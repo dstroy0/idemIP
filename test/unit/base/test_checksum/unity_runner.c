@@ -74,7 +74,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/idemIP_work/test/unit/base/test_checksum\\test_checksum.c");
+  UnityBegin("C:/Users/Douglas/Desktop/git_project/idemIP_work/.claude/worktrees/wf_c808a418-c34-1/test/unit/base/test_checksum\\test_checksum.c");
   run_test(test_rfc1071_section3_example, "test_rfc1071_section3_example", 25);
   run_test(test_rfc1071_byte_order_independence, "test_rfc1071_byte_order_independence", 40);
   run_test(test_checksum_over_itself_is_zero, "test_checksum_over_itself_is_zero", 52);
