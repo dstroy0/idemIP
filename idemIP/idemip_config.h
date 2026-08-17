@@ -663,8 +663,10 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_NETIF_ADDR6_ENTRY_SHIFT
 #define IDEMIP_NETIF_ADDR6_ENTRY_SHIFT 5u
 #endif
+// The region ahead of the two tables carries the operand block as well as the context, the operands
+// living in the borrow rather than on the namespace: 160 octets of NetifIo, then 32 for NetifCtx.
 #ifndef IDEMIP_NETIF_CTX_BYTES
-#define IDEMIP_NETIF_CTX_BYTES 32u
+#define IDEMIP_NETIF_CTX_BYTES 192u
 #endif
 #define IDEMIP_NETIF_BORROW                                                                                            \
     (IDEMIP_NETIF_CTX_BYTES + (IDEMIP_NETIF_COUNT << IDEMIP_NETIF_ENTRY_SHIFT) +                                       \
@@ -679,8 +681,10 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_LOOPIF_FRAME_SHIFT
 #define IDEMIP_LOOPIF_FRAME_SHIFT 11u
 #endif
+// The region ahead of the frame regions carries the operand block as well as the context: 88 octets
+// of LoopifIo, then 64 for LoopifCtx.
 #ifndef IDEMIP_LOOPIF_CTX_BYTES
-#define IDEMIP_LOOPIF_CTX_BYTES 64u
+#define IDEMIP_LOOPIF_CTX_BYTES 152u
 #endif
 #define IDEMIP_LOOPIF_BORROW (IDEMIP_LOOPIF_CTX_BYTES + (IDEMIP_LOOPIF_FRAMES << IDEMIP_LOOPIF_FRAME_SHIFT))
 
@@ -692,8 +696,10 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_DMA_DESC_ENTRY_SHIFT
 #define IDEMIP_DMA_DESC_ENTRY_SHIFT 4u
 #endif
+// The region ahead of the two rings carries the operand block as well as the context: 48 octets of
+// DmaIo, then 48 for DmaCtx.
 #ifndef IDEMIP_DMA_CTX_BYTES
-#define IDEMIP_DMA_CTX_BYTES 32u
+#define IDEMIP_DMA_CTX_BYTES 96u
 #endif
 #define IDEMIP_DMA_BORROW                                                                                              \
     (IDEMIP_DMA_CTX_BYTES + (IDEMIP_RX_DESCRIPTORS << IDEMIP_DMA_DESC_ENTRY_SHIFT) +                                   \
