@@ -1,0 +1,3 @@
+# Every file in this tree is LF in the repository and LF in the working copy. The Pi and WSL build
+# this too, and CRLF kills a shebang on Linux.
+* text=auto eol=lf
