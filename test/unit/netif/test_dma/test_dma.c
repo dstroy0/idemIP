@@ -32,6 +32,10 @@ static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t tx_bufs[IDEMIP_TX_DESCRIPTORS *
 // What the driver was asked to do, in the order it was asked.
 #define EV_INVALIDATE 1
 #define EV_CLEAN 2
+#define EV_RX_CLAIM 3
+#define EV_RX_RELEASE 4
+#define EV_TX_CLAIM 5
+#define EV_TX_COMMIT 6
 static int g_ev[16];
 static int g_ev_n;
 
@@ -40,6 +44,54 @@ static void ev(int what)
     if (g_ev_n < (int)(sizeof g_ev / sizeof g_ev[0]))
     {
         g_ev[g_ev_n++] = what;
+    }
+}
+
+// The engine, modelled on ProtoCore's host DMA rig: it advances only when a case says so, so a test
+// decides which buffer a frame lands in and when it arrives.
+#define ENGINE_Q 8u
+static unsigned g_eng_idx[ENGINE_Q];
+static uint16_t g_eng_len[ENGINE_Q];
+static unsigned g_eng_head;
+static unsigned g_eng_tail;
+static const uint8_t *g_eng_addr; // when set, the address rx_claim reports instead of the buffer's
+static int g_released;
+
+static uint8_t *rx_buf_at(unsigned i)
+{
+    return rx_bufs + ((size_t)i * IDEMIP_DMA_BUF_STRIDE);
+}
+static uint8_t *tx_buf_at(unsigned i)
+{
+    return tx_bufs + ((size_t)i * IDEMIP_DMA_BUF_STRIDE);
+}
+
+// One frame into buffer i, stamped so a later case can prove the octets are still there.
+static void engine_fill(unsigned i, uint16_t len, uint8_t stamp)
+{
+    if (len <= IDEMIP_DMA_BUF_STRIDE)
+    {
+        memset(rx_buf_at(i), stamp, len);
+    }
+    g_eng_idx[g_eng_head & (ENGINE_Q - 1u)] = i;
+    g_eng_len[g_eng_head & (ENGINE_Q - 1u)] = len;
+    g_eng_head++;
+}
+
+// The transmit side: a buffer is out from the claim until the engine reports the frame gone.
+static int g_tx_out[IDEMIP_TX_DESCRIPTORS];
+static unsigned g_tx_cursor;
+static int g_tx_full;
+static int g_tx_commit_fails;
+static int g_committed;
+static size_t g_commit_len;
+static uint8_t *g_tx_addr; // when set, the address tx_claim reports instead of a buffer's
+
+static void engine_tx_done(void)
+{
+    for (unsigned i = 0; i < IDEMIP_TX_DESCRIPTORS; i++)
+    {
+        g_tx_out[i] = 0;
     }
 }
 
@@ -56,20 +108,53 @@ static const uint8_t *fake_mac(void)
 }
 static size_t fake_rx_claim(const uint8_t **frame)
 {
-    (void)frame;
-    return 0;
+    ev(EV_RX_CLAIM);
+    if (g_eng_tail == g_eng_head)
+    {
+        return 0;
+    }
+    unsigned k = g_eng_tail & (ENGINE_Q - 1u);
+    g_eng_tail++;
+    *frame = (g_eng_addr != NULL) ? g_eng_addr : rx_buf_at(g_eng_idx[k]);
+    return g_eng_len[k];
 }
 static void fake_rx_release(void)
 {
+    ev(EV_RX_RELEASE);
+    g_released++;
 }
 static uint8_t *fake_tx_claim(size_t len)
 {
-    (void)len;
-    return tx_bufs;
+    ev(EV_TX_CLAIM);
+    if (g_tx_full || len > IDEMIP_DMA_BUF_STRIDE)
+    {
+        return NULL;
+    }
+    if (g_tx_addr != NULL)
+    {
+        return g_tx_addr;
+    }
+    for (unsigned n = 0; n < IDEMIP_TX_DESCRIPTORS; n++)
+    {
+        unsigned i = (g_tx_cursor + n) & (IDEMIP_TX_DESCRIPTORS - 1u);
+        if (!g_tx_out[i])
+        {
+            g_tx_out[i] = 1;
+            g_tx_cursor = i + 1u;
+            return tx_buf_at(i);
+        }
+    }
+    return NULL;
 }
 static idemip_bool fake_tx_commit(size_t len)
 {
-    (void)len;
+    ev(EV_TX_COMMIT);
+    if (g_tx_commit_fails)
+    {
+        return IDEMIP_FALSE;
+    }
+    g_committed++;
+    g_commit_len = len;
     return IDEMIP_TRUE;
 }
 static void fake_invalidate(const void *p, size_t len)
@@ -133,6 +218,17 @@ void setUp(void)
     memset(rx_bufs, 0xA5, sizeof rx_bufs);
     memset(tx_bufs, 0, sizeof tx_bufs);
     g_ev_n = 0;
+    g_eng_head = 0;
+    g_eng_tail = 0;
+    g_eng_addr = NULL;
+    g_released = 0;
+    engine_tx_done();
+    g_tx_cursor = 0;
+    g_tx_full = 0;
+    g_tx_commit_fails = 0;
+    g_committed = 0;
+    g_commit_len = 0;
+    g_tx_addr = NULL;
 }
 
 void tearDown(void)
@@ -451,4 +547,551 @@ void test_every_entry_is_present(void)
 void test_the_flag_mask_covers_the_enum(void)
 {
     TEST_ASSERT_EQUAL_HEX16(0x000Fu, IDEMIP_DMA_FLAG_MASK);
+}
+
+// --- the frame path ----------------------------------------------------------
+
+static void bind_ok(uint8_t *w)
+{
+    Dma.clear(w);
+    set_bind_args(w);
+    Dma.bind(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(w)->status);
+}
+
+static void post_rx(uint8_t *w, uint8_t index)
+{
+    IDEMIP_DMA_IO(w)->desc_args.index = index;
+    Dma.rx_post(w);
+}
+
+static void pin_rx(uint8_t *w, uint8_t index)
+{
+    IDEMIP_DMA_IO(w)->desc_args.index = index;
+    Dma.pin(w);
+}
+
+static void unpin_rx(uint8_t *w, uint8_t index)
+{
+    IDEMIP_DMA_IO(w)->desc_args.index = index;
+    Dma.unpin(w);
+}
+
+// The frame path calls four more driver members, so a driver missing any of them is refused at bind
+// rather than faulting on the first frame.
+void test_bind_refuses_a_driver_without_the_frame_path(void)
+{
+    IdemIpPhyDriver partial;
+
+    Dma.clear(work_a);
+    set_bind_args(work_a);
+
+    memcpy(&partial, &g_drv, sizeof partial);
+    partial.rx_claim = NULL;
+    IDEMIP_DMA_IO(work_a)->bind_args.drv = &partial;
+    Dma.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+
+    memcpy(&partial, &g_drv, sizeof partial);
+    partial.rx_release = NULL;
+    Dma.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+
+    memcpy(&partial, &g_drv, sizeof partial);
+    partial.tx_claim = NULL;
+    Dma.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+
+    memcpy(&partial, &g_drv, sizeof partial);
+    partial.tx_commit = NULL;
+    Dma.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+}
+
+// PLAN sec 3.5: a buffer starts on a cache line, because invalidating a partial line discards
+// whatever shares it. No retry moves the array, so a misplaced one is ERR.
+void test_bind_refuses_a_buffer_array_off_the_cache_line(void)
+{
+    Dma.clear(work_a);
+    set_bind_args(work_a);
+    IDEMIP_DMA_IO(work_a)->bind_args.rx_base = rx_bufs + 1;
+    Dma.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+
+    set_bind_args(work_a);
+    IDEMIP_DMA_IO(work_a)->bind_args.tx_base = tx_bufs + 1;
+    Dma.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+}
+
+// The engine wrote the buffer, so the stale cached copy is discarded before the frame is readable.
+// Ordering is the whole claim: the driver's claim, then invalidate, then the frame is reported.
+void test_rx_take_invalidates_before_the_frame_is_readable(void)
+{
+    bind_ok(work_a);
+    engine_fill(0u, 100u, 0x11u);
+    g_ev_n = 0;
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(2, g_ev_n);
+    TEST_ASSERT_EQUAL_INT(EV_RX_CLAIM, g_ev[0]);
+    TEST_ASSERT_EQUAL_INT(EV_INVALIDATE, g_ev[1]);
+}
+
+// bind gave descriptor i the address base + i strides, so the address the engine filled names the
+// descriptor the frame is reported on.
+void test_rx_take_reports_the_descriptor_the_engine_filled(void)
+{
+    bind_ok(work_a);
+    engine_fill(3u, 100u, 0x22u);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(3u, IDEMIP_DMA_IO(work_a)->index);
+    TEST_ASSERT_EQUAL_PTR(rx_buf_at(3u), IDEMIP_DMA_IO(work_a)->buf);
+    TEST_ASSERT_EQUAL_UINT16(100u, IDEMIP_DMA_IO(work_a)->len);
+    TEST_ASSERT_EQUAL_HEX16((uint16_t)(IDEMIP_DMA_FLAG_HELD | IDEMIP_DMA_FLAG_LAST),
+                            IDEMIP_DMA_IO(work_a)->flags);
+    TEST_ASSERT_EQUAL_HEX8(0x22u, IDEMIP_DMA_IO(work_a)->buf[0]);
+}
+
+// Nothing filled is BUSY, not OK and not ERR: a later tick finds a frame.
+void test_an_empty_engine_is_busy(void)
+{
+    bind_ok(work_a);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_NULL(IDEMIP_DMA_IO(work_a)->buf);
+    TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_DMA_IO(work_a)->len);
+}
+
+// A take and a post are one round trip: the descriptor goes back to the engine and the same buffer
+// carries the next frame.
+void test_rx_take_and_post_round_trip(void)
+{
+    bind_ok(work_a);
+    engine_fill(2u, 64u, 0x33u);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    g_ev_n = 0;
+    post_rx(work_a, 2u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(1, g_released);
+    TEST_ASSERT_EQUAL_INT(1, g_ev_n);
+    TEST_ASSERT_EQUAL_INT(EV_RX_RELEASE, g_ev[0]);
+
+    engine_fill(2u, 32u, 0x44u);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(2u, IDEMIP_DMA_IO(work_a)->index);
+}
+
+// A second post would hand the engine the same descriptor twice.
+void test_a_second_rx_post_is_refused(void)
+{
+    bind_ok(work_a);
+    engine_fill(1u, 64u, 0x55u);
+    Dma.rx_take(work_a);
+    post_rx(work_a, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    post_rx(work_a, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(1, g_released);
+}
+
+// A post of a descriptor never taken would return one the engine already owns.
+void test_rx_post_without_a_take_is_refused(void)
+{
+    bind_ok(work_a);
+    post_rx(work_a, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(0, g_released);
+}
+
+// A frame at an address this ring never handed the engine belongs to no descriptor, so it is not
+// reported and nothing is released.
+void test_rx_take_refuses_a_frame_outside_the_bound_buffers(void)
+{
+    static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t foreign[64];
+    bind_ok(work_a);
+    g_eng_addr = foreign;
+    engine_fill(0u, 64u, 0x66u);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_NULL(IDEMIP_DMA_IO(work_a)->buf);
+    TEST_ASSERT_EQUAL_INT(0, g_released);
+}
+
+// RFC 894 bounds an Ethernet frame, so a longer one is the engine's error: the descriptor goes back
+// and the call is ERR, because no retry shortens that frame.
+void test_rx_take_refuses_a_frame_longer_than_one_buffer(void)
+{
+    bind_ok(work_a);
+    engine_fill(0u, (uint16_t)(IDEMIP_DMA_FRAME_MAX + 1u), 0x77u);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_HEX16((uint16_t)IDEMIP_DMA_FLAG_ERR, IDEMIP_DMA_IO(work_a)->flags);
+    TEST_ASSERT_EQUAL_INT(1, g_released);
+}
+
+// A refill of a buffer whose descriptor this side still holds would write over a frame in use.
+void test_rx_take_refuses_a_refill_of_a_descriptor_this_side_holds(void)
+{
+    bind_ok(work_a);
+    engine_fill(4u, 64u, 0x88u);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    engine_fill(4u, 64u, 0x99u);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(0, g_released);
+}
+
+// --- the pin protocol --------------------------------------------------------
+
+// A pinned descriptor is not returned to the engine when the hold ends. The last unpin returns it.
+void test_a_pin_holds_the_descriptor_past_the_post(void)
+{
+    bind_ok(work_a);
+    engine_fill(6u, 64u, 0xAAu);
+    Dma.rx_take(work_a);
+    pin_rx(work_a, 6u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_DMA_IO(work_a)->pins);
+
+    post_rx(work_a, 6u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, g_released, "a pinned descriptor went back to the engine");
+
+    // Still out of the engine's hands: a refill of its buffer is refused.
+    engine_fill(6u, 64u, 0xBBu);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+
+    unpin_rx(work_a, 6u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_DMA_IO(work_a)->pins);
+    TEST_ASSERT_EQUAL_INT(1, g_released);
+
+    engine_fill(6u, 48u, 0xCCu);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(6u, IDEMIP_DMA_IO(work_a)->index);
+}
+
+// Two units retaining one frame are two pins, and the descriptor returns once, on the last one.
+void test_the_last_unpin_returns_the_descriptor_once(void)
+{
+    bind_ok(work_a);
+    engine_fill(0u, 64u, 0xDDu);
+    Dma.rx_take(work_a);
+    pin_rx(work_a, 0u);
+    pin_rx(work_a, 0u);
+    TEST_ASSERT_EQUAL_UINT8(2u, IDEMIP_DMA_IO(work_a)->pins);
+    post_rx(work_a, 0u);
+
+    unpin_rx(work_a, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_DMA_IO(work_a)->pins);
+    TEST_ASSERT_EQUAL_INT(0, g_released);
+
+    unpin_rx(work_a, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_DMA_IO(work_a)->pins);
+    TEST_ASSERT_EQUAL_INT(1, g_released);
+}
+
+// A descriptor the engine owns was never taken, so there is nothing to retain and no retry changes
+// that.
+void test_a_pin_on_a_descriptor_the_engine_owns_is_refused(void)
+{
+    bind_ok(work_a);
+    pin_rx(work_a, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+    Dma.pinned(work_a);
+    TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_DMA_IO(work_a)->pinned);
+}
+
+// An unpin with no pin to drop would return a descriptor twice.
+void test_an_unpin_without_a_pin_is_refused(void)
+{
+    bind_ok(work_a);
+    engine_fill(0u, 64u, 0xEEu);
+    Dma.rx_take(work_a);
+    unpin_rx(work_a, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(0, g_released);
+}
+
+// IDEMIP_MAX_PINNED_FRAMES bounds the pins over the ring. The pin past it is BUSY, not ERR: every
+// retaining unit drops its pins on its own timer, so the retry succeeds. ERR would abandon a healthy
+// frame, and the ring is asserted wider than the bound so it never starves.
+void test_pin_exhaustion_is_busy_and_an_unpin_frees_it(void)
+{
+    bind_ok(work_a);
+    for (unsigned i = 0; i < IDEMIP_MAX_PINNED_FRAMES; i++)
+    {
+        engine_fill(i, 64u, (uint8_t)i);
+        Dma.rx_take(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+        TEST_ASSERT_EQUAL_UINT8((uint8_t)i, IDEMIP_DMA_IO(work_a)->index);
+        pin_rx(work_a, (uint8_t)i);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    }
+    Dma.pinned(work_a);
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)IDEMIP_MAX_PINNED_FRAMES, IDEMIP_DMA_IO(work_a)->pinned);
+
+    engine_fill(IDEMIP_MAX_PINNED_FRAMES, 64u, 0xF0u);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    pin_rx(work_a, (uint8_t)IDEMIP_MAX_PINNED_FRAMES);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DMA_IO(work_a)->status,
+                                  "a pin past the budget must be BUSY, because an unpin makes it fit");
+
+    unpin_rx(work_a, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    pin_rx(work_a, (uint8_t)IDEMIP_MAX_PINNED_FRAMES);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    Dma.pinned(work_a);
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)IDEMIP_MAX_PINNED_FRAMES, IDEMIP_DMA_IO(work_a)->pinned);
+}
+
+// The retained frame stays where the engine wrote it. The ring runs twice around while it is pinned,
+// and neither the octets nor the descriptor move.
+void test_a_pinned_frame_survives_the_ring_wrapping_past_it(void)
+{
+    const unsigned held = 5u;
+    bind_ok(work_a);
+    engine_fill(held, 100u, 0x5Au);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    uint8_t *pinned_buf = IDEMIP_DMA_IO(work_a)->buf;
+    pin_rx(work_a, (uint8_t)held);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    post_rx(work_a, (uint8_t)held);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+
+    int expect_released = 0;
+    for (int round = 0; round < 2; round++)
+    {
+        for (unsigned i = 0; i < IDEMIP_RX_DESCRIPTORS; i++)
+        {
+            if (i == held)
+            {
+                continue;
+            }
+            engine_fill(i, 64u, 0xC3u);
+            Dma.rx_take(work_a);
+            TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+            TEST_ASSERT_EQUAL_UINT8((uint8_t)i, IDEMIP_DMA_IO(work_a)->index);
+            TEST_ASSERT_TRUE_MESSAGE(IDEMIP_DMA_IO(work_a)->buf != pinned_buf,
+                                     "a pinned buffer was handed out again");
+            post_rx(work_a, (uint8_t)i);
+            TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+            expect_released++;
+        }
+    }
+
+    for (unsigned j = 0; j < 100u; j++)
+    {
+        TEST_ASSERT_EQUAL_HEX8_MESSAGE(0x5Au, pinned_buf[j], "a pinned frame's octets were written over");
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(expect_released, g_released, "a pinned descriptor went back to the engine");
+    Dma.pinned(work_a);
+    TEST_ASSERT_EQUAL_UINT16(1u, IDEMIP_DMA_IO(work_a)->pinned);
+
+    unpin_rx(work_a, (uint8_t)held);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(expect_released + 1, g_released);
+}
+
+// The pin count is the ring's, and the ring is the borrow, so pinning on one interface leaves the
+// other's count where it was.
+void test_pins_on_two_borrows_are_independent(void)
+{
+    bind_ok(work_a);
+    bind_ok(work_b);
+    engine_fill(0u, 64u, 0x0Fu);
+    Dma.rx_take(work_a);
+    pin_rx(work_a, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+
+    Dma.pinned(work_a);
+    TEST_ASSERT_EQUAL_UINT16(1u, IDEMIP_DMA_IO(work_a)->pinned);
+    Dma.pinned(work_b);
+    TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_DMA_IO(work_b)->pinned);
+
+    unpin_rx(work_b, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_b)->status);
+    Dma.pinned(work_a);
+    TEST_ASSERT_EQUAL_UINT16(1u, IDEMIP_DMA_IO(work_a)->pinned);
+}
+
+// --- the transmit path -------------------------------------------------------
+
+// The buffer the driver handed out names its descriptor, and the descriptor is this side's to build
+// into until it is posted.
+void test_tx_take_reports_the_claimed_buffer_and_its_descriptor(void)
+{
+    bind_ok(work_a);
+    Dma.tx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_PTR(tx_buf_at(0u), IDEMIP_DMA_IO(work_a)->buf);
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_DMA_IO(work_a)->index);
+    TEST_ASSERT_EQUAL_HEX16((uint16_t)IDEMIP_DMA_FLAG_HELD, IDEMIP_DMA_IO(work_a)->flags);
+
+    Dma.tx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_DMA_IO(work_a)->index);
+}
+
+// The engine reads the buffer, so what the build left in cache is written back first. Ordering
+// again: clean must precede commit.
+void test_tx_post_cleans_before_it_commits(void)
+{
+    bind_ok(work_a);
+    Dma.tx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    g_ev_n = 0;
+    IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
+    IDEMIP_DMA_IO(work_a)->desc_args.len = 60u;
+    Dma.tx_post(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(2, g_ev_n);
+    TEST_ASSERT_EQUAL_INT(EV_CLEAN, g_ev[0]);
+    TEST_ASSERT_EQUAL_INT(EV_TX_COMMIT, g_ev[1]);
+    TEST_ASSERT_EQUAL_size_t(60u, g_commit_len);
+    TEST_ASSERT_EQUAL_HEX16((uint16_t)(IDEMIP_DMA_FLAG_OWN | IDEMIP_DMA_FLAG_LAST), IDEMIP_DMA_IO(work_a)->flags);
+}
+
+// A post of a descriptor never taken would hand the engine whatever was in that buffer.
+void test_tx_post_without_a_take_is_refused(void)
+{
+    bind_ok(work_a);
+    IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
+    IDEMIP_DMA_IO(work_a)->desc_args.len = 60u;
+    Dma.tx_post(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(0, g_committed);
+}
+
+// A second post would transmit the same buffer twice.
+void test_a_second_tx_post_is_refused(void)
+{
+    bind_ok(work_a);
+    Dma.tx_take(work_a);
+    IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
+    IDEMIP_DMA_IO(work_a)->desc_args.len = 60u;
+    Dma.tx_post(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    Dma.tx_post(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(1, g_committed);
+}
+
+// A driver that could not queue the frame leaves the descriptor held, so the same one is posted
+// again on a later tick. That is BUSY, and the retry succeeds.
+void test_a_commit_that_could_not_queue_is_busy_and_the_retry_succeeds(void)
+{
+    bind_ok(work_a);
+    Dma.tx_take(work_a);
+    g_tx_commit_fails = 1;
+    IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
+    IDEMIP_DMA_IO(work_a)->desc_args.len = 60u;
+    Dma.tx_post(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(0, g_committed);
+
+    g_tx_commit_fails = 0;
+    Dma.tx_post(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(1, g_committed);
+}
+
+// Every descriptor out is BUSY, because a reaped descriptor frees one. ERR would abandon a healthy
+// ring.
+void test_a_full_transmit_ring_is_busy(void)
+{
+    bind_ok(work_a);
+    for (unsigned i = 0; i < IDEMIP_TX_DESCRIPTORS; i++)
+    {
+        Dma.tx_take(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    }
+    Dma.tx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_NULL(IDEMIP_DMA_IO(work_a)->buf);
+}
+
+// A committed descriptor is the engine's until reap takes it back. Nothing to take back is BUSY.
+void test_tx_reap_frees_a_committed_descriptor(void)
+{
+    bind_ok(work_a);
+    Dma.tx_reap(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DMA_IO(work_a)->status);
+
+    Dma.tx_take(work_a);
+    IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
+    IDEMIP_DMA_IO(work_a)->desc_args.len = 60u;
+    Dma.tx_post(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+
+    Dma.tx_reap(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_DMA_IO(work_a)->index);
+    Dma.tx_reap(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DMA_IO(work_a)->status);
+
+    engine_tx_done();
+    Dma.tx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_PTR(tx_buf_at(IDEMIP_DMA_IO(work_a)->index), IDEMIP_DMA_IO(work_a)->buf);
+}
+
+// A buffer at an address this ring never handed out belongs to no descriptor.
+void test_tx_take_refuses_a_buffer_outside_the_bound_array(void)
+{
+    static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t foreign[64];
+    bind_ok(work_a);
+    g_tx_addr = foreign;
+    Dma.tx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_NULL(IDEMIP_DMA_IO(work_a)->buf);
+}
+
+// A driver handing the same storage to two builds is refused rather than transmitted twice.
+void test_tx_take_refuses_a_buffer_already_handed_out(void)
+{
+    bind_ok(work_a);
+    Dma.tx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    g_tx_addr = tx_buf_at(0u);
+    Dma.tx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+}
+
+// An entry is a function of its borrow alone, so the same call on the same bytes reports the same
+// thing however the other borrow is driven between them. This is the determinism the design is named
+// for.
+void test_a_call_is_a_function_of_its_borrow_alone(void)
+{
+    bind_ok(work_a);
+    bind_ok(work_b);
+
+    Dma.tx_take(work_a);
+    uint8_t first = IDEMIP_DMA_IO(work_a)->index;
+    uint8_t *first_buf = IDEMIP_DMA_IO(work_a)->buf;
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+
+    Dma.pinned(work_b);
+    Dma.tx_reap(work_b);
+
+    Dma.pinned(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_DMA_IO(work_a)->pinned);
+
+    IDEMIP_DMA_IO(work_a)->desc_args.index = first;
+    IDEMIP_DMA_IO(work_a)->desc_args.len = 60u;
+    Dma.tx_post(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_PTR(first_buf, IDEMIP_DMA_IO(work_a)->buf);
 }

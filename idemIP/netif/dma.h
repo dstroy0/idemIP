@@ -56,7 +56,8 @@ typedef enum IDEMIP_ENUM_PACKED
  * Descriptor i of a ring points at its base plus i strides of IDEMIP_DMA_BUF_STRIDE, which rounds
  * IDEMIP_DMA_FRAME_MAX up to whole cache lines so that invalidating one buffer cannot reach another.
  *
- * @var DmaBindArgs::drv     the link driver, for cache_invalidate and cache_clean
+ * @var DmaBindArgs::drv     the link driver: rx_claim, rx_release, tx_claim and tx_commit on the
+ *                           frame path, cache_invalidate and cache_clean around it
  * @var DmaBindArgs::rx_base the first of IDEMIP_RX_DESCRIPTORS receive buffers
  * @var DmaBindArgs::tx_base the first of IDEMIP_TX_DESCRIPTORS transmit buffers
  */
@@ -145,10 +146,11 @@ typedef struct
  * Every member is `const`, and the struct holds no mutable state, so this symbol lives in rodata and
  * the module occupies no RAM of its own.
  *
- * Nothing here blocks. A receive ring with nothing filled and a transmit ring with no free
- * descriptor are both BUSY, and the caller comes back on a later tick. A descriptor index past the
- * ring, a post of a descriptor the engine already owns, an unpin of an unpinned descriptor, and a
- * pin count at its bound are ERR.
+ * Nothing here blocks. A receive ring with nothing filled, a transmit ring with no free descriptor,
+ * and a pin at IDEMIP_MAX_PINNED_FRAMES are all BUSY, and the caller comes back on a later tick: a
+ * frame arrives, a descriptor frees, a retaining unit drops a pin on its own timer. A descriptor
+ * index past the ring, a post of a descriptor the engine already owns, a pin on a descriptor the
+ * engine owns, and an unpin of an unpinned descriptor are ERR.
  *
  * @var DmaNs::clear    zero the context and both rings, which every other entry refuses until it has
  *                      run. The operand block is the caller's and is left alone.
