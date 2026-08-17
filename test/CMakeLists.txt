@@ -51,6 +51,13 @@ set(IDEMIP_SUITE_CAP_test_nd6      IPV6)
 set(IDEMIP_SUITE_CAP_test_mld6     IPV6)
 set(IDEMIP_SUITE_CAP_test_tcp      TCP)
 set(IDEMIP_SUITE_CAP_test_udp      UDP)
+set(IDEMIP_SUITE_CAP_test_tcp_pcb  TCP)
+set(IDEMIP_SUITE_CAP_test_tcp_isn  TCP)
+set(IDEMIP_SUITE_CAP_test_udp_pcb  UDP)
+# raw_pcb.h opens under IPV4 or IPV6, either one being an IP layer to bind a protocol number on. The
+# map holds one capability per suite, so this suite is tied to IPV4 and is skipped loudly in an
+# IPv6-only build even though the header would compile.
+set(IDEMIP_SUITE_CAP_test_raw_pcb  IPV4)
 # test_checksum has no gate: checksum.h is a base facility, ungated like ProtoCore's mmgr/endian.h.
 
 set(IDEMIP_SKIPPED "")
