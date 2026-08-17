@@ -58,6 +58,9 @@ set(IDEMIP_SUITE_CAP_test_udp_pcb  UDP)
 # map holds one capability per suite, so this suite is tied to IPV4 and is skipped loudly in an
 # IPv6-only build even though the header would compile.
 set(IDEMIP_SUITE_CAP_test_raw_pcb  IPV4)
+set(IDEMIP_SUITE_CAP_test_dhcp4    IPV4)
+set(IDEMIP_SUITE_CAP_test_dhcp6    IPV6)
+set(IDEMIP_SUITE_CAP_test_dns      UDP)
 # test_checksum has no gate: checksum.h is a base facility, ungated like ProtoCore's mmgr/endian.h.
 
 set(IDEMIP_SKIPPED "")
