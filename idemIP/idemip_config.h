@@ -872,8 +872,9 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_RAW_PCB_ENTRY_SHIFT
 #define IDEMIP_RAW_PCB_ENTRY_SHIFT 6u
 #endif
+// The region also carries raw_pcb.h's operand block, which is 120 octets, the context 4 behind it.
 #ifndef IDEMIP_RAW_PCB_CTX_BYTES
-#define IDEMIP_RAW_PCB_CTX_BYTES 32u
+#define IDEMIP_RAW_PCB_CTX_BYTES 160u
 #endif
 #define IDEMIP_RAW_PCB_BORROW (IDEMIP_RAW_PCB_CTX_BYTES + (IDEMIP_RAW_PCBS << IDEMIP_RAW_PCB_ENTRY_SHIFT))
 
@@ -883,8 +884,9 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_UDP_PCB_ENTRY_SHIFT
 #define IDEMIP_UDP_PCB_ENTRY_SHIFT 6u
 #endif
+// The region also carries udp_pcb.h's operand block, which is 136 octets, the context 8 behind it.
 #ifndef IDEMIP_UDP_PCB_CTX_BYTES
-#define IDEMIP_UDP_PCB_CTX_BYTES 32u
+#define IDEMIP_UDP_PCB_CTX_BYTES 192u
 #endif
 #define IDEMIP_UDP_PCB_BORROW (IDEMIP_UDP_PCB_CTX_BYTES + (IDEMIP_UDP_PCBS << IDEMIP_UDP_PCB_ENTRY_SHIFT))
 
@@ -910,8 +912,11 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_TCP_OOSEQ_ENTRY_SHIFT
 #define IDEMIP_TCP_OOSEQ_ENTRY_SHIFT 4u
 #endif
+// The region also carries tcp_pcb.h's operand block, which is 360 octets, the context 8 behind it.
+// The block holds one whole TCB's worth of fields, load and store copying the RFC 9293 sec 3.3.1
+// variables, the sec 3.3.2 state and the estimator and congestion state through it.
 #ifndef IDEMIP_TCP_PCB_CTX_BYTES
-#define IDEMIP_TCP_PCB_CTX_BYTES 32u
+#define IDEMIP_TCP_PCB_CTX_BYTES 416u
 #endif
 #define IDEMIP_TCP_PCB_BORROW                                                                                          \
     (IDEMIP_TCP_PCB_CTX_BYTES + (IDEMIP_TCP_PCBS << IDEMIP_TCP_PCB_ENTRY_SHIFT) +                                      \
@@ -923,8 +928,10 @@ typedef enum IDEMIP_ENUM_PACKED
 // The context holds the secret key and the 4-microsecond timer's base. The block is the
 // connection-id the PRF is fed, and the hash region is the PRF's working set; both are regions of
 // the borrow because no array here has automatic storage duration.
+// The region also carries tcp_isn.h's operand block, which is 64 octets, the context 28 behind it:
+// the secret key, M's base, and the mark reset leaves.
 #ifndef IDEMIP_TCP_ISN_CTX_BYTES
-#define IDEMIP_TCP_ISN_CTX_BYTES 32u
+#define IDEMIP_TCP_ISN_CTX_BYTES 128u
 #endif
 #define IDEMIP_TCP_ISN_BORROW (IDEMIP_TCP_ISN_CTX_BYTES + IDEMIP_TCP_ISN_BLOCK_BYTES + IDEMIP_TCP_ISN_HASH_BYTES)
 
