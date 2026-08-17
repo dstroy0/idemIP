@@ -798,8 +798,11 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_IP6_REASS_HOLE_ENTRY_SHIFT
 #define IDEMIP_IP6_REASS_HOLE_ENTRY_SHIFT 3u
 #endif
+// Spans the operand block and the context together, as IDEMIP_PHY_BORROW does: ip6_reass.h puts
+// Ip6ReassIo at offset zero and the context behind it, and the assert in ip6_reass.c fires naming
+// this macro if either outgrows the pair.
 #ifndef IDEMIP_IP6_REASS_CTX_BYTES
-#define IDEMIP_IP6_REASS_CTX_BYTES 32u
+#define IDEMIP_IP6_REASS_CTX_BYTES 96u
 #endif
 #define IDEMIP_IP6_REASS_BORROW                                                                                        \
     (IDEMIP_IP6_REASS_CTX_BYTES + (IDEMIP_IP6_REASS_DATAGRAMS << IDEMIP_IP6_REASS_DATAGRAM_ENTRY_SHIFT) +              \
@@ -840,8 +843,11 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_ND6_PENDING_ENTRY_SHIFT
 #define IDEMIP_ND6_PENDING_ENTRY_SHIFT 4u
 #endif
+// Spans the operand block, the context, and the RFC 4862 sec 5.4 state dad.c and slaac.c keep in this
+// borrow. nd6.h puts Nd6Io at offset zero and the context behind it, and the assert in nd6.c fires
+// naming this macro if the pair outgrows it.
 #ifndef IDEMIP_ND6_CTX_BYTES
-#define IDEMIP_ND6_CTX_BYTES 128u
+#define IDEMIP_ND6_CTX_BYTES 320u
 #endif
 #define IDEMIP_ND6_BORROW                                                                                              \
     (IDEMIP_ND6_CTX_BYTES + (IDEMIP_ND6_NUM_NEIGHBORS << IDEMIP_ND6_NEIGHBOR_ENTRY_SHIFT) +                            \
@@ -857,8 +863,11 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_MLD6_ENTRY_SHIFT
 #define IDEMIP_MLD6_ENTRY_SHIFT 5u
 #endif
+// Spans the operand block and the context together, as IDEMIP_PHY_BORROW does: mld6.h puts Mld6Io at
+// offset zero and the context behind it, and the assert in mld6.c fires naming this macro if either
+// outgrows the pair.
 #ifndef IDEMIP_MLD6_CTX_BYTES
-#define IDEMIP_MLD6_CTX_BYTES 32u
+#define IDEMIP_MLD6_CTX_BYTES 96u
 #endif
 #define IDEMIP_MLD6_BORROW (IDEMIP_MLD6_CTX_BYTES + (IDEMIP_MLD6_GROUPS << IDEMIP_MLD6_ENTRY_SHIFT))
 
