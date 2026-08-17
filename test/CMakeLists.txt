@@ -42,6 +42,10 @@ set(IDEMIP_SUITE_CAP_test_ipv6     IPV6)
 set(IDEMIP_SUITE_CAP_test_icmpv6   IPV6)
 set(IDEMIP_SUITE_CAP_test_tcp      TCP)
 set(IDEMIP_SUITE_CAP_test_udp      UDP)
+# core/ has no gate of its own, and every other capability requires ETHERNET, so that is the gate a
+# core unit is present under.
+set(IDEMIP_SUITE_CAP_test_timeouts ETHERNET)
+set(IDEMIP_SUITE_CAP_test_stats    ETHERNET)
 # test_checksum has no gate: checksum.h is a base facility, ungated like ProtoCore's mmgr/endian.h.
 
 set(IDEMIP_SKIPPED "")
