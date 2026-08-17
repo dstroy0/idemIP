@@ -933,8 +933,11 @@ typedef enum IDEMIP_ENUM_PACKED
 // retry count and its deadline, the server that offered the lease, the offered address, mask and
 // gateway, and the sec 4.4.5 lease time with T1 and T2. The RFC 2131 sec 2 'file' field is not in
 // it; a build that wants BOOTP's 128-octet boot file name raises this macro.
+//
+// dhcp4 holds no table, so this region is the whole borrow and carries the operand block of dhcp4.h
+// as well as the context: 144 and 72 octets on a target with 8-octet pointers.
 #ifndef IDEMIP_DHCP4_CTX_BYTES
-#define IDEMIP_DHCP4_CTX_BYTES 128u
+#define IDEMIP_DHCP4_CTX_BYTES 232u
 #endif
 #define IDEMIP_DHCP4_BORROW (IDEMIP_DHCP4_CTX_BYTES)
 
@@ -943,8 +946,11 @@ typedef enum IDEMIP_ENUM_PACKED
 // sec 21.4 IA_NA with its IAID, T1, T2 and the sec 21.6 IAADDR address with its preferred and valid
 // lifetimes. The server's DUID gets its own region, being opaque and up to IDEMIP_DHCP6_DUID_MAX
 // octets.
+//
+// This region carries the operand block of dhcp6.h as well as the context, the DUID region following
+// both: 168 and 104 octets on a target with 8-octet pointers.
 #ifndef IDEMIP_DHCP6_CTX_BYTES
-#define IDEMIP_DHCP6_CTX_BYTES 128u
+#define IDEMIP_DHCP6_CTX_BYTES 288u
 #endif
 #define IDEMIP_DHCP6_BORROW (IDEMIP_DHCP6_CTX_BYTES + IDEMIP_ROUND_UP(IDEMIP_DHCP6_DUID_MAX, IDEMIP_ALIGN))
 
@@ -966,8 +972,10 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_DNS_SERVER_ENTRY_SHIFT
 #define IDEMIP_DNS_SERVER_ENTRY_SHIFT 5u
 #endif
+// This region carries the operand block of dns.h as well as the context, the four tables following
+// both: 200 and 16 octets on a target with 8-octet pointers.
 #ifndef IDEMIP_DNS_CTX_BYTES
-#define IDEMIP_DNS_CTX_BYTES 32u
+#define IDEMIP_DNS_CTX_BYTES 232u
 #endif
 #define IDEMIP_DNS_BORROW                                                                                              \
     (IDEMIP_DNS_CTX_BYTES + (IDEMIP_DNS_QUERIES << IDEMIP_DNS_QUERY_ENTRY_SHIFT) +                                     \

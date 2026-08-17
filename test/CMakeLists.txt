@@ -42,6 +42,9 @@ set(IDEMIP_SUITE_CAP_test_ipv6     IPV6)
 set(IDEMIP_SUITE_CAP_test_icmpv6   IPV6)
 set(IDEMIP_SUITE_CAP_test_tcp      TCP)
 set(IDEMIP_SUITE_CAP_test_udp      UDP)
+set(IDEMIP_SUITE_CAP_test_dhcp4    IPV4)
+set(IDEMIP_SUITE_CAP_test_dhcp6    IPV6)
+set(IDEMIP_SUITE_CAP_test_dns      UDP)
 # test_checksum has no gate: checksum.h is a base facility, ungated like ProtoCore's mmgr/endian.h.
 
 set(IDEMIP_SKIPPED "")
