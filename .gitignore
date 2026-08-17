@@ -1,0 +1,7 @@
+# Build output, including the FetchContent cache Unity lands in. One per agent, so the pattern is
+# any directory whose name starts with build.
+build*/
+
+# The lwIP reference clone. Read for engineering constants, never built and never shipped, and it
+# carries its own history.
+lwip_ref/
