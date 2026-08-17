@@ -6,8 +6,8 @@
  * @brief Internet control messages for IPv6, RFC 4443.
  *
  * The same three leading fields as RFC 792, a renumbered type space, and a checksum that covers the
- * RFC 8200 sec 8.1 pseudo-header as well as the message. Read out of the caller's bytes; holds
- * nothing.
+ * RFC 8200 sec 8.1 pseudo-header as well as the message. Read out of, and built into, the caller's
+ * bytes; holds nothing.
  */
 
 #ifndef IDEMIP_ICMPV6_H
@@ -37,7 +37,13 @@ IDEMIP_BEGIN_DECLS
  */
 #define IDEMIP_ICMP6_INFORMATIONAL 0x80u
 
-/** @brief Message types RFC 4443 assigns. Numbered apart from RFC 792's. */
+/**
+ * @brief Message types in the ICMPv6 space. Numbered apart from RFC 792's.
+ *
+ * RFC 4443 sec 2.1 assigns 1 through 4 and 128 through 129. Other documents assign into the same
+ * space: RFC 2710 sec 3.1 takes 130 through 132 for MLD, which sec 3 calls "a sub-protocol of
+ * ICMPv6, that is, MLD message types are a subset of the set of ICMPv6 messages".
+ */
 typedef enum IDEMIP_ENUM_PACKED
 {
     IDEMIP_ICMP6_DEST_UNREACHABLE = 1,  ///< sec 3.1
@@ -46,6 +52,9 @@ typedef enum IDEMIP_ENUM_PACKED
     IDEMIP_ICMP6_PARAMETER_PROBLEM = 4, ///< sec 3.4
     IDEMIP_ICMP6_ECHO_REQUEST = 128,    ///< sec 4.1
     IDEMIP_ICMP6_ECHO_REPLY = 129,      ///< sec 4.2
+    IDEMIP_ICMP6_MLD_QUERY = 130,       ///< RFC 2710 sec 3.1, "Multicast Listener Query"
+    IDEMIP_ICMP6_MLD_REPORT = 131,      ///< RFC 2710 sec 3.1, "Multicast Listener Report"
+    IDEMIP_ICMP6_MLD_DONE = 132,        ///< RFC 2710 sec 3.1, "Multicast Listener Done"
 } IdemIpIcmp6Type;
 
 // ---------------------------------------------------------------------------
@@ -165,14 +174,135 @@ IDEMIP_INLINE uint16_t idemip_icmp6_cksum_compute(const uint8_t *m, size_t len, 
     return idemip_cksum_final(idemip_cksum_accum(sum, m, len));
 }
 
+// ---------------------------------------------------------------------------
+// Build (RFC 4443 sec 3 and sec 4)
+// ---------------------------------------------------------------------------
+// Each helper writes one message into the caller's bytes and returns how many it wrote. The buffer
+// is the caller's and is not held past the call. The checksum field is left zero, so a caller
+// finishes a message with
+//
+//   idemip_wr16(m + IDEMIP_ICMP6_OFF_CKSUM, idemip_icmp6_cksum_compute(m, len, src, dst));
+
+/** @brief Type, Code, and a zero Checksum: the three fields sec 2.1 puts at the head of every message. */
+IDEMIP_INLINE void idemip_icmp6_hdr_write(uint8_t *m, uint8_t type, uint8_t code)
+{
+    m[IDEMIP_ICMP6_OFF_TYPE] = type;
+    m[IDEMIP_ICMP6_OFF_CODE] = code;
+    idemip_wr16(m + IDEMIP_ICMP6_OFF_CKSUM, 0u);
+}
+
+/**
+ * @brief Octets of an invoking packet of @p invoking_len that an error message carries.
+ *
+ * RFC 4443 sec 2.4 (c): "Every ICMPv6 error message (type < 128) MUST include as much of the IPv6
+ * offending (invoking) packet (the packet that caused the error) as possible without making the
+ * error message packet exceed the minimum IPv6 MTU". Anything longer is truncated to what is left
+ * of the 1280 once the IPv6 header and these eight octets are counted.
+ */
+IDEMIP_INLINE size_t idemip_icmp6_err_quote_len(size_t invoking_len)
+{
+    return (invoking_len > (size_t)IDEMIP_ICMP6_ERR_QUOTE_MAX) ? (size_t)IDEMIP_ICMP6_ERR_QUOTE_MAX : invoking_len;
+}
+
+/**
+ * @brief An error message: the three head fields, the type's 32-bit field, then the clamped quote.
+ *
+ * @p word is what sec 3 puts at offset 4 for this type: Unused for Destination Unreachable and Time
+ * Exceeded, MTU for Packet Too Big, Pointer for Parameter Problem.
+ *
+ * @p invoking points at the IPv6 header of the packet that caused the error, and must not overlap
+ * @p m.
+ *
+ * @return bytes written, IDEMIP_ICMP6_ERR_HDR_LEN plus the quote.
+ */
+IDEMIP_INLINE size_t idemip_icmp6_err_build(uint8_t *m, uint8_t type, uint8_t code, uint32_t word,
+                                            const uint8_t *invoking, size_t invoking_len)
+{
+    size_t quote = idemip_icmp6_err_quote_len(invoking_len);
+    idemip_icmp6_hdr_write(m, type, code);
+    idemip_wr32(m + IDEMIP_ICMP6_OFF_BODY, word);
+    if (quote != 0u)
+    {
+        memcpy(m + IDEMIP_ICMP6_ERR_HDR_LEN, invoking, quote);
+    }
+    return (size_t)IDEMIP_ICMP6_ERR_HDR_LEN + quote;
+}
+
+/** @brief Destination Unreachable, sec 3.1: Type 1, one of Codes 0 through 6, Unused zero. */
+IDEMIP_INLINE size_t idemip_icmp6_dest_unreach_build(uint8_t *m, uint8_t code, const uint8_t *invoking,
+                                                     size_t invoking_len)
+{
+    return idemip_icmp6_err_build(m, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, code, 0u, invoking, invoking_len);
+}
+
+/**
+ * @brief Packet Too Big, sec 3.2: Type 2, Code 0, and @p mtu, "The Maximum Transmission Unit of the
+ * next-hop link".
+ */
+IDEMIP_INLINE size_t idemip_icmp6_packet_too_big_build(uint8_t *m, uint32_t mtu, const uint8_t *invoking,
+                                                       size_t invoking_len)
+{
+    return idemip_icmp6_err_build(m, (uint8_t)IDEMIP_ICMP6_PACKET_TOO_BIG, IDEMIP_ICMP6_CODE_PTB, mtu, invoking,
+                                  invoking_len);
+}
+
+/** @brief Time Exceeded, sec 3.3: Type 3, Code 0 or 1, Unused zero. */
+IDEMIP_INLINE size_t idemip_icmp6_time_exceeded_build(uint8_t *m, uint8_t code, const uint8_t *invoking,
+                                                      size_t invoking_len)
+{
+    return idemip_icmp6_err_build(m, (uint8_t)IDEMIP_ICMP6_TIME_EXCEEDED, code, 0u, invoking, invoking_len);
+}
+
+/**
+ * @brief Parameter Problem, sec 3.4: Type 4, one of Codes 0 through 2, and @p pointer, which
+ * "Identifies the octet offset within the invoking packet where the error was detected".
+ */
+IDEMIP_INLINE size_t idemip_icmp6_param_problem_build(uint8_t *m, uint8_t code, uint32_t pointer,
+                                                      const uint8_t *invoking, size_t invoking_len)
+{
+    return idemip_icmp6_err_build(m, (uint8_t)IDEMIP_ICMP6_PARAMETER_PROBLEM, code, pointer, invoking, invoking_len);
+}
+
+/**
+ * @brief Echo Reply, sec 4.2: Type 129, Code 0, the request's Identifier and Sequence Number, and
+ * its data.
+ *
+ * RFC 4443 sec 4.2: the Identifier and Sequence Number are "from the invoking Echo Request message",
+ * and "The data received in the ICMPv6 Echo Request message MUST be returned entirely and unmodified
+ * in the ICMPv6 Echo Reply message". @p data is that data, IDEMIP_ICMP6_ECHO_HDR_LEN into the
+ * request, and must not overlap @p m. Sec 4.1 allows "Zero or more octets", so @p data_len may be 0.
+ *
+ * @return bytes written, IDEMIP_ICMP6_ECHO_HDR_LEN plus @p data_len.
+ */
+IDEMIP_INLINE size_t idemip_icmp6_echo_reply_build(uint8_t *m, uint16_t id, uint16_t seq, const uint8_t *data,
+                                                   size_t data_len)
+{
+    idemip_icmp6_hdr_write(m, (uint8_t)IDEMIP_ICMP6_ECHO_REPLY, IDEMIP_ICMP6_CODE_ECHO);
+    idemip_wr16(m + IDEMIP_ICMP6_OFF_ID, id);
+    idemip_wr16(m + IDEMIP_ICMP6_OFF_SEQ, seq);
+    if (data_len != 0u)
+    {
+        memcpy(m + IDEMIP_ICMP6_ECHO_HDR_LEN, data, data_len);
+    }
+    return (size_t)IDEMIP_ICMP6_ECHO_HDR_LEN + data_len;
+}
+
 static_assert(IDEMIP_ICMP6_OFF_CKSUM + 2u == IDEMIP_ICMP6_HDR_LEN,
               "the fields every RFC 4443 message shares must sum to the common header length");
+static_assert(IDEMIP_ICMP6_OFF_BODY == IDEMIP_ICMP6_HDR_LEN,
+              "the RFC 4443 sec 2.1 Message Body starts where the common header ends");
+static_assert(IDEMIP_ICMP6_OFF_BODY + 4u == IDEMIP_ICMP6_ERR_HDR_LEN,
+              "the 32-bit field each RFC 4443 sec 3 error message carries must end the error header");
 static_assert(IDEMIP_ICMP6_OFF_SEQ + 2u == IDEMIP_ICMP6_ECHO_HDR_LEN,
               "the RFC 4443 sec 4.1 echo fields must sum to the echo header length");
+static_assert(IDEMIP_IPV6_HDR_LEN + IDEMIP_ICMP6_ERR_HDR_LEN + IDEMIP_ICMP6_ERR_QUOTE_MAX <= IDEMIP_IPV6_MIN_MTU,
+              "RFC 4443 sec 2.4 (c): an error message carrying a full quote must not exceed the minimum IPv6 MTU");
 static_assert(IDEMIP_ICMP6_ECHO_REQUEST >= IDEMIP_ICMP6_INFORMATIONAL,
               "RFC 4443 sec 2.1 puts the informational types at 128 and above");
 static_assert(IDEMIP_ICMP6_PARAMETER_PROBLEM < IDEMIP_ICMP6_INFORMATIONAL,
               "RFC 4443 sec 2.1 puts the error types below 128");
+static_assert(IDEMIP_ICMP6_MLD_QUERY >= IDEMIP_ICMP6_INFORMATIONAL,
+              "the RFC 2710 sec 3.1 types sit in the RFC 4443 sec 2.1 informational range");
 
 IDEMIP_END_DECLS
 
