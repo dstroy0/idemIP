@@ -70,6 +70,12 @@ if(IDEMIP_LTO)
     endif()
 endif()
 
+# --- tools -------------------------------------------------------------------
+# The footprint is the compiler's arithmetic over idemip_config.h, not a figure kept by hand.
+
+add_executable(idemip_sizes "${CMAKE_CURRENT_SOURCE_DIR}/tools/idemip_sizes.c")
+target_link_libraries(idemip_sizes PRIVATE idemip)
+
 # --- tests -------------------------------------------------------------------
 
 include(CTest)

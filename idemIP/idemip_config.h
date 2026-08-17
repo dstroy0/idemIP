@@ -1070,9 +1070,12 @@ typedef enum IDEMIP_ENUM_PACKED
 /**
  * @brief Every octet of .bss a full build takes, so the footprint is one number a reader can see.
  *
- * 20696 bytes at the default counts and IDEMIP_NETIF_COUNT of 2: 14488 shared, and 3104 for each
- * interface. The frame buffers are not in it, being the driver's storage rather than any borrow's,
- * and neither is the caller's own stack. tools/idemip_sizes.c prints every term.
+ * No figure is written here. A borrow changes whenever a unit's context or a count changes, so a
+ * number in this comment goes stale the moment it is right, and one already had. Run
+ * tools/idemip_sizes.c, which prints every term and the sum the compiler computed.
+ *
+ * The frame buffers are not in it, being the driver's storage rather than any borrow's, and
+ * neither is the caller's own stack.
  */
 #define IDEMIP_TOTAL_BORROW (IDEMIP_SHARED_BORROW + (IDEMIP_NETIF_COUNT * IDEMIP_PER_NETIF_BORROW))
 
