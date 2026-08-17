@@ -772,16 +772,23 @@ typedef enum IDEMIP_ENUM_PACKED
 // RFC 5227 sec 2.1 through sec 2.4 run one machine over one address: the address being probed, the
 // state, the probes or announcements sent, the next deadline, the millisecond of the last defense,
 // and the conflicts counted against MAX_CONFLICTS.
+//
+// acd holds no table, so this region is the whole borrow and carries the operand block of acd.h as
+// well as the context: sizeof(AcdIo) is 64 on a target with 8-octet pointers and the context is 32,
+// so the assert in acd.c holds at 128.
 #ifndef IDEMIP_ACD_CTX_BYTES
-#define IDEMIP_ACD_CTX_BYTES 32u
+#define IDEMIP_ACD_CTX_BYTES 128u
 #endif
 #define IDEMIP_ACD_BORROW (IDEMIP_ACD_CTX_BYTES)
 
 // --- autoip: RFC 3927, PER INTERFACE -------------------------------------------------------------
 // The selected 169.254/16 address, the state, and the count of addresses tried. The probing and
 // defending is ACD's, in its own borrow.
+//
+// autoip holds no table either, so this region carries the operand block of autoip.h as well as the
+// context: sizeof(AutoIpIo) is 48 and the context is 20, so the assert in autoip.c holds at 96.
 #ifndef IDEMIP_AUTOIP_CTX_BYTES
-#define IDEMIP_AUTOIP_CTX_BYTES 32u
+#define IDEMIP_AUTOIP_CTX_BYTES 96u
 #endif
 #define IDEMIP_AUTOIP_BORROW (IDEMIP_AUTOIP_CTX_BYTES)
 
@@ -792,8 +799,12 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_IGMP_ENTRY_SHIFT
 #define IDEMIP_IGMP_ENTRY_SHIFT 4u
 #endif
+// Spans the operand block and the context together, as IDEMIP_PHY_BORROW does: igmp.h puts IgmpIo at
+// offset zero and the context behind it, holding the RFC 2236 sec 4 record of an IGMPv1 Querier for
+// each interface. sizeof(IgmpIo) is 68 on a target with 8-octet pointers and the context is 16 at two
+// interfaces, so the assert in igmp.c holds at 128.
 #ifndef IDEMIP_IGMP_CTX_BYTES
-#define IDEMIP_IGMP_CTX_BYTES 32u
+#define IDEMIP_IGMP_CTX_BYTES 128u
 #endif
 #define IDEMIP_IGMP_BORROW (IDEMIP_IGMP_CTX_BYTES + (IDEMIP_IGMP_GROUPS << IDEMIP_IGMP_ENTRY_SHIFT))
 
