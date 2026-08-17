@@ -717,8 +717,10 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_ARP_PENDING_ENTRY_SHIFT
 #define IDEMIP_ARP_PENDING_ENTRY_SHIFT 4u
 #endif
+// The head region: the arp_table.h operand block, then the private context. sizeof(ArpTableIo) is 96
+// on a 64-bit host and the context is 12, so the assert in arp_table.c holds at 128.
 #ifndef IDEMIP_ARP_CTX_BYTES
-#define IDEMIP_ARP_CTX_BYTES 32u
+#define IDEMIP_ARP_CTX_BYTES 128u
 #endif
 #define IDEMIP_ARP_BORROW                                                                                              \
     (IDEMIP_ARP_CTX_BYTES + (IDEMIP_ARP_ENTRIES << IDEMIP_ARP_ENTRY_SHIFT) +                                           \
@@ -730,8 +732,10 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_IP4_ROUTE_ENTRY_SHIFT
 #define IDEMIP_IP4_ROUTE_ENTRY_SHIFT 5u
 #endif
+// The head region: the ip4_route.h operand block, then the private context. sizeof(Ip4RouteIo) is 68
+// on a 64-bit host and the context is 8, so the assert in ip4_route.c holds at 96.
 #ifndef IDEMIP_IP4_ROUTE_CTX_BYTES
-#define IDEMIP_IP4_ROUTE_CTX_BYTES 32u
+#define IDEMIP_IP4_ROUTE_CTX_BYTES 96u
 #endif
 #define IDEMIP_IP4_ROUTE_BORROW                                                                                        \
     (IDEMIP_IP4_ROUTE_CTX_BYTES + (IDEMIP_IP4_ROUTES << IDEMIP_IP4_ROUTE_ENTRY_SHIFT))
@@ -754,8 +758,10 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT
 #define IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT 3u
 #endif
+// The head region: the ip4_reass.h operand block, then the private context. sizeof(Ip4ReassIo) is 40
+// on a 64-bit host and the context is 12, so the assert in ip4_reass.c holds at 64.
 #ifndef IDEMIP_IP4_REASS_CTX_BYTES
-#define IDEMIP_IP4_REASS_CTX_BYTES 32u
+#define IDEMIP_IP4_REASS_CTX_BYTES 64u
 #endif
 #define IDEMIP_IP4_REASS_BORROW                                                                                        \
     (IDEMIP_IP4_REASS_CTX_BYTES + (IDEMIP_IP4_REASS_DATAGRAMS << IDEMIP_IP4_REASS_DATAGRAM_ENTRY_SHIFT) +              \
