@@ -12,6 +12,8 @@
 #include "idemIP/endian.h"
 #include "idemIP/ethernet/ethernet.h"
 
+#if IDEMIP_ENABLE_IPV4
+
 IDEMIP_BEGIN_DECLS
 
 /**
@@ -258,5 +260,7 @@ IDEMIP_INLINE void idemip_arp_reply_in_place(uint8_t *p, const uint8_t *local_sh
 }
 
 IDEMIP_END_DECLS
+
+#endif // IDEMIP_ENABLE_IPV4
 
 #endif // IDEMIP_ARP_H

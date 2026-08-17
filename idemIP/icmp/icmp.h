@@ -15,6 +15,8 @@
 #include "idemIP/checksum.h"
 #include "idemIP/ip/ipv4.h"
 
+#if IDEMIP_ENABLE_IPV4
+
 IDEMIP_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
@@ -403,5 +405,7 @@ static_assert(IDEMIP_ICMP_DU_NET_UNKNOWN == IDEMIP_ICMP_DU_SRC_ROUTE_FAILED + 1u
 static_assert(IDEMIP_ICMP_DU_HOST_TOS == 12u, "RFC 1122 sec 3.2.2.1 ends the destination unreachable codes at 12");
 
 IDEMIP_END_DECLS
+
+#endif // IDEMIP_ENABLE_IPV4
 
 #endif // IDEMIP_ICMP_H

@@ -15,6 +15,8 @@
 #include "idemIP/checksum.h"
 #include "idemIP/ip/ipv4.h"
 
+#if IDEMIP_ENABLE_TCP
+
 IDEMIP_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
@@ -550,5 +552,7 @@ static_assert(IDEMIP_TCP_SACK_BYTES(IDEMIP_TCP_SACK_BLOCKS_MAX + 1u) > IDEMIP_TC
               "four is the most 40 bytes of options hold, so a fifth block must not fit (RFC 2018 sec 3)");
 
 IDEMIP_END_DECLS
+
+#endif // IDEMIP_ENABLE_TCP
 
 #endif // IDEMIP_TCP_H

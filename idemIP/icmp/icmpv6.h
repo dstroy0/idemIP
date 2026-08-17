@@ -16,6 +16,8 @@
 #include "idemIP/checksum.h"
 #include "idemIP/ip/ipv6.h"
 
+#if IDEMIP_ENABLE_IPV6
+
 IDEMIP_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
@@ -305,5 +307,7 @@ static_assert(IDEMIP_ICMP6_MLD_QUERY >= IDEMIP_ICMP6_INFORMATIONAL,
               "the RFC 2710 sec 3.1 types sit in the RFC 4443 sec 2.1 informational range");
 
 IDEMIP_END_DECLS
+
+#endif // IDEMIP_ENABLE_IPV6
 
 #endif // IDEMIP_ICMPV6_H

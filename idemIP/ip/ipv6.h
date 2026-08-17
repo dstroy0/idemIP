@@ -15,6 +15,8 @@
 #include "idemIP/checksum.h"
 #include "idemIP/common.h"
 
+#if IDEMIP_ENABLE_IPV6
+
 IDEMIP_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
@@ -545,5 +547,7 @@ static_assert(IDEMIP_IP6_RT_OFF_SEGS_LEFT < IDEMIP_IP6_EXT_UNIT,
               "the four named Routing header octets lie in its first 8-octet unit (RFC 8200 sec 4.4)");
 
 IDEMIP_END_DECLS
+
+#endif // IDEMIP_ENABLE_IPV6
 
 #endif // IDEMIP_IPV6_H

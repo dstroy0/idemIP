@@ -17,6 +17,18 @@ endif()
 # which it can at -Os, -O2 and with LTO. Release builds take all three.
 option(IDEMIP_LTO "Link-time optimization, which is what folds the namespace indirection" ON)
 
+# --- capabilities ------------------------------------------------------------
+# Every capability header wraps its declarations in its gate, so a capability that is off compiles
+# to nothing. CMake is the one source for the values: it passes each as a definition the library
+# and every consumer see, and test/ uses the same values to decide which suites exist. A gate set
+# only in idemip_config.h would be invisible to the build, and a suite for a disabled capability
+# would then fail to compile.
+
+set(IDEMIP_CAPABILITIES ETHERNET IPV4 IPV6 TCP UDP)
+foreach(cap ${IDEMIP_CAPABILITIES})
+    option(IDEMIP_ENABLE_${cap} "Build the ${cap} capability" ON)
+endforeach()
+
 # --- the library -------------------------------------------------------------
 
 file(GLOB_RECURSE IDEMIP_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/idemIP/*.c")
@@ -26,10 +38,27 @@ add_library(idemip STATIC ${IDEMIP_SOURCES})
 # The tree includes itself as "idemIP/...", so the repo root is the one include path.
 target_include_directories(idemip PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
+foreach(cap ${IDEMIP_CAPABILITIES})
+    if(IDEMIP_ENABLE_${cap})
+        target_compile_definitions(idemip PUBLIC IDEMIP_ENABLE_${cap}=1)
+    else()
+        target_compile_definitions(idemip PUBLIC IDEMIP_ENABLE_${cap}=0)
+    endif()
+endforeach()
+
+# The warning set, on an INTERFACE target so it reaches the test suites too. Attached PRIVATE to
+# the library it never compiled most of the tree: no .c in idemIP/ includes tcp.h or ipv6.h or
+# udp.h, so those headers were built only by a test TU, which had no warning flags at all.
+add_library(idemip_warnings INTERFACE)
+target_compile_options(idemip_warnings INTERFACE
+    $<$<C_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Wshadow;-Wconversion;-Wsign-conversion;-Wcast-align;-Wundef>
+)
+
 target_compile_options(idemip PRIVATE
-    $<$<C_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Wshadow;-Wconversion;-Wsign-conversion;-Wcast-align;-Wstrict-prototypes;-Wmissing-prototypes;-Wundef>
+    $<$<C_COMPILER_ID:GNU,Clang>:-Wstrict-prototypes;-Wmissing-prototypes>
     $<$<AND:$<C_COMPILER_ID:GNU,Clang>,$<CONFIG:Release>>:-Os>
 )
+target_link_libraries(idemip PRIVATE idemip_warnings)
 
 if(IDEMIP_LTO)
     include(CheckIPOSupported)

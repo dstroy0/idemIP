@@ -14,6 +14,8 @@
 
 #include "idemIP/common.h"
 
+#if IDEMIP_ENABLE_ETHERNET
+
 IDEMIP_BEGIN_DECLS
 
 /** @brief An Ethernet address: 48 bits (RFC 894 "48-bit addresses"). */
@@ -169,5 +171,7 @@ static_assert(IDEMIP_ETH_MAX_PAYLOAD >= IDEMIP_IPV4_MIN_MTU,
               "an Ethernet frame carries at least the IPv4 minimum reassembly buffer (RFC 1122 sec 3.3.2)");
 
 IDEMIP_END_DECLS
+
+#endif // IDEMIP_ENABLE_ETHERNET
 
 #endif // IDEMIP_ETHERNET_H

@@ -15,6 +15,8 @@
 #include "idemIP/checksum.h"
 #include "idemIP/ip/ipv4.h"
 
+#if IDEMIP_ENABLE_UDP
+
 IDEMIP_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
@@ -353,5 +355,7 @@ static_assert(IDEMIP_UDPLITE_COV_MIN == IDEMIP_UDPLITE_HDR_LEN,
               "RFC 3828 sec 3.1: the smallest nonzero Coverage is the header it must always cover");
 
 IDEMIP_END_DECLS
+
+#endif // IDEMIP_ENABLE_UDP
 
 #endif // IDEMIP_UDP_H

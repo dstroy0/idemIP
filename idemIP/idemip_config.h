@@ -95,6 +95,21 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_ENABLE_UDP 1
 #endif
 
+// What each gate needs under it. A combination that cannot compile is refused here, where the
+// message names the gate, rather than fifty lines into a header that cannot see its own dependency.
+#if IDEMIP_ENABLE_IPV4 && !IDEMIP_ENABLE_ETHERNET
+#error "IDEMIP_ENABLE_IPV4 needs IDEMIP_ENABLE_ETHERNET: arp.h resolves to a 48-bit Ethernet address (RFC 826)"
+#endif
+#if IDEMIP_ENABLE_IPV6 && !IDEMIP_ENABLE_ETHERNET
+#error "IDEMIP_ENABLE_IPV6 needs IDEMIP_ENABLE_ETHERNET: the link layer here is Ethernet II (RFC 2464)"
+#endif
+#if IDEMIP_ENABLE_TCP && !(IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6)
+#error "IDEMIP_ENABLE_TCP needs IDEMIP_ENABLE_IPV4 or IDEMIP_ENABLE_IPV6: the checksum covers a pseudo-header"
+#endif
+#if IDEMIP_ENABLE_UDP && !(IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6)
+#error "IDEMIP_ENABLE_UDP needs IDEMIP_ENABLE_IPV4 or IDEMIP_ENABLE_IPV6: the checksum covers a pseudo-header"
+#endif
+
 // ---------------------------------------------------------------------------
 // Platform
 // ---------------------------------------------------------------------------

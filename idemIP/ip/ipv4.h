@@ -17,6 +17,8 @@
 #include "idemIP/checksum.h"
 #include "idemIP/common.h"
 
+#if IDEMIP_ENABLE_IPV4
+
 IDEMIP_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
@@ -483,5 +485,7 @@ static_assert(IDEMIP_IP4_MIN_FORWARD_MTU == IDEMIP_IP4_HDR_MAX + IDEMIP_IP4_FRAG
               "RFC 791 sec 3.2: 68 octets is a 60-octet header plus the 8-octet minimum fragment");
 
 IDEMIP_END_DECLS
+
+#endif // IDEMIP_ENABLE_IPV4
 
 #endif // IDEMIP_IPV4_H

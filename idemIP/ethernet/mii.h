@@ -28,6 +28,8 @@
 
 #include "idemIP/ethernet/ethernet.h"
 
+#if IDEMIP_ENABLE_ETHERNET
+
 IDEMIP_BEGIN_DECLS
 
 /** @brief PHY addresses a management interface can reach (Clause 22.2.4.5: 5 bits). */
@@ -324,5 +326,7 @@ IDEMIP_INLINE IdemIpMiiResolved idemip_mii_resolve(uint16_t bmsr, uint16_t anar,
 }
 
 IDEMIP_END_DECLS
+
+#endif // IDEMIP_ENABLE_ETHERNET
 
 #endif // IDEMIP_MII_H

@@ -18,6 +18,8 @@
 
 #include "idemIP/ethernet/mii.h"
 
+#if IDEMIP_ENABLE_ETHERNET
+
 IDEMIP_BEGIN_DECLS
 
 /** @brief Negotiated line rate, in megabits per second. */
@@ -187,5 +189,7 @@ typedef struct
 extern const PhyNs Phy;
 
 IDEMIP_END_DECLS
+
+#endif // IDEMIP_ENABLE_ETHERNET
 
 #endif // IDEMIP_PHY_H

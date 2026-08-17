@@ -29,10 +29,33 @@ if(NOT IDEMIP_SUITE_SOURCES)
     message(WARNING "idemIP: no test suites found under test/unit or test/integration")
 endif()
 
+# Which capability each suite needs. A suite whose capability is off is not built, because its
+# header compiled to nothing and the suite would fail on undeclared constants. It is SKIPPED
+# LOUDLY: silently dropping it would leave a passing run that tested less than it looks like.
+set(IDEMIP_SUITE_CAP_test_ethernet ETHERNET)
+set(IDEMIP_SUITE_CAP_test_mii      ETHERNET)
+set(IDEMIP_SUITE_CAP_test_phy      ETHERNET)
+set(IDEMIP_SUITE_CAP_test_arp      IPV4)
+set(IDEMIP_SUITE_CAP_test_ipv4     IPV4)
+set(IDEMIP_SUITE_CAP_test_icmp     IPV4)
+set(IDEMIP_SUITE_CAP_test_ipv6     IPV6)
+set(IDEMIP_SUITE_CAP_test_icmpv6   IPV6)
+set(IDEMIP_SUITE_CAP_test_tcp      TCP)
+set(IDEMIP_SUITE_CAP_test_udp      UDP)
+# test_checksum has no gate: checksum.h is a base facility, ungated like ProtoCore's mmgr/endian.h.
+
+set(IDEMIP_SKIPPED "")
+
 foreach(suite_src ${IDEMIP_SUITE_SOURCES})
     get_filename_component(suite_dir "${suite_src}" DIRECTORY)
     get_filename_component(suite_name "${suite_dir}" NAME)
     set(runner "${suite_dir}/unity_runner.c")
+
+    set(cap "${IDEMIP_SUITE_CAP_${suite_name}}")
+    if(cap AND NOT IDEMIP_ENABLE_${cap})
+        list(APPEND IDEMIP_SKIPPED "${suite_name} (IDEMIP_ENABLE_${cap}=OFF)")
+        continue()
+    endif()
 
     # Regenerated whenever the cases change, so a new case is registered without re-configuring.
     add_custom_command(
@@ -48,11 +71,19 @@ foreach(suite_src ${IDEMIP_SUITE_SOURCES})
         "${unity_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}"
     )
-    target_link_libraries(${suite_name} PRIVATE idemip)
+    target_link_libraries(${suite_name} PRIVATE idemip idemip_warnings)
     set_target_properties(${suite_name} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test")
 
     add_test(NAME ${suite_name} COMMAND ${suite_name})
+    list(APPEND IDEMIP_BUILT "${suite_name}")
 endforeach()
 
-list(LENGTH IDEMIP_SUITE_SOURCES IDEMIP_SUITE_COUNT)
-message(STATUS "idemIP: ${IDEMIP_SUITE_COUNT} test suites")
+list(LENGTH IDEMIP_BUILT IDEMIP_BUILT_COUNT)
+message(STATUS "idemIP: ${IDEMIP_BUILT_COUNT} test suites")
+if(IDEMIP_SKIPPED)
+    list(LENGTH IDEMIP_SKIPPED IDEMIP_SKIPPED_COUNT)
+    message(STATUS "idemIP: ${IDEMIP_SKIPPED_COUNT} suites NOT built, their capability is off:")
+    foreach(s ${IDEMIP_SKIPPED})
+        message(STATUS "idemIP:   ${s}")
+    endforeach()
+endif()
