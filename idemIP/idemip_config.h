@@ -265,6 +265,26 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_IP4_ROUTES 4u
 #endif
 
+/**
+ * @brief RFC 1191 sec 6.3: "Once a minute, a timer-driven procedure runs through the routing table".
+ *
+ * Held in milliseconds, deadlines being held in milliseconds throughout this tree.
+ */
+#ifndef IDEMIP_IP4_ROUTE_PMTU_SWEEP_MS
+#define IDEMIP_IP4_ROUTE_PMTU_SWEEP_MS 60000u
+#endif
+
+/**
+ * @brief RFC 1191 sec 6.3: "When a PMTU value has not been decreased for a while (on the order of 10
+ * minutes), the PMTU estimate should be set to the first-hop data-link MTU".
+ *
+ * sec 6.6: "The implementation should also provide a way to change the timeout period for aging stale
+ * PMTU information."
+ */
+#ifndef IDEMIP_IP4_ROUTE_PMTU_TIMEOUT_MS
+#define IDEMIP_IP4_ROUTE_PMTU_TIMEOUT_MS 600000u
+#endif
+
 // RFC 5227 sec 1.1, values as printed. Seconds became milliseconds, deadlines being held in
 // milliseconds throughout this tree.
 #ifndef IDEMIP_ACD_PROBE_WAIT_MS

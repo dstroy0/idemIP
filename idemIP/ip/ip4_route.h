@@ -10,11 +10,15 @@
  * (1) is the interface index here, the address itself being the netif's. sec 3.3.1.2 adds the static
  * route and "a flag specifying whether it may be overridden by ICMP Redirects", and sec 3.3.1.3
  * calls a row "a natural place to cache data on the properties of the path. Examples of such
- * properties might be the maximum unfragmented datagram size", which is the RFC 1191 path MTU and
- * the timestamp RFC 1191 sec 6.6 ages it by.
+ * properties might be the maximum unfragmented datagram size", which is the RFC 1191 sec 6.2 path MTU
+ * and the timestamp RFC 1191 sec 6.3 ages it by.
  *
  * The local/remote decision of sec 3.3.1.1 is a mask compare, so each row carries the address mask
  * "that selects the network number and subnet number fields".
+ *
+ * Which row a destination selects is RFC 1812 sec 5.2.4.3's pruning rules, in the order that section
+ * prints them: (1) Basic Match, (2) Longest Match, (3) Weak TOS, (4) Best Metric, the lowest row
+ * breaking a remaining tie.
  */
 
 #ifndef IDEMIP_IP4_ROUTE_H
@@ -56,11 +60,16 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_IP4_ROUTE_F_REDIRECT_OK (1u << 2) ///< an ICMP Redirect may override it, sec 3.3.1.2
 #define IDEMIP_IP4_ROUTE_F_HOST (1u << 3)        ///< keyed on the full destination address, sec 3.3.1.3
 
+// IDEMIP_IP4_ROUTE_F_HOST follows the mask that add was given: field (2) is the full destination
+// address exactly when every one of its bits is significant.
+
 /**
  * @brief What add takes.
  *
  * A default gateway is a row whose destination and mask are both zero. RFC 1122 sec 3.3.1.2: "The IP
- * layer MUST support multiple default gateways", so they are separate rows rather than one field.
+ * layer MUST support multiple default gateways", so they are separate rows rather than one field, and
+ * @c gw is part of the row key: two defaults differ in nothing else. sec 3.3.1.6 (3) configures "a list
+ * of default gateways, with a preference level", which is @c metric.
  */
 typedef struct
 {
@@ -73,7 +82,12 @@ typedef struct
     uint8_t flags;   ///< IDEMIP_IP4_ROUTE_F_*
 } Ip4RouteAddArgs;
 
-/** @brief What remove takes: the destination and mask of the row to drop. */
+/**
+ * @brief What remove takes: the destination and mask of the row to drop.
+ *
+ * No type of service, so every row carrying this destination and mask goes, whatever field (3) each
+ * holds.
+ */
 typedef struct
 {
     uint32_t dst;
@@ -108,8 +122,8 @@ typedef struct
 /**
  * @brief What set_pmtu takes.
  *
- * RFC 1191 sec 6.6 caches the path MTU on the route and stamps it: "Whenever the PMTU is decreased
- * in response to a Datagram Too Big message, the timestamp is set to the current time."
+ * RFC 1191 sec 6.2 caches the path MTU on the route, and sec 6.3 stamps it: "Whenever the PMTU is
+ * decreased in response to a Datagram Too Big message, the timestamp is set to the current time."
  */
 typedef struct
 {
@@ -201,17 +215,19 @@ static_assert(IDEMIP_IP4_ROUTES < IDEMIP_IP4_ROUTE_INDEX_NONE,
  * caller comes back on a later tick. A borrow that clear has not run on is refused.
  *
  * @var Ip4RouteNs::clear     zero the context and the table, and mark the borrow usable
- * @var Ip4RouteNs::add       write one row. BUSY when every row is taken, which frees when one is
- *                            removed.
- * @var Ip4RouteNs::remove    drop the row holding a destination and mask
+ * @var Ip4RouteNs::add       write one row, rewriting the row holding the same destination, mask, type
+ *                            of service and gateway. BUSY when every row is taken, which frees when
+ *                            one is removed.
+ * @var Ip4RouteNs::remove    drop every row holding a destination and mask
  * @var Ip4RouteNs::lookup    the sec 3.3.1.1 local/remote decision, then the sec 3.3.1.2 gateway
- *                            selection, into @ref Ip4RouteIo::next_hop. BUSY when the table holds
- *                            no route to the destination and no default gateway, which an added
- *                            route fixes.
- * @var Ip4RouteNs::redirect  move a row's next hop to the gateway an ICMP Redirect named, sec
- *                            3.3.1.2 (c)
- * @var Ip4RouteNs::set_pmtu  record a path MTU on the row a destination matches, RFC 1191 sec 6.6
- * @var Ip4RouteNs::tick      age the path MTU estimates, RFC 1191 sec 6.6
+ *                            selection, over the RFC 1812 sec 5.2.4.3 pruning rules, into @ref
+ *                            Ip4RouteIo::next_hop. BUSY when the table holds no route to the
+ *                            destination and no default gateway, which an added route fixes.
+ * @var Ip4RouteNs::redirect  move the host row's next hop to the gateway an ICMP Redirect named, and
+ *                            create that row when none holds the destination, sec 3.3.1.2 (c)
+ * @var Ip4RouteNs::set_pmtu  record a path MTU on the host row a destination matches, creating it
+ *                            from the row that routes the destination today, RFC 1191 sec 6.2
+ * @var Ip4RouteNs::tick      age the path MTU estimates, RFC 1191 sec 6.3
  */
 typedef struct
 {
