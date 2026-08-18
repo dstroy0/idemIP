@@ -986,6 +986,51 @@ static void d_ip4_frag(uint8_t *restrict work, const uint8_t *ip4, size_t total_
     }
 }
 
+// RFC 1122 sec 3.2.1.3: "A host MUST silently discard an incoming datagram containing an IP source
+// address that is invalid by the rules of this section. This validation could be done in either the
+// IP layer or by each protocol in the transport layer." Case (c) "{ -1, -1 } Limited broadcast. It
+// MUST NOT be used as a source address", cases (d), (e) and (f) say the same of every directed
+// broadcast, case (g) "{ 127, <any> } ... MUST NOT appear outside a host", and the section's sending
+// rule bars the rest: "the IP source address MUST be one of its own IP addresses (but not a
+// broadcast or multicast address)."
+//
+// Cases (a) and (b) keep { 0, 0 } and { 0, <Host-number> } valid as a source, "as part of an
+// initialization procedure by which the host learns its own IP address", which is what a DHCP
+// client's first datagram carries. A directed broadcast is only recognizable against the receiving
+// interface's own mask, so an interface with no address bars nothing but the forms above.
+static idemip_bool d_ip4_src_invalid(uint8_t *restrict work, uint32_t src)
+{
+    DispatchCtx *ctx = D_CTX(work);
+    DispatchIo *io = D_IO(work);
+    IdemIpIp4AddrType type = idemip_ip4_addr_type(src);
+    if (type == IDEMIP_IP4_TYPE_BROADCAST || type == IDEMIP_IP4_TYPE_MULTICAST)
+    {
+        return IDEMIP_TRUE;
+    }
+    idemip_bool have = d_netif_get(work, io->netif);
+    if (type == IDEMIP_IP4_TYPE_LOOPBACK)
+    {
+        // Case (g) bars 127/8 from the wire and leaves it to the interface no wire reaches.
+        uint16_t flags = have ? IDEMIP_NETIF_IO(ctx->netif)->flags : 0u;
+        return ((flags & (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK) != 0u) ? IDEMIP_FALSE : IDEMIP_TRUE;
+    }
+    if (!have || ctx->ip4_addr == NULL)
+    {
+        return IDEMIP_FALSE;
+    }
+    uint32_t mask = IDEMIP_NETIF_IO(ctx->netif)->mask;
+    if (mask == 0u)
+    {
+        return IDEMIP_FALSE;
+    }
+    Ip4AddrIo *ia = IDEMIP_IP4_ADDR_IO(ctx->ip4_addr);
+    ia->match_args.addr = src;
+    ia->match_args.net = IDEMIP_NETIF_IO(ctx->netif)->addr;
+    ia->match_args.mask = mask;
+    Ip4Addr.match(ctx->ip4_addr);
+    return (ia->status == IDEMIP_OK && ia->is_broadcast) ? IDEMIP_TRUE : IDEMIP_FALSE;
+}
+
 // RFC 1122 sec 3.1, steps (1), (2), (4) and (5) over one IPv4 datagram.
 static void d_ip4(uint8_t *restrict work, const uint8_t *ip4, size_t avail)
 {
@@ -1004,6 +1049,15 @@ static void d_ip4(uint8_t *restrict work, const uint8_t *ip4, size_t avail)
     // included in the total length field", so the length comes from the header and never the frame.
     size_t total_len = (size_t)idemip_ip4_total_len(ip4);
     size_t hdr_len = idemip_ip4_hdr_len(ip4);
+
+    // sec 3.2.1.3's source-address rule, taken in the IP layer so every transport above it is covered
+    // once.
+    if (d_ip4_src_invalid(work, idemip_ip4_src(ip4)))
+    {
+        d_drop(work, IDEMIP_DISPATCH_DROP_IP_SOURCE, IDEMIP_STAT_IF_IN_DISCARDS);
+        d_bump(work, IDEMIP_STAT_IP4_IN_ADDR_ERRORS);
+        return;
+    }
 
     // (2) verifies that it is destined to the local host
     DispatchDest dest = d_ip4_dest(work, idemip_ip4_dst(ip4));

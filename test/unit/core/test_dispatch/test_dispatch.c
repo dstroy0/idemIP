@@ -812,6 +812,53 @@ void test_an_unbound_udp_port_counts_no_ports(void)
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_UDP_NO_PORTS));
 }
 
+// RFC 1122 sec 3.2.1.3: "A host MUST silently discard an incoming datagram containing an IP source
+// address that is invalid by the rules of this section", restated for this transport by sec 4.1.3.6,
+// "A UDP datagram received with an invalid IP source address (e.g., a broadcast or multicast
+// address) must be discarded by UDP or by the IP layer". Case (c) bars the limited broadcast, cases
+// (d), (e) and (f) bar every directed broadcast, case (g) keeps 127/8 off the wire, and the
+// section's sending rule bars multicast. Each is fed to a bound port that would otherwise take it.
+void test_a_datagram_whose_source_address_is_barred_is_discarded(void)
+{
+    static const uint32_t barred[] = {
+        0xFFFFFFFFu, // case (c), the limited broadcast
+        0xE0000001u, // 224.0.0.1, "not a broadcast or multicast address"
+        0x7F000001u, // case (g), 127.0.0.1 arriving on a wire
+        0xC00002FFu, // case (e), 192.0.2.255, this interface's own directed broadcast
+    };
+    (void)bind_udp4(4001u);
+    for (size_t i = 0u; i < (sizeof barred / sizeof barred[0]); i++)
+    {
+        size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+        off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, barred[i], LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
+        size_t end = build_udp(g_frame, off, 4000u, 4001u, 4u);
+        seal_udp4(g_frame, off, barred[i], LOCAL_IP4);
+        input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_SOURCE, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                      "a source address RFC 1122 sec 3.2.1.3 bars was accepted");
+        TEST_ASSERT_FALSE_MESSAGE(IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER,
+                                  "a datagram with a barred source address was delivered");
+    }
+}
+
+// Cases (a) and (b) keep { 0, 0 } and { 0, <Host-number> } valid as a source, "as part of an
+// initialization procedure by which the host learns its own IP address". That is what a DHCP
+// client's first datagram carries, so barring it would break the exchange that gives the host the
+// address every other rule here is written against.
+void test_the_unspecified_source_an_address_request_carries_still_arrives(void)
+{
+    uint16_t pcb = bind_udp4(68u);
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, 0u, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
+    size_t end = build_udp(g_frame, off, 67u, 68u, 4u);
+    seal_udp4(g_frame, off, 0u, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "the source RFC 1122 sec 3.2.1.3 (a) permits was dropped");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
+}
+
 // --- IGMP, RFC 2236 ----------------------------------------------------------
 // The IGMP borrow was bound here from the start and no case ever fed it a message, which is how a
 // missing MUST survived: an unexercised path cannot fail.
