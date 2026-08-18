@@ -150,6 +150,10 @@ typedef struct
  * @var TcpPcbCtl::ssthresh      RFC 5681 sec 2 ssthresh, the slow start threshold
  * @var TcpPcbCtl::bytes_acked   RFC 3465 sec 2.1 bytes_acked, the byte counter Appropriate Byte
  *                               Counting keeps "in the TCP control block"
+ * @var TcpPcbCtl::max_snd_wnd   RFC 5961 sec 5.2 MAX.SND.WND, "the largest window that the local
+ *                               sender has ever received from its peer", which RFC 9293 sec 3.10.7.4
+ *                               fifth checks SEG.ACK against and RFC 9293 sec 3.8.6.2.1 calls
+ *                               Max(SND.WND)
  * @var TcpPcbCtl::ts_recent     RFC 7323 sec 3.2 TS.Recent, which "holds a timestamp to be echoed in
  *                               TSecr whenever a segment is sent"
  * @var TcpPcbCtl::last_ack_sent RFC 7323 sec 3.2 Last.ACK.sent, which "holds the ACK field from the
@@ -188,6 +192,7 @@ typedef struct
     uint32_t cwnd;
     uint32_t ssthresh;
     uint32_t bytes_acked;
+    uint32_t max_snd_wnd;
     uint32_t ts_recent;
     uint32_t last_ack_sent;
     uint32_t keep_idle_ms;
@@ -246,6 +251,24 @@ typedef struct
 {
     uint16_t index;
 } TcpPcbPcbArgs;
+
+/**
+ * @brief What an accept takes: the connection a listener's SYN created, and that listener.
+ *
+ * RFC 9293 sec 3.10.7.2 creates the connection in SYN-RECEIVED out of the LISTEN state, and sec 3.5
+ * (MUST-11) requires that "a TCP implementation MUST keep track of whether a connection has reached
+ * SYN-RECEIVED state as the result of a passive OPEN or an active OPEN", which sec 3.10.7.4 second
+ * and fourth then read to decide whether a RST or a SYN returns the connection to LISTEN.
+ *
+ * @var TcpPcbAcceptArgs::index    the TCB an open reported
+ * @var TcpPcbAcceptArgs::listener the listener a listen reported, IDEMIP_TCP_PCB_NONE for an active
+ *                                 OPEN
+ */
+typedef struct
+{
+    uint16_t index;
+    uint16_t listener;
+} TcpPcbAcceptArgs;
 
 /**
  * @brief What a listen takes: the passive OPEN of RFC 9293 sec 3.3.2.
@@ -442,6 +465,7 @@ typedef struct
  * @var TcpPcbIo::bind_args     the local address and port a bind sets
  * @var TcpPcbIo::connect_args  the remote address and port a connect sets
  * @var TcpPcbIo::pcb_args      the entry a close, a load, a store and an unlisten name
+ * @var TcpPcbIo::accept_args   the connection an accept records a listener on
  * @var TcpPcbIo::listen_args   the passive OPEN a listen takes
  * @var TcpPcbIo::find_args     the arriving segment a find and a find_listener match
  * @var TcpPcbIo::seg_args      the send-queue segment a seg_alloc writes, and the one a seg_load or
@@ -467,6 +491,7 @@ typedef struct
     TcpPcbAddrArgs bind_args;
     TcpPcbAddrArgs connect_args;
     TcpPcbPcbArgs pcb_args;
+    TcpPcbAcceptArgs accept_args;
     TcpPcbListenArgs listen_args;
     TcpPcbFindArgs find_args;
     TcpPcbSegArgs seg_args;
@@ -547,6 +572,10 @@ typedef struct
  * @var TcpPcbNs::store         write the sec 3.3.1 variables, the sec 3.3.2 state and the control
  *                              state back to that TCB. A sec 3.3.2 state RFC 9293 does not reach
  *                              from the state the TCB is in is ERR, and nothing is written.
+ * @var TcpPcbNs::accept        record on the TCB @ref TcpPcbAcceptArgs::index the listener its SYN
+ *                              arrived on, which sec 3.5 (MUST-11) requires be kept. A listener that
+ *                              is not taken is ERR; IDEMIP_TCP_PCB_NONE clears it, which is an
+ *                              active OPEN.
  * @var TcpPcbNs::listen        take a free listener for a passive OPEN, reporting it in
  *                              @ref TcpPcbIo::index. An all-zero address is sec 3.9.1.1's
  *                              unspecified "local IP address" parameter, which "will await an
@@ -562,6 +591,11 @@ typedef struct
  *                              when every segment is queued.
  * @var TcpPcbNs::seg_load      read the segment @ref TcpPcbSegArgs::index names into
  *                              @ref TcpPcbIo::seg
+ * @var TcpPcbNs::seg_sent      move the segment @ref TcpPcbSegArgs::index names off the head of its
+ *                              TCB's unsent queue onto the tail of the retransmission queue sec
+ *                              3.3.1 names, which is where sec 3.10.7.4 fifth removes it from once
+ *                              it is entirely acknowledged. A segment that is not that head is a
+ *                              broken link and is ERR.
  * @var TcpPcbNs::seg_free      unlink and release that segment
  * @var TcpPcbNs::oos_alloc     take a free out-of-order entry and link it into a TCB's queue in
  *                              sequence order. BUSY when that TCB holds IDEMIP_TCP_OOSEQ_SEGS
@@ -580,12 +614,14 @@ typedef struct
     void (*const connect)(uint8_t *restrict work);
     void (*const load)(uint8_t *restrict work);
     void (*const store)(uint8_t *restrict work);
+    void (*const accept)(uint8_t *restrict work);
     void (*const listen)(uint8_t *restrict work);
     void (*const unlisten)(uint8_t *restrict work);
     void (*const find)(uint8_t *restrict work);
     void (*const find_listener)(uint8_t *restrict work);
     void (*const seg_alloc)(uint8_t *restrict work);
     void (*const seg_load)(uint8_t *restrict work);
+    void (*const seg_sent)(uint8_t *restrict work);
     void (*const seg_free)(uint8_t *restrict work);
     void (*const oos_alloc)(uint8_t *restrict work);
     void (*const oos_load)(uint8_t *restrict work);

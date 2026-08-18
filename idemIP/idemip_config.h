@@ -537,6 +537,69 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_TCP_MSL_MS 60000u
 #endif
 
+/**
+ * @brief RFC 6298 (2.1): "the sender SHOULD set RTO <- 1 second" until a round-trip time has been
+ * measured.
+ */
+#ifndef IDEMIP_TCP_RTO_INIT_MS
+#define IDEMIP_TCP_RTO_INIT_MS 1000u
+#endif
+
+/** @brief RFC 6298 (2.4): "if it is less than 1 second, then the RTO SHOULD be rounded up to 1
+ * second". */
+#ifndef IDEMIP_TCP_RTO_MIN_MS
+#define IDEMIP_TCP_RTO_MIN_MS 1000u
+#endif
+
+/** @brief RFC 6298 (2.5): "A maximum value MAY be placed on RTO provided it is at least 60
+ * seconds." */
+#ifndef IDEMIP_TCP_RTO_MAX_MS
+#define IDEMIP_TCP_RTO_MAX_MS 60000u
+#endif
+
+/**
+ * @brief RFC 6298 sec 4's clock granularity G, in milliseconds, which "RTO <- SRTT + max (G,
+ * K*RTTVAR)" floors the variance term at. The tick this stack retransmits on is
+ * IDEMIP_TCP_TMR_INTERVAL_MS, so that is the granularity.
+ */
+#ifndef IDEMIP_TCP_RTO_G_MS
+#define IDEMIP_TCP_RTO_G_MS IDEMIP_TCP_TMR_INTERVAL_MS
+#endif
+
+/** @brief RFC 6298 (2.2): "RTO <- SRTT + max (G, K*RTTVAR) where K = 4", a shift by two. */
+#define IDEMIP_TCP_RTO_K_SHIFT 2u
+
+/** @brief RFC 6298 (2.3) alpha, 1/8, a shift by three. */
+#define IDEMIP_TCP_RTO_ALPHA_SHIFT 3u
+
+/** @brief RFC 6298 (2.3) beta, 1/4, a shift by two. */
+#define IDEMIP_TCP_RTO_BETA_SHIFT 2u
+
+/**
+ * @brief RFC 5961 sec 7: "in any 5 second window, no more than 10 challenge ACKs should be sent",
+ * and "The values for both the time and number of ACKs SHOULD be tunable by the system
+ * administrator".
+ */
+#ifndef IDEMIP_TCP_CHALLENGE_ACKS
+#define IDEMIP_TCP_CHALLENGE_ACKS 10u
+#endif
+
+/** @brief The window RFC 5961 sec 7 counts those challenge ACKs in, in milliseconds. */
+#ifndef IDEMIP_TCP_CHALLENGE_WINDOW_MS
+#define IDEMIP_TCP_CHALLENGE_WINDOW_MS 5000u
+#endif
+
+/**
+ * @brief RFC 9293 sec 3.8.6.2.1 (3) Fs, "a fraction whose recommended value is 1/2", as a shift.
+ *
+ * The rule sends when "min(D,U) >= Fs * Max(SND.WND)", so half of the largest window seen is that
+ * window shifted right by one.
+ */
+#define IDEMIP_TCP_SWS_FS_SHIFT 1u
+
+/** @brief RFC 5681 sec 3.2: "the arrival of 3 duplicate ACKs" is the fast retransmit threshold. */
+#define IDEMIP_TCP_DUPACK_THRESH 3u
+
 /** @brief UDP bindings. */
 #ifndef IDEMIP_UDP_PCBS
 #define IDEMIP_UDP_PCBS 8u
@@ -958,7 +1021,8 @@ typedef enum IDEMIP_ENUM_PACKED
 // port numbers", then the send variables SND.UNA, SND.NXT, SND.WND, SND.UP, SND.WL1, SND.WL2 and
 // ISS, and the receive variables RCV.NXT, RCV.WND, RCV.UP and IRS, at 4 octets each. Added to those:
 // the sec 3.3.2 state, the RFC 6298 SRTT, RTTVAR and RTO with the retransmission count, the RFC 5681
-// cwnd and ssthresh with the RFC 3465 byte counter, the RFC 7323 window scales and timestamps, the
+// cwnd and ssthresh with the RFC 3465 byte counter, the RFC 5961 sec 5 MAX.SND.WND the ACK range is
+// checked against, the RFC 7323 window scales and timestamps, the
 // RFC 2018 SACK blocks at 8 octets each, the RFC 1122 sec 4.2.3.6 keepalive counters, and the heads
 // of the three queues below. A listener is the address pair, the port, the state and the backlog. A
 // send-queue segment is its sequence number, length, option flags and data reference. An
@@ -975,7 +1039,7 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_TCP_OOSEQ_ENTRY_SHIFT
 #define IDEMIP_TCP_OOSEQ_ENTRY_SHIFT 4u
 #endif
-// The region also carries tcp_pcb.h's operand block, which is 360 octets, the context 8 behind it.
+// The region also carries tcp_pcb.h's operand block, which is 368 octets, the context 8 behind it.
 // The block holds one whole TCB's worth of fields, load and store copying the RFC 9293 sec 3.3.1
 // variables, the sec 3.3.2 state and the estimator and congestion state through it.
 #ifndef IDEMIP_TCP_PCB_CTX_BYTES
@@ -986,6 +1050,28 @@ typedef enum IDEMIP_ENUM_PACKED
      (IDEMIP_TCP_LISTEN_PCBS << IDEMIP_TCP_LISTEN_ENTRY_SHIFT) +                                                       \
      (IDEMIP_TCP_SEGS << IDEMIP_TCP_SEG_ENTRY_SHIFT) +                                                                 \
      ((IDEMIP_TCP_PCBS * IDEMIP_TCP_OOSEQ_SEGS) << IDEMIP_TCP_OOSEQ_ENTRY_SHIFT))
+
+// --- tcp_in: RFC 9293 sec 3.10.7 -----------------------------------------------------------------
+// tcp_in holds no table, so this region is the whole borrow and carries the operand block of tcp_in.h
+// as well as the context. The block is one arriving segment's RFC 9293 sec 3.3.1 Table 4 variables
+// with the sec 3.1 control bits, one whole TCB's worth of sec 3.3.1 variables and control state that
+// a load fills and a store takes back, and what the call reports: 264 octets on a target with
+// 8-octet pointers. The context behind it is the mark clear leaves and RFC 5961 sec 7's challenge-ACK
+// counter with the millisecond its window opened at, 12 more.
+#ifndef IDEMIP_TCP_IN_CTX_BYTES
+#define IDEMIP_TCP_IN_CTX_BYTES 288u
+#endif
+#define IDEMIP_TCP_IN_BORROW (IDEMIP_TCP_IN_CTX_BYTES)
+
+// --- tcp_out: RFC 9293 sec 3.7, sec 3.8 ----------------------------------------------------------
+// tcp_out holds no table either. The operand block is what a build takes (the caller's buffer, the
+// four-tuple, the sec 3.1 header fields and the sec 3.2 options), what the sec 3.8.6.2.1 send rule
+// takes, one whole TCB's worth of sec 3.3.1 variables and control state, and what the call reports:
+// 304 octets on a target with 8-octet pointers. The context behind it is the mark clear leaves.
+#ifndef IDEMIP_TCP_OUT_CTX_BYTES
+#define IDEMIP_TCP_OUT_CTX_BYTES 320u
+#endif
+#define IDEMIP_TCP_OUT_BORROW (IDEMIP_TCP_OUT_CTX_BYTES)
 
 // --- tcp_isn: RFC 6528 ---------------------------------------------------------------------------
 // The context holds the secret key and the 4-microsecond timer's base. The block is the
@@ -1095,7 +1181,8 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_SHARED_BORROW                                                                                           \
     (IDEMIP_NETIF_BORROW + IDEMIP_LOOPIF_BORROW + IDEMIP_ARP_BORROW + IDEMIP_IP4_ROUTE_BORROW +                        \
      IDEMIP_IP4_REASS_BORROW + IDEMIP_IGMP_BORROW + IDEMIP_IP6_REASS_BORROW + IDEMIP_MLD6_BORROW +                     \
-     IDEMIP_RAW_PCB_BORROW + IDEMIP_UDP_PCB_BORROW + IDEMIP_TCP_PCB_BORROW + IDEMIP_TCP_ISN_BORROW +                   \
+     IDEMIP_RAW_PCB_BORROW + IDEMIP_UDP_PCB_BORROW + IDEMIP_TCP_PCB_BORROW + IDEMIP_TCP_IN_BORROW +                    \
+     IDEMIP_TCP_OUT_BORROW + IDEMIP_TCP_ISN_BORROW +                                                                   \
      IDEMIP_DNS_BORROW + IDEMIP_TIMEOUTS_BORROW + IDEMIP_STATS_BORROW)
 
 /**
@@ -1157,7 +1244,8 @@ static_assert(((IDEMIP_NETIF_CTX_BYTES | IDEMIP_LOOPIF_CTX_BYTES | IDEMIP_DMA_CT
                 IDEMIP_IP4_ROUTE_CTX_BYTES | IDEMIP_IP4_REASS_CTX_BYTES | IDEMIP_ACD_CTX_BYTES |
                 IDEMIP_AUTOIP_CTX_BYTES | IDEMIP_IGMP_CTX_BYTES | IDEMIP_IP6_REASS_CTX_BYTES | IDEMIP_ND6_CTX_BYTES |
                 IDEMIP_MLD6_CTX_BYTES | IDEMIP_RAW_PCB_CTX_BYTES | IDEMIP_UDP_PCB_CTX_BYTES |
-                IDEMIP_TCP_PCB_CTX_BYTES | IDEMIP_TCP_ISN_CTX_BYTES | IDEMIP_DHCP4_CTX_BYTES |
+                IDEMIP_TCP_PCB_CTX_BYTES | IDEMIP_TCP_IN_CTX_BYTES | IDEMIP_TCP_OUT_CTX_BYTES |
+                IDEMIP_TCP_ISN_CTX_BYTES | IDEMIP_DHCP4_CTX_BYTES |
                 IDEMIP_DHCP6_CTX_BYTES | IDEMIP_DNS_CTX_BYTES | IDEMIP_TIMEOUTS_CTX_BYTES | IDEMIP_STATS_CTX_BYTES) &
                (IDEMIP_ALIGN - 1u)) == 0u,
               "every IDEMIP_*_CTX_BYTES must be a multiple of IDEMIP_ALIGN: a table starts at the end of its context");

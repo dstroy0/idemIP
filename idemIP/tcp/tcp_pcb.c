@@ -761,6 +761,40 @@ static void tcp_pcb_store(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
+// RFC 9293 sec 3.5 (MUST-11): "a TCP implementation MUST keep track of whether a connection has
+// reached SYN-RECEIVED state as the result of a passive OPEN or an active OPEN". sec 3.10.7.2 creates
+// the connection out of the LISTEN state, so the listener it came through is recorded here and read
+// by sec 3.10.7.4's second and fourth checks, which return a passive connection to LISTEN.
+// IDEMIP_TCP_PCB_NONE is the active OPEN; any other index must name a taken listener.
+static void tcp_pcb_accept(uint8_t *restrict work)
+{
+    if (!work)
+    {
+        return;
+    }
+    TcpPcbIo *io = TCP_PCB_IO(work);
+    io->status = IDEMIP_ERR;
+    if (TCP_PCB_CTX(work)->ready != TCP_PCB_READY || io->accept_args.index >= IDEMIP_TCP_PCBS)
+    {
+        return;
+    }
+    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->accept_args.index)->f;
+    if (!t->in_use)
+    {
+        return;
+    }
+    if (io->accept_args.listener != IDEMIP_TCP_PCB_NONE)
+    {
+        if (io->accept_args.listener >= IDEMIP_TCP_LISTEN_PCBS ||
+            !TCP_PCB_LISTEN_AT(work, io->accept_args.listener)->f.in_use)
+        {
+            return;
+        }
+    }
+    t->listener = io->accept_args.listener;
+    io->status = IDEMIP_OK;
+}
+
 // RFC 9293 sec 3.3.2's passive OPEN, which "means that the process wants to accept incoming
 // connection requests". sec 3.9.1.1: "Every passive OPEN call either creates a new connection record
 // in LISTEN state, or it returns an error", so the listener is taken in LISTEN. A port of zero names
@@ -1006,6 +1040,54 @@ static void tcp_pcb_seg_load(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
+// RFC 9293 sec 3.3.1's "pointers to the retransmit queue", which sec 3.10.7.4 fifth removes a segment
+// from once it is "entirely acknowledged". The segment leaves the head of the unsent queue and goes
+// on the tail of that queue, so both stay in the sec 3.10.7.4 SEG.SEQ order they were built in. A
+// segment that is not that head is a broken link rather than a busy resource, so it is ERR.
+static void tcp_pcb_seg_sent(uint8_t *restrict work)
+{
+    if (!work)
+    {
+        return;
+    }
+    TcpPcbIo *io = TCP_PCB_IO(work);
+    io->status = IDEMIP_ERR;
+    if (TCP_PCB_CTX(work)->ready != TCP_PCB_READY || io->seg_args.index >= IDEMIP_TCP_SEGS)
+    {
+        return;
+    }
+    TcpPcbSegFields *s = &TCP_PCB_SEG_AT(work, io->seg_args.index)->f;
+    if (!s->in_use || s->pcb >= (uint16_t)IDEMIP_TCP_PCBS)
+    {
+        return;
+    }
+    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, s->pcb)->f;
+    if (t->unsent != io->seg_args.index)
+    {
+        return;
+    }
+    t->unsent = s->next;
+    s->next = IDEMIP_TCP_PCB_NONE;
+    if (t->unacked >= (uint16_t)IDEMIP_TCP_SEGS)
+    {
+        t->unacked = io->seg_args.index;
+        io->status = IDEMIP_OK;
+        return;
+    }
+    uint16_t at = t->unacked;
+    for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_SEGS; n++)
+    {
+        TcpPcbSegFields *tail = &TCP_PCB_SEG_AT(work, at)->f;
+        if (tail->next >= (uint16_t)IDEMIP_TCP_SEGS)
+        {
+            tail->next = io->seg_args.index;
+            io->status = IDEMIP_OK;
+            return;
+        }
+        at = tail->next;
+    }
+}
+
 // RFC 9293 sec 3.4 case (b), "all sequence numbers occupied by a segment have been acknowledged
 // (e.g., to remove the segment from a retransmission queue)". A segment not on the queue its own pcb
 // field names is a broken link rather than a busy resource, so it is ERR.
@@ -1175,12 +1257,14 @@ const TcpPcbNs TcpPcb = {.clear = tcp_pcb_clear,
                          .connect = tcp_pcb_connect,
                          .load = tcp_pcb_load,
                          .store = tcp_pcb_store,
+                         .accept = tcp_pcb_accept,
                          .listen = tcp_pcb_listen,
                          .unlisten = tcp_pcb_unlisten,
                          .find = tcp_pcb_find,
                          .find_listener = tcp_pcb_find_listener,
                          .seg_alloc = tcp_pcb_seg_alloc,
                          .seg_load = tcp_pcb_seg_load,
+                         .seg_sent = tcp_pcb_seg_sent,
                          .seg_free = tcp_pcb_seg_free,
                          .oos_alloc = tcp_pcb_oos_alloc,
                          .oos_load = tcp_pcb_oos_load,

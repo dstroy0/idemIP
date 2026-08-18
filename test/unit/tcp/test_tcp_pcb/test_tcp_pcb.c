@@ -78,12 +78,14 @@ static void call_every_entry(uint8_t *w)
     TcpPcb.connect(w);
     TcpPcb.load(w);
     TcpPcb.store(w);
+    TcpPcb.accept(w);
     TcpPcb.listen(w);
     TcpPcb.unlisten(w);
     TcpPcb.find(w);
     TcpPcb.find_listener(w);
     TcpPcb.seg_alloc(w);
     TcpPcb.seg_load(w);
+    TcpPcb.seg_sent(w);
     TcpPcb.seg_free(w);
     TcpPcb.oos_alloc(w);
     TcpPcb.oos_load(w);
@@ -1887,4 +1889,206 @@ void test_an_ipv6_connection_keys_on_all_sixteen_octets_and_its_zone(void)
     IO(work_a)->find_args.remote_zone = 3u;
     TcpPcb.find(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+// --- MAX.SND.WND, the listener writer and the sent mark ------------------------
+
+// RFC 9293 sec 3.3.1 names eleven variables and no more. RFC 5961 sec 5.2's MAX.SND.WND is not one of
+// them, so it rides in the control state and the eleven stay eleven.
+void test_max_snd_wnd_is_not_one_of_the_eleven_section_3_3_1_variables(void)
+{
+    TEST_ASSERT_EQUAL_size_t(11u * sizeof(uint32_t), sizeof(IdemIpTcpVars));
+    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof IO(work_a)->ctl.max_snd_wnd);
+}
+
+// RFC 5961 sec 5.2: "A new state variable MAX.SND.WND is defined as the largest window that the local
+// sender has ever received from its peer. This window may be scaled to a value larger than 65,535
+// bytes", so it round-trips through a store at the full 32-bit width.
+void test_max_snd_wnd_round_trips_a_scaled_window(void)
+{
+    TcpPcb.clear(work_a);
+    uint16_t idx = open4(work_a);
+    IO(work_a)->pcb_args.index = idx;
+    TcpPcb.load(work_a);
+    IO(work_a)->ctl.max_snd_wnd = 0xFFFFu << 14; // RFC 7323 sec 2.2's largest scaled window
+    IO(work_a)->pcb_args.index = idx;
+    TcpPcb.store(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    memset(&IO(work_a)->ctl, 0, sizeof IO(work_a)->ctl);
+    IO(work_a)->pcb_args.index = idx;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)0xFFFFu << 14, IO(work_a)->ctl.max_snd_wnd);
+}
+
+// RFC 9293 sec 3.5 (MUST-11): "a TCP implementation MUST keep track of whether a connection has
+// reached SYN-RECEIVED state as the result of a passive OPEN or an active OPEN". A fresh TCB names no
+// listener, an accept records one, and IDEMIP_TCP_PCB_NONE takes it back to the active OPEN.
+void test_accept_records_the_listener_a_connection_came_through(void)
+{
+    TcpPcb.clear(work_a);
+    IO(work_a)->listen_args.ip = g_local;
+    IO(work_a)->listen_args.port = 80u;
+    IO(work_a)->listen_args.ip_version = 4u;
+    TcpPcb.listen(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    uint16_t lis = IO(work_a)->index;
+
+    uint16_t idx = open4(work_a);
+    IO(work_a)->pcb_args.index = idx;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->info.listener);
+
+    IO(work_a)->accept_args.index = idx;
+    IO(work_a)->accept_args.listener = lis;
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    IO(work_a)->pcb_args.index = idx;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_UINT16(lis, IO(work_a)->info.listener);
+
+    IO(work_a)->accept_args.index = idx;
+    IO(work_a)->accept_args.listener = IDEMIP_TCP_PCB_NONE;
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    IO(work_a)->pcb_args.index = idx;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->info.listener);
+}
+
+// A listener no passive OPEN took names nothing for the connection to have arrived through, and no
+// retry makes it one.
+void test_accept_refuses_a_listener_no_passive_open_took(void)
+{
+    TcpPcb.clear(work_a);
+    uint16_t idx = open4(work_a);
+    IO(work_a)->accept_args.index = idx;
+    IO(work_a)->accept_args.listener = 0u;
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+
+    IO(work_a)->accept_args.listener = (uint16_t)IDEMIP_TCP_LISTEN_PCBS;
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+
+    IO(work_a)->accept_args.index = (uint16_t)IDEMIP_TCP_PCBS;
+    IO(work_a)->accept_args.listener = IDEMIP_TCP_PCB_NONE;
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+// RFC 9293 sec 3.3.1's "pointers to the retransmit queue". A sent segment leaves the head of the
+// unsent queue for the tail of the retransmission queue, and both keep their order.
+void test_seg_sent_moves_the_head_of_unsent_onto_the_retransmit_queue(void)
+{
+    static const uint8_t data[4] = {9u, 9u, 9u, 9u};
+    TcpPcb.clear(work_a);
+    uint16_t pcb = open4(work_a);
+    uint16_t got[3];
+    for (int i = 0; i < 3; i++)
+    {
+        IO(work_a)->seg_args.pcb = pcb;
+        IO(work_a)->seg_args.data = data;
+        IO(work_a)->seg_args.seq = (uint32_t)(100 + (i * 4));
+        IO(work_a)->seg_args.len = 4u;
+        IO(work_a)->seg_args.flags = IDEMIP_TCP_ACK;
+        IO(work_a)->seg_args.opts = 0u;
+        TcpPcb.seg_alloc(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        got[i] = IO(work_a)->index;
+    }
+
+    for (int i = 0; i < 2; i++)
+    {
+        IO(work_a)->seg_args.index = got[i];
+        TcpPcb.seg_sent(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    }
+
+    IO(work_a)->pcb_args.index = pcb;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_UINT16(got[2], IO(work_a)->info.unsent);
+    TEST_ASSERT_EQUAL_UINT16(got[0], IO(work_a)->info.unacked);
+
+    IO(work_a)->seg_args.index = got[0];
+    TcpPcb.seg_load(work_a);
+    TEST_ASSERT_EQUAL_UINT16(got[1], IO(work_a)->seg.next);
+    IO(work_a)->seg_args.index = got[1];
+    TcpPcb.seg_load(work_a);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->seg.next);
+    IO(work_a)->seg_args.index = got[2];
+    TcpPcb.seg_load(work_a);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->seg.next);
+}
+
+// Segments leave the queue in the order they were built, so anything but the head is a broken link.
+void test_seg_sent_refuses_a_segment_that_is_not_the_head_of_unsent(void)
+{
+    static const uint8_t data[4] = {1u, 1u, 1u, 1u};
+    TcpPcb.clear(work_a);
+    uint16_t pcb = open4(work_a);
+    uint16_t got[2];
+    for (int i = 0; i < 2; i++)
+    {
+        IO(work_a)->seg_args.pcb = pcb;
+        IO(work_a)->seg_args.data = data;
+        IO(work_a)->seg_args.seq = (uint32_t)(200 + (i * 4));
+        IO(work_a)->seg_args.len = 4u;
+        IO(work_a)->seg_args.flags = 0u;
+        IO(work_a)->seg_args.opts = 0u;
+        TcpPcb.seg_alloc(work_a);
+        got[i] = IO(work_a)->index;
+    }
+
+    IO(work_a)->seg_args.index = got[1];
+    TcpPcb.seg_sent(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+
+    IO(work_a)->seg_args.index = (uint16_t)IDEMIP_TCP_SEGS;
+    TcpPcb.seg_sent(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+
+    // A segment already marked sent is off the unsent queue, so a second mark is refused too.
+    IO(work_a)->seg_args.index = got[0];
+    TcpPcb.seg_sent(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TcpPcb.seg_sent(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+// A close releases both queues, so a segment marked sent goes with the connection.
+void test_a_close_frees_the_segments_on_the_retransmit_queue_too(void)
+{
+    static const uint8_t data[4] = {2u, 2u, 2u, 2u};
+    TcpPcb.clear(work_a);
+    uint16_t pcb = open4(work_a);
+    for (int i = 0; i < (int)IDEMIP_TCP_SEGS; i++)
+    {
+        IO(work_a)->seg_args.pcb = pcb;
+        IO(work_a)->seg_args.data = data;
+        IO(work_a)->seg_args.seq = (uint32_t)(300 + (i * 4));
+        IO(work_a)->seg_args.len = 4u;
+        IO(work_a)->seg_args.flags = 0u;
+        IO(work_a)->seg_args.opts = 0u;
+        TcpPcb.seg_alloc(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        uint16_t seg = IO(work_a)->index;
+        IO(work_a)->seg_args.index = seg;
+        TcpPcb.seg_sent(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    }
+
+    IO(work_a)->pcb_args.index = pcb;
+    TcpPcb.close(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    uint16_t again = open4(work_a);
+    IO(work_a)->seg_args.pcb = again;
+    IO(work_a)->seg_args.data = data;
+    IO(work_a)->seg_args.seq = 900u;
+    IO(work_a)->seg_args.len = 4u;
+    IO(work_a)->seg_args.flags = 0u;
+    IO(work_a)->seg_args.opts = 0u;
+    TcpPcb.seg_alloc(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 }
