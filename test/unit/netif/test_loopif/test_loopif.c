@@ -334,6 +334,500 @@ void test_match_operands_on_two_borrows_are_independent(void)
 
 #endif // IDEMIP_ENABLE_IPV6
 
+// --- bind: the two address forms ---------------------------------------------
+
+static void bind_ok(uint8_t *w)
+{
+    Loopif.clear(w);
+    set_bind_args(w);
+    Loopif.bind(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(w)->status);
+}
+
+void test_bind_accepts_the_loopback_addresses(void)
+{
+    bind_ok(work_a);
+}
+
+// RFC 1122 sec 3.2.1.3 case (g) is "{ 127, <any> }", so the host part is unconstrained: the network
+// number alone decides. RFC 1122 prints no address vectors, so these walk the form the text states,
+// including the two host parts the same section excludes everywhere else ("IP addresses are not
+// permitted to have the value 0 or -1 ... except in the special cases listed above", and (g) is one
+// of those cases).
+void test_bind_accepts_any_host_part_on_network_127(void)
+{
+    static const uint32_t forms[] = {0x7F000000u, 0x7F000001u, 0x7F0000FFu, 0x7F010203u, 0x7FFFFFFFu};
+    for (size_t i = 0; i < sizeof forms / sizeof forms[0]; i++)
+    {
+        Loopif.clear(work_a);
+        set_bind_args(work_a);
+        IDEMIP_LOOPIF_IO(work_a)->bind_args.addr4 = forms[i];
+        Loopif.bind(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status,
+                                      "a { 127, <any> } address was refused");
+    }
+}
+
+// An address off network 127 is not the internal host loopback address, and the same operands
+// retried are the same address, so it is ERR and not BUSY. 126.255.255.255 and 128.0.0.1 sit either
+// side of the network number.
+void test_bind_refuses_an_address_off_network_127(void)
+{
+    static const uint32_t forms[] = {0x00000000u, 0x0A000001u, 0x7EFFFFFFu, 0x80000001u, 0xC0A80001u, 0xFFFFFFFFu};
+    for (size_t i = 0; i < sizeof forms / sizeof forms[0]; i++)
+    {
+        Loopif.clear(work_a);
+        set_bind_args(work_a);
+        IDEMIP_LOOPIF_IO(work_a)->bind_args.addr4 = forms[i];
+        Loopif.bind(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status,
+                                      "an address outside network 127 was bound");
+    }
+}
+
+#if IDEMIP_ENABLE_IPV6
+
+// RFC 4291 sec 2.5.3 names exactly one address, 0:0:0:0:0:0:0:1. The unspecified address of sec
+// 2.5.2 and an address carrying the 1 one octet early are both refused.
+void test_bind_refuses_an_ipv6_address_that_is_not_the_loopback(void)
+{
+    static const uint8_t forms[][IDEMIP_IP6_ADDR_LEN] = {
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},          // sec 2.5.2, the unspecified address
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0},       // the 1 one octet early
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02},       // ::2
+        {0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01},    // 100::1
+        {0xFE, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01}, // fe80::1
+    };
+    for (size_t i = 0; i < sizeof forms / sizeof forms[0]; i++)
+    {
+        Loopif.clear(work_a);
+        set_bind_args(work_a);
+        IDEMIP_LOOPIF_IO(work_a)->bind_args.addr6 = forms[i];
+        Loopif.bind(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status,
+                                      "an address that is not ::1 was bound");
+    }
+}
+
+#endif // IDEMIP_ENABLE_IPV6
+
+// --- owns4 and owns6 ---------------------------------------------------------
+
+// RFC 1122 sec 3.2.1.3 case (g), "{ 127, <any> } Internal host loopback address". The network
+// number is the whole test, so 127.0.0.1 and 127.255.255.255 answer alike.
+void test_owns4_answers_for_every_host_part_on_network_127(void)
+{
+    static const uint32_t forms[] = {0x7F000000u, 0x7F000001u, 0x7F0000FFu, 0x7F010203u, 0x7FFFFFFFu};
+    Loopif.clear(work_a);
+    for (size_t i = 0; i < sizeof forms / sizeof forms[0]; i++)
+    {
+        IDEMIP_LOOPIF_IO(work_a)->match_args.addr4 = forms[i];
+        Loopif.owns4(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status, "owns4 did not finish");
+        TEST_ASSERT_TRUE_MESSAGE(IDEMIP_LOOPIF_IO(work_a)->owned, "a { 127, <any> } address was not owned");
+    }
+}
+
+// The two addresses either side of network 127 are not loopback, and neither is any other network.
+// The call still finishes, so the status is OK and the answer is in owned.
+void test_owns4_disowns_addresses_off_network_127(void)
+{
+    static const uint32_t forms[] = {0x00000000u, 0x0A000001u, 0x7EFFFFFFu, 0x80000000u, 0xC0A80001u, 0xFFFFFFFFu};
+    Loopif.clear(work_a);
+    for (size_t i = 0; i < sizeof forms / sizeof forms[0]; i++)
+    {
+        IDEMIP_LOOPIF_IO(work_a)->match_args.addr4 = forms[i];
+        Loopif.owns4(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status, "owns4 did not finish");
+        TEST_ASSERT_FALSE_MESSAGE(IDEMIP_LOOPIF_IO(work_a)->owned, "an address outside network 127 was owned");
+    }
+}
+
+// The bound address does not narrow the test: case (g) makes the whole network the host's own, so a
+// borrow bound to 127.0.0.1 still owns 127.9.9.9.
+void test_owns4_is_not_narrowed_by_the_bound_address(void)
+{
+    bind_ok(work_a);
+    IDEMIP_LOOPIF_IO(work_a)->match_args.addr4 = 0x7F090909u;
+    Loopif.owns4(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    TEST_ASSERT_TRUE(IDEMIP_LOOPIF_IO(work_a)->owned);
+}
+
+#if IDEMIP_ENABLE_IPV6
+
+// RFC 4291 sec 2.5.3, "The unicast address 0:0:0:0:0:0:0:1 is called the loopback address."
+void test_owns6_answers_for_the_one_loopback_address(void)
+{
+    Loopif.clear(work_a);
+    IDEMIP_LOOPIF_IO(work_a)->match_args.addr6 = g_lo6;
+    Loopif.owns6(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    TEST_ASSERT_TRUE(IDEMIP_LOOPIF_IO(work_a)->owned);
+}
+
+// Sec 2.5.3 names one address, so every other one is disowned: the unspecified address of sec
+// 2.5.2, the 1 one octet early, ::2, and a link-local address.
+void test_owns6_disowns_every_other_address(void)
+{
+    static const uint8_t forms[][IDEMIP_IP6_ADDR_LEN] = {
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02},
+        {0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01},
+        {0xFE, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01},
+    };
+    Loopif.clear(work_a);
+    for (size_t i = 0; i < sizeof forms / sizeof forms[0]; i++)
+    {
+        IDEMIP_LOOPIF_IO(work_a)->match_args.addr6 = forms[i];
+        Loopif.owns6(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status, "owns6 did not finish");
+        TEST_ASSERT_FALSE_MESSAGE(IDEMIP_LOOPIF_IO(work_a)->owned, "an address that is not ::1 was owned");
+    }
+}
+
+// Every one of the 128 bits is walked: setting any single bit other than the last makes the address
+// something other than ::1.
+void test_owns6_disowns_an_address_one_bit_off(void)
+{
+    uint8_t addr[IDEMIP_IP6_ADDR_LEN];
+    Loopif.clear(work_a);
+    for (size_t bit = 0; bit < (IDEMIP_IP6_ADDR_LEN * 8u); bit++)
+    {
+        memcpy(addr, g_lo6, sizeof addr);
+        addr[bit >> 3] ^= (uint8_t)(0x80u >> (bit & 7u));
+        IDEMIP_LOOPIF_IO(work_a)->match_args.addr6 = addr;
+        Loopif.owns6(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status, "owns6 did not finish");
+        TEST_ASSERT_FALSE_MESSAGE(IDEMIP_LOOPIF_IO(work_a)->owned, "an address one bit off ::1 was owned");
+    }
+}
+
+#endif // IDEMIP_ENABLE_IPV6
+
+// --- the queue ---------------------------------------------------------------
+
+// A frame whose every octet names which frame it is, so the order they come back in is visible.
+static void fill(uint8_t *buf, size_t len, uint8_t tag)
+{
+    for (size_t i = 0; i < len; i++)
+    {
+        buf[i] = (uint8_t)(tag + (uint8_t)i);
+    }
+}
+
+static void output_ok(uint8_t *w, const uint8_t *frame, size_t len)
+{
+    IDEMIP_LOOPIF_IO(w)->output_args.frame = frame;
+    IDEMIP_LOOPIF_IO(w)->output_args.len = len;
+    Loopif.output(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(w)->status);
+}
+
+// RFC 1122 sec 3.2.1.3 case (g): the frame the host sent to itself comes back to this host's own
+// input path, octet for octet.
+void test_a_frame_written_comes_back_on_the_next_claim(void)
+{
+    uint8_t sent[64];
+    fill(sent, sizeof sent, 0x10u);
+    bind_ok(work_a);
+    output_ok(work_a, sent, sizeof sent);
+
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_size_t(sizeof sent, IDEMIP_LOOPIF_IO(work_a)->len);
+    TEST_ASSERT_NOT_NULL(IDEMIP_LOOPIF_IO(work_a)->frame);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(sent, IDEMIP_LOOPIF_IO(work_a)->frame, sizeof sent);
+
+    Loopif.release(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+}
+
+// The frame is handed back where it lies, which is a frame region of this borrow and nowhere else.
+void test_the_frame_comes_back_inside_the_borrow(void)
+{
+    uint8_t sent[32];
+    fill(sent, sizeof sent, 0x20u);
+    bind_ok(work_a);
+    output_ok(work_a, sent, sizeof sent);
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+
+    const uint8_t *got = IDEMIP_LOOPIF_IO(work_a)->frame;
+    TEST_ASSERT_TRUE(got >= work_a + IDEMIP_LOOPIF_OFF_FRAMES);
+    TEST_ASSERT_TRUE(got + sizeof sent <= work_a + IDEMIP_LOOPIF_OFF_END);
+    TEST_ASSERT_EQUAL_PTR(work_a + IDEMIP_LOOPIF_OFF_FRAMES +
+                              ((size_t)IDEMIP_LOOPIF_IO(work_a)->slot << IDEMIP_LOOPIF_FRAME_SHIFT),
+                          got);
+}
+
+// The caller's buffer is the caller's: output takes a copy, so overwriting the source after the call
+// does not change what comes back.
+void test_the_looped_frame_does_not_follow_the_callers_buffer(void)
+{
+    uint8_t sent[48];
+    uint8_t expect[48];
+    fill(sent, sizeof sent, 0x30u);
+    memcpy(expect, sent, sizeof expect);
+
+    bind_ok(work_a);
+    output_ok(work_a, sent, sizeof sent);
+    memset(sent, 0xEE, sizeof sent);
+
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expect, IDEMIP_LOOPIF_IO(work_a)->frame, sizeof expect);
+}
+
+// The oldest waiting frame is the one claim reports, so the order out is the order in.
+void test_frames_come_back_in_the_order_they_were_written(void)
+{
+    uint8_t sent[IDEMIP_LOOPIF_FRAMES][32];
+    bind_ok(work_a);
+    for (unsigned i = 0; i < IDEMIP_LOOPIF_FRAMES; i++)
+    {
+        fill(sent[i], sizeof sent[i], (uint8_t)(0x40u + (i << 4)));
+        output_ok(work_a, sent[i], sizeof sent[i]);
+    }
+    for (unsigned i = 0; i < IDEMIP_LOOPIF_FRAMES; i++)
+    {
+        Loopif.claim(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+        TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(sent[i], IDEMIP_LOOPIF_IO(work_a)->frame, sizeof sent[i],
+                                              "a frame came back out of order");
+        Loopif.release(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    }
+}
+
+// Every region full is BUSY, not ERR: a claim and a release free one, so the retry succeeds. ERR
+// here would abandon a healthy queue.
+void test_every_region_full_is_busy_and_a_release_frees_one(void)
+{
+    uint8_t sent[16];
+    fill(sent, sizeof sent, 0x50u);
+    bind_ok(work_a);
+    for (unsigned i = 0; i < IDEMIP_LOOPIF_FRAMES; i++)
+    {
+        output_ok(work_a, sent, sizeof sent);
+        TEST_ASSERT_EQUAL_UINT8(i + 1u, IDEMIP_LOOPIF_IO(work_a)->held);
+    }
+
+    IDEMIP_LOOPIF_IO(work_a)->output_args.frame = sent;
+    IDEMIP_LOOPIF_IO(work_a)->output_args.len = sizeof sent;
+    Loopif.output(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_LOOPIF_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_LOOPIF_FRAMES, IDEMIP_LOOPIF_IO(work_a)->held);
+
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    Loopif.release(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+
+    Loopif.output(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+}
+
+// Nothing waiting is BUSY, not OK and not ERR: OK would claim a frame that is not there, ERR would
+// call an empty queue broken. The caller comes back after the next output.
+void test_nothing_waiting_is_busy_and_the_retry_succeeds(void)
+{
+    uint8_t sent[16];
+    fill(sent, sizeof sent, 0x60u);
+    bind_ok(work_a);
+
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_LOOPIF_IO(work_a)->status);
+    TEST_ASSERT_NULL(IDEMIP_LOOPIF_IO(work_a)->frame);
+    TEST_ASSERT_EQUAL_size_t(0u, IDEMIP_LOOPIF_IO(work_a)->len);
+
+    output_ok(work_a, sent, sizeof sent);
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+}
+
+// A second claim would hand out a region release has not stepped past, and no retry changes that
+// while the first claim is out, so it is ERR.
+void test_a_second_claim_before_release_is_refused(void)
+{
+    uint8_t sent[16];
+    fill(sent, sizeof sent, 0x70u);
+    bind_ok(work_a);
+    output_ok(work_a, sent, sizeof sent);
+    output_ok(work_a, sent, sizeof sent);
+
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status);
+    TEST_ASSERT_NULL(IDEMIP_LOOPIF_IO(work_a)->frame);
+}
+
+// A release with nothing out would free a region twice, so it is ERR both before any claim and
+// after the claim it belongs to.
+void test_release_without_a_claim_is_refused(void)
+{
+    uint8_t sent[16];
+    fill(sent, sizeof sent, 0x80u);
+    bind_ok(work_a);
+
+    Loopif.release(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status);
+
+    output_ok(work_a, sent, sizeof sent);
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    Loopif.release(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    Loopif.release(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status);
+}
+
+// head and tail wrap on IDEMIP_LOOPIF_FRAMES, so a run several times longer than the queue still
+// hands every frame back intact.
+void test_the_queue_wraps(void)
+{
+    uint8_t sent[24];
+    bind_ok(work_a);
+    for (unsigned round = 0; round < (IDEMIP_LOOPIF_FRAMES * 4u) + 1u; round++)
+    {
+        fill(sent, sizeof sent, (uint8_t)(0x90u + round));
+        output_ok(work_a, sent, sizeof sent);
+        Loopif.claim(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+        TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(sent, IDEMIP_LOOPIF_IO(work_a)->frame, sizeof sent,
+                                              "a frame came back wrong after the queue wrapped");
+        TEST_ASSERT_TRUE(IDEMIP_LOOPIF_IO(work_a)->slot < IDEMIP_LOOPIF_FRAMES);
+        Loopif.release(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    }
+}
+
+// output copies the octets it was given and no more, so the region past the frame is as clear left
+// it.
+void test_output_writes_no_octet_past_the_frame(void)
+{
+    uint8_t sent[8];
+    fill(sent, sizeof sent, 0xA0u);
+    Loopif.clear(work_a);
+    set_bind_args(work_a);
+    Loopif.bind(work_a);
+    output_ok(work_a, sent, sizeof sent);
+    for (size_t i = (size_t)IDEMIP_LOOPIF_OFF_FRAMES + sizeof sent;
+         i < (size_t)IDEMIP_LOOPIF_OFF_FRAMES + (1u << IDEMIP_LOOPIF_FRAME_SHIFT); i++)
+    {
+        TEST_ASSERT_EQUAL_HEX8_MESSAGE(0u, work_a[i], "output wrote past the frame it was given");
+    }
+}
+
+// A region carries a whole Ethernet II frame (RFC 894's maximum), so the longest one round trips.
+void test_the_longest_frame_round_trips(void)
+{
+    static uint8_t sent[IDEMIP_ETH_FRAME_MAX];
+    fill(sent, sizeof sent, 0xB0u);
+    bind_ok(work_a);
+    output_ok(work_a, sent, sizeof sent);
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_size_t(sizeof sent, IDEMIP_LOOPIF_IO(work_a)->len);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(sent, IDEMIP_LOOPIF_IO(work_a)->frame, sizeof sent);
+}
+
+// The queue is in the borrow, so a frame written to one loopback interface is not waiting on the
+// other. This is the storage model applied to held state.
+void test_two_borrows_queue_independently(void)
+{
+    uint8_t sent[16];
+    fill(sent, sizeof sent, 0xC0u);
+    bind_ok(work_a);
+    bind_ok(work_b);
+    output_ok(work_a, sent, sizeof sent);
+
+    Loopif.claim(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_LOOPIF_IO(work_b)->status);
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_LOOPIF_IO(work_b)->held);
+
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_LOOPIF_IO(work_a)->held);
+
+    // b has claimed nothing, so releasing b is refused even though a holds one.
+    Loopif.release(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_b)->status);
+    Loopif.release(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+}
+
+// clear takes the queue back to empty, claim included, so a frame written before it is gone.
+void test_clear_empties_the_queue(void)
+{
+    uint8_t sent[16];
+    fill(sent, sizeof sent, 0xD0u);
+    bind_ok(work_a);
+    output_ok(work_a, sent, sizeof sent);
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+
+    Loopif.clear(work_a);
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_LOOPIF_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_LOOPIF_IO(work_a)->held);
+}
+
+// held is what is waiting, counted up by output and down by release, and it is reported on the busy
+// paths too.
+void test_held_counts_the_frames_waiting(void)
+{
+    uint8_t sent[16];
+    fill(sent, sizeof sent, 0xE0u);
+    bind_ok(work_a);
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_LOOPIF_IO(work_a)->held);
+
+    output_ok(work_a, sent, sizeof sent);
+    TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_LOOPIF_IO(work_a)->held);
+
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_LOOPIF_IO(work_a)->held);
+
+    Loopif.release(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_LOOPIF_IO(work_a)->held);
+}
+
+// An entry is a function of its borrow alone, so the same claim on the same bytes reports the same
+// frame every time. This is the determinism the design is named for.
+void test_a_call_is_a_function_of_its_borrow_alone(void)
+{
+    uint8_t sent_a[16];
+    uint8_t sent_b[16];
+    fill(sent_a, sizeof sent_a, 0xF0u);
+    fill(sent_b, sizeof sent_b, 0x11u);
+    bind_ok(work_a);
+    bind_ok(work_b);
+    output_ok(work_a, sent_a, sizeof sent_a);
+    output_ok(work_b, sent_b, sizeof sent_b);
+
+    // Interleave: a, then b, then a again. a's answer must be identical both times.
+    Loopif.claim(work_a);
+    const uint8_t *first = IDEMIP_LOOPIF_IO(work_a)->frame;
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    Loopif.claim(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_b)->status);
+
+    TEST_ASSERT_EQUAL_PTR(first, IDEMIP_LOOPIF_IO(work_a)->frame);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(sent_a, IDEMIP_LOOPIF_IO(work_a)->frame, sizeof sent_a);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(sent_b, IDEMIP_LOOPIF_IO(work_b)->frame, sizeof sent_b);
+
+    // Each frame came out of its own borrow's regions, so the two queues are different bytes.
+    TEST_ASSERT_TRUE(IDEMIP_LOOPIF_IO(work_a)->frame >= work_a + IDEMIP_LOOPIF_OFF_FRAMES);
+    TEST_ASSERT_TRUE(IDEMIP_LOOPIF_IO(work_a)->frame < work_a + IDEMIP_LOOPIF_OFF_END);
+    TEST_ASSERT_TRUE(IDEMIP_LOOPIF_IO(work_b)->frame >= work_b + IDEMIP_LOOPIF_OFF_FRAMES);
+    TEST_ASSERT_TRUE(IDEMIP_LOOPIF_IO(work_b)->frame < work_b + IDEMIP_LOOPIF_OFF_END);
+}
+
 // --- the shape ---------------------------------------------------------------
 
 // RFC 1122 sec 3.2.1.3 case (g) writes the loopback form as "{ 127, <any> }", so the mask selects
