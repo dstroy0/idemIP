@@ -29,6 +29,10 @@ fails when the fix is reverted, and the file hash returns to its pre-mutation va
 | 18 | `nd/nd6.c` `nd6_retrans_ms` | RFC 4861 sec 7.3.3, sec 6.3.4 | RetransTimer was copied verbatim from a Router Advertisement. Above the deadline span a solicitation deadline reads as already past, inverting the per-neighbour MUST NOT into one solicitation per tick. Held at the span, which is the deadline max shifted down by MAX_MULTICAST_SOLICIT + 1. | `86dc94a` |
 | 19 | `nd/dad.c` `dad_start` | RFC 4862 sec 5.4 | The same unbounded timer on the DAD wait, which collapsed to the next tick and declared an address unique before any defence could arrive. | `86dc94a` |
 | 17 | `nd/nd6.c` `nd6_router_set` | RFC 4861 sec 7.2, sec 6.3.4 | Created a Neighbor Cache entry for every RA source, NULL link-layer address and INCOMPLETE. `Nd6RouterArgs` now carries the SLLAO; without it only an existing entry has IsRouter set, and the Default Router List holds the address itself so a router that omits the option is still listed. | `fc0b37a` |
+| 7 | `acd/acd.c` `acd_claim` | RFC 5227 sec 2.1.1 | Gated a new claim on state RATE_LIMIT, entered only from an abandon, so a defended conflict raised the count without ever closing the gate. The gate now reads the count, which is what sec 2.1.1 says applies "not only to conflicts experienced during the initial probing phase, but also to conflicts experienced later". | `84f09b1` |
+| 12 | `icmp/icmp6_in.c` `icmp6_in_error` | RFC 4443 sec 2.2 | Copied the invoking packet's Destination Address into the Source Address of an error the node originates, for every case but multicast - including a unicast address that is not the node's. `dst_local_unicast` now separates sec 2.2 (a) from (b). | `3349e1b` |
+| 20 | `tcp/tcp_pcb.c` `tcp_pcb_bind` | RFC 9293 sec 3.4.1 | Refused a local port another TCB held, so a server served one client per port. Uniqueness is the pair of sockets, which `tcp_pcb_connect` already enforces. | `d7fe64f` |
+| 21 | `tcp/tcp_pcb.c` `tcp_pcb_port_draw` | RFC 6056 sec 3.3.1 | The ephemeral draw walked from a stored cursor, so one observed port named the next. Now Algorithm 1, placed by the caller's random word, with the modulo as an AND. | `d7fe64f` |
 
 ## Security, open
 
@@ -37,10 +41,6 @@ fails when the fix is reverted, and the file hash returns to its pre-mutation va
 | 3 | `ip/ip6_reass.c` `ip6_reass_payload_len` | RFC 8200 sec 4.5 | Takes FO.last and FL.last from the tail of the linked list. The tail is the greatest Fragment Offset, not the fragment with the greatest end, so the reassembled Payload Length can be short. |
 | 13 | `ip/ip6_reass.c` `ip6_reass_carve` | RFC 8200 sec 4.5, RFC 815 sec 3 step 6 | A last fragment landing inside a bounded hole leaves neither head nor tail hole, so the datagram is declared complete while octets of the Fragmentable Part were never received. The stack delivers bytes it never got. |
 | 14 | `ip/ip6_reass.c` `ip6_reass_file` | RFC 8200 sec 4.5, sec 10 (RFC 6946) | An atomic fragment (Fragment Offset 0, M 0) is matched into whatever HOLDING datagram shares its {Source, Destination, Identification} instead of being processed independently, so one atomic fragment poisons a legitimate reassembly. |
-| 7 | `acd/acd.c` `acd_claim` | RFC 5227 sec 2.1.1 | Gates a new claim on state RATE_LIMIT rather than on the conflict count, and RATE_LIMIT is only entered from `acd_abandon`. A defended conflict raises `conflicts` but leaves the machine in ONGOING, so the sec 2.1.1 MAX_CONFLICTS rate limit never engages. |
-| 12 | `icmp/icmp6_in.c` `icmp6_in_error` | RFC 4443 sec 2.2 (b) | Picks the error's Source Address as `is_multicast(dst) ? if_addr : dst`, covering only the first of the three cases sec 2.2 (b) lists. For an invoking packet addressed to an anycast address, or to a unicast address that is not the node's, it copies that address into the Source Address of an ICMPv6 error the node originates. |
-| 20 | `tcp/tcp_pcb.c` `tcp_pcb_port_taken` | RFC 9293 sec 3.4.1 | Reports a local port taken whenever any other open TCB holds it, ignoring the remote socket. A connection is a pair of sockets, so two peers reaching one local socket are two connections; the second cannot bind. |
-| 21 | `tcp/tcp_pcb.c:415` | RFC 6056 sec 3.3 | Ephemeral port selection is not obfuscated as BCP 156 requires. |
 
 ## The rest
 
