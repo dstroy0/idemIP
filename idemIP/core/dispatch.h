@@ -165,6 +165,11 @@ typedef enum IDEMIP_ENUM_PACKED
      *  unrecognized Routing Type." The discard is here; the message is the caller's to build through
      *  icmp6_in.h, the same division DROP_NO_PCB uses for Port Unreachable. */
     IDEMIP_DISPATCH_DROP_IP6_ROUTING,
+    /** ipInHdrErrors: an RFC 8200 sec 4.2 option this node does not recognize whose two high-order
+     *  bits are 01, 10 or 11. All three discard; 10 and 11 also owe a Parameter Problem, Code 2,
+     *  pointing to the Option Type, which @ref DispatchIo::err_ptr names and whose own octet says
+     *  which. 11 owes it "only if the packet's Destination Address was not a multicast address". */
+    IDEMIP_DISPATCH_DROP_IP6_OPTION,
     IDEMIP_DISPATCH_DROP_NO_PCB,     ///< ipInDiscards: nothing is bound to the port or protocol
     IDEMIP_DISPATCH_DROP_REASS,      ///< ipInDiscards: the reassembler had no room, or refused it
     IDEMIP_DISPATCH_DROP_NO_DESC,    ///< ipInDiscards: retention needs a descriptor and there is none

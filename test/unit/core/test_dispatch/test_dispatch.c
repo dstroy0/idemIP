@@ -1298,6 +1298,75 @@ void test_a_routing_header_with_no_segments_left_is_ignored(void)
     TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
 }
 
+// A Destination Options header carrying one option of @p opt_type padded out to eight octets, ahead
+// of an eight-octet UDP header.
+static size_t build_ip6_dstopts(uint8_t *f, size_t off, uint8_t opt_type)
+{
+    const size_t dh = off + IDEMIP_IPV6_HDR_LEN;
+    (void)build_ip6(f, off, IDEMIP_IP6_NH_DSTOPTS, g_remote_ip6, g_local_ip6,
+                    IDEMIP_IP6_EXT_UNIT + IDEMIP_UDP_HDR_LEN);
+    f[dh + IDEMIP_IP6_EXT_OFF_NEXT_HDR] = IDEMIP_IP6_NH_UDP;
+    f[dh + IDEMIP_IP6_EXT_OFF_LEN] = 0u; // 8 octets, the header alone
+    f[dh + 2u] = opt_type;
+    f[dh + 3u] = 2u; // Opt Data Len, so the option spans four octets
+    f[dh + 4u] = 0u;
+    f[dh + 5u] = 0u;
+    f[dh + 6u] = IDEMIP_IP6_OPT_PADN; // PadN over the last two octets
+    f[dh + 7u] = 0u;
+    return dh + IDEMIP_IP6_EXT_UNIT;
+}
+
+// RFC 8200 sec 4.2: "The Option Type identifiers are internally encoded such that their highest-order
+// 2 bits specify the action that must be taken if the processing IPv6 node does not recognize the
+// Option Type: 00 - skip over this option and continue processing the header. 01 - discard the
+// packet. 10 - discard the packet and, regardless of whether or not the packet's Destination Address
+// was a multicast address, send an ICMP Parameter Problem, Code 2 ... 11 - discard the packet and,
+// only if the packet's Destination Address was not a multicast address, send [one]."
+//
+// This library recognizes only the two padding options sec 4.2 says "must be recognized by all IPv6
+// implementations", so every other type takes its own action bits. Nothing walked the options at all,
+// so all four behaved as 00 and the packet was delivered whatever it carried.
+void test_an_option_the_node_refuses_discards_the_packet(void)
+{
+    static const uint8_t discarding[] = {
+        (uint8_t)(IDEMIP_IP6_OPT_ACT_DISCARD | 0x1Fu),      // 01
+        (uint8_t)(IDEMIP_IP6_OPT_ACT_DISCARD_ICMP | 0x1Fu), // 10
+        (uint8_t)(IDEMIP_IP6_OPT_ACT_DISCARD_UNI | 0x1Fu),  // 11
+    };
+    (void)bind_udp6(4001u);
+    for (size_t i = 0u; i < (sizeof discarding / sizeof discarding[0]); i++)
+    {
+        size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+        size_t udp_off = build_ip6_dstopts(g_frame, off, discarding[i]);
+        size_t end = build_udp(g_frame, udp_off, 4000u, 4001u, 0u);
+        seal_udp6(g_frame, udp_off, g_remote_ip6, g_local_ip6);
+        input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP6_OPTION, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                      "an option whose action bits discard was skipped over");
+        TEST_ASSERT_FALSE(IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER);
+        // "pointing to the unrecognized Option Type", which is two octets into the header
+        TEST_ASSERT_EQUAL_UINT16((uint16_t)(IDEMIP_IPV6_HDR_LEN + 2u), IDEMIP_DISPATCH_IO(work_a)->err_ptr);
+    }
+}
+
+// "00 - skip over this option and continue processing the header." The Router Alert option RFC 2711
+// gives MLD is type 5, whose high bits are 00, so this is the case that keeps a Query arriving.
+void test_an_unrecognized_option_that_says_skip_is_skipped(void)
+{
+    uint16_t pcb = bind_udp6(4001u);
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t udp_off = build_ip6_dstopts(g_frame, off, (uint8_t)(IDEMIP_IP6_OPT_ACT_SKIP | 0x05u));
+    size_t end = build_udp(g_frame, udp_off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, udp_off, g_remote_ip6, g_local_ip6);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "sec 4.2 skips an unrecognized option whose high bits are 00");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
+}
+
 // RFC 8200 sec 8.1: "IPv6 receivers must discard UDP packets containing a zero checksum". The
 // IPv4 exemption does not carry over, because an IPv6 header carries no checksum of its own, so a
 // zero here leaves the whole datagram unprotected.

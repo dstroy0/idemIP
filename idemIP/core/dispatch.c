@@ -1380,6 +1380,18 @@ static void d_ip6(uint8_t *restrict work, const uint8_t *ip6, size_t avail)
         d_bump(work, IDEMIP_STAT_IP6_IN_HDR_ERRORS);
         return;
     }
+    // RFC 8200 sec 4.2, over an option this node does not recognize whose two high-order bits are not
+    // 00: "01 - discard the packet", "10 - discard the packet and, regardless of whether or not the
+    // packet's Destination Address was a multicast address, send an ICMP Parameter Problem, Code 2",
+    // "11 - discard the packet and, only if the packet's Destination Address was not a multicast
+    // address, send an ICMP Parameter Problem, Code 2". The discard is the same in all three.
+    if (chain.refused)
+    {
+        io->err_ptr = (uint16_t)chain.opt_hdr;
+        d_drop(work, IDEMIP_DISPATCH_DROP_IP6_OPTION, IDEMIP_STAT_IF_IN_ERRORS);
+        d_bump(work, IDEMIP_STAT_IP6_IN_HDR_ERRORS);
+        return;
+    }
     if (chain.fragmented)
     {
         d_ip6_frag(work, ip6, total_len, chain.frag_hdr);

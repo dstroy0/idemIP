@@ -290,6 +290,48 @@ IDEMIP_INLINE size_t idemip_ip6_opt_len(const uint8_t *o)
     return (o[IDEMIP_IP6_OPT_OFF_TYPE] == IDEMIP_IP6_OPT_PAD1) ? 1u : ((size_t)o[IDEMIP_IP6_OPT_OFF_LEN] + 2u);
 }
 
+/**
+ * @brief Walk the options of one Hop-by-Hop or Destination Options header for one this node refuses.
+ *
+ * RFC 8200 sec 4.2 gives the two padding options as the ones that "must be recognized by all IPv6
+ * implementations"; this library recognizes no other, so every other type is the section's
+ * unrecognized case and its two high-order bits decide. 00 skips and is not reported. 01, 10 and 11
+ * all discard, and differ only in whether the caller owes a Parameter Problem, which it reads back
+ * off the Option Type octet this reports.
+ *
+ * @param p      the packet
+ * @param first  octets to the first Option Type, which is two past the header
+ * @param last   octets to one past the header
+ * @param bad    set to the offset of the refused Option Type when one is found
+ * @return true when an option runs past @p last, or one is refused; @p bad is set only in the second
+ *         case, so a caller distinguishes them by whether it changed.
+ */
+IDEMIP_INLINE idemip_bool idemip_ip6_opts_refused(const uint8_t *p, size_t first, size_t last, size_t *bad)
+{
+    size_t at = first;
+    while (at < last)
+    {
+        const uint8_t type = p[at + IDEMIP_IP6_OPT_OFF_TYPE];
+        if (type != IDEMIP_IP6_OPT_PAD1 && at + 2u > last)
+        {
+            return IDEMIP_TRUE; // the length octet is not inside the header
+        }
+        const size_t step = idemip_ip6_opt_len(p + at);
+        if (step == 0u || at + step > last)
+        {
+            return IDEMIP_TRUE;
+        }
+        if (type != IDEMIP_IP6_OPT_PAD1 && type != IDEMIP_IP6_OPT_PADN &&
+            (type & IDEMIP_IP6_OPT_ACT_MASK) != IDEMIP_IP6_OPT_ACT_SKIP)
+        {
+            *bad = at;
+            return IDEMIP_TRUE;
+        }
+        at += step;
+    }
+    return IDEMIP_FALSE;
+}
+
 // ---------------------------------------------------------------------------
 // Fragment header (RFC 8200 sec 4.5)
 // ---------------------------------------------------------------------------
@@ -397,8 +439,13 @@ IDEMIP_INLINE uint8_t idemip_ip6_rt_type(const uint8_t *r)
  *                                 send an ICMP Parameter Problem, Code 0, message to the packet's
  *                                 Source Address, pointing to the unrecognized Routing Type." One
  *                                 whose Segments Left is zero is ignored, as the same section says.
+ * @var IdemIpIp6Chain::opt_hdr    octets to the Option Type of a sec 4.2 option this node does not
+ *                                 recognize and whose two high-order bits are not 00, set only when
+ *                                 @c refused. The octet carries its own action, so the caller reads
+ *                                 back whether a Parameter Problem, Code 2 is owed.
  * @var IdemIpIp6Chain::fragmented a sec 4.5 Fragment header appeared in the chain
  * @var IdemIpIp6Chain::routed     such a Routing header appeared
+ * @var IdemIpIp6Chain::refused    such an option appeared, so the packet is discarded
  * @var IdemIpIp6Chain::ok         every stepped header lay wholly inside the span, and no Next
  *                                 Header of zero appeared below the IPv6 header
  */
@@ -407,10 +454,12 @@ typedef struct
     size_t offset;
     size_t frag_hdr;
     size_t routing_hdr;
+    size_t opt_hdr;
     uint8_t next_hdr;
     uint16_t hops;
     idemip_bool fragmented;
     idemip_bool routed;
+    idemip_bool refused;
     idemip_bool ok;
 } IdemIpIp6Chain;
 
@@ -438,10 +487,12 @@ IDEMIP_INLINE IdemIpIp6Chain idemip_ip6_walk(const uint8_t *p, size_t len)
     c.offset = IDEMIP_IP6_OFF_PAYLOAD;
     c.frag_hdr = 0u;
     c.routing_hdr = 0u;
+    c.opt_hdr = 0u;
     c.next_hdr = IDEMIP_IP6_NH_NONE;
     c.hops = 0u;
     c.fragmented = IDEMIP_FALSE;
     c.routed = IDEMIP_FALSE;
+    c.refused = IDEMIP_FALSE;
     c.ok = IDEMIP_FALSE;
 
     if (len < IDEMIP_IPV6_HDR_LEN)
@@ -478,6 +529,21 @@ IDEMIP_INLINE IdemIpIp6Chain idemip_ip6_walk(const uint8_t *p, size_t len)
         {
             c.routed = IDEMIP_TRUE;
             c.routing_hdr = c.offset;
+        }
+        // sec 4.2, over the two headers that carry options. An option that runs past its header is a
+        // header this walk could not step, and one the node refuses stops the packet here.
+        if ((c.next_hdr == IDEMIP_IP6_NH_HOPOPT || c.next_hdr == IDEMIP_IP6_NH_DSTOPTS) && !c.refused)
+        {
+            size_t bad = 0u;
+            if (idemip_ip6_opts_refused(p, c.offset + 2u, c.offset + step, &bad))
+            {
+                if (bad == 0u)
+                {
+                    return c; // malformed, and c.ok is still false
+                }
+                c.refused = IDEMIP_TRUE;
+                c.opt_hdr = bad;
+            }
         }
         c.next_hdr = idemip_ip6_ext_next_hdr(p + c.offset);
         c.offset += step;
