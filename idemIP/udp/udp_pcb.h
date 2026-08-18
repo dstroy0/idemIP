@@ -47,6 +47,16 @@ IDEMIP_BEGIN_DECLS
 #define IDEMIP_UDP_PCB_PORT_ANY 0u
 
 /**
+ * @brief The range a bind of IDEMIP_UDP_PCB_PORT_ANY settles inside.
+ *
+ * RFC 6335 sec 6: "the Dynamic Ports, also known as the Private or Ephemeral Ports, from 49152-65535
+ * (never assigned)". The two bounds span a power of two, so a candidate is the base ORed with the
+ * masked low bits of a running count.
+ */
+#define IDEMIP_UDP_PCB_PORT_FIRST 0xC000u
+#define IDEMIP_UDP_PCB_PORT_LAST 0xFFFFu
+
+/**
  * @brief What an open takes.
  *
  * @var UdpPcbOpenArgs::ip_version 4 for an RFC 791 sec 3.1 Version 4 binding, 6 for an RFC 8200
