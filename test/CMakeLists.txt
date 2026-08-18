@@ -63,6 +63,7 @@ set(IDEMIP_SUITE_CAP_test_tcp_isn  TCP)
 set(IDEMIP_SUITE_CAP_test_tcp_in   TCP)
 set(IDEMIP_SUITE_CAP_test_tcp_out  TCP)
 set(IDEMIP_SUITE_CAP_test_udp_pcb  UDP)
+set(IDEMIP_SUITE_CAP_test_udplite  UDP)
 # raw_pcb.h opens under IPV4 or IPV6, either one being an IP layer to bind a protocol number on. The
 # map holds one capability per suite, so this suite is tied to IPV4 and is skipped loudly in an
 # IPv6-only build even though the header would compile.
