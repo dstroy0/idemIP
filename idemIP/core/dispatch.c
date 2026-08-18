@@ -165,6 +165,78 @@ static void d_drop(uint8_t *restrict work, IdemIpDispatchDrop why, IdemIpStatsIf
     }
 }
 
+// RFC 2011 gives one counter per ICMP Type it names, so a well-formed message is counted by its Type
+// as well as by icmpInMsgs. A Type with no counter of its own - RFC 792's Information Request pair,
+// and every unassigned value - is counted only in icmpInMsgs. RFC 950's Address Mask pair is not a
+// type this library carries, RFC 1122 sec 3.2.2.9 leaving it optional, so those two counters have no
+// Type to reach them.
+#if IDEMIP_ENABLE_IPV4
+static void d_icmp4_type_bump(uint8_t *restrict work, uint8_t type)
+{
+    switch (type)
+    {
+    case IDEMIP_ICMP_ECHO_REPLY:
+        d_bump(work, IDEMIP_STAT_ICMP4_IN_ECHO_REPS);
+        return;
+    case IDEMIP_ICMP_DEST_UNREACHABLE:
+        d_bump(work, IDEMIP_STAT_ICMP4_IN_DEST_UNREACHS);
+        return;
+    case IDEMIP_ICMP_SOURCE_QUENCH:
+        d_bump(work, IDEMIP_STAT_ICMP4_IN_SRC_QUENCHS);
+        return;
+    case IDEMIP_ICMP_REDIRECT:
+        d_bump(work, IDEMIP_STAT_ICMP4_IN_REDIRECTS);
+        return;
+    case IDEMIP_ICMP_ECHO:
+        d_bump(work, IDEMIP_STAT_ICMP4_IN_ECHOS);
+        return;
+    case IDEMIP_ICMP_TIME_EXCEEDED:
+        d_bump(work, IDEMIP_STAT_ICMP4_IN_TIME_EXCDS);
+        return;
+    case IDEMIP_ICMP_PARAMETER_PROBLEM:
+        d_bump(work, IDEMIP_STAT_ICMP4_IN_PARM_PROBS);
+        return;
+    case IDEMIP_ICMP_TIMESTAMP:
+        d_bump(work, IDEMIP_STAT_ICMP4_IN_TIMESTAMPS);
+        return;
+    case IDEMIP_ICMP_TIMESTAMP_REPLY:
+        d_bump(work, IDEMIP_STAT_ICMP4_IN_TIMESTAMP_REPS);
+        return;
+    default:
+        return;
+    }
+}
+#endif
+
+#if IDEMIP_ENABLE_IPV6
+// The same table over RFC 4443's Types. It defines no Source Quench, Timestamp or Address Mask, so
+// those counters have no ICMPv6 Type to reach them, and Packet Too Big and the RFC 4861 Neighbor
+// Discovery messages have no counter of their own and are counted only in icmpInMsgs.
+static void d_icmp6_type_bump(uint8_t *restrict work, uint8_t type)
+{
+    switch (type)
+    {
+    case IDEMIP_ICMP6_DEST_UNREACHABLE:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_DEST_UNREACHS);
+        return;
+    case IDEMIP_ICMP6_TIME_EXCEEDED:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_TIME_EXCDS);
+        return;
+    case IDEMIP_ICMP6_PARAMETER_PROBLEM:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_PARM_PROBS);
+        return;
+    case IDEMIP_ICMP6_ECHO_REQUEST:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_ECHOS);
+        return;
+    case IDEMIP_ICMP6_ECHO_REPLY:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_ECHO_REPS);
+        return;
+    default:
+        return;
+    }
+}
+#endif
+
 // RFC 1213 sec 6.4 counts a delivery and not an arrival: ifInUcastPkts is "the number of
 // subnetwork-unicast packets delivered to a higher-layer protocol", ifInNUcastPkts the non-unicast
 // ones. The subnetwork address decides which, so the Ethernet Destination Address is read: the low
@@ -800,6 +872,10 @@ static void d_icmp4(uint8_t *restrict work, const uint8_t *ip4, size_t total_len
     const DispatchInputArgs *a = &io->input_args;
 
     io->pcb_kind = IDEMIP_DISPATCH_PCB_ICMP;
+    // RFC 2011 icmpInMsgs: "The total number of ICMP messages which the entity received. Note that
+    // this counter includes all those counted by icmpInErrors." Counted before the message is read,
+    // so one that turns out malformed is still counted here as well as in icmpInErrors.
+    d_bump(work, IDEMIP_STAT_ICMP4_IN_MSGS);
     if (ctx->icmp_in == NULL)
     {
         d_drop(work, IDEMIP_DISPATCH_DROP_UNBOUND, IDEMIP_STAT_IF_COUNT);
@@ -826,10 +902,32 @@ static void d_icmp4(uint8_t *restrict work, const uint8_t *ip4, size_t total_len
     IcmpIn.recv(ctx->icmp_in);
     if (ic->status != IDEMIP_OK)
     {
+        // icmpInErrors: "The number of ICMP messages which the entity received but determined as
+        // having ICMP-specific errors (bad ICMP checksums, bad length, etc.)."
+        d_bump(work, IDEMIP_STAT_ICMP4_IN_ERRORS);
         d_drop(work, IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_STAT_IF_IN_DISCARDS);
         d_bump(work, IDEMIP_STAT_IP4_IN_DISCARDS);
         return;
     }
+    // The unit's own decision, which was set at eight sites in icmp_in.c and read at none. RFC 1122
+    // sec 3.2.2: "If an ICMP message of unknown type is received, it MUST be silently discarded",
+    // which icmp_in.h also raises for a message whose checksum does not hold, one shorter than its
+    // type requires, and the types sec 3.2.2.7 and sec 3.2.2.8 leave unimplemented.
+    if ((ic->act & IDEMIP_ICMP_IN_ACT_DISCARD) != 0u)
+    {
+        if (!ic->cksum_ok)
+        {
+            d_bump(work, IDEMIP_STAT_ICMP4_IN_ERRORS);
+            d_drop(work, IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_STAT_IF_IN_ERRORS);
+        }
+        else
+        {
+            d_drop(work, IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_STAT_IF_IN_DISCARDS);
+        }
+        d_bump(work, IDEMIP_STAT_IP4_IN_DISCARDS);
+        return;
+    }
+    d_icmp4_type_bump(work, idemip_icmp_type(ip4 + idemip_ip4_hdr_len(ip4)));
     if ((ic->act & IDEMIP_ICMP_IN_ACT_REPLY) != 0u)
     {
         io->out_len = ic->out_len;
@@ -1238,6 +1336,7 @@ static void d_icmp6(uint8_t *restrict work, const uint8_t *ip6, size_t total_len
     const DispatchInputArgs *a = &io->input_args;
 
     io->pcb_kind = IDEMIP_DISPATCH_PCB_ICMP;
+    d_bump(work, IDEMIP_STAT_ICMP6_IN_MSGS);
     if (ctx->icmp6_in == NULL)
     {
         d_drop(work, IDEMIP_DISPATCH_DROP_UNBOUND, IDEMIP_STAT_IF_COUNT);
@@ -1274,10 +1373,12 @@ static void d_icmp6(uint8_t *restrict work, const uint8_t *ip6, size_t total_len
     Icmp6In.recv(ctx->icmp6_in);
     if (ic->status != IDEMIP_OK)
     {
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_ERRORS);
         d_drop(work, IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_STAT_IF_IN_DISCARDS);
         d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
         return;
     }
+    d_icmp6_type_bump(work, idemip_icmp6_type(ip6 + io->payload_off - io->ip_off));
     if ((ic->act & IDEMIP_ICMP6_IN_ACT_REPLY) != 0u)
     {
         io->out_len = ic->out_len;

@@ -1012,18 +1012,94 @@ void test_a_udp_length_past_the_ip_payload_is_an_error(void)
 
 #endif // IDEMIP_ENABLE_UDP
 
-// A delivery to a link broadcast is non-unicast, which is the other half of the RFC 1213 pair.
+// A delivery to a link broadcast is non-unicast, which is the other half of the RFC 1213 pair. An
+// Echo Reply carries it rather than an Echo Request: RFC 1122 sec 3.2.2.6 lets a request "destined to
+// an IP broadcast or IP multicast address" be silently discarded, and IDEMIP_ICMP_ECHO_BROADCAST
+// takes that option, so a request would be dropped before any delivery is counted.
 void test_a_broadcast_delivery_counts_non_unicast(void)
 {
     size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     size_t ip = off;
     off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, 0xFFFFFFFFu, IDEMIP_ICMP_ECHO_HDR_LEN + 4u, 0u);
     size_t end = build_icmp_echo(g_frame, off, 4u);
+    g_frame[off + IDEMIP_ICMP_OFF_TYPE] = IDEMIP_ICMP_ECHO_REPLY;
+    idemip_wr16(g_frame + off + 2u, 0u);
+    idemip_wr16(g_frame + off + 2u, idemip_cksum(g_frame + off, IDEMIP_ICMP_ECHO_HDR_LEN + 4u));
     idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(end - ip));
     idemip_ip4_recksum(g_frame + ip);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_NUCAST_PKTS));
     TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_UCAST_PKTS));
+}
+
+// RFC 2011 icmpInMsgs: "The total number of ICMP messages which the entity received. Note that this
+// counter includes all those counted by icmpInErrors." Each Type it names carries its own counter as
+// well, so an Echo is both an icmpInMsgs and an icmpInEchos. Nothing under idemIP/ bumped one of the
+// fifty-three ICMP counters, while the IP, interface, TCP and UDP receive paths all counted.
+void test_an_icmp_echo_counts_itself_by_message_and_by_type(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, LOCAL_IP4, IDEMIP_ICMP_ECHO_HDR_LEN + 4u, 0u);
+    size_t end = build_icmp_echo(g_frame, off, 4u);
+    idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(end - ip));
+    idemip_ip4_recksum(g_frame + ip);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP4_IN_MSGS), "icmpInMsgs counted nothing");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP4_IN_ECHOS), "icmpInEchos counted nothing");
+    TEST_ASSERT_EQUAL_UINT32(0u, ctr(IDEMIP_STAT_ICMP4_IN_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP4_IN_ECHO_REPS),
+                                     "an Echo was counted as an Echo Reply");
+}
+
+// icmpInErrors: "The number of ICMP messages which the entity received but determined as having
+// ICMP-specific errors (bad ICMP checksums, bad length, etc.)", and icmpInMsgs counts it too.
+void test_an_icmp_message_with_a_bad_checksum_counts_as_an_error(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, LOCAL_IP4, IDEMIP_ICMP_ECHO_HDR_LEN + 4u, 0u);
+    size_t end = build_icmp_echo(g_frame, off, 4u);
+    idemip_wr16(g_frame + off + 2u, (uint16_t)(idemip_rd16(g_frame + off + 2u) ^ 0x5A5Au));
+    idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(end - ip));
+    idemip_ip4_recksum(g_frame + ip);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP4_IN_MSGS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP4_IN_ERRORS), "icmpInErrors counted nothing");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP4_IN_ECHOS),
+                                     "a message with a bad checksum was counted by its Type");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a message whose checksum does not hold was not dropped");
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER,
+                              "a message whose checksum does not hold was delivered");
+}
+
+// RFC 1122 sec 3.2.2: "If an ICMP message of unknown type is received, it MUST be silently
+// discarded." icmp_in raises IDEMIP_ICMP_IN_ACT_DISCARD for that and for seven other conditions -
+// a checksum that does not hold, a message shorter than its own type requires, and the types sec
+// 3.2.2.7 and sec 3.2.2.8 leave unimplemented - and dispatch, its only caller, named the flag
+// nowhere. Every one of them was delivered.
+void test_an_icmp_message_of_unknown_type_is_discarded(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, LOCAL_IP4, IDEMIP_ICMP_ECHO_HDR_LEN + 4u, 0u);
+    size_t end = build_icmp_echo(g_frame, off, 4u);
+    g_frame[off + IDEMIP_ICMP_OFF_TYPE] = 200u; // no type RFC 792 assigns
+    idemip_wr16(g_frame + off + 2u, 0u);
+    idemip_wr16(g_frame + off + 2u, idemip_cksum(g_frame + off, IDEMIP_ICMP_ECHO_HDR_LEN + 4u));
+    idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(end - ip));
+    idemip_ip4_recksum(g_frame + ip);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER,
+                              "a message of unknown type was delivered");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP4_IN_MSGS),
+                                     "icmpInMsgs counts every message received, this one included");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP4_IN_ERRORS),
+                                     "an unknown type is not an ICMP-specific error");
 }
 
 // A protocol nothing here claims and no raw binding takes: ipInUnknownProtos.
