@@ -75,6 +75,19 @@ IDEMIP_BEGIN_DECLS
  */
 #define IDEMIP_DHCP4_MSG_MIN 576u
 
+/**
+ * @brief Octets a built message spans.
+ *
+ * RFC 1542 sec 2.1 has every BOOTP entity check that "The IP Total Length and UDP Length must be
+ * large enough to contain the minimal BOOTP header of 300 octets (in the UDP data field)", and
+ * "BOOTP messages not meeting these consistency checks MUST be silently discarded". Octets past the
+ * last option are RFC 2132 sec 3.1 pad options, which sec 3.2 asks for after the end option.
+ */
+#define IDEMIP_DHCP4_MSG_BOOTP_MIN 300u
+
+/** @brief RFC 2131 sec 3.3: "The time value of 0xffffffff is reserved to represent 'infinity'." */
+#define IDEMIP_DHCP4_TIME_INFINITE 0xFFFFFFFFu
+
 // ---------------------------------------------------------------------------
 // Options (RFC 2132)
 // ---------------------------------------------------------------------------
@@ -95,6 +108,83 @@ IDEMIP_BEGIN_DECLS
 #define IDEMIP_DHCP4_OPT_T2 59u           ///< sec 9.12, length 4, seconds
 #define IDEMIP_DHCP4_OPT_CLIENT_ID 61u    ///< sec 9.14, a type octet then the identifier
 #define IDEMIP_DHCP4_OPT_END 255u         ///< sec 3.2, length 1
+
+// ---------------------------------------------------------------------------
+// The client's own timers, as RFC 2131 states them
+// ---------------------------------------------------------------------------
+// Every one is a millisecond, so a deadline is the clock plus a constant and no conversion divide
+// exists (PLAN sec 5.2). Each is #ifndef-guarded, the way idemip_config.h guards a count.
+
+/**
+ * @brief The sec 4.4.1 startup delay: "The client SHOULD wait a random time between one and ten
+ * seconds to desynchronize the use of DHCP at startup."
+ */
+#ifndef IDEMIP_DHCP4_START_DELAY_MIN_MS
+#define IDEMIP_DHCP4_START_DELAY_MIN_MS 1000u
+#endif
+#ifndef IDEMIP_DHCP4_START_DELAY_MAX_MS
+#define IDEMIP_DHCP4_START_DELAY_MAX_MS 10000u
+#endif
+
+/**
+ * @brief The sec 4.1 backoff: "the delay before the first retransmission SHOULD be 4 seconds ... The
+ * retransmission delay SHOULD be doubled with subsequent retransmissions up to a maximum of 64
+ * seconds", each "randomized by the value of a uniform random number chosen from the range -1 to +1".
+ */
+#ifndef IDEMIP_DHCP4_RETRY_BASE_MS
+#define IDEMIP_DHCP4_RETRY_BASE_MS 4000u
+#endif
+#ifndef IDEMIP_DHCP4_RETRY_MAX_MS
+#define IDEMIP_DHCP4_RETRY_MAX_MS 64000u
+#endif
+#ifndef IDEMIP_DHCP4_JITTER_MS
+#define IDEMIP_DHCP4_JITTER_MS 1000u
+#endif
+
+/**
+ * @brief The sec 4.4.5 retransmission floor in RENEWING and REBINDING: the client waits half the
+ * remaining time, "down to a minimum of 60 seconds, before retransmitting the DHCPREQUEST message".
+ */
+#ifndef IDEMIP_DHCP4_RENEW_MIN_MS
+#define IDEMIP_DHCP4_RENEW_MIN_MS 60000u
+#endif
+
+/**
+ * @brief The sec 3.1 wait after a DHCPDECLINE: the client "SHOULD wait a minimum of ten seconds
+ * before restarting the configuration process to avoid excessive network traffic in case of looping".
+ */
+#ifndef IDEMIP_DHCP4_DECLINE_WAIT_MS
+#define IDEMIP_DHCP4_DECLINE_WAIT_MS 10000u
+#endif
+
+/**
+ * @brief Transmissions of one DHCPREQUEST before the machine reverts to INIT.
+ *
+ * sec 3.1: a client "might retransmit the DHCPREQUEST message four times, for a total delay of 60
+ * seconds, before restarting the initialization procedure", and "If the client receives neither a
+ * DHCPACK or a DHCPNAK message after employing the retransmission algorithm, the client reverts to
+ * INIT state". sec 3.2 point 3 puts the same algorithm over a remembered address.
+ */
+#ifndef IDEMIP_DHCP4_REQUEST_TRIES
+#define IDEMIP_DHCP4_REQUEST_TRIES 4u
+#endif
+
+/** @brief sec 4.4.3: a DHCPINFORM gives up after "60 seconds or 4 tries". */
+#ifndef IDEMIP_DHCP4_INFORM_TRIES
+#define IDEMIP_DHCP4_INFORM_TRIES 4u
+#endif
+
+/**
+ * @brief The furthest millisecond a deadline is held at.
+ *
+ * A deadline is compared against a 32-bit millisecond clock, which is unambiguous over half its
+ * range, so a lease time past this is held here. sec 4.4.5: "A client MAY choose to renew or extend
+ * its lease prior to T1."
+ */
+#define IDEMIP_DHCP4_DEADLINE_MAX_MS 0x7FFFFFFFu
+
+/** @brief Seconds that fit in @ref IDEMIP_DHCP4_DEADLINE_MAX_MS milliseconds. */
+#define IDEMIP_DHCP4_DEADLINE_MAX_S 2147483u
 
 /** @brief The option 53 values, RFC 2132 sec 9.6. */
 typedef enum IDEMIP_ENUM_PACKED
@@ -219,7 +309,8 @@ typedef struct
  * @var Dhcp4Io::state       the sec 4.4 state the machine is in
  * @var Dhcp4Io::msg_type    the option 53 value input read, or build wrote, 0 when none
  * @var Dhcp4Io::xid         the 'xid' replies are matched against
- * @var Dhcp4Io::offered_ip  'yiaddr' from the offer or the ack
+ * @var Dhcp4Io::offered_ip  'yiaddr' from the offer or the ack, and, before start or inform runs, the
+ *                           known address of sec 4.4.2 or the externally configured one of sec 4.4.3
  * @var Dhcp4Io::subnet_mask option 1
  * @var Dhcp4Io::router      option 3, the first address
  * @var Dhcp4Io::server_id   option 54, the server a unicast request goes to
@@ -280,7 +371,12 @@ typedef struct
  *   IDEMIP_DHCP4_IO(work)->bind_args.cfg = &my_cfg;
  *   Dhcp4.bind(work);
  *   IDEMIP_DHCP4_IO(work)->start_args.xid = my_random_word;
+ *   IDEMIP_DHCP4_IO(work)->start_args.now_ms = clock_ms;
+ *   IDEMIP_DHCP4_IO(work)->start_args.rand = my_random_word;
  *   Dhcp4.start(work);
+ *   // the sec 4.4.1 one-to-ten-second delay is a deadline, so the first message is owed by a tick
+ *   IDEMIP_DHCP4_IO(work)->tick_args.now_ms = clock_ms;
+ *   Dhcp4.tick(work);
  *   Dhcp4.build(work);
  *   if (IDEMIP_DHCP4_IO(work)->status == IDEMIP_OK) { send IDEMIP_DHCP4_IO(work)->len octets }
  *
@@ -297,15 +393,21 @@ typedef struct
  *
  * @var Dhcp4Ns::clear   zero every byte of the borrow, so it runs before the operands are set
  * @var Dhcp4Ns::bind    take the configuration, after checking every member is present
- * @var Dhcp4Ns::start   leave INIT and form a DHCPDISCOVER (sec 4.4.1)
+ * @var Dhcp4Ns::start   leave INIT for SELECTING with a DHCPDISCOVER owed after the sec 4.4.1
+ *                       one-to-ten-second delay, or, when @ref Dhcp4Io::offered_ip already holds a
+ *                       known address, for INIT-REBOOT with a DHCPREQUEST owed (sec 4.4.2). BUSY
+ *                       while the sec 3.1 ten-second wait after a DHCPDECLINE has not passed.
  * @var Dhcp4Ns::stop    halt the machine and return to INIT (sec 4.4.5)
- * @var Dhcp4Ns::input   take one received message, matched on 'xid' (sec 4.1)
+ * @var Dhcp4Ns::input   take one received message, matched on 'xid' (sec 4.1). ERR for a message
+ *                       this state discards, since the same bytes are discarded again.
  * @var Dhcp4Ns::build   write the message the state owes into the caller's buffer. BUSY when
  *                       nothing is owed.
- * @var Dhcp4Ns::tick    run the retransmission, T1, T2 and lease deadlines (sec 4.1, sec 4.4.5)
+ * @var Dhcp4Ns::tick    run the retransmission, T1, T2 and lease deadlines (sec 4.1, sec 4.4.5).
+ *                       BUSY when no deadline has passed.
  * @var Dhcp4Ns::release give the lease up (sec 4.4.6)
- * @var Dhcp4Ns::decline report the offered address already in use (sec 4.4.1)
- * @var Dhcp4Ns::inform  ask for parameters for an externally configured address (sec 4.4.3)
+ * @var Dhcp4Ns::decline report the acked address already in use (sec 4.4.1, sec 3.1 point 5)
+ * @var Dhcp4Ns::inform  ask for parameters for the externally configured address in @ref
+ *                       Dhcp4Io::offered_ip, with the 'xid' of @ref Dhcp4StartArgs::xid (sec 4.4.3)
  */
 typedef struct
 {
@@ -335,6 +437,37 @@ static_assert(IDEMIP_DHCP4_MSG_OFF_COOKIE + 4u == IDEMIP_DHCP4_MSG_OFF_OPTIONS,
               "the magic cookie is four octets and the options follow it (RFC 2131 sec 4.1)");
 static_assert(IDEMIP_DHCP4_MSG_MIN > IDEMIP_DHCP4_FIXED_LEN,
               "a 576-octet message must hold the fixed part and options (RFC 2131 sec 2)");
+
+// RFC 1542 sec 2.1's 300-octet minimal BOOTP header leaves room for options past the fixed part, and
+// a client must be prepared to receive more than it sends (RFC 2131 sec 2).
+static_assert(IDEMIP_DHCP4_MSG_BOOTP_MIN > IDEMIP_DHCP4_FIXED_LEN,
+              "the 300-octet minimal BOOTP header holds the fixed part and options (RFC 1542 sec 2.1)");
+static_assert(IDEMIP_DHCP4_MSG_BOOTP_MIN <= IDEMIP_DHCP4_MSG_MIN,
+              "a built message fits what a client must be prepared to receive (RFC 2131 sec 2)");
+
+// RFC 2131 sec 4.1 doubles 4 seconds to a maximum of 64, which is four doublings, so the backoff is a
+// shift and no multiply or divide appears on the retransmission path.
+static_assert((IDEMIP_DHCP4_RETRY_BASE_MS << 4u) == IDEMIP_DHCP4_RETRY_MAX_MS,
+              "RFC 2131 sec 4.1 doubles the 4-second delay to 64 seconds in four steps");
+
+// sec 4.4.1 draws the startup delay over a one-to-ten-second span, and sec 4.1 the jitter over two
+// seconds. Both spans are drawn by masking a word to the power of two above them (PLAN sec 3.4).
+static_assert(IDEMIP_DHCP4_START_DELAY_MAX_MS > IDEMIP_DHCP4_START_DELAY_MIN_MS,
+              "RFC 2131 sec 4.4.1 puts the startup delay between one and ten seconds");
+static_assert((IDEMIP_DHCP4_START_DELAY_MAX_MS - IDEMIP_DHCP4_START_DELAY_MIN_MS) <= 0x3FFFu,
+              "the sec 4.4.1 startup span is drawn from 14 bits of one word");
+static_assert((IDEMIP_DHCP4_JITTER_MS << 1u) <= 0x7FFu, "the sec 4.1 jitter span is drawn from 11 bits of one word");
+static_assert(IDEMIP_DHCP4_RETRY_BASE_MS > IDEMIP_DHCP4_JITTER_MS,
+              "the sec 4.1 jitter never drives a delay below zero");
+static_assert(IDEMIP_DHCP4_RENEW_MIN_MS > IDEMIP_DHCP4_JITTER_MS,
+              "the sec 4.4.5 minimum retransmission delay stays above the jitter");
+
+// A deadline is the clock plus a span, so the span has to fit the half of the 32-bit millisecond
+// clock a wrap-safe compare covers (sec 3.3 holds every time value in seconds).
+static_assert(IDEMIP_DHCP4_DEADLINE_MAX_S * 1000u <= IDEMIP_DHCP4_DEADLINE_MAX_MS,
+              "the deadline horizon in seconds fits the horizon in milliseconds");
+static_assert(IDEMIP_DHCP4_DEADLINE_MAX_S < IDEMIP_DHCP4_TIME_INFINITE,
+              "the deadline horizon is short of sec 3.3's infinity");
 
 IDEMIP_END_DECLS
 
