@@ -1378,6 +1378,23 @@ static void d_icmp6(uint8_t *restrict work, const uint8_t *ip6, size_t total_len
         d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
         return;
     }
+    // The same decision on the RFC 4443 side. sec 2.4 (b): "If an ICMPv6 informational message of
+    // unknown type is received, it MUST be silently discarded", which icmp6_in also raises for a
+    // message shorter than its own type requires and for one whose sec 2.3 checksum does not hold.
+    if ((ic->act & IDEMIP_ICMP6_IN_ACT_DISCARD) != 0u)
+    {
+        if (!ic->cksum_ok)
+        {
+            d_bump(work, IDEMIP_STAT_ICMP6_IN_ERRORS);
+            d_drop(work, IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_STAT_IF_IN_ERRORS);
+        }
+        else
+        {
+            d_drop(work, IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_STAT_IF_IN_DISCARDS);
+        }
+        d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
+        return;
+    }
     d_icmp6_type_bump(work, idemip_icmp6_type(ip6 + io->payload_off - io->ip_off));
     if ((ic->act & IDEMIP_ICMP6_IN_ACT_REPLY) != 0u)
     {

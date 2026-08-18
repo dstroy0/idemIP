@@ -1443,6 +1443,32 @@ void test_an_unrecognized_option_that_says_skip_is_skipped(void)
     TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
 }
 
+// RFC 4443 sec 2.4 (b): "If an ICMPv6 informational message of unknown type is received, it MUST be
+// silently discarded." icmp6_in raises IDEMIP_ICMP6_IN_ACT_DISCARD for that, for a message shorter
+// than its own type requires, and for one whose sec 2.3 checksum does not hold, and dispatch named
+// the flag nowhere.
+void test_an_icmpv6_message_of_unknown_type_is_discarded(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_ICMPV6, g_remote_ip6, g_local_ip6, IDEMIP_ICMP6_ECHO_HDR_LEN);
+    g_frame[off + IDEMIP_ICMP6_OFF_TYPE] = 200u; // informational, and no type RFC 4443 assigns
+    g_frame[off + IDEMIP_ICMP6_OFF_CODE] = 0u;
+    idemip_wr16(g_frame + off + IDEMIP_ICMP6_OFF_CKSUM, 0u);
+    idemip_wr16(g_frame + off + 4u, 0u);
+    idemip_wr16(g_frame + off + 6u, 0u);
+    uint32_t sum = idemip_ip6_pseudo_accum(0u, g_remote_ip6, g_local_ip6, (uint32_t)IDEMIP_ICMP6_ECHO_HDR_LEN,
+                                           IDEMIP_IP6_NH_ICMPV6);
+    idemip_wr16(g_frame + off + IDEMIP_ICMP6_OFF_CKSUM,
+                idemip_cksum_final(idemip_cksum_accum(sum, g_frame + off, IDEMIP_ICMP6_ECHO_HDR_LEN)));
+    input(work_a, off + IDEMIP_ICMP6_ECHO_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER,
+                              "an informational message of unknown type was delivered");
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_MSGS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS),
+                                     "an unknown type is not an ICMP-specific error");
+}
+
 // RFC 8200 sec 8.1: "IPv6 receivers must discard UDP packets containing a zero checksum". The
 // IPv4 exemption does not carry over, because an IPv6 header carries no checksum of its own, so a
 // zero here leaves the whole datagram unprotected.
