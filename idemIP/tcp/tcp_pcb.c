@@ -170,6 +170,330 @@ static_assert(IDEMIP_TCP_PCBS < IDEMIP_TCP_PCB_NONE && IDEMIP_TCP_LISTEN_PCBS < 
 #define TCP_PCB_OOS_AT(w, i)                                                                                           \
     ((TcpPcbOosEntry *)(void *)((w) + IDEMIP_TCP_PCB_OFF_OOSEQ + ((size_t)(i) << IDEMIP_TCP_OOSEQ_ENTRY_SHIFT)))
 
+// --- the sequence space ----------------------------------------------------
+
+// RFC 9293 sec 3.4: "all arithmetic dealing with sequence numbers must be performed modulo 2^32.
+// This unsigned arithmetic preserves the relationship of sequence numbers as they cycle from
+// 2^32 - 1 to 0 again." A sequence number's distance forward from the left window edge, which sec
+// 3.3.1 Figure 4 names RCV.NXT, is that subtraction, and those distances order the whole 2^32 space
+// from that edge with no wrap ambiguity.
+static uint32_t tcp_pcb_seq_from(uint32_t seq, uint32_t edge)
+{
+    return seq - edge;
+}
+
+// --- the address pair ------------------------------------------------------
+
+// RFC 791 sec 3.1 addresses are four octets, RFC 8200 sec 3 addresses are sixteen. Any other version
+// number names neither, and reports zero so the caller refuses the call.
+static uint8_t tcp_pcb_addr_bytes(uint8_t ip_version)
+{
+    if (ip_version == 4u)
+    {
+        return 4u;
+    }
+    if (ip_version == 6u)
+    {
+        return 16u;
+    }
+    return 0u;
+}
+
+static idemip_bool tcp_pcb_addr_eq(const uint8_t *a, const uint8_t *b, uint8_t n)
+{
+    return (memcmp(a, b, (size_t)n) == 0) ? IDEMIP_TRUE : IDEMIP_FALSE;
+}
+
+// RFC 9293 sec 3.9.1.1: a passive OPEN whose "local IP address" parameter is unspecified "will await
+// an incoming connection request to any local IP address". An all-zero address is that parameter
+// left unspecified.
+static idemip_bool tcp_pcb_addr_unspecified(const uint8_t *a, uint8_t n)
+{
+    for (uint8_t i = 0u; i < n; i++)
+    {
+        if (a[i] != 0u)
+        {
+            return IDEMIP_FALSE;
+        }
+    }
+    return IDEMIP_TRUE;
+}
+
+// The address operand is IDEMIP_TCP_PCB_ADDR_BYTES wide in the caller's storage and the entry holds
+// that many, so the octets past the version's width are zeroed rather than left as they were found.
+static void tcp_pcb_addr_set(uint8_t *dst, const uint8_t *src, uint8_t n)
+{
+    memcpy(dst, src, (size_t)n);
+    memset(dst + n, 0, (size_t)IDEMIP_TCP_PCB_ADDR_BYTES - n);
+}
+
+// --- the RFC 9293 sec 3.3.2 state machine ----------------------------------
+
+#define TCP_PCB_S(x) (1u << (unsigned)(IDEMIP_TCP_STATE_##x))
+
+/*
+ * The transitions RFC 9293 permits out of one state, as a bit per destination. The set is the union
+ * of every transition the document states, and each edge below names the section that states it.
+ * Figure 5 is a summary and "must not be taken as the total specification", so sec 3.5.2, sec 3.5.3
+ * and sec 3.10 carry edges the figure omits.
+ *
+ * CLOSED       sec 3.10.1 passive OPEN "enter the LISTEN state", active OPEN "enter SYN-SENT state";
+ *              sec 3.10.7.2 "The connection state should be changed to SYN-RECEIVED", which is where
+ *              a connection accepted through a listener enters the machine
+ * LISTEN       sec 3.10.1 OPEN active from LISTEN "Enter SYN-SENT state"; sec 3.10.7.2 SYN-RECEIVED;
+ *              sec 3.10.4 and sec 3.10.5 "Delete TCB, enter CLOSED state"
+ * SYN-SENT     sec 3.10.7.3 fourth "change the connection state to ESTABLISHED" and "Otherwise,
+ *              enter SYN-RECEIVED"; sec 3.10.7.3 second RST "enter CLOSED state"; sec 3.5.2 "The
+ *              side of a connection issuing a reset should enter the TIME-WAIT state"
+ * SYN-RECEIVED sec 3.10.7.4 second and fourth "return this connection to LISTEN state";
+ *              sec 3.10.7.4 fifth "enter ESTABLISHED state"; sec 3.10.4 CLOSE "enter FIN-WAIT-1
+ *              state"; sec 3.10.7.4 eighth FIN "Enter the CLOSE-WAIT state"; sec 3.10.5 ABORT
+ *              CLOSED; sec 3.5.2 TIME-WAIT
+ * ESTABLISHED  Figure 5 CLOSE "snd FIN" FIN-WAIT-1 and "rcv FIN" CLOSE-WAIT; sec 3.10.5 CLOSED;
+ *              sec 3.5.2 TIME-WAIT
+ * FIN-WAIT-1   Figure 5 "rcv ACK of FIN" FIN-WAIT-2 and "rcv FIN" CLOSING; sec 3.10.7.4 eighth "If
+ *              our FIN has been ACKed (perhaps in this segment), then enter TIME-WAIT", which is
+ *              Figure 5 note 2; sec 3.10.5 CLOSED
+ * FIN-WAIT-2   Figure 5 "rcv FIN" TIME-WAIT; sec 3.10.5 CLOSED
+ * CLOSE-WAIT   Figure 5 CLOSE "snd FIN" LAST-ACK; sec 3.10.5 CLOSED; sec 3.5.2 TIME-WAIT
+ * CLOSING      Figure 5 "rcv ACK of FIN" TIME-WAIT; sec 3.10.5 CLOSED
+ * LAST-ACK     Figure 5 "rcv ACK of FIN" CLOSED; sec 3.5.2 TIME-WAIT
+ * TIME-WAIT    Figure 5 "Timeout=2MSL delete TCB" CLOSED, the one way out
+ *
+ * LISTEN is a destination only from CLOSED and from SYN-RECEIVED: sec 3.5.3 narrows Figure 5 note 3
+ * to "If the receiver was in SYN-RECEIVED state and had previously been in the LISTEN state, then
+ * the receiver returns to the LISTEN state; otherwise, the receiver aborts the connection and goes
+ * to the CLOSED state."
+ */
+static uint16_t tcp_pcb_transitions(IdemIpTcpState from)
+{
+    switch (from)
+    {
+    case IDEMIP_TCP_STATE_CLOSED:
+        return (uint16_t)(TCP_PCB_S(CLOSED) | TCP_PCB_S(LISTEN) | TCP_PCB_S(SYN_SENT) | TCP_PCB_S(SYN_RECEIVED));
+    case IDEMIP_TCP_STATE_LISTEN:
+        return (uint16_t)(TCP_PCB_S(LISTEN) | TCP_PCB_S(CLOSED) | TCP_PCB_S(SYN_SENT) | TCP_PCB_S(SYN_RECEIVED));
+    case IDEMIP_TCP_STATE_SYN_SENT:
+        return (uint16_t)(TCP_PCB_S(SYN_SENT) | TCP_PCB_S(CLOSED) | TCP_PCB_S(SYN_RECEIVED) | TCP_PCB_S(ESTABLISHED) |
+                          TCP_PCB_S(TIME_WAIT));
+    case IDEMIP_TCP_STATE_SYN_RECEIVED:
+        return (uint16_t)(TCP_PCB_S(SYN_RECEIVED) | TCP_PCB_S(CLOSED) | TCP_PCB_S(LISTEN) | TCP_PCB_S(ESTABLISHED) |
+                          TCP_PCB_S(FIN_WAIT_1) | TCP_PCB_S(CLOSE_WAIT) | TCP_PCB_S(TIME_WAIT));
+    case IDEMIP_TCP_STATE_ESTABLISHED:
+        return (uint16_t)(TCP_PCB_S(ESTABLISHED) | TCP_PCB_S(CLOSED) | TCP_PCB_S(FIN_WAIT_1) | TCP_PCB_S(CLOSE_WAIT) |
+                          TCP_PCB_S(TIME_WAIT));
+    case IDEMIP_TCP_STATE_FIN_WAIT_1:
+        return (uint16_t)(TCP_PCB_S(FIN_WAIT_1) | TCP_PCB_S(CLOSED) | TCP_PCB_S(FIN_WAIT_2) | TCP_PCB_S(CLOSING) |
+                          TCP_PCB_S(TIME_WAIT));
+    case IDEMIP_TCP_STATE_FIN_WAIT_2:
+        return (uint16_t)(TCP_PCB_S(FIN_WAIT_2) | TCP_PCB_S(CLOSED) | TCP_PCB_S(TIME_WAIT));
+    case IDEMIP_TCP_STATE_CLOSE_WAIT:
+        return (uint16_t)(TCP_PCB_S(CLOSE_WAIT) | TCP_PCB_S(CLOSED) | TCP_PCB_S(LAST_ACK) | TCP_PCB_S(TIME_WAIT));
+    case IDEMIP_TCP_STATE_CLOSING:
+        return (uint16_t)(TCP_PCB_S(CLOSING) | TCP_PCB_S(CLOSED) | TCP_PCB_S(TIME_WAIT));
+    case IDEMIP_TCP_STATE_LAST_ACK:
+        return (uint16_t)(TCP_PCB_S(LAST_ACK) | TCP_PCB_S(CLOSED) | TCP_PCB_S(TIME_WAIT));
+    case IDEMIP_TCP_STATE_TIME_WAIT:
+        return (uint16_t)(TCP_PCB_S(TIME_WAIT) | TCP_PCB_S(CLOSED));
+    default:
+        return 0u;
+    }
+}
+
+static idemip_bool tcp_pcb_transition_ok(IdemIpTcpState from, IdemIpTcpState to)
+{
+    if (from > IDEMIP_TCP_STATE_TIME_WAIT || to > IDEMIP_TCP_STATE_TIME_WAIT)
+    {
+        return IDEMIP_FALSE;
+    }
+    return ((tcp_pcb_transitions(from) >> (unsigned)to) & 1u) != 0u ? IDEMIP_TRUE : IDEMIP_FALSE;
+}
+
+// --- the three queues ------------------------------------------------------
+
+// Every send-queue segment on one TCB's two queues, then every held segment on its out-of-order
+// queue, released. Each walk is bounded by its table's count, so a link cycle cannot spin it.
+static void tcp_pcb_queues_free(uint8_t *restrict work, uint16_t pcb)
+{
+    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, pcb)->f;
+    for (uint8_t which = 0u; which < 2u; which++)
+    {
+        uint16_t at = (which == 0u) ? t->unsent : t->unacked;
+        for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_SEGS && at < (uint16_t)IDEMIP_TCP_SEGS; n++)
+        {
+            uint16_t next = TCP_PCB_SEG_AT(work, at)->f.next;
+            memset(TCP_PCB_SEG_AT(work, at)->raw, 0, sizeof(TcpPcbSegEntry));
+            at = next;
+        }
+    }
+    uint16_t held = t->ooseq;
+    for (uint16_t n = 0u; n < (uint16_t)TCP_PCB_OOSEQ_ENTRIES && held < (uint16_t)TCP_PCB_OOSEQ_ENTRIES; n++)
+    {
+        uint16_t next = TCP_PCB_OOS_AT(work, held)->f.next;
+        memset(TCP_PCB_OOS_AT(work, held)->raw, 0, sizeof(TcpPcbOosEntry));
+        held = next;
+    }
+    t->unsent = IDEMIP_TCP_PCB_NONE;
+    t->unacked = IDEMIP_TCP_PCB_NONE;
+    t->ooseq = IDEMIP_TCP_PCB_NONE;
+}
+
+// RFC 9293 sec 3.4 case (b), "all sequence numbers occupied by a segment have been acknowledged
+// (e.g., to remove the segment from a retransmission queue)". The segment is on exactly one of the
+// TCB's two send queues, so both heads are tried.
+static idemip_bool tcp_pcb_seg_unlink(uint8_t *restrict work, uint16_t pcb, uint16_t seg)
+{
+    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, pcb)->f;
+    for (uint8_t which = 0u; which < 2u; which++)
+    {
+        uint16_t *head = (which == 0u) ? &t->unsent : &t->unacked;
+        if (*head == seg)
+        {
+            *head = TCP_PCB_SEG_AT(work, seg)->f.next;
+            return IDEMIP_TRUE;
+        }
+        uint16_t at = *head;
+        for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_SEGS && at < (uint16_t)IDEMIP_TCP_SEGS; n++)
+        {
+            TcpPcbSegFields *s = &TCP_PCB_SEG_AT(work, at)->f;
+            if (s->next == seg)
+            {
+                s->next = TCP_PCB_SEG_AT(work, seg)->f.next;
+                return IDEMIP_TRUE;
+            }
+            at = s->next;
+        }
+    }
+    return IDEMIP_FALSE;
+}
+
+// RFC 9293 sec 3.10.7.4, releasing a held segment once RCV.NXT has passed it. The receive descriptor
+// the entry names is unpinned by the caller that pinned it, through netif/dma.h.
+static idemip_bool tcp_pcb_oos_unlink(uint8_t *restrict work, uint16_t pcb, uint16_t oos)
+{
+    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, pcb)->f;
+    if (t->ooseq == oos)
+    {
+        t->ooseq = TCP_PCB_OOS_AT(work, oos)->f.next;
+        return IDEMIP_TRUE;
+    }
+    uint16_t at = t->ooseq;
+    for (uint16_t n = 0u; n < (uint16_t)TCP_PCB_OOSEQ_ENTRIES && at < (uint16_t)TCP_PCB_OOSEQ_ENTRIES; n++)
+    {
+        TcpPcbOosFields *o = &TCP_PCB_OOS_AT(work, at)->f;
+        if (o->next == oos)
+        {
+            o->next = TCP_PCB_OOS_AT(work, oos)->f.next;
+            return IDEMIP_TRUE;
+        }
+        at = o->next;
+    }
+    return IDEMIP_FALSE;
+}
+
+// --- the local port --------------------------------------------------------
+
+// A local port is taken while any open TCB holds it. RFC 9293 sec 3.9.1.1 (MUST-42) requires that a
+// LISTEN on a port be possible "while a connection block with the same local port is in SYN-SENT or
+// SYN-RECEIVED state", so a listener's port does not make one taken here and a TCB's does not make
+// one taken for a listen.
+static idemip_bool tcp_pcb_port_taken(uint8_t *restrict work, uint16_t port, uint16_t except)
+{
+    for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_PCBS; i++)
+    {
+        const TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, i)->f;
+        if (t->in_use && i != except && t->local_port == port)
+        {
+            return IDEMIP_TRUE;
+        }
+    }
+    return IDEMIP_FALSE;
+}
+
+// RFC 6335 sec 6's Dynamic Ports, walked from where the last draw left off. They number a power of
+// two, so the wrap is an AND and an OR rather than a divide.
+static uint16_t tcp_pcb_port_draw(uint8_t *restrict work, uint16_t except)
+{
+    TcpPcbCtx *ctx = TCP_PCB_CTX(work);
+    uint16_t at = ctx->next_port;
+    if (at < (uint16_t)IDEMIP_TCP_PCB_PORT_DYN_FIRST)
+    {
+        at = (uint16_t)IDEMIP_TCP_PCB_PORT_DYN_FIRST;
+    }
+    for (uint32_t n = 0u; n < (uint32_t)IDEMIP_TCP_PCB_PORT_DYN_COUNT; n++)
+    {
+        uint16_t port = at;
+        at = (uint16_t)(IDEMIP_TCP_PCB_PORT_DYN_FIRST | (uint16_t)((port + 1u) & IDEMIP_TCP_PCB_PORT_DYN_MASK));
+        if (!tcp_pcb_port_taken(work, port, except))
+        {
+            ctx->next_port = at;
+            return port;
+        }
+    }
+    return IDEMIP_TCP_PCB_PORT_ANY;
+}
+
+// --- matching an arriving segment ------------------------------------------
+
+// RFC 9293 sec 3.3.1 keys a TCB on "the local and remote IP addresses and port numbers". The
+// segment's own pair is swapped against it: its Destination Port is the local port. RFC 4007 sec 6
+// zone indices qualify a non-global IPv6 address, so they are compared only over IPv6.
+static idemip_bool tcp_pcb_tcb_matches(const TcpPcbTcbFields *t, const TcpPcbFindArgs *a, uint8_t n)
+{
+    if (!t->in_use || t->ip_version != a->ip_version)
+    {
+        return IDEMIP_FALSE;
+    }
+    if (t->local_port != a->local_port || t->remote_port != a->remote_port)
+    {
+        return IDEMIP_FALSE;
+    }
+    if (t->netif != 0u && t->netif != a->netif)
+    {
+        return IDEMIP_FALSE;
+    }
+    if (!tcp_pcb_addr_eq(t->local_ip, a->local_ip, n) || !tcp_pcb_addr_eq(t->remote_ip, a->remote_ip, n))
+    {
+        return IDEMIP_FALSE;
+    }
+    if (a->ip_version == 6u && (t->local_zone != a->local_zone || t->remote_zone != a->remote_zone))
+    {
+        return IDEMIP_FALSE;
+    }
+    return IDEMIP_TRUE;
+}
+
+// A listener matches on the local half alone. RFC 9293 sec 3.9.1.1: "If the parameter is
+// unspecified, a passive OPEN will await an incoming connection request to any local IP address", so
+// an all-zero local address matches every destination. A listener bound to the destination is
+// preferred over one that is not, which is the order lwIP walks in
+// lwip_ref/src/core/tcp_in.c:353 "first try specific local IP".
+static idemip_bool tcp_pcb_listener_matches(const TcpPcbListenFields *l, const TcpPcbFindArgs *a, uint8_t n,
+                                            idemip_bool wildcard)
+{
+    if (!l->in_use || l->ip_version != a->ip_version || l->local_port != a->local_port)
+    {
+        return IDEMIP_FALSE;
+    }
+    if (l->netif != 0u && l->netif != a->netif)
+    {
+        return IDEMIP_FALSE;
+    }
+    if (wildcard)
+    {
+        return tcp_pcb_addr_unspecified(l->local_ip, n);
+    }
+    if (tcp_pcb_addr_unspecified(l->local_ip, n) || !tcp_pcb_addr_eq(l->local_ip, a->local_ip, n))
+    {
+        return IDEMIP_FALSE;
+    }
+    if (a->ip_version == 6u && l->local_zone != a->local_zone)
+    {
+        return IDEMIP_FALSE;
+    }
+    return IDEMIP_TRUE;
+}
+
 // --- the entries -----------------------------------------------------------
 
 // The context and the four tables are contiguous from IDEMIP_TCP_PCB_OFF_CTX to the end of the
@@ -184,6 +508,7 @@ static void tcp_pcb_clear(uint8_t *restrict work)
     TcpPcbIo *io = TCP_PCB_IO(work);
     memset(work + IDEMIP_TCP_PCB_OFF_CTX, 0, (size_t)IDEMIP_TCP_PCB_BORROW - IDEMIP_TCP_PCB_OFF_CTX);
     TCP_PCB_CTX(work)->ready = TCP_PCB_READY;
+    TCP_PCB_CTX(work)->next_port = (uint16_t)IDEMIP_TCP_PCB_PORT_DYN_FIRST;
     memset(&io->vars, 0, sizeof io->vars);
     memset(&io->ctl, 0, sizeof io->ctl);
     memset(&io->info, 0, sizeof io->info);
@@ -195,6 +520,11 @@ static void tcp_pcb_clear(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
+// RFC 9293 sec 3.10.1: "Create a new transmission control block (TCB) to hold connection state
+// information." The TCB is taken in sec 3.3.2's CLOSED, which "represents the state when there is no
+// TCB", and enters the machine when a store moves it to LISTEN, SYN-SENT or SYN-RECEIVED. A table
+// with every TCB open is BUSY, since sec 3.10.4's "Delete TCB" frees one; a version that names
+// neither RFC 791 sec 3.1 nor RFC 8200 sec 3 is ERR, since no later call makes 5 an address family.
 static void tcp_pcb_open(uint8_t *restrict work)
 {
     if (!work)
@@ -208,10 +538,38 @@ static void tcp_pcb_open(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.3.2's active OPEN, which "create TCB" answers
-    io->status = IDEMIP_ERR;
+    if (tcp_pcb_addr_bytes(io->open_args.ip_version) == 0u)
+    {
+        return;
+    }
+    for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_PCBS; i++)
+    {
+        TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, i)->f;
+        if (t->in_use)
+        {
+            continue;
+        }
+        memset(TCP_PCB_TCB_AT(work, i)->raw, 0, sizeof(TcpPcbTcbEntry));
+        t->listener = IDEMIP_TCP_PCB_NONE;
+        t->unsent = IDEMIP_TCP_PCB_NONE;
+        t->unacked = IDEMIP_TCP_PCB_NONE;
+        t->ooseq = IDEMIP_TCP_PCB_NONE;
+        t->ttl = (uint8_t)IDEMIP_IP_DEFAULT_TTL;
+        t->ip_version = io->open_args.ip_version;
+        t->state = IDEMIP_TCP_STATE_CLOSED;
+        t->in_use = IDEMIP_TRUE;
+        io->index = i;
+        io->status = IDEMIP_OK;
+        return;
+    }
+    io->status = IDEMIP_BUSY; // every TCB open, and sec 3.10.4's "Delete TCB" frees one
 }
 
+// RFC 9293 sec 3.3.2's "delete TCB", which sec 3.10.4 CLOSE reaches from LISTEN and SYN-SENT, sec
+// 3.10.5 ABORT reaches from every state, Figure 5 reaches from LAST-ACK on "rcv ACK of FIN", and
+// Figure 5 reaches from TIME-WAIT on "Timeout=2MSL". Every segment on the TCB's three queues goes
+// with it. A TCB that is not open is sec 3.10.4's CLOSED case, "error: connection does not exist",
+// which no retry changes.
 static void tcp_pcb_close(uint8_t *restrict work)
 {
     if (!work)
@@ -224,11 +582,23 @@ static void tcp_pcb_close(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.3.2's "delete TCB", reached from CLOSED and from TIME-WAIT on
-    // Timeout=2MSL
-    io->status = IDEMIP_ERR;
+    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->pcb_args.index)->f;
+    if (!t->in_use)
+    {
+        return;
+    }
+    tcp_pcb_queues_free(work, io->pcb_args.index);
+    memset(TCP_PCB_TCB_AT(work, io->pcb_args.index)->raw, 0, sizeof(TcpPcbTcbEntry));
+    io->status = IDEMIP_OK;
 }
 
+// RFC 9293 sec 3.3.1's "local... IP address and port number" half of the four-tuple, which sec
+// 3.10.1's OPEN fills in from its "local port" and "local IP address" parameters. Those are OPEN
+// parameters, so a TCB past sec 3.3.2's CLOSED refuses the call: sec 3.9.1.1 (MUST-45) fixes the
+// local address once "a previous segment has either been sent or received on this connection".
+// A port already held by another open TCB is BUSY, since sec 3.10.4's "Delete TCB" frees it, and
+// IDEMIP_TCP_PCB_PORT_ANY with none of RFC 6335 sec 6's Dynamic Ports free is BUSY for the same
+// reason.
 static void tcp_pcb_bind(uint8_t *restrict work)
 {
     if (!work)
@@ -243,10 +613,39 @@ static void tcp_pcb_bind(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.3.1's "local... IP address and port number" half of the four-tuple
-    io->status = IDEMIP_ERR;
+    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->bind_args.index)->f;
+    uint8_t n = tcp_pcb_addr_bytes(t->ip_version);
+    if (!t->in_use || n == 0u || t->state != IDEMIP_TCP_STATE_CLOSED)
+    {
+        return;
+    }
+    uint16_t port = io->bind_args.port;
+    if (port == IDEMIP_TCP_PCB_PORT_ANY)
+    {
+        port = tcp_pcb_port_draw(work, io->bind_args.index);
+        if (port == IDEMIP_TCP_PCB_PORT_ANY)
+        {
+            io->status = IDEMIP_BUSY;
+            return;
+        }
+    }
+    else if (tcp_pcb_port_taken(work, port, io->bind_args.index))
+    {
+        io->status = IDEMIP_BUSY;
+        return;
+    }
+    tcp_pcb_addr_set(t->local_ip, io->bind_args.ip, n);
+    t->local_port = port;
+    t->local_zone = io->bind_args.zone;
+    t->netif = io->bind_args.netif;
+    io->port = port;
+    io->status = IDEMIP_OK;
 }
 
+// RFC 9293 sec 3.3.1's "remote IP address and port number" half of the four-tuple. sec 3.10.1: "if
+// active and the remote socket is unspecified, return 'error: remote socket unspecified'", so a
+// remote port of zero is ERR. The pair completed here is what sec 3.4.1 calls a connection, "defined
+// by a pair of sockets", so a pair another open TCB already holds is BUSY: closing that one frees it.
 static void tcp_pcb_connect(uint8_t *restrict work)
 {
     if (!work)
@@ -260,10 +659,38 @@ static void tcp_pcb_connect(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.3.1's "remote IP address and port number" half of the four-tuple
-    io->status = IDEMIP_ERR;
+    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->connect_args.index)->f;
+    uint8_t n = tcp_pcb_addr_bytes(t->ip_version);
+    if (!t->in_use || n == 0u || t->state != IDEMIP_TCP_STATE_CLOSED)
+    {
+        return;
+    }
+    if (io->connect_args.port == IDEMIP_TCP_PCB_PORT_ANY)
+    {
+        return;
+    }
+    for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_PCBS; i++)
+    {
+        const TcpPcbTcbFields *o = &TCP_PCB_TCB_AT(work, i)->f;
+        if (!o->in_use || i == io->connect_args.index || o->ip_version != t->ip_version)
+        {
+            continue;
+        }
+        if (o->local_port == t->local_port && o->remote_port == io->connect_args.port &&
+            tcp_pcb_addr_eq(o->local_ip, t->local_ip, n) && tcp_pcb_addr_eq(o->remote_ip, io->connect_args.ip, n))
+        {
+            io->status = IDEMIP_BUSY;
+            return;
+        }
+    }
+    tcp_pcb_addr_set(t->remote_ip, io->connect_args.ip, n);
+    t->remote_port = io->connect_args.port;
+    t->remote_zone = io->connect_args.zone;
+    io->status = IDEMIP_OK;
 }
 
+// RFC 9293 sec 3.3.1, reporting one TCB's four-tuple, Table 2 and Table 3 variables and sec 3.3.2
+// state. The two addresses point into the entry, which is the caller's own borrow.
 static void tcp_pcb_load(uint8_t *restrict work)
 {
     if (!work)
@@ -280,11 +707,36 @@ static void tcp_pcb_load(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.3.1, reporting one TCB's four-tuple, Table 2 and Table 3 variables and
-    // sec 3.3.2 state
-    io->status = IDEMIP_ERR;
+    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->pcb_args.index)->f;
+    if (!t->in_use)
+    {
+        return;
+    }
+    io->vars = t->vars;
+    io->ctl = t->ctl;
+    io->state = t->state;
+    io->info.local_ip = t->local_ip;
+    io->info.remote_ip = t->remote_ip;
+    io->info.local_port = t->local_port;
+    io->info.remote_port = t->remote_port;
+    io->info.listener = t->listener;
+    io->info.unsent = t->unsent;
+    io->info.unacked = t->unacked;
+    io->info.ooseq = t->ooseq;
+    io->info.local_zone = t->local_zone;
+    io->info.remote_zone = t->remote_zone;
+    io->info.netif = t->netif;
+    io->info.tos = t->tos;
+    io->info.ttl = t->ttl;
+    io->info.ip_version = t->ip_version;
+    io->status = IDEMIP_OK;
 }
 
+// RFC 9293 sec 3.3.1, writing one TCB's Table 2 and Table 3 variables and sec 3.3.2 state back. The
+// state is the one place the eleven-state machine is written, so the transition is checked against
+// tcp_pcb_transitions: a state sec 3.3.2 does not name, and a transition no section of RFC 9293
+// permits out of the state the TCB is in, are both ERR, since the same call on the same TCB can
+// never succeed later.
 static void tcp_pcb_store(uint8_t *restrict work)
 {
     if (!work)
@@ -298,11 +750,22 @@ static void tcp_pcb_store(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.3.1, writing one TCB's Table 2 and Table 3 variables and sec 3.3.2
-    // state back
-    io->status = IDEMIP_ERR;
+    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->pcb_args.index)->f;
+    if (!t->in_use || !tcp_pcb_transition_ok(t->state, io->state))
+    {
+        return;
+    }
+    t->vars = io->vars;
+    t->ctl = io->ctl;
+    t->state = io->state;
+    io->status = IDEMIP_OK;
 }
 
+// RFC 9293 sec 3.3.2's passive OPEN, which "means that the process wants to accept incoming
+// connection requests". sec 3.9.1.1: "Every passive OPEN call either creates a new connection record
+// in LISTEN state, or it returns an error", so the listener is taken in LISTEN. A port of zero names
+// no socket for a segment to arrive on and is ERR; a port another listener holds is BUSY, since an
+// unlisten frees it, and a table with every listener taken is BUSY for the same reason.
 static void tcp_pcb_listen(uint8_t *restrict work)
 {
     if (!work)
@@ -316,11 +779,46 @@ static void tcp_pcb_listen(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.3.2's passive OPEN, which "means that the process wants to accept
-    // incoming connection requests"
-    io->status = IDEMIP_ERR;
+    uint8_t n = tcp_pcb_addr_bytes(io->listen_args.ip_version);
+    if (n == 0u || io->listen_args.port == IDEMIP_TCP_PCB_PORT_ANY)
+    {
+        return;
+    }
+    for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_LISTEN_PCBS; i++)
+    {
+        const TcpPcbListenFields *l = &TCP_PCB_LISTEN_AT(work, i)->f;
+        if (l->in_use && l->local_port == io->listen_args.port && l->ip_version == io->listen_args.ip_version &&
+            tcp_pcb_addr_eq(l->local_ip, io->listen_args.ip, n))
+        {
+            io->status = IDEMIP_BUSY;
+            return;
+        }
+    }
+    for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_LISTEN_PCBS; i++)
+    {
+        TcpPcbListenFields *l = &TCP_PCB_LISTEN_AT(work, i)->f;
+        if (l->in_use)
+        {
+            continue;
+        }
+        memset(TCP_PCB_LISTEN_AT(work, i)->raw, 0, sizeof(TcpPcbListenEntry));
+        tcp_pcb_addr_set(l->local_ip, io->listen_args.ip, n);
+        l->local_port = io->listen_args.port;
+        l->local_zone = io->listen_args.zone;
+        l->netif = io->listen_args.netif;
+        l->backlog = io->listen_args.backlog;
+        l->ip_version = io->listen_args.ip_version;
+        l->state = IDEMIP_TCP_STATE_LISTEN;
+        l->in_use = IDEMIP_TRUE;
+        io->index = i;
+        io->status = IDEMIP_OK;
+        return;
+    }
+    io->status = IDEMIP_BUSY; // every listener taken, and an unlisten frees one
 }
 
+// RFC 9293 sec 3.10.4's CLOSE from LISTEN, "Delete TCB, enter CLOSED state". A listener that is not
+// taken is "error: connection does not exist", which no retry changes.
 static void tcp_pcb_unlisten(uint8_t *restrict work)
 {
     if (!work)
@@ -333,10 +831,17 @@ static void tcp_pcb_unlisten(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.3.2's CLOSE from LISTEN, which "delete TCB" answers
-    io->status = IDEMIP_ERR;
+    TcpPcbListenFields *l = &TCP_PCB_LISTEN_AT(work, io->pcb_args.index)->f;
+    if (!l->in_use)
+    {
+        return;
+    }
+    memset(TCP_PCB_LISTEN_AT(work, io->pcb_args.index)->raw, 0, sizeof(TcpPcbListenEntry));
+    io->status = IDEMIP_OK;
 }
 
+// RFC 9293 sec 3.10.7, matching a segment to the TCB its four-tuple names. No TCB is sec 3.10.7.1's
+// CLOSED case, "i.e., TCB does not exist", and is ERR: the same segment matches no better later.
 static void tcp_pcb_find(uint8_t *restrict work)
 {
     if (!work)
@@ -351,10 +856,25 @@ static void tcp_pcb_find(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.10.7, matching a segment to the TCB its four-tuple names
-    io->status = IDEMIP_ERR;
+    uint8_t n = tcp_pcb_addr_bytes(io->find_args.ip_version);
+    if (n == 0u)
+    {
+        return;
+    }
+    for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_PCBS; i++)
+    {
+        if (tcp_pcb_tcb_matches(&TCP_PCB_TCB_AT(work, i)->f, &io->find_args, n))
+        {
+            io->index = i;
+            io->status = IDEMIP_OK;
+            return;
+        }
+    }
 }
 
+// RFC 9293 sec 3.10.7.2, the LISTEN state's answer to an arriving segment. A listener bound to the
+// segment's destination is matched before one left unspecified, which sec 3.9.1.1 says "will await an
+// incoming connection request to any local IP address".
 static void tcp_pcb_find_listener(uint8_t *restrict work)
 {
     if (!work)
@@ -368,10 +888,30 @@ static void tcp_pcb_find_listener(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.10.7.2, the LISTEN state's answer to an arriving segment
-    io->status = IDEMIP_ERR;
+    uint8_t n = tcp_pcb_addr_bytes(io->find_args.ip_version);
+    if (n == 0u)
+    {
+        return;
+    }
+    for (uint8_t pass = 0u; pass < 2u; pass++)
+    {
+        idemip_bool wildcard = (pass == 1u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+        for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_LISTEN_PCBS; i++)
+        {
+            if (tcp_pcb_listener_matches(&TCP_PCB_LISTEN_AT(work, i)->f, &io->find_args, n, wildcard))
+            {
+                io->index = i;
+                io->status = IDEMIP_OK;
+                return;
+            }
+        }
+    }
 }
 
+// RFC 9293 sec 3.3.1's "pointers to the retransmit queue and to the current segment". The segment
+// names the caller's octets rather than holding them, and goes on the tail of the TCB's unsent
+// queue, so sec 3.10.7.4's "further processing is done in SEG.SEQ order" holds on a queue built in
+// send order. A table with every segment queued is BUSY, since a seg_free returns one.
 static void tcp_pcb_seg_alloc(uint8_t *restrict work)
 {
     if (!work)
@@ -385,10 +925,59 @@ static void tcp_pcb_seg_alloc(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.3.1's "pointers to the retransmit queue and to the current segment"
-    io->status = IDEMIP_ERR;
+    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->seg_args.pcb)->f;
+    if (!t->in_use)
+    {
+        return;
+    }
+    // RFC 9293 sec 3.3.1 Table 4 SEG.LEN counts data octets, and a segment with octets must name
+    // them; a segment carrying only sec 3.1 control bits carries none.
+    if ((io->seg_args.len != 0u) != (io->seg_args.data != NULL))
+    {
+        return;
+    }
+    for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_SEGS; i++)
+    {
+        TcpPcbSegFields *s = &TCP_PCB_SEG_AT(work, i)->f;
+        if (s->in_use)
+        {
+            continue;
+        }
+        memset(TCP_PCB_SEG_AT(work, i)->raw, 0, sizeof(TcpPcbSegEntry));
+        s->data = io->seg_args.data;
+        s->seq = io->seg_args.seq;
+        s->next = IDEMIP_TCP_PCB_NONE;
+        s->pcb = io->seg_args.pcb;
+        s->len = io->seg_args.len;
+        s->flags = io->seg_args.flags;
+        s->opts = io->seg_args.opts;
+        s->in_use = IDEMIP_TRUE;
+        if (t->unsent >= (uint16_t)IDEMIP_TCP_SEGS)
+        {
+            t->unsent = i;
+        }
+        else
+        {
+            uint16_t at = t->unsent;
+            for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_SEGS; n++)
+            {
+                TcpPcbSegFields *tail = &TCP_PCB_SEG_AT(work, at)->f;
+                if (tail->next >= (uint16_t)IDEMIP_TCP_SEGS)
+                {
+                    tail->next = i;
+                    break;
+                }
+                at = tail->next;
+            }
+        }
+        io->index = i;
+        io->status = IDEMIP_OK;
+        return;
+    }
+    io->status = IDEMIP_BUSY; // every segment queued, and a seg_free returns one
 }
 
+// RFC 9293 sec 3.3.1, reporting one queued segment's SEG.SEQ and SEG.LEN.
 static void tcp_pcb_seg_load(uint8_t *restrict work)
 {
     if (!work)
@@ -402,10 +991,24 @@ static void tcp_pcb_seg_load(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.3.1, reporting one queued segment's SEG.SEQ and SEG.LEN
-    io->status = IDEMIP_ERR;
+    const TcpPcbSegFields *s = &TCP_PCB_SEG_AT(work, io->seg_args.index)->f;
+    if (!s->in_use)
+    {
+        return;
+    }
+    io->seg.data = s->data;
+    io->seg.seq = s->seq;
+    io->seg.next = s->next;
+    io->seg.pcb = s->pcb;
+    io->seg.len = s->len;
+    io->seg.flags = s->flags;
+    io->seg.opts = s->opts;
+    io->status = IDEMIP_OK;
 }
 
+// RFC 9293 sec 3.4 case (b), "all sequence numbers occupied by a segment have been acknowledged
+// (e.g., to remove the segment from a retransmission queue)". A segment not on the queue its own pcb
+// field names is a broken link rather than a busy resource, so it is ERR.
 static void tcp_pcb_seg_free(uint8_t *restrict work)
 {
     if (!work)
@@ -418,11 +1021,24 @@ static void tcp_pcb_seg_free(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.4 case (b), "all sequence numbers occupied by a segment have been
-    // acknowledged (e.g., to remove the segment from a retransmission queue)"
-    io->status = IDEMIP_ERR;
+    TcpPcbSegFields *s = &TCP_PCB_SEG_AT(work, io->seg_args.index)->f;
+    if (!s->in_use || s->pcb >= (uint16_t)IDEMIP_TCP_PCBS)
+    {
+        return;
+    }
+    if (!tcp_pcb_seg_unlink(work, s->pcb, io->seg_args.index))
+    {
+        return;
+    }
+    memset(TCP_PCB_SEG_AT(work, io->seg_args.index)->raw, 0, sizeof(TcpPcbSegEntry));
+    io->status = IDEMIP_OK;
 }
 
+// RFC 9293 sec 3.10.7.4, where "Segments are processed in sequence. Initial tests on arrival are used
+// to discard old duplicates, but further processing is done in SEG.SEQ order." The queue is kept in
+// that order, measured from RCV.NXT, which sec 3.3.1 Figure 4 calls "the left or lower edge of the
+// receive window", so the whole 2^32 space orders without a wrap ambiguity. A TCB already holding
+// IDEMIP_TCP_OOSEQ_SEGS is BUSY, since delivery or an oos_free frees one; so is a full table.
 static void tcp_pcb_oos_alloc(uint8_t *restrict work)
 {
     if (!work)
@@ -436,10 +1052,67 @@ static void tcp_pcb_oos_alloc(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.10.7.4, where "further processing is done in SEG.SEQ order"
-    io->status = IDEMIP_ERR;
+    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->oos_args.pcb)->f;
+    if (!t->in_use || io->oos_args.len == 0u)
+    {
+        return;
+    }
+    uint16_t held = 0u;
+    uint16_t at = t->ooseq;
+    for (uint16_t n = 0u; n < (uint16_t)TCP_PCB_OOSEQ_ENTRIES && at < (uint16_t)TCP_PCB_OOSEQ_ENTRIES; n++)
+    {
+        held++;
+        at = TCP_PCB_OOS_AT(work, at)->f.next;
+    }
+    if (held >= (uint16_t)IDEMIP_TCP_OOSEQ_SEGS)
+    {
+        io->status = IDEMIP_BUSY; // this TCB's hold is full, and delivery or an oos_free frees one
+        return;
+    }
+    for (uint16_t i = 0u; i < (uint16_t)TCP_PCB_OOSEQ_ENTRIES; i++)
+    {
+        TcpPcbOosFields *o = &TCP_PCB_OOS_AT(work, i)->f;
+        if (o->in_use)
+        {
+            continue;
+        }
+        memset(TCP_PCB_OOS_AT(work, i)->raw, 0, sizeof(TcpPcbOosEntry));
+        o->seq = io->oos_args.seq;
+        o->next = IDEMIP_TCP_PCB_NONE;
+        o->pcb = io->oos_args.pcb;
+        o->desc = io->oos_args.desc;
+        o->offset = io->oos_args.offset;
+        o->len = io->oos_args.len;
+        o->in_use = IDEMIP_TRUE;
+        uint16_t prev = IDEMIP_TCP_PCB_NONE;
+        uint16_t cur = t->ooseq;
+        for (uint16_t n = 0u; n < (uint16_t)TCP_PCB_OOSEQ_ENTRIES && cur < (uint16_t)TCP_PCB_OOSEQ_ENTRIES; n++)
+        {
+            const TcpPcbOosFields *c = &TCP_PCB_OOS_AT(work, cur)->f;
+            if (tcp_pcb_seq_from(o->seq, t->vars.rcv_nxt) < tcp_pcb_seq_from(c->seq, t->vars.rcv_nxt))
+            {
+                break;
+            }
+            prev = cur;
+            cur = c->next;
+        }
+        o->next = cur;
+        if (prev >= (uint16_t)TCP_PCB_OOSEQ_ENTRIES)
+        {
+            t->ooseq = i;
+        }
+        else
+        {
+            TCP_PCB_OOS_AT(work, prev)->f.next = i;
+        }
+        io->index = i;
+        io->status = IDEMIP_OK;
+        return;
+    }
+    io->status = IDEMIP_BUSY; // every held-segment entry taken, and an oos_free returns one
 }
 
+// RFC 9293 sec 3.10.7.4, reporting one held segment's SEG.SEQ and SEG.LEN.
 static void tcp_pcb_oos_load(uint8_t *restrict work)
 {
     if (!work)
@@ -453,10 +1126,23 @@ static void tcp_pcb_oos_load(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.10.7.4, reporting one held segment's SEG.SEQ and SEG.LEN
-    io->status = IDEMIP_ERR;
+    const TcpPcbOosFields *o = &TCP_PCB_OOS_AT(work, io->oos_args.index)->f;
+    if (!o->in_use)
+    {
+        return;
+    }
+    io->oos.seq = o->seq;
+    io->oos.next = o->next;
+    io->oos.pcb = o->pcb;
+    io->oos.desc = o->desc;
+    io->oos.offset = o->offset;
+    io->oos.len = o->len;
+    io->status = IDEMIP_OK;
 }
 
+// RFC 9293 sec 3.10.7.4, releasing a held segment once RCV.NXT has passed it. The entry names the
+// receive descriptor rather than the octets, so the caller that pinned it through netif/dma.h drops
+// the pin once this reports OK.
 static void tcp_pcb_oos_free(uint8_t *restrict work)
 {
     if (!work)
@@ -469,8 +1155,17 @@ static void tcp_pcb_oos_free(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 9293 sec 3.10.7.4, releasing a held segment once RCV.NXT has passed it
-    io->status = IDEMIP_ERR;
+    TcpPcbOosFields *o = &TCP_PCB_OOS_AT(work, io->oos_args.index)->f;
+    if (!o->in_use || o->pcb >= (uint16_t)IDEMIP_TCP_PCBS)
+    {
+        return;
+    }
+    if (!tcp_pcb_oos_unlink(work, o->pcb, io->oos_args.index))
+    {
+        return;
+    }
+    memset(TCP_PCB_OOS_AT(work, io->oos_args.index)->raw, 0, sizeof(TcpPcbOosEntry));
+    io->status = IDEMIP_OK;
 }
 
 const TcpPcbNs TcpPcb = {.clear = tcp_pcb_clear,

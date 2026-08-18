@@ -46,6 +46,27 @@ IDEMIP_BEGIN_DECLS
 #define IDEMIP_TCP_PCB_PORT_ANY 0u
 
 /**
+ * @brief RFC 6335 sec 6: "the Dynamic Ports, also known as the Private or Ephemeral Ports, from
+ * 49152-65535 (never assigned)". The first of them, which a bind of IDEMIP_TCP_PCB_PORT_ANY draws
+ * from.
+ */
+#define IDEMIP_TCP_PCB_PORT_DYN_FIRST 49152u
+
+/** @brief The last Dynamic Port of RFC 6335 sec 6. */
+#define IDEMIP_TCP_PCB_PORT_DYN_LAST 65535u
+
+/** @brief The Dynamic Ports, 16384 of them, a power of two so the walk wraps with a mask. */
+#define IDEMIP_TCP_PCB_PORT_DYN_COUNT (IDEMIP_TCP_PCB_PORT_DYN_LAST - IDEMIP_TCP_PCB_PORT_DYN_FIRST + 1u)
+
+/** @brief The mask that wraps a Dynamic Port walk, IDEMIP_TCP_PCB_PORT_DYN_COUNT - 1. */
+#define IDEMIP_TCP_PCB_PORT_DYN_MASK (IDEMIP_TCP_PCB_PORT_DYN_COUNT - 1u)
+
+static_assert((IDEMIP_TCP_PCB_PORT_DYN_COUNT & IDEMIP_TCP_PCB_PORT_DYN_MASK) == 0u,
+              "RFC 6335 sec 6's Dynamic Ports must number a power of two so the walk wraps with a mask");
+static_assert((IDEMIP_TCP_PCB_PORT_DYN_FIRST & IDEMIP_TCP_PCB_PORT_DYN_MASK) == 0u,
+              "the first Dynamic Port must be a multiple of their count so an OR rebuilds the port");
+
+/**
  * @brief The eleven states of RFC 9293 sec 3.3.2.
  *
  * "The states are: LISTEN, SYN-SENT, SYN-RECEIVED, ESTABLISHED, FIN-WAIT-1, FIN-WAIT-2, CLOSE-WAIT,
@@ -514,14 +535,24 @@ typedef struct
  * @var TcpPcbNs::close         release the TCB @ref TcpPcbPcbArgs::index names, with every segment on
  *                              its queues
  * @var TcpPcbNs::bind          set that TCB's local address and port, reporting the port it settled
- *                              on in @ref TcpPcbIo::port
- * @var TcpPcbNs::connect       set that TCB's remote address and port, completing the four-tuple
+ *                              on in @ref TcpPcbIo::port. IDEMIP_TCP_PCB_PORT_ANY draws from RFC
+ *                              6335 sec 6's Dynamic Ports. sec 3.9.1.1 (MUST-45) fixes the local
+ *                              socket once a segment has passed, so a TCB past CLOSED is ERR.
+ * @var TcpPcbNs::connect       set that TCB's remote address and port, completing the four-tuple.
+ *                              A remote port of IDEMIP_TCP_PCB_PORT_ANY is sec 3.10.1's "error:
+ *                              remote socket unspecified" and is ERR; a pair another open TCB
+ *                              already holds is BUSY.
  * @var TcpPcbNs::load          read the four-tuple, the sec 3.3.1 variables, the sec 3.3.2 state and
  *                              the control state of that TCB into the operand block
  * @var TcpPcbNs::store         write the sec 3.3.1 variables, the sec 3.3.2 state and the control
- *                              state back to that TCB
+ *                              state back to that TCB. A sec 3.3.2 state RFC 9293 does not reach
+ *                              from the state the TCB is in is ERR, and nothing is written.
  * @var TcpPcbNs::listen        take a free listener for a passive OPEN, reporting it in
- *                              @ref TcpPcbIo::index. BUSY when every listener is taken.
+ *                              @ref TcpPcbIo::index. An all-zero address is sec 3.9.1.1's
+ *                              unspecified "local IP address" parameter, which "will await an
+ *                              incoming connection request to any local IP address". A port of
+ *                              IDEMIP_TCP_PCB_PORT_ANY names no socket and is ERR. BUSY when every
+ *                              listener is taken, and when another listener holds the same socket.
  * @var TcpPcbNs::unlisten      release the listener @ref TcpPcbPcbArgs::index names
  * @var TcpPcbNs::find          match an arriving segment's four-tuple to a TCB, reporting it in
  *                              @ref TcpPcbIo::index. No TCB is ERR, which is the RFC 9293 sec 3.10.7.1
