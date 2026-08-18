@@ -210,6 +210,17 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_ARP_PENDING 4u
 #endif
 
+/**
+ * @brief lwIP ARP_MAXPENDING, seconds a row waits for the ar$sha a REQUEST is out for.
+ *
+ * lwIP etharp.c ARP_MAXPENDING is 5, and etharp_tmr ages a row once per ARP_TMR_INTERVAL of 1000 ms,
+ * so the pending life is 5 seconds. RFC 826 "Related issue" states the bound without a number: "If a
+ * REPLY is not seen in a short amount of time, the entry is deleted."
+ */
+#ifndef IDEMIP_ARP_MAXPENDING_S
+#define IDEMIP_ARP_MAXPENDING_S 5u
+#endif
+
 /** @brief lwIP ARP_TMR_INTERVAL, milliseconds between two sweeps of the table. */
 #ifndef IDEMIP_ARP_TMR_INTERVAL_MS
 #define IDEMIP_ARP_TMR_INTERVAL_MS 1000u
@@ -709,8 +720,8 @@ typedef enum IDEMIP_ENUM_PACKED
 // RFC 826 puts "the <protocol type, sender protocol address, sender hardware address> triplet" in
 // the table, which over IPv4 on Ethernet is 2, 4 and 6 octets; an entry adds the state, the
 // interface it was learned on, the head of its pending list, and the millisecond it was last used.
-// A pending entry holds the pinned receive descriptor, the frame length, the table entry it waits
-// on, its deadline, and the next index.
+// A pending entry holds the pinned receive descriptor, the frame length, the protocol address it
+// waits on, the table entry it waits on, its deadline, and the next index.
 #ifndef IDEMIP_ARP_ENTRY_SHIFT
 #define IDEMIP_ARP_ENTRY_SHIFT 5u
 #endif

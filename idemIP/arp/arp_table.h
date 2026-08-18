@@ -14,6 +14,12 @@
  * retransmitted by a higher network layer)", and this unit instead holds the frame's receive
  * descriptor pinned until the REPLY lands or its deadline passes.
  *
+ * The descriptor rings are dma.h's borrow, not this one, so the pin is the caller's: it pins through
+ * Dma.pin before queue and unpins every descriptor dequeue or tick hands back. Each descriptor queue
+ * took comes back exactly once, through dequeue when its address resolves or through tick when its
+ * deadline passes, its row is flushed, or its row ages out, and IDEMIP_ARP_PENDING of them are
+ * outstanding at most, which is what IDEMIP_MAX_PINNED_FRAMES counts for this unit.
+ *
  * The ARP packet itself is arp.h's. arp.h's IDEMIP_ARP_OFF_* name fields inside a packet; the
  * IDEMIP_ARP_OFF_* below name regions inside the caller's borrow.
  */
@@ -120,12 +126,14 @@ typedef struct
  *                               deadline this unit stamps and every age it compares comes from it,
  *                               so no entry reads a clock of its own.
  * @var ArpTableIo::status       what the call reports: OK, BUSY, or ERR
- * @var ArpTableIo::mac          ar$sha of the row find matched, IDEMIP_ARP_HLN_ETHERNET bytes in the
- *                               table region of this borrow
+ * @var ArpTableIo::mac          ar$sha of the row find matched or dequeue released a hold from,
+ *                               IDEMIP_ARP_HLN_ETHERNET bytes in the table region of this borrow
  * @var ArpTableIo::ip           the protocol address a REQUEST is due for, or the one a released
  *                               hold was waiting on
  * @var ArpTableIo::desc         the pinned descriptor dequeue or tick hands back
- * @var ArpTableIo::len          octets of frame in it
+ * @var ArpTableIo::len          octets of frame in it, never zero, so a tick report carrying a
+ *                               nonzero len is a descriptor to hand back and one carrying zero is an
+ *                               address a REQUEST is due for
  * @var ArpTableIo::index        the row add, find or input touched, or IDEMIP_ARP_INDEX_NONE
  * @var ArpTableIo::state        that row's state
  * @var ArpTableIo::netif        the interface that row's triplet was seen on
@@ -208,20 +216,29 @@ static_assert(IDEMIP_ARP_PENDING < IDEMIP_ARP_INDEX_NONE,
  *
  * @var ArpTableNs::clear    zero the context and both tables, and mark the borrow usable
  * @var ArpTableNs::add      merge one RFC 826 triplet, replacing the hardware address of a row that
- *                           already holds the pair
+ *                           already holds the pair. BUSY when every row carries pinned holds, since a
+ *                           hold's deadline frees one.
  * @var ArpTableNs::find     the hardware address behind a pair, into @ref ArpTableIo::mac. BUSY
  *                           while the row is IDEMIP_ARP_PENDING, so the caller comes back rather
- *                           than treating an unresolved address as absent.
- * @var ArpTableNs::remove   drop the row holding a pair, releasing anything it holds
+ *                           than treating an unresolved address as absent. ERR when no row holds the
+ *                           pair: calling find again cannot put one there, so the caller queues the
+ *                           frame, which opens the row and starts the REQUESTs.
+ * @var ArpTableNs::remove   drop the row holding a pair. Whatever it held becomes reclaimable, so
+ *                           tick hands each pinned descriptor back.
  * @var ArpTableNs::input    the RFC 826 "Packet Reception" algorithm over one received payload: the
  *                           merge, then the target test, then the opcode
  * @var ArpTableNs::queue    hold a pinned descriptor until its address resolves. BUSY when every
- *                           hold is taken.
+ *                           hold is taken. ERR when the address is already resolved, because the
+ *                           frame goes out now and a hold on it would pin a descriptor for nothing.
  * @var ArpTableNs::dequeue  the next held descriptor whose row went IDEMIP_ARP_STABLE, for
- *                           transmission. BUSY when nothing is resolved.
- * @var ArpTableNs::tick     age rows past IDEMIP_ARP_MAXAGE_S, expire holds past their deadline, and
- *                           report the address a REQUEST is due for. BUSY when the sweep found
- *                           nothing to report.
+ *                           transmission, oldest hold on that row first, with @ref ArpTableIo::mac
+ *                           the hardware address to send it to. BUSY when nothing is resolved.
+ * @var ArpTableNs::tick     age rows past IDEMIP_ARP_MAXAGE_S and IDEMIP_ARP_PENDING rows past
+ *                           IDEMIP_ARP_MAXPENDING_S, expire holds past their deadline, and report the
+ *                           address a REQUEST is due for. One report per call, so a caller loops
+ *                           until BUSY. The row sweep runs once per IDEMIP_ARP_TMR_INTERVAL_MS, which
+ *                           is the granularity of both row bounds; the holds and the REQUESTs are
+ *                           looked at on every call. BUSY when the sweep found nothing to report.
  */
 typedef struct
 {
