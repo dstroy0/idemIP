@@ -1165,16 +1165,90 @@ typedef enum IDEMIP_ENUM_PACKED
 #endif
 #define IDEMIP_STATS_BORROW (IDEMIP_STATS_CTX_BYTES + (IDEMIP_NETIF_COUNT << IDEMIP_STATS_IF_ENTRY_SHIFT))
 
+// --- pmtu4: RFC 1191 -----------------------------------------------------------------------------
+// The estimate and the timestamp aging it are the routing table's, RFC 1191 sec 6.2 putting them "as
+// a field in the routing table entries", so this unit holds no table: the region is the whole borrow
+// and carries the operand block of pmtu4.h and the mark clear leaves. Table 7-1 of sec 7 is const
+// and lives in rodata rather than in any borrow.
+
+/** @brief Rows in RFC 1191 Table 7-1, "Common MTUs in the Internet": the Plateau column, as printed. */
+#ifndef IDEMIP_PMTU4_PLATEAUS
+#define IDEMIP_PMTU4_PLATEAUS 11u
+#endif
+
+/**
+ * @brief RFC 1191 sec 3: milliseconds before an estimate is raised again.
+ *
+ * "An attempt to detect an increase (by sending a datagram larger than the current estimate) MUST
+ * NOT be done less than 5 minutes after a Datagram Too Big message has been received for the given
+ * destination... We recommend setting these timers at twice their minimum values (10 minutes and 2
+ * minutes, respectively)." sec 6.3 states the same interval as "on the order of 10 minutes".
+ */
+#ifndef IDEMIP_PMTU4_INCREASE_MS
+#define IDEMIP_PMTU4_INCREASE_MS 600000u
+#endif
+
+#ifndef IDEMIP_PMTU4_CTX_BYTES
+#define IDEMIP_PMTU4_CTX_BYTES 64u
+#endif
+#define IDEMIP_PMTU4_BORROW (IDEMIP_PMTU4_CTX_BYTES)
+
+static_assert(IDEMIP_PMTU4_INCREASE_MS >= 300000u,
+              "RFC 1191 sec 3: an increase attempt MUST NOT be made less than 5 minutes after a Datagram Too Big");
+
+// --- pmtu6: RFC 8201, PER INTERFACE --------------------------------------------------------------
+// The estimate is the nd6 Destination Cache's, RFC 8201 sec 5.2 storing "a PMTU value ... with the
+// corresponding entry in the destination cache". That row carries no timestamp for it, so the clock
+// sec 5.3 ages by is one stamp per path here: the 16-octet destination and the millisecond the
+// estimate was last decreased. sec 5.2: "For nodes with multiple interfaces, Path MTU information
+// should be maintained for each IPv6 link", so the borrow is per interface, and one stamp per row the
+// Destination Cache can hold covers every path that cache knows.
+#define IDEMIP_PMTU6_PATHS IDEMIP_ND6_NUM_DESTINATIONS
+#ifndef IDEMIP_PMTU6_ENTRY_SHIFT
+#define IDEMIP_PMTU6_ENTRY_SHIFT 5u
+#endif
+
+/**
+ * @brief RFC 8201 sec 5.3: milliseconds before a path is probed for a larger PMTU.
+ *
+ * "When a PMTU value has not been decreased for a while (on the order of 10 minutes), it should
+ * probe to find if a larger PMTU is supported." sec 4 floors it: an attempt "must not be done less
+ * than 5 minutes after a Packet Too Big message has been received for the given path. The
+ * recommended setting for this timer is twice its minimum value (10 minutes)."
+ */
+#ifndef IDEMIP_PMTU6_PROBE_MS
+#define IDEMIP_PMTU6_PROBE_MS 600000u
+#endif
+
+// Spans the operand block and the context together, as IDEMIP_ND6_CTX_BYTES does: pmtu6.h puts
+// Pmtu6Io at offset zero and the context behind it, 64 and 4 octets on a target with 8-octet
+// pointers, and the assert in pmtu6.c fires naming this macro if the pair outgrows it.
+#ifndef IDEMIP_PMTU6_CTX_BYTES
+#define IDEMIP_PMTU6_CTX_BYTES 96u
+#endif
+#define IDEMIP_PMTU6_BORROW (IDEMIP_PMTU6_CTX_BYTES + (IDEMIP_PMTU6_PATHS << IDEMIP_PMTU6_ENTRY_SHIFT))
+
+static_assert(IDEMIP_PMTU6_PROBE_MS >= 300000u,
+              "RFC 8201 sec 4: a probe must not be made less than 5 minutes after a Packet Too Big");
+
+// The stamp table starts at the end of the head region, so that region is a whole number of
+// alignments, and stamp i sits at (i << SHIFT), so one stamp is IDEMIP_ALIGN or wider.
+static_assert(((IDEMIP_PMTU4_CTX_BYTES | IDEMIP_PMTU6_CTX_BYTES) & (IDEMIP_ALIGN - 1u)) == 0u,
+              "IDEMIP_PMTU4_CTX_BYTES and IDEMIP_PMTU6_CTX_BYTES must be multiples of IDEMIP_ALIGN");
+static_assert((1u << IDEMIP_PMTU6_ENTRY_SHIFT) >= IDEMIP_ALIGN,
+              "a pmtu6 stamp must be IDEMIP_ALIGN or wider: stamp i sits at (i << IDEMIP_PMTU6_ENTRY_SHIFT)");
+
 // --- the whole footprint -------------------------------------------------------------------------
 
 /**
  * @brief Every borrow a per-interface unit takes, for one interface.
  *
- * phy, dma, nd6, acd, autoip, dhcp4 and dhcp6 hold state the RFC puts on one interface, so the
- * caller takes IDEMIP_NETIF_COUNT of each.
+ * phy, dma, nd6, acd, autoip, pmtu6, dhcp4 and dhcp6 hold state the RFC puts on one interface, so
+ * the caller takes IDEMIP_NETIF_COUNT of each.
  */
 #define IDEMIP_PER_NETIF_BORROW                                                                                        \
     (IDEMIP_PHY_BORROW + IDEMIP_DMA_BORROW + IDEMIP_ND6_BORROW + IDEMIP_ACD_BORROW + IDEMIP_AUTOIP_BORROW +            \
+     IDEMIP_PMTU6_BORROW +                                                                                             \
      IDEMIP_DHCP4_BORROW + IDEMIP_DHCP6_BORROW)
 
 /** @brief Every borrow a unit holding one table across all interfaces takes. */
@@ -1183,6 +1257,7 @@ typedef enum IDEMIP_ENUM_PACKED
      IDEMIP_IP4_REASS_BORROW + IDEMIP_IGMP_BORROW + IDEMIP_IP6_REASS_BORROW + IDEMIP_MLD6_BORROW +                     \
      IDEMIP_RAW_PCB_BORROW + IDEMIP_UDP_PCB_BORROW + IDEMIP_TCP_PCB_BORROW + IDEMIP_TCP_IN_BORROW +                    \
      IDEMIP_TCP_OUT_BORROW + IDEMIP_TCP_ISN_BORROW +                                                                   \
+     IDEMIP_PMTU4_BORROW +                                                                                             \
      IDEMIP_DNS_BORROW + IDEMIP_TIMEOUTS_BORROW + IDEMIP_STATS_BORROW)
 
 /**
