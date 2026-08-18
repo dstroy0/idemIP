@@ -24,6 +24,12 @@ IDEMIP_BEGIN_DECLS
 // every entry but clear refuses it.
 #define DAD_READY 0x44414431u
 
+// A deadline is one absolute millisecond stamp read as a span below half the clock's range, so an
+// interval past this arms a deadline that is already due. RFC 4862 sec 5.4 waits RetransTimer
+// milliseconds for a defence, and RFC 4861 sec 6.3.4 lets a Router Advertisement set that timer, so
+// the value reaching dad_start is a remote party's. Held at the bound, the wait is still a wait.
+#define DAD_RETRANS_MAX_MS 0x7FFFFFFFu
+
 // One machine over one tentative address (RFC 4862 sec 5.4). sent counts the solicitations sec 5.4.2
 // transmits, received the ones sec 5.4.3 counts against the loopback semantics, and hw_derived is
 // sec 5.4.5's "interface identifier based on the hardware address".
@@ -395,8 +401,9 @@ static void dad_start(uint8_t *restrict work)
 
     DadEntry *e = DAD_AT(work, index);
     memcpy(e->addr, io->start_args.addr, IDEMIP_IP6_ADDR_LEN);
-    e->retrans_ms = (io->start_args.retrans_ms != 0u) ? io->start_args.retrans_ms
-                                                      : (uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS;
+    uint32_t retrans = (io->start_args.retrans_ms != 0u) ? io->start_args.retrans_ms
+                                                         : (uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS;
+    e->retrans_ms = (retrans > DAD_RETRANS_MAX_MS) ? (uint32_t)DAD_RETRANS_MAX_MS : retrans;
     e->sent = 0u;
     e->received = 0u;
     e->hw_derived = io->start_args.hw_derived;

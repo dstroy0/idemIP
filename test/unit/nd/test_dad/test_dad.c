@@ -527,6 +527,26 @@ void test_the_procedure_ends_one_retrans_timer_after_the_last_solicitation(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_DAD_STATE_UNIQUE, IO(work_a)->state);
 }
 
+// The same wait, with a RetransTimer no deadline can hold. RFC 4861 sec 6.3.4 lets a Router
+// Advertisement set that timer, so the value reaching start is a remote party's. A deadline is an
+// absolute stamp read as a span below half the clock's range, so a value past that bound arms one
+// already due and sec 5.4's "within RetransTimer milliseconds after having sent
+// DupAddrDetectTransmits Neighbor Solicitations" collapses to the next tick - the address is
+// declared unique a millisecond after the single solicitation, before any defence could arrive.
+void test_a_retrans_timer_past_the_deadline_span_still_waits(void)
+{
+    bind_cfg(work_a, &g_cfg_one);
+    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0xFFFFFFFFu, 0u);
+    tick_at(work_a, 0u);
+    TEST_ASSERT_TRUE(IO(work_a)->send_ns);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DAD_STATE_WAIT, IO(work_a)->state);
+
+    tick_at(work_a, 1u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status, "the wait ended on the tick after the NS");
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->unique,
+                              "a RetransTimer past the deadline span ended the wait on the next tick");
+}
+
 // RFC 4861 sec 6.3.4: an unspecified field "should be ignored and the host should continue using
 // whatever value it is already using", so a zero RetransTimer takes RFC 4861 sec 10's 1,000 ms.
 void test_a_zero_retrans_timer_takes_the_rfc_4861_default(void)

@@ -174,6 +174,23 @@ static_assert(IDEMIP_ND6_NUM_NEIGHBORS < IDEMIP_ND6_NONE && IDEMIP_ND6_NUM_DESTI
 static_assert((uint64_t)ND6_LIFETIME_S_MAX * 1000u <= (uint64_t)ND6_DEADLINE_MAX_MS,
               "ND6_LIFETIME_S_MAX seconds must fit ND6_DEADLINE_MAX_MS milliseconds");
 
+// RFC 4861 sec 7.2.2 arms the address-resolution deadline at RetransTimer times
+// MAX_MULTICAST_SOLICIT + 1, so the interval is the deadline span shifted down by that count. A
+// RetransTimer above this cannot be represented: the deadline it arms lands more than half the
+// clock's period out and reads as already past, which turns sec 7.3.3's "A node MUST NOT send
+// Neighbor Solicitations to the same neighbor more frequently than once every RetransTimer
+// milliseconds" into a solicitation on every tick. A count that is a power of two makes the bound a
+// shift.
+#define ND6_RETRANS_SHIFT 2u
+#define ND6_RETRANS_MAX_MS (ND6_DEADLINE_MAX_MS >> ND6_RETRANS_SHIFT)
+static_assert(((uint32_t)IDEMIP_ND6_MAX_MULTICAST_SOLICIT + 1u) == (1u << ND6_RETRANS_SHIFT),
+              "ND6_RETRANS_SHIFT must be the log2 of MAX_MULTICAST_SOLICIT + 1 - RFC 4861 sec 10");
+static_assert((uint64_t)ND6_RETRANS_MAX_MS * ((uint64_t)IDEMIP_ND6_MAX_MULTICAST_SOLICIT + 1u) <=
+                  (uint64_t)ND6_DEADLINE_MAX_MS,
+              "a sec 7.2.2 retransmit deadline must fit ND6_DEADLINE_MAX_MS milliseconds");
+static_assert((uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS <= ND6_RETRANS_MAX_MS,
+              "the RETRANS_TIMER default must fit the deadline span");
+
 // RFC 4291 sec 2.5.6 gives the link-local prefix as FE80::/10, which RFC 4861 sec 5.1 keeps on the
 // Prefix List "with an infinite invalidation timer regardless of whether routers are advertising a
 // prefix for it".
@@ -264,9 +281,13 @@ static uint32_t nd6_reachable_ms(const Nd6Ctx *ctx)
     return (ctx->reachable_ms != 0u) ? ctx->reachable_ms : IDEMIP_ND6_REACHABLE_TIME_MS;
 }
 
+// RFC 4861 sec 6.3.4: "The RetransTimer variable SHOULD be copied from the Retrans Timer field, if
+// the received value is non-zero." A value past ND6_RETRANS_MAX_MS is held at the bound, which is
+// where every reader of the timer takes it, so no deadline armed from it can land outside the span.
 static uint32_t nd6_retrans_ms(const Nd6Ctx *ctx)
 {
-    return (ctx->retrans_ms != 0u) ? ctx->retrans_ms : IDEMIP_ND6_RETRANS_TIMER_MS;
+    uint32_t ms = (ctx->retrans_ms != 0u) ? ctx->retrans_ms : (uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS;
+    return (ms > ND6_RETRANS_MAX_MS) ? ND6_RETRANS_MAX_MS : ms;
 }
 
 // RFC 2464 sec 2: "The default MTU size for IPv6 packets on an Ethernet is 1500 octets."

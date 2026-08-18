@@ -736,6 +736,37 @@ void test_an_unanswered_incomplete_entry_is_deleted_after_max_multicast_solicit(
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, nb_find(work_a, g_addr_a), "sec 7.3.3 deletes the entry");
 }
 
+// RFC 4861 sec 7.3.3: "Note that all Neighbor Solicitations are rate-limited on a per-neighbor
+// basis. A node MUST NOT send Neighbor Solicitations to the same neighbor more frequently than once
+// every RetransTimer milliseconds." sec 6.3.4 lets a Router Advertisement set that timer, so the
+// value is a remote party's. A deadline is one absolute stamp read as a span below half the clock's
+// range, so a RetransTimer past that bound arms a deadline that is already past and the rate limit
+// inverts into a solicitation on every tick - one Router Advertisement turning the node into a
+// solicitation source.
+void test_a_retrans_timer_past_the_deadline_span_still_rate_limits(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    memset(&IDEMIP_ND6_IO(work_a)->params_args, 0, sizeof IDEMIP_ND6_IO(work_a)->params_args);
+    IDEMIP_ND6_IO(work_a)->params_args.retrans_timer_ms = 0xFFFFFFFFu;
+    Nd6.params_set(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    nb_set(work_a, g_addr_a, NULL, IDEMIP_ND6_INCOMPLETE, F, F, F);
+
+    unsigned sent = 0u;
+    for (uint32_t t = 0u; t < 16u; t++)
+    {
+        at(work_a, t);
+        Nd6.tick(work_a);
+        if (IDEMIP_ND6_IO(work_a)->solicit)
+        {
+            sent++;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(sent <= 1u, "a RetransTimer past the deadline span solicited on every tick");
+}
+
 // RFC 4861 sec 7.3.3: "If no response is received after waiting RetransTimer milliseconds after
 // sending the MAX_UNICAST_SOLICIT solicitations, retransmissions cease and the entry SHOULD be
 // deleted." A probe is answered by a confirmation, which returns the entry to REACHABLE.
