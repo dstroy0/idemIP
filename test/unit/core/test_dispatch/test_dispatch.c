@@ -1,0 +1,1463 @@
+// idemIP v0.1.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// The suite for the receive path, shaped on test/unit/ethernet/test_phy. Every case tests the
+// CONTRACT and stays valid however the logic behind it is written:
+//
+//   1. the borrow is the caller's, so the suite declares it and passes it to every entry
+//   2. every entry is called with a null borrow and must refuse
+//   3. the borrow IS the instance, so two receive paths share not one byte
+//   4. a canary past IDEMIP_DISPATCH_BORROW is intact after every case
+//   5. the published offsets are ordered and do not overlap
+//   6. every drop bumps the one RFC 1213 counter whose own wording names that reason
+//
+// test/ is exempt from the src/ style rules, so this reads as plain host C.
+
+#include "idemIP/core/dispatch.h"
+
+#include "idemIP/arp/arp.h"
+#include "idemIP/icmp/icmp.h"
+#include "idemIP/ip/ipv4.h"
+#if IDEMIP_ENABLE_IPV6
+#include "idemIP/ip/ipv6.h"
+#endif
+#if IDEMIP_ENABLE_TCP
+#include "idemIP/tcp/tcp.h"
+#endif
+#if IDEMIP_ENABLE_UDP
+#include "idemIP/udp/udp.h"
+#endif
+
+#include <string.h>
+#include <unity.h>
+
+// The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
+// so a write past the map is visible.
+#define CANARY 0x5Au
+static _Alignas(8) uint8_t work_a[IDEMIP_DISPATCH_BORROW + 16];
+static _Alignas(8) uint8_t work_b[IDEMIP_DISPATCH_BORROW + 16];
+
+// Every borrow the path calls into, each the caller's own.
+static _Alignas(8) uint8_t stats_mem[IDEMIP_STATS_BORROW];
+static _Alignas(8) uint8_t netif_mem[IDEMIP_NETIF_BORROW];
+static _Alignas(8) uint8_t loopif_mem[IDEMIP_LOOPIF_BORROW];
+static _Alignas(8) uint8_t vlan_mem[IDEMIP_VLAN_BORROW];
+static _Alignas(8) uint8_t arp_mem[IDEMIP_ARP_BORROW];
+static _Alignas(8) uint8_t ip4_addr_mem[IDEMIP_IP4_ADDR_BORROW];
+static _Alignas(8) uint8_t ip4_reass_mem[IDEMIP_IP4_REASS_BORROW];
+static _Alignas(8) uint8_t icmp_in_mem[IDEMIP_ICMP_IN_BORROW];
+static _Alignas(8) uint8_t igmp_mem[IDEMIP_IGMP_BORROW];
+#if IDEMIP_ENABLE_IPV6
+static _Alignas(8) uint8_t ip6_addr_mem[IDEMIP_IP6_ADDR_BORROW];
+static _Alignas(8) uint8_t ip6_reass_mem[IDEMIP_IP6_REASS_BORROW];
+static _Alignas(8) uint8_t icmp6_in_mem[IDEMIP_ICMP6_IN_BORROW];
+static _Alignas(8) uint8_t mld6_mem[IDEMIP_MLD6_BORROW];
+#endif
+static _Alignas(8) uint8_t raw_mem[IDEMIP_RAW_PCB_BORROW];
+#if IDEMIP_ENABLE_UDP
+static _Alignas(8) uint8_t udp_mem[IDEMIP_UDP_PCB_BORROW];
+static _Alignas(8) uint8_t udplite_mem[IDEMIP_UDPLITE_BORROW];
+#endif
+#if IDEMIP_ENABLE_TCP
+static _Alignas(8) uint8_t tcp_pcb_mem[IDEMIP_TCP_PCB_BORROW];
+static _Alignas(8) uint8_t tcp_in_mem[IDEMIP_TCP_IN_BORROW];
+#endif
+static _Alignas(8) uint8_t phy_mem[IDEMIP_PHY_BORROW];
+
+// The caller's frame and its transmit buffer.
+static uint8_t g_frame[256];
+static uint8_t g_out[256];
+
+// RFC 5737 sec 3: 192.0.2.0/24 is "TEST-NET-1 ... for use in documentation".
+#define LOCAL_IP4 0xC0000201u
+#define REMOTE_IP4 0xC0000209u
+#define OTHER_IP4 0xC6336409u
+#define NETMASK4 0xFFFFFF00u
+
+static const uint8_t g_local_mac[IDEMIP_MAC_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+static const uint8_t g_remote_mac[IDEMIP_MAC_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x09};
+static const uint8_t g_bcast_mac[IDEMIP_MAC_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
+#if IDEMIP_ENABLE_IPV6
+// RFC 3849: 2001:DB8::/32 is "for use in documentation".
+static const uint8_t g_local_ip6[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
+static const uint8_t g_remote_ip6[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x09};
+static const uint8_t g_other_ip6[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x77};
+static const uint8_t g_lo6[IDEMIP_IP6_ADDR_LEN] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+#endif
+
+#define VID_OURS 100u
+#define VID_THEIRS 200u
+
+static void arm(uint8_t *w, size_t cap)
+{
+    memset(w, 0, cap);
+    memset(w + IDEMIP_DISPATCH_BORROW, CANARY, cap - IDEMIP_DISPATCH_BORROW);
+}
+
+static void check_canary(const uint8_t *w, size_t cap)
+{
+    for (size_t i = IDEMIP_DISPATCH_BORROW; i < cap; i++)
+    {
+        TEST_ASSERT_EQUAL_HEX8_MESSAGE(CANARY, w[i], "a write landed past IDEMIP_DISPATCH_BORROW");
+    }
+}
+
+static void bind_all(uint8_t *w)
+{
+    DispatchIo *io = IDEMIP_DISPATCH_IO(w);
+    io->bind_args.stats = stats_mem;
+    io->bind_args.netif = netif_mem;
+    io->bind_args.loopif = loopif_mem;
+    io->bind_args.vlan = vlan_mem;
+    io->bind_args.arp = arp_mem;
+    io->bind_args.ip4_addr = ip4_addr_mem;
+    io->bind_args.ip4_reass = ip4_reass_mem;
+    io->bind_args.icmp_in = icmp_in_mem;
+    io->bind_args.igmp = igmp_mem;
+#if IDEMIP_ENABLE_IPV6
+    io->bind_args.ip6_addr = ip6_addr_mem;
+    io->bind_args.ip6_reass = ip6_reass_mem;
+    io->bind_args.icmp6_in = icmp6_in_mem;
+    io->bind_args.mld6 = mld6_mem;
+#endif
+    io->bind_args.raw_pcb = raw_mem;
+#if IDEMIP_ENABLE_UDP
+    io->bind_args.udp_pcb = udp_mem;
+    io->bind_args.udplite = udplite_mem;
+#endif
+#if IDEMIP_ENABLE_TCP
+    io->bind_args.tcp_pcb = tcp_pcb_mem;
+    io->bind_args.tcp_in = tcp_in_mem;
+#endif
+    Dispatch.bind(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+}
+
+static void if_untagged(uint8_t *w, uint8_t index)
+{
+    DispatchIo *io = IDEMIP_DISPATCH_IO(w);
+    io->if_args.index = index;
+    io->if_args.dma = NULL;
+    io->if_args.vid = 0u;
+    io->if_args.tagged = IDEMIP_FALSE;
+    Dispatch.if_bind(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+}
+
+static void if_tagged(uint8_t *w, uint8_t index, uint16_t vid)
+{
+    DispatchIo *io = IDEMIP_DISPATCH_IO(w);
+    io->if_args.index = index;
+    io->if_args.dma = NULL;
+    io->if_args.vid = vid;
+    io->if_args.tagged = IDEMIP_TRUE;
+    Dispatch.if_bind(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+}
+
+static uint32_t if_ctr(uint8_t netif, IdemIpStatsIfCounter id)
+{
+    IDEMIP_STATS_IO(stats_mem)->if_args.netif = netif;
+    IDEMIP_STATS_IO(stats_mem)->if_args.id = id;
+    Stats.if_read(stats_mem);
+    return (IDEMIP_STATS_IO(stats_mem)->status == IDEMIP_OK) ? IDEMIP_STATS_IO(stats_mem)->value : 0xFFFFFFFFu;
+}
+
+static uint32_t ctr(IdemIpStatsCounter id)
+{
+    IDEMIP_STATS_IO(stats_mem)->ctr_args.id = id;
+    Stats.read(stats_mem);
+    return (IDEMIP_STATS_IO(stats_mem)->status == IDEMIP_OK) ? IDEMIP_STATS_IO(stats_mem)->value : 0xFFFFFFFFu;
+}
+
+#if IDEMIP_ENABLE_UDP
+static uint16_t bind_udp4(uint16_t port)
+{
+    UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
+    up->open_args.ip_version = 4u;
+    up->open_args.lite = IDEMIP_FALSE;
+    UdpPcb.open(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+    uint16_t pcb = up->index;
+    static uint8_t local[4];
+    idemip_wr32(local, LOCAL_IP4);
+    up->bind_args.index = pcb;
+    up->bind_args.ip = local;
+    up->bind_args.port = port;
+    up->bind_args.zone = 0u;
+    up->bind_args.netif = 0u;
+    UdpPcb.bind(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+    return pcb;
+}
+#endif
+
+static void wire_units(void)
+{
+    Stats.clear(stats_mem);
+    Vlan.clear(vlan_mem);
+    ArpTable.clear(arp_mem);
+    Ip4Addr.clear(ip4_addr_mem);
+    Ip4Reass.clear(ip4_reass_mem);
+    IcmpIn.clear(icmp_in_mem);
+    Igmp.clear(igmp_mem);
+#if IDEMIP_ENABLE_IPV6
+    Ip6Addr.clear(ip6_addr_mem);
+    Ip6Reass.clear(ip6_reass_mem);
+    Icmp6In.clear(icmp6_in_mem);
+    Mld6.clear(mld6_mem);
+#endif
+    RawPcb.clear(raw_mem);
+#if IDEMIP_ENABLE_UDP
+    UdpPcb.clear(udp_mem);
+    UdpLite.clear(udplite_mem);
+#endif
+#if IDEMIP_ENABLE_TCP
+    TcpPcb.clear(tcp_pcb_mem);
+    TcpIn.clear(tcp_in_mem);
+#endif
+
+    Loopif.clear(loopif_mem);
+    IDEMIP_LOOPIF_IO(loopif_mem)->bind_args.addr4 = 0x7F000001u;
+#if IDEMIP_ENABLE_IPV6
+    IDEMIP_LOOPIF_IO(loopif_mem)->bind_args.addr6 = g_lo6;
+#endif
+    IDEMIP_LOOPIF_IO(loopif_mem)->bind_args.mtu = 1500u;
+    IDEMIP_LOOPIF_IO(loopif_mem)->bind_args.index = 0u;
+    Loopif.bind(loopif_mem);
+
+    Netif.clear(netif_mem);
+    NetifIo *ni = IDEMIP_NETIF_IO(netif_mem);
+    ni->bind_args.index = 0u;
+    ni->bind_args.phy = phy_mem;
+    ni->bind_args.hwaddr = g_local_mac;
+    ni->bind_args.mtu = 1500u;
+    Netif.bind(netif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ni->status);
+    ni->addr4_args.index = 0u;
+    ni->addr4_args.addr = LOCAL_IP4;
+    ni->addr4_args.mask = NETMASK4;
+    ni->addr4_args.gw = REMOTE_IP4;
+    Netif.set_addr4(netif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ni->status);
+    ni->if_args.index = 0u;
+    ni->if_args.set = (uint16_t)(IDEMIP_NETIF_FLAG_UP | IDEMIP_NETIF_FLAG_LINK_UP | IDEMIP_NETIF_FLAG_BROADCAST |
+                                 IDEMIP_NETIF_FLAG_ETHARP);
+    ni->if_args.clear = 0u;
+    Netif.set_flags(netif_mem);
+#if IDEMIP_ENABLE_IPV6
+    ni->addr6_args.index = 0u;
+    ni->addr6_args.addr = g_local_ip6;
+    ni->addr6_args.state = IDEMIP_NETIF_ADDR6_PREFERRED;
+    ni->addr6_args.preferred_s = IDEMIP_NETIF_LIFETIME_INFINITE;
+    ni->addr6_args.valid_s = IDEMIP_NETIF_LIFETIME_INFINITE;
+    Netif.add_addr6(netif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ni->status);
+#endif
+}
+
+// --- frame building ----------------------------------------------------------
+
+static size_t build_eth(uint8_t *f, const uint8_t *dst, uint16_t type)
+{
+    idemip_eth_build(f, dst, g_remote_mac, type);
+    return IDEMIP_ETH_OFF_PAYLOAD;
+}
+
+static size_t build_eth_tagged(uint8_t *f, const uint8_t *dst, uint16_t type, uint16_t vid)
+{
+    idemip_eth_build(f, dst, g_remote_mac, type);
+    IDEMIP_VLAN_IO(vlan_mem)->build_args.frame = f;
+    IDEMIP_VLAN_IO(vlan_mem)->build_args.type = type;
+    IDEMIP_VLAN_IO(vlan_mem)->tag_args.vid = vid;
+    IDEMIP_VLAN_IO(vlan_mem)->tag_args.pcp = 0u;
+    IDEMIP_VLAN_IO(vlan_mem)->tag_args.dei = IDEMIP_FALSE;
+    Vlan.build(vlan_mem);
+    return IDEMIP_VLAN_OFF_PAYLOAD;
+}
+
+// A tag the build entry refuses to write, because RFC 6325 sec 4.1.1 reserves it. A switch that is
+// broken or an attacker still puts it on the wire, so the suite writes the octets by hand.
+static size_t build_eth_tagged_raw(uint8_t *f, const uint8_t *dst, uint16_t type, uint16_t tci)
+{
+    idemip_eth_build(f, dst, g_remote_mac, (uint16_t)IDEMIP_VLAN_TPID);
+    idemip_wr16(f + IDEMIP_VLAN_OFF_TCI, tci);
+    idemip_wr16(f + IDEMIP_VLAN_OFF_TYPE, type);
+    return IDEMIP_VLAN_OFF_PAYLOAD;
+}
+
+static size_t build_ip4(uint8_t *f, size_t off, uint8_t proto, uint32_t src, uint32_t dst, size_t payload_len,
+                        uint16_t flags_frag)
+{
+    IdemIpIp4Fields fields;
+    memset(&fields, 0, sizeof fields);
+    fields.total_len = (uint16_t)(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + payload_len);
+    fields.id = 0x1234u;
+    fields.flags_frag = flags_frag;
+    fields.ttl = 64u;
+    fields.proto = proto;
+    fields.src = src;
+    fields.dst = dst;
+    idemip_ip4_build(f + off, &fields);
+    return off + IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN);
+}
+
+#if IDEMIP_ENABLE_UDP
+static size_t build_udp(uint8_t *f, size_t off, uint16_t sport, uint16_t dport, size_t data_len)
+{
+    idemip_udp_build(f + off, sport, dport, (uint16_t)(IDEMIP_UDP_HDR_LEN + data_len));
+    memset(f + off + IDEMIP_UDP_HDR_LEN, 0xAB, data_len);
+    return off + IDEMIP_UDP_HDR_LEN + data_len;
+}
+#endif
+
+static size_t build_icmp_echo(uint8_t *f, size_t off, size_t data_len)
+{
+    f[off + IDEMIP_ICMP_OFF_TYPE] = IDEMIP_ICMP_ECHO;
+    f[off + 1u] = 0u;
+    idemip_wr16(f + off + 2u, 0u);
+    idemip_wr16(f + off + 4u, 0x0AAAu);
+    idemip_wr16(f + off + 6u, 0x0001u);
+    memset(f + off + IDEMIP_ICMP_ECHO_HDR_LEN, 0x77, data_len);
+    size_t len = IDEMIP_ICMP_ECHO_HDR_LEN + data_len;
+    idemip_wr16(f + off + 2u, idemip_cksum(f + off, len));
+    return off + len;
+}
+
+static size_t build_ip4_echo(uint8_t *f, size_t off, uint32_t src, uint32_t dst)
+{
+    size_t ip = off;
+    off = build_ip4(f, off, IDEMIP_IP4_PROTO_ICMP, src, dst, IDEMIP_ICMP_ECHO_HDR_LEN + 4u, 0u);
+    size_t end = build_icmp_echo(f, off, 4u);
+    idemip_ip4_set_total_len(f + ip, (uint16_t)(end - ip));
+    idemip_ip4_recksum(f + ip);
+    return end;
+}
+
+static size_t build_arp(uint8_t *f, size_t off, uint16_t op, uint32_t tpa)
+{
+    if (op == IDEMIP_ARP_OP_REQUEST)
+    {
+        idemip_arp_build_request(f + off, g_remote_mac, REMOTE_IP4, tpa);
+    }
+    else
+    {
+        idemip_arp_build_reply(f + off, g_remote_mac, REMOTE_IP4, g_local_mac, tpa);
+    }
+    return off + IDEMIP_ARP_LEN;
+}
+
+#if IDEMIP_ENABLE_IPV6
+static size_t build_ip6(uint8_t *f, size_t off, uint8_t next_hdr, const uint8_t *src, const uint8_t *dst,
+                        size_t payload_len)
+{
+    IdemIpIp6BuildArgs a;
+    memset(&a, 0, sizeof a);
+    a.src = src;
+    a.dst = dst;
+    a.payload_len = (uint16_t)payload_len;
+    a.next_hdr = next_hdr;
+    a.hop_limit = 64u;
+    idemip_ip6_build(f + off, &a);
+    return off + IDEMIP_IPV6_HDR_LEN;
+}
+#endif
+
+static void input(uint8_t *w, size_t len, uint8_t netif, uint16_t desc)
+{
+    DispatchIo *io = IDEMIP_DISPATCH_IO(w);
+    io->input_args.frame = g_frame;
+    io->input_args.len = len;
+    io->input_args.out = g_out;
+    io->input_args.out_cap = sizeof g_out;
+    io->input_args.now_ms = 1000u;
+    io->input_args.desc = desc;
+    io->input_args.netif = netif;
+    Dispatch.input(w);
+}
+
+void setUp(void)
+{
+    arm(work_a, sizeof work_a);
+    arm(work_b, sizeof work_b);
+    memset(g_frame, 0, sizeof g_frame);
+    memset(g_out, 0, sizeof g_out);
+    memset(phy_mem, 0, sizeof phy_mem);
+    wire_units();
+    Dispatch.clear(work_a);
+    Dispatch.clear(work_b);
+    bind_all(work_a);
+    if_untagged(work_a, 0u);
+}
+
+void tearDown(void)
+{
+    check_canary(work_a, sizeof work_a);
+    check_canary(work_b, sizeof work_b);
+}
+
+// --- the borrow --------------------------------------------------------------
+
+// Nothing to report into, so nothing is written and nothing faults.
+void test_every_entry_survives_a_null_borrow(void)
+{
+    Dispatch.clear(NULL);
+    Dispatch.bind(NULL);
+    Dispatch.if_bind(NULL);
+    Dispatch.if_get(NULL);
+    Dispatch.input(NULL);
+#if IDEMIP_ENABLE_TCP
+    Dispatch.tcp_deliver(NULL);
+    Dispatch.tcp_ack(NULL);
+#endif
+    TEST_PASS();
+}
+
+// A zeroed borrow is not this module's until clear has marked it, so every entry refuses one.
+void test_every_entry_refuses_an_uncleared_borrow(void)
+{
+    static _Alignas(8) uint8_t raw[IDEMIP_DISPATCH_BORROW];
+    memset(raw, 0, sizeof raw);
+    Dispatch.bind(raw);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DISPATCH_IO(raw)->status);
+    Dispatch.if_bind(raw);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DISPATCH_IO(raw)->status);
+    Dispatch.if_get(raw);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DISPATCH_IO(raw)->status);
+    Dispatch.input(raw);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DISPATCH_IO(raw)->status);
+#if IDEMIP_ENABLE_TCP
+    Dispatch.tcp_deliver(raw);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DISPATCH_IO(raw)->status);
+    Dispatch.tcp_ack(raw);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DISPATCH_IO(raw)->status);
+#endif
+}
+
+// The borrow IS the instance, and the operand block is in it, so two paths share no byte at all.
+void test_two_borrows_share_no_byte(void)
+{
+    bind_all(work_b);
+    if_tagged(work_a, 0u, VID_OURS);
+    if_tagged(work_b, 0u, VID_THEIRS);
+
+    IDEMIP_DISPATCH_IO(work_a)->if_args.index = 0u;
+    Dispatch.if_get(work_a);
+    TEST_ASSERT_EQUAL_UINT16(VID_OURS, IDEMIP_DISPATCH_IO(work_a)->vid);
+    IDEMIP_DISPATCH_IO(work_b)->if_args.index = 0u;
+    Dispatch.if_get(work_b);
+    TEST_ASSERT_EQUAL_UINT16(VID_THEIRS, IDEMIP_DISPATCH_IO(work_b)->vid);
+
+    // And a's row is still a's after b's call.
+    IDEMIP_DISPATCH_IO(work_a)->if_args.index = 0u;
+    Dispatch.if_get(work_a);
+    TEST_ASSERT_EQUAL_UINT16(VID_OURS, IDEMIP_DISPATCH_IO(work_a)->vid);
+}
+
+// An entry is a function of its borrow alone, so a call interleaved on another borrow cannot change
+// what this one reports.
+void test_a_call_is_a_function_of_its_borrow_alone(void)
+{
+    bind_all(work_b);
+    if_tagged(work_a, 0u, VID_OURS);
+    if_tagged(work_b, 0u, VID_THEIRS);
+
+    IDEMIP_DISPATCH_IO(work_a)->if_args.index = 0u;
+    Dispatch.if_get(work_a);
+    uint16_t first = IDEMIP_DISPATCH_IO(work_a)->vid;
+    IDEMIP_DISPATCH_IO(work_b)->if_args.index = 0u;
+    Dispatch.if_get(work_b);
+    IDEMIP_DISPATCH_IO(work_a)->if_args.index = 0u;
+    Dispatch.if_get(work_a);
+    TEST_ASSERT_EQUAL_UINT16(first, IDEMIP_DISPATCH_IO(work_a)->vid);
+}
+
+// The map is published, so a reader can see every region without opening the .c. The regions are in
+// order, none overlaps the one before it, and the last ends inside the borrow.
+void test_the_published_offsets_are_ordered_and_fit(void)
+{
+    TEST_ASSERT_EQUAL_size_t(0u, (size_t)IDEMIP_DISPATCH_OFF_IO);
+    TEST_ASSERT_TRUE(IDEMIP_DISPATCH_OFF_CTX >= sizeof(DispatchIo));
+    TEST_ASSERT_TRUE(IDEMIP_DISPATCH_OFF_IF >= IDEMIP_DISPATCH_OFF_CTX);
+    TEST_ASSERT_TRUE(IDEMIP_DISPATCH_OFF_PCB > IDEMIP_DISPATCH_OFF_IF);
+    TEST_ASSERT_TRUE(IDEMIP_DISPATCH_OFF_END > IDEMIP_DISPATCH_OFF_PCB);
+    TEST_ASSERT_TRUE(IDEMIP_DISPATCH_OFF_END <= IDEMIP_DISPATCH_BORROW);
+}
+
+void test_input_refuses_a_null_frame_and_a_bad_interface(void)
+{
+    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    io->input_args.frame = NULL;
+    io->input_args.len = 64u;
+    io->input_args.netif = 0u;
+    Dispatch.input(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, io->status);
+
+    io->input_args.frame = g_frame;
+    io->input_args.len = 0u;
+    Dispatch.input(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, io->status);
+
+    io->input_args.len = 64u;
+    io->input_args.netif = (uint8_t)IDEMIP_NETIF_COUNT;
+    Dispatch.input(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, io->status);
+}
+
+// --- the link layer, and what each drop counts -------------------------------
+
+// RFC 1213 sec 6.4 ifInOctets is "the total number of octets received on the interface", whatever
+// becomes of the frame after that.
+void test_every_arriving_frame_counts_its_octets(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, 0x9999u);
+    input(work_a, off + 46u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)(off + 46u), if_ctr(0u, IDEMIP_STAT_IF_IN_OCTETS));
+}
+
+// Shorter than the Ethernet II header it claims: ifInErrors, "contained errors preventing them from
+// being deliverable to a higher-layer protocol".
+void test_a_short_frame_is_an_error_not_a_discard(void)
+{
+    input(work_a, 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_DISCARDS));
+}
+
+// A type code nothing here handles: ifInUnknownProtos, "discarded because of an unknown or
+// unsupported protocol". The frame is intact, so it is neither an error nor a discard.
+void test_an_unhandled_ethertype_counts_unknown_protos(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, 0x88CCu);
+    input(work_a, off + 46u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_ETHERTYPE, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS));
+    TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_DISCARDS));
+}
+
+// --- the VLAN policy, which lives here and not in the parser -----------------
+
+// An untagged interface accepts every frame.
+void test_an_untagged_interface_accepts_an_untagged_frame(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_FALSE(IDEMIP_DISPATCH_IO(work_a)->tagged);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_DISCARDS));
+}
+
+// An untagged interface accepts a tagged frame too, and reads the payload behind the tag.
+void test_an_untagged_interface_accepts_a_tagged_frame(void)
+{
+    size_t off = build_eth_tagged(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4, VID_THEIRS);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE(IDEMIP_DISPATCH_IO(work_a)->tagged);
+    TEST_ASSERT_EQUAL_UINT16(VID_THEIRS, IDEMIP_DISPATCH_IO(work_a)->vid);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_DISCARDS));
+    TEST_ASSERT_EQUAL_size_t((size_t)IDEMIP_VLAN_OFF_PAYLOAD, IDEMIP_DISPATCH_IO(work_a)->ip_off);
+}
+
+// A tagged interface accepts its own VLAN ID.
+void test_a_tagged_interface_accepts_its_own_vid(void)
+{
+    if_tagged(work_a, 0u, VID_OURS);
+    size_t off = build_eth_tagged(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4, VID_OURS);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_DISCARDS));
+}
+
+// A tagged interface discards the rest. RFC 1213 ifInDiscards: "chosen to be discarded even though no
+// errors had been detected". The frame is intact, so this is not ifInErrors.
+void test_a_tagged_interface_discards_another_vid(void)
+{
+    if_tagged(work_a, 0u, VID_OURS);
+    size_t off = build_eth_tagged(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4, VID_THEIRS);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_VLAN_POLICY, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_DISCARDS));
+    TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS));
+}
+
+// The count alone cannot be acted on, so the offending VLAN ID is recorded beside it. It rises and
+// falls rather than accumulating, so it is a Gauge (RFC 1155 sec 3.2.3.4): assigned, never bumped.
+void test_a_policy_drop_records_the_offending_vid(void)
+{
+    if_tagged(work_a, 0u, VID_OURS);
+    IDEMIP_DISPATCH_IO(work_a)->if_args.index = 0u;
+    Dispatch.if_get(work_a);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_DISPATCH_VID_NONE, IDEMIP_DISPATCH_IO(work_a)->last_vid);
+
+    size_t off = build_eth_tagged(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4, VID_THEIRS);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    IDEMIP_DISPATCH_IO(work_a)->if_args.index = 0u;
+    Dispatch.if_get(work_a);
+    TEST_ASSERT_EQUAL_UINT16(VID_THEIRS, IDEMIP_DISPATCH_IO(work_a)->last_vid);
+
+    // A second drop on another VLAN assigns, and does not accumulate.
+    off = build_eth_tagged(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4, 300u);
+    end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    IDEMIP_DISPATCH_IO(work_a)->if_args.index = 0u;
+    Dispatch.if_get(work_a);
+    TEST_ASSERT_EQUAL_UINT16(300u, IDEMIP_DISPATCH_IO(work_a)->last_vid);
+}
+
+// THE SENTINEL IS 4095 AND NOT 0. RFC 6325 sec 4.1.1: "VLAN ID zero is the null VLAN identifier and
+// indicates that no VLAN is specified", which is a priority-tagged frame and a real value on the
+// wire. A drop of one records 0, which must read as a drop and not as "nothing discarded".
+void test_a_discarded_priority_tagged_frame_records_zero_not_the_sentinel(void)
+{
+    if_tagged(work_a, 0u, VID_OURS);
+    size_t off = build_eth_tagged(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4, IDEMIP_VLAN_VID_NULL);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_VLAN_POLICY, IDEMIP_DISPATCH_IO(work_a)->drop);
+    IDEMIP_DISPATCH_IO(work_a)->if_args.index = 0u;
+    Dispatch.if_get(work_a);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_VLAN_VID_NULL, IDEMIP_DISPATCH_IO(work_a)->last_vid);
+    TEST_ASSERT_NOT_EQUAL_UINT16(IDEMIP_DISPATCH_VID_NONE, IDEMIP_DISPATCH_IO(work_a)->last_vid);
+}
+
+// RFC 6325 sec 4.1.1: "The VLAN ID 0xFFF MUST NOT be used", and a receiver "MUST discard any frame"
+// carrying it. A value the standard forbids on the wire makes the frame malformed, so it is
+// ifInErrors and not the deliberate ifInDiscards.
+void test_the_reserved_vid_is_an_error_not_a_policy_discard(void)
+{
+    if_tagged(work_a, 0u, VID_OURS);
+    size_t off = build_eth_tagged_raw(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4,
+                                      (uint16_t)IDEMIP_VLAN_VID_RESERVED);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_VLAN_RESERVED, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_DISCARDS));
+}
+
+// The reserved VLAN ID is refused on an untagged interface too, the frame being malformed however
+// this interface is configured.
+void test_the_reserved_vid_is_refused_on_an_untagged_interface(void)
+{
+    size_t off = build_eth_tagged_raw(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4,
+                                      (uint16_t)IDEMIP_VLAN_VID_RESERVED);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_VLAN_RESERVED, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
+}
+
+// RFC 6325 sec 4.1.1 runs the usable range 0x001 through 0xFFE, so a membership outside it names no
+// VLAN and cannot be configured.
+void test_if_bind_refuses_a_membership_outside_the_usable_range(void)
+{
+    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    io->if_args.index = 0u;
+    io->if_args.tagged = IDEMIP_TRUE;
+    io->if_args.vid = IDEMIP_VLAN_VID_NULL;
+    Dispatch.if_bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, io->status);
+    io->if_args.vid = (uint16_t)IDEMIP_VLAN_VID_RESERVED;
+    Dispatch.if_bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, io->status);
+    io->if_args.vid = (uint16_t)IDEMIP_VLAN_VID_LAST;
+    Dispatch.if_bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+}
+
+void test_if_bind_and_if_get_refuse_an_index_past_the_table(void)
+{
+    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    io->if_args.index = (uint8_t)IDEMIP_NETIF_COUNT;
+    io->if_args.tagged = IDEMIP_FALSE;
+    Dispatch.if_bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, io->status);
+    Dispatch.if_get(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, io->status);
+}
+
+// clear leaves every row saying nothing has been discarded, which is 4095 and never 0.
+void test_clear_sets_every_row_to_the_sentinel(void)
+{
+    for (uint8_t i = 0u; i < (uint8_t)IDEMIP_NETIF_COUNT; i++)
+    {
+        IDEMIP_DISPATCH_IO(work_a)->if_args.index = i;
+        Dispatch.if_get(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DISPATCH_IO(work_a)->status);
+        TEST_ASSERT_EQUAL_UINT16(IDEMIP_DISPATCH_VID_NONE, IDEMIP_DISPATCH_IO(work_a)->last_vid);
+    }
+}
+
+// --- IPv4, the five steps of RFC 1122 sec 3.1 --------------------------------
+
+// (1) verifies that the datagram is correctly formatted.
+void test_a_bad_ipv4_checksum_is_a_header_error(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    idemip_ip4_set_cksum(g_frame + ip, (uint16_t)(idemip_ip4_cksum(g_frame + ip) ^ 0xFFFFu));
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_HEADER, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP4_IN_HDR_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
+}
+
+// (2) verifies that it is destined to the local host. One that is not leaves the input path: RFC 1122
+// sec 3.1 puts the first-hop choice on the outgoing side, so this reports and routes nothing.
+void test_a_datagram_for_somewhere_else_is_reported_for_forwarding(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, OTHER_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) != 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+}
+
+// RFC 1122 sec 3.2.1.3 case (c) "{ -1, -1 }", the limited broadcast, is this host's.
+void test_the_limited_broadcast_is_local(void)
+{
+    size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, 0xFFFFFFFFu);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u);
+}
+
+// RFC 1122 sec 3.2.1.3 case (e) "{ <Network-number>, <Subnet-number>, -1 }", the directed broadcast
+// of the receiving interface's own subnet, is this host's too.
+void test_the_directed_broadcast_of_our_subnet_is_local(void)
+{
+    size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4 | ~NETMASK4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u);
+}
+
+// A class D group this node never joined is not this host's, and RFC 1213 ipInAddrErrors counts it.
+void test_a_group_we_never_joined_is_an_address_error(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, 0xE0000105u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_ADDRESS, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP4_IN_ADDR_ERRORS));
+}
+
+#if IDEMIP_ENABLE_UDP
+
+// (5) passes the encapsulated message to the appropriate transport-layer protocol module.
+void test_a_bound_udp_port_takes_the_datagram(void)
+{
+    uint16_t pcb = bind_udp4(4001u);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 4u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_UDP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_UDP_IN_DATAGRAMS));
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP4_IN_DELIVERS));
+    // RFC 1213 counts a delivery, not an arrival, and this one went to a unicast link address.
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_UCAST_PKTS));
+    TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_NUCAST_PKTS));
+}
+
+// RFC 1122 sec 4.1.3.1: with no binding, "UDP SHOULD send an ICMP Port Unreachable message", and
+// udpNoPorts is what counts it.
+void test_an_unbound_udp_port_counts_no_ports(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_UDP_NO_PORTS));
+}
+
+#endif // IDEMIP_ENABLE_UDP
+
+// A delivery to a link broadcast is non-unicast, which is the other half of the RFC 1213 pair.
+void test_a_broadcast_delivery_counts_non_unicast(void)
+{
+    size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, 0xFFFFFFFFu, IDEMIP_ICMP_ECHO_HDR_LEN + 4u, 0u);
+    size_t end = build_icmp_echo(g_frame, off, 4u);
+    idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(end - ip));
+    idemip_ip4_recksum(g_frame + ip);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_NUCAST_PKTS));
+    TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_UCAST_PKTS));
+}
+
+// A protocol nothing here claims and no raw binding takes: ipInUnknownProtos.
+void test_an_unclaimed_ip_protocol_counts_unknown_protos(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, 253u, REMOTE_IP4, LOCAL_IP4, 8u, 0u);
+    input(work_a, off + 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_PROTO, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP4_IN_UNKNOWN_PROTOS));
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS));
+}
+
+// RFC 1122 sec 3.2: a raw binding takes the protocol number itself, so a protocol no built-in module
+// claims still reaches a pcb.
+void test_a_raw_binding_takes_an_unclaimed_protocol(void)
+{
+    RawPcbIo *rp = IDEMIP_RAW_PCB_IO(raw_mem);
+    rp->open_args.ip_version = 4u;
+    rp->open_args.proto = 253u;
+    RawPcb.open(raw_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, rp->status);
+    uint16_t pcb = rp->index;
+    uint8_t local[4];
+    idemip_wr32(local, LOCAL_IP4);
+    rp->bind_args.index = pcb;
+    rp->bind_args.ip = local;
+    rp->bind_args.zone = 0u;
+    rp->bind_args.netif = 0u;
+    RawPcb.bind(raw_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, rp->status);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, 253u, REMOTE_IP4, LOCAL_IP4, 8u, 0u);
+    input(work_a, off + 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_RAW, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+}
+
+// RFC 792 Echo, answered into the caller's transmit buffer.
+void test_an_echo_request_builds_a_reply(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, LOCAL_IP4, IDEMIP_ICMP_ECHO_HDR_LEN + 8u, 0u);
+    size_t end = build_icmp_echo(g_frame, off, 8u);
+    idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(end - ip));
+    idemip_ip4_recksum(g_frame + ip);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DISPATCH_IO(work_a)->status);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_SEND) != 0u);
+    TEST_ASSERT_TRUE(IDEMIP_DISPATCH_IO(work_a)->out_len > 0u);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP_ECHO_REPLY, g_out[IDEMIP_ICMP_OFF_TYPE]);
+}
+
+// A reply with nowhere to be built is BUSY, not ERR: a transmit buffer frees on a later tick and the
+// same frame dispatched then answers. Reported as ERR the caller would give up on a healthy stack.
+void test_a_reply_with_no_transmit_buffer_is_busy(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, LOCAL_IP4, IDEMIP_ICMP_ECHO_HDR_LEN + 8u, 0u);
+    size_t end = build_icmp_echo(g_frame, off, 8u);
+    idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(end - ip));
+    idemip_ip4_recksum(g_frame + ip);
+
+    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    io->input_args.frame = g_frame;
+    io->input_args.len = end;
+    io->input_args.out = NULL;
+    io->input_args.out_cap = 0u;
+    io->input_args.now_ms = 1000u;
+    io->input_args.desc = IDEMIP_DISPATCH_DESC_NONE;
+    io->input_args.netif = 0u;
+    Dispatch.input(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, io->status);
+}
+
+// --- ARP ---------------------------------------------------------------------
+
+// RFC 826 "Packet Reception": a REQUEST for this end's protocol address owes a REPLY.
+void test_an_arp_request_for_us_builds_a_reply(void)
+{
+    size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_ARP);
+    size_t end = build_arp(g_frame, off, IDEMIP_ARP_OP_REQUEST, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DISPATCH_IO(work_a)->status);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_SEND) != 0u);
+    TEST_ASSERT_EQUAL_size_t((size_t)IDEMIP_ETH_FRAME_MIN, IDEMIP_DISPATCH_IO(work_a)->out_len);
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)IDEMIP_ETHERTYPE_ARP, idemip_eth_type(g_out));
+    TEST_ASSERT_TRUE(idemip_arp_is_reply(g_out + IDEMIP_ETH_OFF_PAYLOAD));
+    TEST_ASSERT_EQUAL_UINT32(LOCAL_IP4, idemip_arp_spa(g_out + IDEMIP_ETH_OFF_PAYLOAD));
+    TEST_ASSERT_EQUAL_UINT32(REMOTE_IP4, idemip_arp_tpa(g_out + IDEMIP_ETH_OFF_PAYLOAD));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(g_local_mac, idemip_eth_src(g_out), IDEMIP_MAC_LEN);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(g_remote_mac, idemip_eth_dst(g_out), IDEMIP_MAC_LEN);
+}
+
+// RFC 826 "Packet Reception" owes a REPLY only for "?Am I the target protocol address?", and adds
+// the triplet only then: "If Merge_flag is false, add the triplet <protocol type, sender protocol
+// address, sender hardware address> to the translation table." A REQUEST for someone else therefore
+// neither answers nor populates the table.
+void test_an_arp_request_for_someone_else_neither_answers_nor_is_learned(void)
+{
+    size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_ARP);
+    size_t end = build_arp(g_frame, off, IDEMIP_ARP_OP_REQUEST, OTHER_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_SEND) == 0u);
+    IDEMIP_ARP_IO(arp_mem)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
+    IDEMIP_ARP_IO(arp_mem)->find_args.spa = REMOTE_IP4;
+    ArpTable.find(arp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_ARP_IO(arp_mem)->status);
+}
+
+// The same REQUEST addressed to us is answered, and the sender's triplet IS added.
+void test_an_arp_request_for_us_is_learned(void)
+{
+    size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_ARP);
+    size_t end = build_arp(g_frame, off, IDEMIP_ARP_OP_REQUEST, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    IDEMIP_ARP_IO(arp_mem)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
+    IDEMIP_ARP_IO(arp_mem)->find_args.spa = REMOTE_IP4;
+    ArpTable.find(arp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ARP_IO(arp_mem)->status);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(g_remote_mac, IDEMIP_ARP_IO(arp_mem)->mac, IDEMIP_MAC_LEN);
+}
+
+// A tagged interface answers inside its own VLAN, so the REPLY carries the tag the frame arrived on.
+void test_an_arp_reply_on_a_tagged_interface_carries_the_tag(void)
+{
+    if_tagged(work_a, 0u, VID_OURS);
+    size_t off = build_eth_tagged(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_ARP, VID_OURS);
+    size_t end = build_arp(g_frame, off, IDEMIP_ARP_OP_REQUEST, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_SEND) != 0u);
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)IDEMIP_VLAN_TPID, idemip_rd16(g_out + IDEMIP_VLAN_OFF_TPID));
+    TEST_ASSERT_EQUAL_UINT16(VID_OURS, (uint16_t)(idemip_rd16(g_out + IDEMIP_VLAN_OFF_TCI) & IDEMIP_VLAN_VID_MASK));
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)IDEMIP_ETHERTYPE_ARP, idemip_rd16(g_out + IDEMIP_VLAN_OFF_TYPE));
+    TEST_ASSERT_TRUE(idemip_arp_is_reply(g_out + IDEMIP_VLAN_OFF_PAYLOAD));
+}
+
+// A REPLY owed with no transmit buffer is BUSY for the same reason an ICMP reply is.
+void test_an_arp_reply_with_no_transmit_buffer_is_busy(void)
+{
+    size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_ARP);
+    size_t end = build_arp(g_frame, off, IDEMIP_ARP_OP_REQUEST, LOCAL_IP4);
+    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    io->input_args.frame = g_frame;
+    io->input_args.len = end;
+    io->input_args.out = NULL;
+    io->input_args.out_cap = 0u;
+    io->input_args.now_ms = 1000u;
+    io->input_args.desc = IDEMIP_DISPATCH_DESC_NONE;
+    io->input_args.netif = 0u;
+    Dispatch.input(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, io->status);
+}
+
+// An ARP payload shorter than RFC 826's twenty-eight octets is a malformed frame.
+void test_a_short_arp_packet_is_an_error(void)
+{
+    size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_ARP);
+    input(work_a, off + 10u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
+}
+
+// --- reassembly, which pins the buffer the engine wrote ----------------------
+
+// Retention is a pin on a descriptor. A frame that lies in none cannot be held past the call, so the
+// fragment is discarded rather than a pointer into a buffer the engine may recycle being kept.
+void test_a_fragment_with_no_descriptor_is_discarded(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, 8u, IDEMIP_IP4_FLAG_MF);
+    input(work_a, off + 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NO_DESC, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP4_REASM_REQDS));
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP4_REASM_FAILS));
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) == 0u);
+}
+
+// --- IPv6 --------------------------------------------------------------------
+
+#if IDEMIP_ENABLE_IPV6
+#if IDEMIP_ENABLE_UDP
+
+void test_an_ipv6_packet_for_our_address_is_delivered(void)
+{
+    UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
+    up->open_args.ip_version = 6u;
+    up->open_args.lite = IDEMIP_FALSE;
+    UdpPcb.open(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+    up->bind_args.index = up->index;
+    up->bind_args.ip = g_local_ip6;
+    up->bind_args.port = 4001u;
+    up->bind_args.zone = 0u;
+    up->bind_args.netif = 0u;
+    UdpPcb.bind(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_local_ip6, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_UDP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_RECEIVES));
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_DELIVERS));
+}
+
+#endif // IDEMIP_ENABLE_UDP
+
+void test_an_ipv6_packet_for_somewhere_else_is_reported_for_forwarding(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_other_ip6, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) != 0u);
+}
+
+// RFC 8200 sec 3: a Payload Length reaching past the octets that arrived is a header error.
+void test_an_ipv6_payload_length_past_the_frame_is_a_header_error(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t ip = off;
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_local_ip6, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    idemip_ip6_set_payload_len(g_frame + ip, 4000u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_HEADER, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_HDR_ERRORS));
+}
+
+// RFC 4291 sec 2.7.1: a node joins the Solicited-Node address of every unicast address it holds, so
+// a packet to one is this host's.
+void test_the_solicited_node_address_of_our_own_is_local(void)
+{
+    uint8_t solicited[IDEMIP_IP6_ADDR_LEN];
+    idemip_ip6_addr_solicited(solicited, g_local_ip6);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, solicited, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u);
+}
+
+#endif // IDEMIP_ENABLE_IPV6
+
+// --- TCP, the three joins ----------------------------------------------------
+
+#if IDEMIP_ENABLE_TCP
+
+static uint16_t listen_on(uint16_t port)
+{
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    uint8_t local[IDEMIP_TCP_PCB_ADDR_BYTES];
+    memset(local, 0, sizeof local);
+    idemip_wr32(local, LOCAL_IP4);
+    tp->listen_args.ip = local;
+    tp->listen_args.port = port;
+    tp->listen_args.zone = 0u;
+    tp->listen_args.netif = 0u;
+    tp->listen_args.backlog = 2u;
+    tp->listen_args.ip_version = 4u;
+    TcpPcb.listen(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+    return tp->index;
+}
+
+static size_t build_tcp4(uint8_t *f, uint16_t sport, uint16_t dport, uint32_t seq, uint32_t ack, uint8_t flags,
+                         size_t data_len)
+{
+    size_t off = build_eth(f, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    off = build_ip4(f, off, IDEMIP_IP4_PROTO_TCP, REMOTE_IP4, LOCAL_IP4, IDEMIP_TCP_HDR_LEN + data_len, 0u);
+    uint8_t *seg = f + off;
+    memset(seg, 0, IDEMIP_TCP_HDR_LEN);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_SRC_PORT, sport);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_DST_PORT, dport);
+    idemip_wr32(seg + IDEMIP_TCP_OFF_SEQ, seq);
+    idemip_wr32(seg + IDEMIP_TCP_OFF_ACK, ack);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_OFFS_FLAGS,
+                (uint16_t)(((uint16_t)IDEMIP_TCP_DOFF_MIN << IDEMIP_TCP_DOFF_SHIFT) | flags));
+    idemip_wr16(seg + IDEMIP_TCP_OFF_WINDOW, (uint16_t)IDEMIP_TCP_WND);
+    memset(seg + IDEMIP_TCP_HDR_LEN, 0x5A, data_len);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM, 0u);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM,
+                idemip_tcp_cksum_compute(seg, IDEMIP_TCP_HDR_LEN + data_len, REMOTE_IP4, LOCAL_IP4));
+    idemip_ip4_set_total_len(f + ip, (uint16_t)(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + IDEMIP_TCP_HDR_LEN + data_len));
+    idemip_ip4_recksum(f + ip);
+    return off + IDEMIP_TCP_HDR_LEN + data_len;
+}
+
+// RFC 9293 sec 3.10.7.1 CLOSED STATE: "If the state is CLOSED (i.e., TCB does not exist)", the
+// segment is answered with a reset and reaches no pcb.
+void test_a_segment_with_no_tcb_reaches_the_closed_state(void)
+{
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_TCP) != 0u);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->tcp_act & IDEMIP_TCP_IN_ACT_RST) != 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_NONE, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_TCP_IN_SEGS));
+}
+
+// RFC 9293 sec 3.10.7.2 LISTEN STATE: a SYN to a listener creates the connection, which sec 3.5
+// (MUST-11) records the listener on.
+void test_a_syn_to_a_listener_creates_the_connection(void)
+{
+    uint16_t listener = listen_on(5001u);
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_TCP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    uint16_t pcb = IDEMIP_DISPATCH_IO(work_a)->pcb;
+    TEST_ASSERT_NOT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, pcb);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_TCP_PASSIVE_OPENS));
+
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_SYN_RECEIVED, tp->state);
+    TEST_ASSERT_EQUAL_UINT16(listener, tp->info.listener);
+}
+
+// The connection a listener created is the one the next segment of that four-tuple finds.
+void test_the_second_segment_finds_the_connection(void)
+{
+    (void)listen_on(5001u);
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    uint16_t pcb = IDEMIP_DISPATCH_IO(work_a)->pcb;
+
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, IDEMIP_TCP_ACK, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_TCP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_ESTABLISHED, tp->state);
+}
+
+// Brings one connection to ESTABLISHED and reports it, so the joins below start from a real TCB.
+//
+// RFC 9293 sec 3.3.1 has RCV.WND come from the receive buffer the user's OPEN supplied, and no entry
+// in this tree invents one, so the suite sets it the way an application would. Left at zero, sec
+// 3.10.7.4 Table 6 makes every segment carrying data unacceptable.
+static uint16_t establish(void)
+{
+    (void)listen_on(5001u);
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    uint16_t pcb = IDEMIP_DISPATCH_IO(work_a)->pcb;
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    tp->vars.rcv_wnd = IDEMIP_TCP_WND;
+    tp->pcb_args.index = pcb;
+    TcpPcb.store(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+    uint32_t iss = tp->vars.iss;
+    end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, IDEMIP_TCP_ACK, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    return pcb;
+}
+
+// JOIN 3, RFC 9293 sec 3.10.7.4 (MUST-58): the acknowledgment a segment earns is recorded rather than
+// reported, so a batch of segments does not put one acknowledgment each on the wire.
+void test_an_ordinary_acknowledgment_is_aggregated_and_not_reported(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, (uint8_t)(IDEMIP_TCP_ACK | IDEMIP_TCP_PSH), 4u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    TEST_ASSERT_TRUE((io->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_TRUE((io->act & IDEMIP_DISPATCH_ACT_ACK_OWED) != 0u);
+    TEST_ASSERT_TRUE_MESSAGE((io->tcp_act & IDEMIP_TCP_IN_ACT_ACK) == 0u,
+                             "an ordinary acknowledgment was reported per segment rather than aggregated");
+}
+
+// (MUST-59) "it MUST process them all before sending any ACK segments": two segments earn one
+// acknowledgment, and that one carries the RCV.NXT the second left behind.
+void test_two_segments_earn_one_acknowledgment(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    end = build_tcp4(g_frame, 5000u, 5001u, 105u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t rcv_nxt = tp->vars.rcv_nxt;
+    TEST_ASSERT_EQUAL_UINT32(109u, rcv_nxt);
+
+    Dispatch.tcp_ack(work_a);
+    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_EQUAL_UINT16(pcb, io->pcb);
+    TEST_ASSERT_EQUAL_UINT32(rcv_nxt, io->reply.ack);
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)IDEMIP_TCP_ACK, io->reply.flags);
+
+    // One per connection per batch: the second call has nothing left to take.
+    Dispatch.tcp_ack(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, io->status);
+}
+
+// Nothing owed is BUSY, not ERR: a segment on a later tick makes the same call succeed.
+void test_an_ack_flush_with_nothing_owed_is_busy(void)
+{
+    Dispatch.tcp_ack(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DISPATCH_IO(work_a)->status);
+}
+
+// JOIN 1, RFC 9293 sec 3.10.7.4 (SHLD-31): "Segments with higher beginning sequence numbers SHOULD be
+// held for later processing." Held is pinned and queued, so a segment ahead of RCV.NXT reaches the
+// out-of-order queue instead of being dropped.
+void test_a_segment_ahead_of_the_window_is_held(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    // Sequence 105 with RCV.NXT at 101 leaves a four-octet gap in front of it.
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 105u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, 3u);
+    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    TEST_ASSERT_TRUE_MESSAGE((io->tcp_act & IDEMIP_TCP_IN_ACT_HOLD) != 0u,
+                             "a segment above RCV.NXT was not reported as one to hold");
+
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_NOT_EQUAL_UINT16_MESSAGE(IDEMIP_TCP_PCB_NONE, tp->info.ooseq,
+                                         "nothing joined tcp_in's hold to the out-of-order queue");
+    tp->oos_args.index = tp->info.ooseq;
+    TcpPcb.oos_load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+    TEST_ASSERT_EQUAL_UINT32(105u, tp->oos.seq);
+    TEST_ASSERT_EQUAL_UINT16(4u, tp->oos.len);
+    TEST_ASSERT_EQUAL_UINT16(3u, tp->oos.desc);
+}
+
+// JOIN 2: nothing re-delivers a held segment until RCV.NXT reaches it, and BUSY is what says so.
+void test_a_held_segment_waits_until_rcv_nxt_reaches_it(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 105u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, 3u);
+
+    IDEMIP_DISPATCH_IO(work_a)->tcp_args.pcb = pcb;
+    Dispatch.tcp_deliver(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DISPATCH_IO(work_a)->status,
+                                  "a held segment was delivered while the gap in front of it was open");
+}
+
+// JOIN 2: once the gap is filled, the held segment is delivered and RCV.NXT advances over it.
+void test_a_held_segment_is_redelivered_once_the_gap_is_filled(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    // The segment at 105 is held; the one at 101 fills the gap and takes RCV.NXT to 105.
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 105u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, 3u);
+    end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_UINT32(105u, tp->vars.rcv_nxt);
+
+    IDEMIP_DISPATCH_IO(work_a)->tcp_args.pcb = pcb;
+    Dispatch.tcp_deliver(work_a);
+    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_TRUE((io->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_UINT32(105u, io->text_seq);
+    TEST_ASSERT_EQUAL_UINT16(4u, io->text_len);
+    TEST_ASSERT_EQUAL_UINT16(3u, io->desc);
+
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_UINT32(109u, tp->vars.rcv_nxt);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, tp->info.ooseq);
+
+    // The queue is empty now, so the next call has nothing to re-deliver.
+    IDEMIP_DISPATCH_IO(work_a)->tcp_args.pcb = pcb;
+    Dispatch.tcp_deliver(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DISPATCH_IO(work_a)->status);
+}
+
+// A re-delivery advances the window, so it owes the aggregate acknowledgment the same way an
+// in-order segment does.
+void test_a_redelivery_owes_the_aggregate_acknowledgment(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 105u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, 3u);
+    end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    // Take the acknowledgment the two arriving segments owed, so what is left is the re-delivery's.
+    Dispatch.tcp_ack(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DISPATCH_IO(work_a)->status);
+
+    IDEMIP_DISPATCH_IO(work_a)->tcp_args.pcb = pcb;
+    Dispatch.tcp_deliver(work_a);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_ACK_OWED) != 0u);
+
+    Dispatch.tcp_ack(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DISPATCH_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32(109u, IDEMIP_DISPATCH_IO(work_a)->reply.ack);
+}
+
+void test_tcp_deliver_refuses_a_pcb_past_the_table(void)
+{
+    IDEMIP_DISPATCH_IO(work_a)->tcp_args.pcb = (uint16_t)IDEMIP_TCP_PCBS;
+    Dispatch.tcp_deliver(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DISPATCH_IO(work_a)->status);
+}
+
+// A segment shorter than the RFC 9293 sec 3.1 header is a malformed frame, and tcpInErrs counts it.
+void test_a_short_tcp_segment_is_an_error(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_TCP, REMOTE_IP4, LOCAL_IP4, 12u, 0u);
+    input(work_a, off + 12u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_TCP_IN_ERRS));
+}
+
+// RFC 5961 sec 4.2: a SYN arriving on an established connection makes the receiver "send an ACK
+// (also referred to as challenge ACK)". That answer belongs to that one segment, so it is NOT the
+// aggregate of RFC 9293 sec 3.10.7.4 MUST-58 and must reach the caller on the call that earned it.
+void test_a_challenge_acknowledgment_is_not_aggregated(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    // Drain what the handshake owed, so what is left is this segment's own answer.
+    Dispatch.tcp_ack(work_a);
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, (uint8_t)(IDEMIP_TCP_SYN | IDEMIP_TCP_ACK), 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    TEST_ASSERT_TRUE_MESSAGE((io->tcp_act & IDEMIP_TCP_IN_ACT_CHALLENGE) != 0u,
+                             "RFC 5961 sec 4.2's challenge was not reported for a SYN in the window");
+    TEST_ASSERT_TRUE_MESSAGE((io->tcp_act & IDEMIP_TCP_IN_ACT_ACK) != 0u,
+                             "a challenge acknowledgment was aggregated away");
+    TEST_ASSERT_TRUE((io->act & IDEMIP_DISPATCH_ACT_ACK_OWED) == 0u);
+}
+
+#endif // IDEMIP_ENABLE_TCP
+
+#if IDEMIP_ENABLE_UDP
+
+// RFC 3828 sec 3.1 puts a Checksum Coverage where RFC 768 puts a Length, so a protocol 136 datagram
+// is checked over the octets that field names and the binding is matched on the coverage.
+void test_a_udp_lite_datagram_reaches_a_lite_binding(void)
+{
+    UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
+    up->open_args.ip_version = 4u;
+    up->open_args.lite = IDEMIP_TRUE;
+    UdpPcb.open(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+    uint16_t pcb = up->index;
+    uint8_t local[4];
+    idemip_wr32(local, LOCAL_IP4);
+    up->bind_args.index = pcb;
+    up->bind_args.ip = local;
+    up->bind_args.port = 4001u;
+    up->bind_args.zone = 0u;
+    up->bind_args.netif = 0u;
+    UdpPcb.bind(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+    up->opt_args.index = pcb;
+    up->opt_args.cksum_len_tx = (uint16_t)IDEMIP_UDPLITE_COV_MIN;
+    up->opt_args.cksum_len_rx = (uint16_t)IDEMIP_UDPLITE_COV_MIN;
+    up->opt_args.tos = 0u;
+    up->opt_args.ttl = 64u;
+    up->opt_args.mcast_ttl = 1u;
+    up->opt_args.mcast_netif = 0u;
+    up->opt_args.flags = 0u;
+    UdpPcb.set_opts(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    off = build_ip4(g_frame, off, (uint8_t)IDEMIP_UDPLITE_PROTO, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
+    memset(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
+    UdpLiteIo *ul = IDEMIP_UDPLITE_IO(udplite_mem);
+    ul->build_args.dgram = g_frame + off;
+    ul->build_args.src = g_frame + ip + IDEMIP_IP4_OFF_SRC;
+    ul->build_args.dst = g_frame + ip + IDEMIP_IP4_OFF_DST;
+    ul->build_args.ip_payload_len = (uint32_t)(IDEMIP_UDP_HDR_LEN + 4u);
+    ul->build_args.src_port = 4000u;
+    ul->build_args.dst_port = 4001u;
+    ul->build_args.cov = (uint16_t)IDEMIP_UDPLITE_COV_MIN;
+    ul->build_args.ip_version = 4u;
+    UdpLite.build(udplite_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ul->status);
+
+    input(work_a, off + IDEMIP_UDP_HDR_LEN + 4u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_UDP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
+}
+
+// RFC 3828 sec 3.1: "A UDP-Lite packet with a Checksum Coverage of 1 to 7 is illegal, and MUST be
+// discarded by the receiver."
+void test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, (uint8_t)IDEMIP_UDPLITE_PROTO, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
+    idemip_udp_build(g_frame + off, 4000u, 4001u, 4u); // a coverage of 4, which sec 3.1 forbids
+    memset(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
+    input(work_a, off + IDEMIP_UDP_HDR_LEN + 4u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_UDP_IN_ERRORS));
+}
+
+#endif // IDEMIP_ENABLE_UDP

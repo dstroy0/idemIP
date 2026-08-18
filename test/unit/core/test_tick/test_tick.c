@@ -1,0 +1,761 @@
+// idemIP v0.1.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// The suite for the scheduler, shaped on test/unit/ethernet/test_phy. Every case tests the CONTRACT
+// and stays valid however the logic behind it is written:
+//
+//   1. the borrow is the caller's, so the suite declares it and passes it to every entry
+//   2. every entry is called with a null borrow and must refuse
+//   3. the borrow IS the instance, so two schedulers share not one byte
+//   4. a canary past IDEMIP_TICK_BORROW is intact after every case
+//   5. the published offsets are ordered and do not overlap
+//   6. the ORDER of the three phases is enforced, not described: an entry called out of its phase is
+//      refused, and the units a phase runs are reported in their dependency order
+//
+// test/ is exempt from the src/ style rules, so this reads as plain host C.
+
+#include "idemIP/core/tick.h"
+
+#include "idemIP/arp/arp.h"
+#include "idemIP/ip/ipv4.h"
+
+#include <string.h>
+#include <unity.h>
+
+#define CANARY 0x5Au
+static _Alignas(8) uint8_t work_a[IDEMIP_TICK_BORROW + 16];
+static _Alignas(8) uint8_t work_b[IDEMIP_TICK_BORROW + 16];
+
+// The borrows the scheduler drives, and the ones the receive path under it drives.
+static _Alignas(8) uint8_t dispatch_mem[IDEMIP_DISPATCH_BORROW];
+static _Alignas(8) uint8_t timeouts_mem[IDEMIP_TIMEOUTS_BORROW];
+static _Alignas(8) uint8_t stats_mem[IDEMIP_STATS_BORROW];
+static _Alignas(8) uint8_t netif_mem[IDEMIP_NETIF_BORROW];
+static _Alignas(8) uint8_t loopif_mem[IDEMIP_LOOPIF_BORROW];
+static _Alignas(8) uint8_t vlan_mem[IDEMIP_VLAN_BORROW];
+static _Alignas(8) uint8_t arp_mem[IDEMIP_ARP_BORROW];
+static _Alignas(8) uint8_t ip4_addr_mem[IDEMIP_IP4_ADDR_BORROW];
+static _Alignas(8) uint8_t ip4_reass_mem[IDEMIP_IP4_REASS_BORROW];
+static _Alignas(8) uint8_t igmp_mem[IDEMIP_IGMP_BORROW];
+#if IDEMIP_ENABLE_IPV6
+static _Alignas(8) uint8_t ip6_reass_mem[IDEMIP_IP6_REASS_BORROW];
+static _Alignas(8) uint8_t mld6_mem[IDEMIP_MLD6_BORROW];
+static _Alignas(8) uint8_t nd6_mem[IDEMIP_ND6_BORROW];
+#endif
+static _Alignas(8) uint8_t dma_mem[IDEMIP_DMA_BORROW];
+static _Alignas(8) uint8_t phy_mem[IDEMIP_PHY_BORROW];
+static uint8_t out_buf[256];
+
+// The frame buffers are the DRIVER's storage, the way a board's driver owns them.
+static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t rx_bufs[IDEMIP_RX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE];
+static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t tx_bufs[IDEMIP_TX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE];
+
+#define LOCAL_IP4 0xC0000201u
+#define REMOTE_IP4 0xC0000209u
+#define NETMASK4 0xFFFFFF00u
+
+static const uint8_t g_local_mac[IDEMIP_MAC_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+static const uint8_t g_remote_mac[IDEMIP_MAC_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x09};
+
+// --- the engine, which advances only when a case says so ---------------------
+
+#define ENGINE_Q 8u
+static unsigned g_eng_idx[ENGINE_Q];
+static uint16_t g_eng_len[ENGINE_Q];
+static unsigned g_eng_head;
+static unsigned g_eng_tail;
+static int g_released;
+static int g_committed;
+
+static uint8_t *rx_buf_at(unsigned i)
+{
+    return rx_bufs + ((size_t)i * IDEMIP_DMA_BUF_STRIDE);
+}
+
+static void engine_queue(unsigned i, uint16_t len)
+{
+    g_eng_idx[g_eng_head & (ENGINE_Q - 1u)] = i;
+    g_eng_len[g_eng_head & (ENGINE_Q - 1u)] = len;
+    g_eng_head++;
+}
+
+static IdemIpPhyLink fake_link(void)
+{
+    IdemIpPhyLink l = {IDEMIP_PHY_SPEED_100, 1u, 1u};
+    return l;
+}
+static const uint8_t *fake_mac(void)
+{
+    return g_local_mac;
+}
+static size_t fake_rx_claim(const uint8_t **frame)
+{
+    if (g_eng_tail == g_eng_head)
+    {
+        return 0;
+    }
+    unsigned k = g_eng_tail & (ENGINE_Q - 1u);
+    g_eng_tail++;
+    *frame = rx_buf_at(g_eng_idx[k]);
+    return g_eng_len[k];
+}
+static void fake_rx_release(void)
+{
+    g_released++;
+}
+static uint8_t *fake_tx_claim(size_t len)
+{
+    return (len > IDEMIP_DMA_BUF_STRIDE) ? NULL : tx_bufs;
+}
+static idemip_bool fake_tx_commit(size_t len)
+{
+    (void)len;
+    g_committed++;
+    return IDEMIP_TRUE;
+}
+static void fake_invalidate(const void *p, size_t len)
+{
+    (void)p;
+    (void)len;
+}
+static void fake_clean(const void *p, size_t len)
+{
+    (void)p;
+    (void)len;
+}
+static idemip_bool fake_mdio_read(uint8_t addr, uint8_t reg, uint16_t *out)
+{
+    (void)addr;
+    (void)reg;
+    *out = 0u;
+    return IDEMIP_TRUE;
+}
+static idemip_bool fake_mdio_write(uint8_t addr, uint8_t reg, uint16_t val)
+{
+    (void)addr;
+    (void)reg;
+    (void)val;
+    return IDEMIP_TRUE;
+}
+
+static const IdemIpPhyDriver g_drv = {
+    .link = fake_link,
+    .mac = fake_mac,
+    .rx_claim = fake_rx_claim,
+    .rx_release = fake_rx_release,
+    .tx_claim = fake_tx_claim,
+    .tx_commit = fake_tx_commit,
+    .cache_invalidate = fake_invalidate,
+    .cache_clean = fake_clean,
+    .mdio_read = fake_mdio_read,
+    .mdio_write = fake_mdio_write,
+};
+
+static void arm(uint8_t *w, size_t cap)
+{
+    memset(w, 0, cap);
+    memset(w + IDEMIP_TICK_BORROW, CANARY, cap - IDEMIP_TICK_BORROW);
+}
+
+static void check_canary(const uint8_t *w, size_t cap)
+{
+    for (size_t i = IDEMIP_TICK_BORROW; i < cap; i++)
+    {
+        TEST_ASSERT_EQUAL_HEX8_MESSAGE(CANARY, w[i], "a write landed past IDEMIP_TICK_BORROW");
+    }
+}
+
+static void wire_units(void)
+{
+    Stats.clear(stats_mem);
+    Vlan.clear(vlan_mem);
+    ArpTable.clear(arp_mem);
+    Ip4Addr.clear(ip4_addr_mem);
+    Ip4Reass.clear(ip4_reass_mem);
+    Igmp.clear(igmp_mem);
+#if IDEMIP_ENABLE_IPV6
+    Ip6Reass.clear(ip6_reass_mem);
+    Mld6.clear(mld6_mem);
+    Nd6.clear(nd6_mem);
+#endif
+    Timeouts.clear(timeouts_mem);
+
+    Loopif.clear(loopif_mem);
+    Dma.clear(dma_mem);
+    IDEMIP_DMA_IO(dma_mem)->bind_args.drv = &g_drv;
+    IDEMIP_DMA_IO(dma_mem)->bind_args.rx_base = rx_bufs;
+    IDEMIP_DMA_IO(dma_mem)->bind_args.tx_base = tx_bufs;
+    Dma.bind(dma_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(dma_mem)->status);
+
+    Netif.clear(netif_mem);
+    NetifIo *ni = IDEMIP_NETIF_IO(netif_mem);
+    ni->bind_args.index = 0u;
+    ni->bind_args.phy = phy_mem;
+    ni->bind_args.hwaddr = g_local_mac;
+    ni->bind_args.mtu = 1500u;
+    Netif.bind(netif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ni->status);
+    ni->addr4_args.index = 0u;
+    ni->addr4_args.addr = LOCAL_IP4;
+    ni->addr4_args.mask = NETMASK4;
+    ni->addr4_args.gw = REMOTE_IP4;
+    Netif.set_addr4(netif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ni->status);
+
+    Dispatch.clear(dispatch_mem);
+    DispatchIo *di = IDEMIP_DISPATCH_IO(dispatch_mem);
+    di->bind_args.stats = stats_mem;
+    di->bind_args.netif = netif_mem;
+    di->bind_args.loopif = loopif_mem;
+    di->bind_args.vlan = vlan_mem;
+    di->bind_args.arp = arp_mem;
+    di->bind_args.ip4_addr = ip4_addr_mem;
+    di->bind_args.ip4_reass = ip4_reass_mem;
+    di->bind_args.igmp = igmp_mem;
+    Dispatch.bind(dispatch_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, di->status);
+    di->if_args.index = 0u;
+    di->if_args.dma = dma_mem;
+    di->if_args.vid = 0u;
+    di->if_args.tagged = IDEMIP_FALSE;
+    Dispatch.if_bind(dispatch_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, di->status);
+}
+
+static void bind_tick(uint8_t *w)
+{
+    TickIo *io = IDEMIP_TICK_IO(w);
+    io->bind_args.dispatch = dispatch_mem;
+    io->bind_args.timeouts = timeouts_mem;
+    io->bind_args.stats = stats_mem;
+    io->bind_args.arp = arp_mem;
+    io->bind_args.ip4_reass = ip4_reass_mem;
+    io->bind_args.igmp = igmp_mem;
+#if IDEMIP_ENABLE_IPV6
+    io->bind_args.ip6_reass = ip6_reass_mem;
+    io->bind_args.mld6 = mld6_mem;
+#endif
+    io->bind_args.netif = netif_mem;
+    Tick.bind(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+
+    io->if_args.index = 0u;
+    io->if_args.dma = dma_mem;
+#if IDEMIP_ENABLE_IPV6
+    io->if_args.nd6 = nd6_mem;
+#endif
+    io->if_args.out = out_buf;
+    io->if_args.out_cap = sizeof out_buf;
+    Tick.if_bind(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+}
+
+static void open_tick(uint8_t *w, uint32_t now_ms)
+{
+    IDEMIP_TICK_IO(w)->open_args.now_ms = now_ms;
+    Tick.open(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(w)->status);
+}
+
+// One IPv4 datagram into receive buffer @p slot, and its length. RFC 1700 leaves protocol 253 to
+// "use for experimentation and testing", so nothing here claims it and the receive path is visible
+// through RFC 1213 ipInUnknownProtos without any transport binding.
+#define TICK_TEST_PROTO 253u
+#define TICK_TEST_DATA 8u
+
+static uint16_t fill_ip4(unsigned slot, uint32_t dst, uint16_t flags_frag)
+{
+    uint8_t *f = rx_buf_at(slot);
+    memset(f, 0, IDEMIP_DMA_BUF_STRIDE);
+    idemip_eth_build(f, g_local_mac, g_remote_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    IdemIpIp4Fields fields;
+    memset(&fields, 0, sizeof fields);
+    fields.total_len = (uint16_t)(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + TICK_TEST_DATA);
+    fields.id = 0x4242u;
+    fields.flags_frag = flags_frag;
+    fields.ttl = 64u;
+    fields.proto = TICK_TEST_PROTO;
+    fields.src = REMOTE_IP4;
+    fields.dst = dst;
+    idemip_ip4_build(f + IDEMIP_ETH_OFF_PAYLOAD, &fields);
+    memset(f + IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN), 0x5A, TICK_TEST_DATA);
+    return (uint16_t)(IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + TICK_TEST_DATA);
+}
+
+void setUp(void)
+{
+    arm(work_a, sizeof work_a);
+    arm(work_b, sizeof work_b);
+    memset(rx_bufs, 0, sizeof rx_bufs);
+    memset(tx_bufs, 0, sizeof tx_bufs);
+    memset(out_buf, 0, sizeof out_buf);
+    memset(phy_mem, 0, sizeof phy_mem);
+    g_eng_head = 0u;
+    g_eng_tail = 0u;
+    g_released = 0;
+    g_committed = 0;
+    wire_units();
+    Tick.clear(work_a);
+    Tick.clear(work_b);
+    bind_tick(work_a);
+}
+
+void tearDown(void)
+{
+    check_canary(work_a, sizeof work_a);
+    check_canary(work_b, sizeof work_b);
+}
+
+// --- the borrow --------------------------------------------------------------
+
+void test_every_entry_survives_a_null_borrow(void)
+{
+    Tick.clear(NULL);
+    Tick.bind(NULL);
+    Tick.if_bind(NULL);
+    Tick.open(NULL);
+    Tick.drain(NULL);
+    Tick.service(NULL);
+    Tick.flush(NULL);
+    TEST_PASS();
+}
+
+void test_every_entry_refuses_an_uncleared_borrow(void)
+{
+    static _Alignas(8) uint8_t raw[IDEMIP_TICK_BORROW];
+    memset(raw, 0, sizeof raw);
+    Tick.bind(raw);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(raw)->status);
+    Tick.if_bind(raw);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(raw)->status);
+    Tick.open(raw);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(raw)->status);
+    Tick.drain(raw);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(raw)->status);
+    Tick.service(raw);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(raw)->status);
+    Tick.flush(raw);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(raw)->status);
+}
+
+// The borrow IS the instance, so one scheduler's phase is not the other's.
+void test_two_borrows_share_no_byte(void)
+{
+    bind_tick(work_b);
+    open_tick(work_a, 1000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_DRAIN, IDEMIP_TICK_IO(work_a)->phase);
+
+    // b was never opened, so its phase is still IDLE and its drain is out of phase.
+    Tick.drain(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(work_b)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_IDLE, IDEMIP_TICK_IO(work_b)->phase);
+
+    // And a is still where a was.
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_TICK_IO(work_a)->status);
+}
+
+void test_the_published_offsets_are_ordered_and_fit(void)
+{
+    TEST_ASSERT_EQUAL_size_t(0u, (size_t)IDEMIP_TICK_OFF_IO);
+    TEST_ASSERT_TRUE(IDEMIP_TICK_OFF_CTX >= sizeof(TickIo));
+    TEST_ASSERT_TRUE(IDEMIP_TICK_OFF_IF >= IDEMIP_TICK_OFF_CTX);
+    TEST_ASSERT_TRUE(IDEMIP_TICK_OFF_END > IDEMIP_TICK_OFF_IF);
+    TEST_ASSERT_TRUE(IDEMIP_TICK_OFF_END <= IDEMIP_TICK_BORROW);
+}
+
+void test_if_bind_refuses_an_index_past_the_table(void)
+{
+    IDEMIP_TICK_IO(work_a)->if_args.index = (uint8_t)IDEMIP_NETIF_COUNT;
+    Tick.if_bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(work_a)->status);
+}
+
+// --- the order, which is enforced and not described --------------------------
+
+// PLAN.md sec 3.4b fixes the order because a later phase consumes what an earlier one produced, so a
+// phase entry called before its turn is refused rather than quietly running early.
+void test_a_phase_entry_before_its_turn_is_refused(void)
+{
+    open_tick(work_a, 1000u);
+    // The tick is at DRAIN, so neither of the later phases may run.
+    Tick.service(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(work_a)->status);
+    Tick.flush(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(work_a)->status);
+}
+
+// A phase entry called after its phase is through is refused the same way.
+void test_a_phase_entry_after_its_turn_is_refused(void)
+{
+    open_tick(work_a, 1000u);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_SERVICE, IDEMIP_TICK_IO(work_a)->phase);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(work_a)->status);
+}
+
+// Nothing may run before a tick is opened: the clock every deadline is measured from arrives there.
+void test_no_phase_runs_before_the_tick_is_opened(void)
+{
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(work_a)->status);
+    Tick.service(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(work_a)->status);
+    Tick.flush(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(work_a)->status);
+}
+
+// The three phases run through to DONE, and each reports BUSY when its own work is finished. BUSY
+// here is progress, not a fault: it is what moves the order on.
+void test_the_three_phases_run_in_order_to_done(void)
+{
+    open_tick(work_a, 1000u);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_TICK_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_SERVICE, IDEMIP_TICK_IO(work_a)->phase);
+    while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_FLUSH, IDEMIP_TICK_IO(work_a)->phase);
+    while (Tick.flush(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_DONE, IDEMIP_TICK_IO(work_a)->phase);
+}
+
+// A second open starts another tick from the beginning.
+void test_opening_again_starts_the_order_over(void)
+{
+    open_tick(work_a, 1000u);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    while (Tick.flush(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    open_tick(work_a, 2000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_DRAIN, IDEMIP_TICK_IO(work_a)->phase);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_TICK_IO(work_a)->status);
+}
+
+// The units a service phase reports come in one fixed order: the resolvers before the queues that
+// wait on them, reassembly before the protocols that read a completed datagram.
+void test_the_service_phase_reports_its_units_in_dependency_order(void)
+{
+    // A group joined and a Query heard leaves IGMP with a report due, so a later unit than ARP has
+    // work and the order is visible across more than one unit.
+    IgmpIo *ig = IDEMIP_IGMP_IO(igmp_mem);
+    ig->group_args.group = 0xE0000105u;
+    ig->group_args.netif = 0u;
+    ig->group_args.rand = 7u;
+    ig->group_args.now_ms = 1000u;
+    Igmp.join(igmp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ig->status);
+
+    open_tick(work_a, 100000u);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    int last = 0;
+    int steps = 0;
+    while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+        int unit = (int)IDEMIP_TICK_IO(work_a)->unit;
+        TEST_ASSERT_TRUE_MESSAGE(unit >= last, "a service step ran out of the fixed dependency order");
+        last = unit;
+        steps++;
+        if (steps > 64)
+        {
+            TEST_FAIL_MESSAGE("the service phase did not finish");
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(steps > 0, "no service reported work when IGMP had a report due");
+}
+
+// --- the clock and the deadline list ----------------------------------------
+
+// An empty list has no next deadline, which is what IDEMIP_TIMEOUT_FOREVER says.
+void test_an_empty_deadline_list_reports_forever(void)
+{
+    open_tick(work_a, 1000u);
+    TEST_ASSERT_EQUAL_UINT32(IDEMIP_TIMEOUT_FOREVER, IDEMIP_TICK_IO(work_a)->until_ms);
+}
+
+// A deadline ahead of the clock is reported as the milliseconds until it.
+void test_a_deadline_ahead_is_reported_as_the_wait(void)
+{
+    TimeoutsIo *to = IDEMIP_TIMEOUTS_IO(timeouts_mem);
+    to->arm_args.unit = IDEMIP_TIMEOUT_UNIT_DNS;
+    to->arm_args.arg = 2u;
+    to->arm_args.deadline_ms = 1500u;
+    to->arm_args.flags = IDEMIP_TIMEOUT_FLAG_ARMED;
+    Timeouts.arm(timeouts_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, to->status);
+
+    open_tick(work_a, 1000u);
+    TEST_ASSERT_EQUAL_UINT32(500u, IDEMIP_TICK_IO(work_a)->until_ms);
+}
+
+// A deadline the clock has reached is handed back in the service phase, naming the unit and the
+// index into that unit's own table. The units this scheduler drives ran above it; the rest are the
+// caller's to run.
+void test_an_expired_deadline_is_reported_with_its_unit(void)
+{
+    TimeoutsIo *to = IDEMIP_TIMEOUTS_IO(timeouts_mem);
+    to->arm_args.unit = IDEMIP_TIMEOUT_UNIT_DHCP4;
+    to->arm_args.arg = 1u;
+    to->arm_args.deadline_ms = 900u;
+    to->arm_args.flags = IDEMIP_TIMEOUT_FLAG_ARMED;
+    Timeouts.arm(timeouts_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, to->status);
+
+    open_tick(work_a, 1000u);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    int found = 0;
+    while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+        if (IDEMIP_TICK_IO(work_a)->unit == IDEMIP_TICK_UNIT_TIMEOUTS)
+        {
+            TEST_ASSERT_EQUAL_INT(IDEMIP_TIMEOUT_UNIT_DHCP4, IDEMIP_TICK_IO(work_a)->timeout_unit);
+            TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_TICK_IO(work_a)->timeout_arg);
+            found = 1;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(found, "an expired deadline was not handed back");
+}
+
+// The millisecond count wraps at 2^32, so a deadline whose count is numerically below the clock's is
+// still ahead of it. A plain less-than would fire it at once and every timer would die at the
+// rollover.
+void test_a_deadline_across_the_wrap_is_still_ahead(void)
+{
+    TimeoutsIo *to = IDEMIP_TIMEOUTS_IO(timeouts_mem);
+    to->arm_args.unit = IDEMIP_TIMEOUT_UNIT_DNS;
+    to->arm_args.arg = 0u;
+    // The clock is 1001 ms below 2^32 and the deadline is 999 ms above the wrap, so the deadline is
+    // 2000 ms ahead of the clock while its count reads far below it.
+    to->arm_args.deadline_ms = 999u;
+    to->arm_args.flags = IDEMIP_TIMEOUT_FLAG_ARMED;
+    Timeouts.arm(timeouts_mem);
+
+    open_tick(work_a, 0xFFFFFC17u);
+    TEST_ASSERT_EQUAL_UINT32(2000u, IDEMIP_TICK_IO(work_a)->until_ms);
+}
+
+// --- the drain, and what happens to the descriptor ---------------------------
+
+// An empty ring is BUSY, which moves the phase on rather than looking like a fault.
+void test_an_empty_ring_drains_busy(void)
+{
+    open_tick(work_a, 1000u);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_TICK_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_TICK_IO(work_a)->frames);
+}
+
+// One frame in the ring is taken, dispatched, and its descriptor given back, nothing having retained
+// it.
+void test_a_frame_is_dispatched_and_its_descriptor_returned(void)
+{
+    uint16_t len = fill_ip4(0u, LOCAL_IP4, 0u);
+    engine_queue(0u, len);
+
+    open_tick(work_a, 1000u);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16(1u, IDEMIP_TICK_IO(work_a)->frames);
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_TICK_IO(work_a)->netif);
+
+    // The receive path saw it: nothing claims the protocol, so ipInUnknownProtos counts it.
+    IDEMIP_STATS_IO(stats_mem)->ctr_args.id = IDEMIP_STAT_IP4_IN_UNKNOWN_PROTOS;
+    Stats.read(stats_mem);
+    TEST_ASSERT_EQUAL_UINT32(1u, IDEMIP_STATS_IO(stats_mem)->value);
+
+    // And the descriptor went back to the engine, nothing having pinned it.
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_DMA_IO(dma_mem)->pinned);
+    TEST_ASSERT_EQUAL_INT(1, g_released);
+
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_TICK_IO(work_a)->status);
+}
+
+// A fragment is held by the reassembler, which pins the buffer the engine wrote it to. The
+// descriptor must NOT go back to the ring, or the engine writes a later frame over a held one.
+void test_a_retained_frame_keeps_its_descriptor_out_of_the_ring(void)
+{
+    uint16_t len = fill_ip4(0u, LOCAL_IP4, (uint16_t)IDEMIP_IP4_FLAG_MF);
+    engine_queue(0u, len);
+
+    open_tick(work_a, 1000u);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(dispatch_mem)->act & IDEMIP_DISPATCH_ACT_PINNED) != 0u,
+                             "a held fragment was not reported as pinned");
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16(1u, IDEMIP_DMA_IO(dma_mem)->pinned);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, g_released, "a pinned descriptor was handed back to the engine");
+}
+
+// Every ring is drained before the phase moves on, so two frames are two steps.
+void test_the_drain_takes_every_waiting_frame(void)
+{
+    uint16_t len = fill_ip4(0u, LOCAL_IP4, 0u);
+    engine_queue(0u, len);
+    len = fill_ip4(1u, LOCAL_IP4, 0u);
+    engine_queue(1u, len);
+
+    open_tick(work_a, 1000u);
+    int taken = 0;
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+        taken++;
+    }
+    TEST_ASSERT_EQUAL_INT(2, taken);
+    TEST_ASSERT_EQUAL_UINT16(2u, IDEMIP_TICK_IO(work_a)->frames);
+}
+
+// --- the flush, and the frames a resolver released ---------------------------
+
+// RFC 826's pending queue holds a frame until the REPLY arrives. The flush phase hands it back, and
+// its descriptor stays pinned until the step after, so the caller reads the frame in between.
+void test_a_resolved_hold_is_reported_and_unpinned_one_step_later(void)
+{
+    // A frame in descriptor 2, pinned the way the receive path pins a retained one.
+    uint16_t len = fill_ip4(2u, LOCAL_IP4, 0u);
+    engine_queue(2u, len);
+    Dma.rx_take(dma_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(dma_mem)->status);
+    uint8_t desc = IDEMIP_DMA_IO(dma_mem)->index;
+    IDEMIP_DMA_IO(dma_mem)->desc_args.index = desc;
+    Dma.pin(dma_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(dma_mem)->status);
+
+    ArpTableIo *ar = IDEMIP_ARP_IO(arp_mem);
+    ar->now_ms = 1000u;
+    ar->queue_args.ip = REMOTE_IP4;
+    ar->queue_args.desc = desc;
+    ar->queue_args.len = len;
+    ArpTable.queue(arp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ar->status);
+
+    // The REPLY arrives, so the row goes stable and the hold is releasable.
+    ar->now_ms = 1000u;
+    ar->add_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
+    ar->add_args.spa = REMOTE_IP4;
+    ar->add_args.sha = g_remote_mac;
+    ar->add_args.netif = 0u;
+    ArpTable.add(arp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ar->status);
+
+    open_tick(work_a, 1000u);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    Tick.flush(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_UNIT_ARP_HOLD, IDEMIP_TICK_IO(work_a)->unit);
+    TEST_ASSERT_EQUAL_UINT16(desc, IDEMIP_TICK_IO(work_a)->desc);
+    TEST_ASSERT_EQUAL_UINT16(len, IDEMIP_TICK_IO(work_a)->len);
+    TEST_ASSERT_EQUAL_UINT32(REMOTE_IP4, IDEMIP_TICK_IO(work_a)->ip);
+
+    // Still pinned right now, which is what lets the caller read the frame it was just handed.
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(1u, IDEMIP_DMA_IO(dma_mem)->pinned,
+                                     "the reported frame was unpinned before the caller could read it");
+
+    // The next step drops that pin.
+    Tick.flush(work_a);
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(dma_mem)->pinned,
+                                     "the pin outlived the step after the one that reported it");
+}
+
+// The flush phase reports its units in the fixed order too.
+void test_the_flush_phase_reports_its_units_in_order(void)
+{
+    open_tick(work_a, 1000u);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    int last = 0;
+    int steps = 0;
+    while (Tick.flush(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+        int unit = (int)IDEMIP_TICK_IO(work_a)->unit;
+        TEST_ASSERT_TRUE_MESSAGE(unit >= last, "a flush step ran out of the fixed order");
+        last = unit;
+        steps++;
+        if (steps > 64)
+        {
+            TEST_FAIL_MESSAGE("the flush phase did not finish");
+        }
+    }
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_DONE, IDEMIP_TICK_IO(work_a)->phase);
+}
+
+// An interface with no ring bound is stepped over rather than faulting the drain.
+void test_an_interface_with_no_ring_is_stepped_over(void)
+{
+    IDEMIP_TICK_IO(work_a)->if_args.index = 0u;
+    IDEMIP_TICK_IO(work_a)->if_args.dma = NULL;
+#if IDEMIP_ENABLE_IPV6
+    IDEMIP_TICK_IO(work_a)->if_args.nd6 = NULL;
+#endif
+    IDEMIP_TICK_IO(work_a)->if_args.out = NULL;
+    IDEMIP_TICK_IO(work_a)->if_args.out_cap = 0u;
+    Tick.if_bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
+
+    open_tick(work_a, 1000u);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_TICK_IO(work_a)->status);
+}
+
+// A build with a borrow left unbound still ticks: the step that would have driven it is skipped.
+void test_an_unbound_service_is_skipped(void)
+{
+    Tick.clear(work_b);
+    TickIo *io = IDEMIP_TICK_IO(work_b);
+    io->bind_args.dispatch = NULL;
+    io->bind_args.timeouts = NULL;
+    io->bind_args.stats = NULL;
+    io->bind_args.arp = NULL;
+    io->bind_args.ip4_reass = NULL;
+    io->bind_args.igmp = NULL;
+#if IDEMIP_ENABLE_IPV6
+    io->bind_args.ip6_reass = NULL;
+    io->bind_args.mld6 = NULL;
+#endif
+    io->bind_args.netif = NULL;
+    Tick.bind(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+
+    open_tick(work_b, 1000u);
+    TEST_ASSERT_EQUAL_UINT32(IDEMIP_TIMEOUT_FOREVER, io->until_ms);
+    Tick.drain(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, io->status);
+    Tick.service(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, io->status);
+    Tick.flush(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, io->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_DONE, io->phase);
+}

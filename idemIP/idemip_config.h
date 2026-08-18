@@ -1370,6 +1370,45 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 #endif
 #define IDEMIP_TIMEOUTS_BORROW (IDEMIP_TIMEOUTS_CTX_BYTES + (IDEMIP_TIMEOUTS << IDEMIP_TIMEOUT_ENTRY_SHIFT))
 
+// --- tick: PLAN.md sec 3.4b ----------------------------------------------------------------------
+// The scheduler. Its context holds the millisecond the tick was entered at, the phase the fixed order
+// has reached, the cursor into that order, and the descriptor a flush step reported and unpins on the
+// step after. One entry per interface holds the nd6 borrow that interface's neighbor machine runs in,
+// RFC 4861 sec 5.1 keeping those four structures per interface.
+#ifndef IDEMIP_TICK_IF_ENTRY_SHIFT
+#define IDEMIP_TICK_IF_ENTRY_SHIFT 5u
+#endif
+// The region ahead of the table carries the operand block as well as the context: sizeof(TickIo) is
+// 176 on a target with 8-octet pointers and the context is 32, so the assert in tick.c holds at 256.
+#ifndef IDEMIP_TICK_CTX_BYTES
+#define IDEMIP_TICK_CTX_BYTES 256u
+#endif
+#define IDEMIP_TICK_BORROW (IDEMIP_TICK_CTX_BYTES + (IDEMIP_NETIF_COUNT << IDEMIP_TICK_IF_ENTRY_SHIFT))
+
+// --- dispatch: RFC 1122 sec 3.1 ------------------------------------------------------------------
+// The receive path, frame to pcb. Two tables. One entry per interface holds the dma borrow that
+// interface's ring pair runs in, the IEEE 802.1Q VLAN ID the interface is a member of, whether it is
+// tagged at all, and the last VLAN ID a policy drop discarded: a Gauge in an idemIP-private
+// per-interface group, never a fourteenth object in the RFC 1213 sec 6.4 ifEntry. One entry per TCB
+// holds the RFC 9293 sec 3.10.7.4 MUST-58 aggregation bit and the interface the connection's held
+// segments were pinned on.
+#ifndef IDEMIP_DISPATCH_IF_ENTRY_SHIFT
+#define IDEMIP_DISPATCH_IF_ENTRY_SHIFT 4u
+#endif
+#ifndef IDEMIP_DISPATCH_PCB_ENTRY_SHIFT
+#define IDEMIP_DISPATCH_PCB_ENTRY_SHIFT 3u
+#endif
+// The region ahead of the two tables carries the operand block as well as the context: the block is
+// the sixteen borrows a bind takes, one interface's row, one frame's operands and one connection's,
+// with what the call reports, and the context behind it holds the same sixteen addresses copied out
+// of the block.
+#ifndef IDEMIP_DISPATCH_CTX_BYTES
+#define IDEMIP_DISPATCH_CTX_BYTES 512u
+#endif
+#define IDEMIP_DISPATCH_BORROW                                                                                         \
+    (IDEMIP_DISPATCH_CTX_BYTES + (IDEMIP_NETIF_COUNT << IDEMIP_DISPATCH_IF_ENTRY_SHIFT) +                              \
+     (IDEMIP_TCP_PCBS << IDEMIP_DISPATCH_PCB_ENTRY_SHIFT))
+
 // --- stats: RFC 1213 -----------------------------------------------------------------------------
 // The context holds the counters RFC 1213 defines outside its per-interface table: 17 in the IP
 // group of sec 6.6, 26 in the ICMP group of sec 6.7, 10 in the TCP group of sec 6.8 and 4 in the UDP
@@ -1566,6 +1605,8 @@ static_assert((1u << IDEMIP_PMTU6_ENTRY_SHIFT) >= IDEMIP_ALIGN,
      IDEMIP_ETHIP6_BORROW +                                                                                            \
      IDEMIP_DNS_BORROW +                                                                                               \
      IDEMIP_TIMEOUTS_BORROW +                                                                                          \
+     IDEMIP_TICK_BORROW +                                                                                              \
+     IDEMIP_DISPATCH_BORROW +                                                                                          \
      IDEMIP_STATS_BORROW)
 
 /**
@@ -1630,7 +1671,8 @@ static_assert(((IDEMIP_NETIF_CTX_BYTES | IDEMIP_LOOPIF_CTX_BYTES | IDEMIP_DMA_CT
                 IDEMIP_UDPLITE_CTX_BYTES |
                 IDEMIP_TCP_PCB_CTX_BYTES | IDEMIP_TCP_IN_CTX_BYTES | IDEMIP_TCP_OUT_CTX_BYTES |
                 IDEMIP_TCP_ISN_CTX_BYTES | IDEMIP_DHCP4_CTX_BYTES |
-                IDEMIP_DHCP6_CTX_BYTES | IDEMIP_DNS_CTX_BYTES | IDEMIP_TIMEOUTS_CTX_BYTES | IDEMIP_STATS_CTX_BYTES) &
+                IDEMIP_DHCP6_CTX_BYTES | IDEMIP_DNS_CTX_BYTES | IDEMIP_TIMEOUTS_CTX_BYTES |
+                IDEMIP_TICK_CTX_BYTES | IDEMIP_DISPATCH_CTX_BYTES | IDEMIP_STATS_CTX_BYTES) &
                (IDEMIP_ALIGN - 1u)) == 0u,
               "every IDEMIP_*_CTX_BYTES must be a multiple of IDEMIP_ALIGN: a table starts at the end of its context");
 
