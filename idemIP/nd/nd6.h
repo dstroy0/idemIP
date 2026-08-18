@@ -56,9 +56,17 @@ typedef enum IDEMIP_ENUM_PACKED
  * @var Nd6NeighborArgs::addr      the neighbor's on-link unicast address, IDEMIP_IP6_ADDR_LEN octets
  * @var Nd6NeighborArgs::lladdr    its link-layer address, IDEMIP_MAC_LEN octets, or null when none
  *                                 is known yet (sec 7.3.2 INCOMPLETE)
- * @var Nd6NeighborArgs::state     the reachability state the call installs
- * @var Nd6NeighborArgs::is_router the sec 5.1 IsRouter flag
+ * @var Nd6NeighborArgs::state     the reachability state a CREATED entry takes. An entry that is
+ *                                 already there takes its state from sec 7.2.5 instead, so this is
+ *                                 unread then.
+ * @var Nd6NeighborArgs::is_router the sec 5.1 IsRouter flag, written on every call. sec 7.2.3 leaves
+ *                                 an existing entry's flag alone, so a solicitation's caller passes
+ *                                 back what @ref Nd6Ns::neighbor_find reported.
  * @var Nd6NeighborArgs::solicited a solicited advertisement, which sec 7.3.3 makes REACHABLE
+ * @var Nd6NeighborArgs::override  the sec 4.4 Override flag. sec 7.2.5 rule I: with it clear and a
+ *                                 different link-layer address supplied, a REACHABLE entry goes
+ *                                 STALE and any other state ignores the advertisement, which
+ *                                 "MUST NOT update the cache".
  * @var Nd6NeighborArgs::index     which entry a call by index names
  */
 typedef struct
@@ -68,6 +76,7 @@ typedef struct
     IdemIpNd6State state;
     idemip_bool is_router;
     idemip_bool solicited;
+    idemip_bool override;
     uint8_t index;
 } Nd6NeighborArgs;
 
@@ -152,8 +161,12 @@ typedef struct
  *
  * @var Nd6ParamsArgs::reachable_time_ms sec 4.2 Reachable Time, milliseconds; zero is unspecified
  * @var Nd6ParamsArgs::retrans_timer_ms  sec 4.2 Retrans Timer, milliseconds; zero is unspecified
- * @var Nd6ParamsArgs::link_mtu          sec 4.6.4 MTU option; one below IDEMIP_IPV6_MIN_MTU is not
- *                                       copied into LinkMTU
+ * @var Nd6ParamsArgs::link_mtu          sec 4.6.4 MTU option; one below IDEMIP_IPV6_MIN_MTU or above
+ *                                       IDEMIP_ETH_MAX_PAYLOAD is not copied into LinkMTU
+ * @var Nd6ParamsArgs::rand              a random word the sec 6.3.2 ReachableTime draw is taken
+ *                                       from, which "should be a uniformly distributed random value
+ *                                       between MIN_RANDOM_FACTOR and MAX_RANDOM_FACTOR times
+ *                                       BaseReachableTime"
  * @var Nd6ParamsArgs::cur_hop_limit     sec 4.2 Cur Hop Limit; zero is unspecified
  * @var Nd6ParamsArgs::managed           sec 4.2 M flag, "Managed address configuration"
  * @var Nd6ParamsArgs::other             sec 4.2 O flag, "Other configuration"
@@ -163,12 +176,18 @@ typedef struct
     uint32_t reachable_time_ms;
     uint32_t retrans_timer_ms;
     uint32_t link_mtu;
+    uint32_t rand;
     uint8_t cur_hop_limit;
     idemip_bool managed;
     idemip_bool other;
 } Nd6ParamsArgs;
 
-/** @brief What a sweep takes: the millisecond clock every deadline is compared against. */
+/**
+ * @brief The millisecond clock every deadline is stamped from and compared against.
+ *
+ * Every entry latches it, not the sweep alone, so a caller that sets it once per tick has every
+ * deadline stamped from that tick and a caller that sets it per call has each stamped exactly.
+ */
 typedef struct
 {
     uint32_t now_ms;
@@ -302,22 +321,35 @@ typedef struct
  * entry's invalidation timer fires or resolution completes. A bad argument or an entry that is not
  * there reports IDEMIP_ERR.
  *
+ * A frame this module holds stays in the buffer the engine wrote it to, so what it keeps is the
+ * descriptor index. Every entry that hands one back reports it in @ref Nd6Io::desc with
+ * @ref Nd6Io::len nonzero, and the caller unpins it through dma.
+ *
  * @var Nd6Ns::clear            zero the context and the five tables, and mark the borrow cleared
  * @var Nd6Ns::neighbor_find    the Neighbor Cache entry keyed on an on-link unicast address
- * @var Nd6Ns::neighbor_set     create or update one, per sec 7.2.3, sec 7.2.5 and sec 6.3.4
- * @var Nd6Ns::neighbor_confirm a reachability confirmation arrived, which sec 7.3.3 makes REACHABLE
+ * @var Nd6Ns::neighbor_set     create or update one, per sec 7.2.3, sec 7.2.5, sec 6.3.4 and sec 8.3
+ * @var Nd6Ns::neighbor_confirm upper-layer advice that the forward path works, which sec 7.3.3 makes
+ *                              REACHABLE, and which sec 7.3.3 makes a no-op on an INCOMPLETE entry
  * @var Nd6Ns::neighbor_used    a packet went to a STALE neighbor, which sec 7.3.3 makes DELAY
- * @var Nd6Ns::neighbor_remove  delete an entry, as sec 7.3.3 does when resolution fails
+ * @var Nd6Ns::neighbor_remove  delete an entry, as sec 7.3.3 does when resolution fails. Reports
+ *                              IDEMIP_BUSY once per frame still queued on it, handing each
+ *                              descriptor back so sec 7.2.2's ICMP Destination Unreachable code 3
+ *                              is answered, and IDEMIP_OK on the call that frees the entry.
  * @var Nd6Ns::dest_find        the next hop a destination resolves to (sec 5.2)
  * @var Nd6Ns::dest_set         install or revise one, as a Redirect (sec 8.3) or a PMTU does
  * @var Nd6Ns::prefix_set       install a Prefix Information option's prefix (sec 6.3.4)
- * @var Nd6Ns::prefix_on_link   longest prefix match over the Prefix List (sec 5.2)
+ * @var Nd6Ns::prefix_on_link   longest prefix match over the Prefix List (sec 5.2), which answers
+ *                              IDEMIP_OK either way and puts the answer in @ref Nd6Io::on_link
  * @var Nd6Ns::router_set       install or time out a Default Router List entry (sec 6.3.4)
  * @var Nd6Ns::router_select    pick a default router, favoring the reachable (sec 6.3.6)
- * @var Nd6Ns::pending_push     hold a frame awaiting resolution (sec 7.2.2)
+ * @var Nd6Ns::pending_push     hold a frame awaiting resolution (sec 7.2.2). A full table with a
+ *                              frame already queued on that neighbor replaces the oldest and hands
+ *                              its descriptor back.
  * @var Nd6Ns::pending_pop      take back the next frame held for a neighbor (sec 7.2.2)
  * @var Nd6Ns::params_set       copy the sec 6.3.4 host variables out of a Router Advertisement
- * @var Nd6Ns::tick             run the sec 7.3.3 reachability machine and every invalidation timer
+ * @var Nd6Ns::tick             run the sec 7.3.3 reachability machine and every invalidation timer.
+ *                              Reports one event per call, a released frame before a due
+ *                              solicitation, and IDEMIP_BUSY when nothing was due.
  */
 typedef struct
 {
