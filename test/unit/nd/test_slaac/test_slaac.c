@@ -1,0 +1,801 @@
+// idemIP v0.1.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// The suite for slaac, modeled on test_phy. It tests two things and nothing else:
+//
+//   the contract
+//     1. the borrow is the caller's, so the suite declares it and passes it to every entry
+//     2. every entry is called with a null borrow and must refuse
+//     3. the borrow IS the interface, so two interfaces share not one byte
+//     4. a canary past IDEMIP_SLAAC_BORROW is intact after every case
+//     5. the published offset map is ordered, aligned, and does not overlap
+//     6. clear zeroes the regions, and a borrow no one cleared is refused
+//     7. BUSY and ERR are separated by whether retrying can ever succeed
+//
+//   RFC 4862 sec 5.3, sec 5.5.3 (a) through (e), and sec 5.5.4
+//     every rule the sections state, each case naming the sentence it holds to. sec 5.5.3 (e), the
+//     two-hour rule, gets one case per branch and one for the attack it exists to stop.
+//
+// RFC 4862 prints no byte vectors. The one printed vector this unit touches is RFC 2464 sec 4's
+// worked interface identifier, 34-56-78-9A-BC-DE giving 36-56-78-FF-FE-9A-BC-DE, which sec 5 appends
+// to FE80::/64; that address is asserted directly. Everything else asserts the property the prose
+// states.
+//
+// test/ is exempt from the src/ style rules, so this reads as plain host C.
+
+#include "idemIP/nd/slaac.h"
+
+#include <string.h>
+#include <unity.h>
+
+// The borrow, the caller's. Two of them, because RFC 4862 sec 5 performs autoconfiguration "on a
+// per-interface basis". A canary follows each so a write past the map is visible.
+#define CANARY 0x5Au
+static _Alignas(IDEMIP_ALIGN) uint8_t work_a[IDEMIP_SLAAC_BORROW + 16];
+static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_SLAAC_BORROW + 16];
+
+#define STATE_OFF ((size_t)IDEMIP_SLAAC_OFF_CTX)
+#define TABLE_OFF ((size_t)IDEMIP_SLAAC_OFF_ENTRIES)
+#define STATE_END ((size_t)IDEMIP_SLAAC_OFF_END)
+
+#define IO(w) IDEMIP_SLAAC_IO(w)
+
+#define HOUR_S 3600u
+#define TWO_HOURS_S 7200u
+
+// RFC 2464 sec 4: "the Interface Identifier for an Ethernet interface whose built-in address is, in
+// hexadecimal, 34-56-78-9A-BC-DE would be 36-56-78-FF-FE-9A-BC-DE."
+static const uint8_t g_iid[8] = {0x36, 0x56, 0x78, 0xFF, 0xFE, 0x9A, 0xBC, 0xDE};
+static const uint8_t g_iid2[8] = {0x02, 0x00, 0x00, 0xFF, 0xFE, 0x00, 0x00, 0x02};
+
+// RFC 2464 sec 5: the link-local address is that identifier appended to FE80::/64.
+static const uint8_t g_link_local[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0x80, 0,    0,    0,    0,    0,    0,
+                                                          0x36, 0x56, 0x78, 0xFF, 0xFE, 0x9A, 0xBC, 0xDE};
+
+// RFC 3849 reserves 2001:DB8::/32 for documentation.
+static const uint8_t g_prefix[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0x01, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t g_prefix2[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0x02, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t g_formed[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0,    0,    0,    0x01,
+                                                      0x36, 0x56, 0x78, 0xFF, 0xFE, 0x9A, 0xBC, 0xDE};
+// RFC 4291 sec 2.5.6 gives the link-local prefix as FE80::/10.
+static const uint8_t g_ll_prefix[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+static void arm(uint8_t *w, size_t cap)
+{
+    memset(w, 0, cap);
+    memset(w + IDEMIP_SLAAC_BORROW, CANARY, cap - IDEMIP_SLAAC_BORROW);
+}
+
+static void check_canary(const uint8_t *w, size_t cap)
+{
+    for (size_t i = IDEMIP_SLAAC_BORROW; i < cap; i++)
+    {
+        TEST_ASSERT_EQUAL_HEX8_MESSAGE(CANARY, w[i], "a write landed past IDEMIP_SLAAC_BORROW");
+    }
+}
+
+void setUp(void)
+{
+    arm(work_a, sizeof work_a);
+    arm(work_b, sizeof work_b);
+}
+
+void tearDown(void)
+{
+    check_canary(work_a, sizeof work_a);
+    check_canary(work_b, sizeof work_b);
+}
+
+// Every entry, in namespace order, so a new one added to SlaacNs is added here too.
+static void call_every_entry(uint8_t *w)
+{
+    Slaac.clear(w);
+    Slaac.link_local(w);
+    Slaac.prefix_in(w);
+    Slaac.find(w);
+    Slaac.get(w);
+    Slaac.remove(w);
+    Slaac.tick(w);
+}
+
+static void link_local(uint8_t *w, const uint8_t *iid, uint8_t iid_bits)
+{
+    IO(w)->link_local_args.iid = iid;
+    IO(w)->link_local_args.iid_bits = iid_bits;
+    Slaac.link_local(w);
+}
+
+static void prefix_in(uint8_t *w, const uint8_t *prefix, uint8_t prefix_len, uint32_t valid_s, uint32_t preferred_s,
+                      uint32_t now_ms, idemip_bool autonomous, idemip_bool authenticated)
+{
+    IO(w)->prefix_args.prefix = prefix;
+    IO(w)->prefix_args.prefix_len = prefix_len;
+    IO(w)->prefix_args.iid = g_iid;
+    IO(w)->prefix_args.iid_bits = 64u;
+    IO(w)->prefix_args.valid_s = valid_s;
+    IO(w)->prefix_args.preferred_s = preferred_s;
+    IO(w)->prefix_args.now_ms = now_ms;
+    IO(w)->prefix_args.autonomous = autonomous;
+    IO(w)->prefix_args.authenticated = authenticated;
+    Slaac.prefix_in(w);
+}
+
+static void tick_at(uint8_t *w, uint32_t now_ms)
+{
+    IO(w)->tick_args.now_ms = now_ms;
+    Slaac.tick(w);
+}
+
+static void find_addr(uint8_t *w, const uint8_t *addr)
+{
+    IO(w)->addr_args.addr = addr;
+    Slaac.find(w);
+}
+
+// --- the borrow --------------------------------------------------------------
+
+// Nothing to report into, so nothing is written and nothing faults.
+void test_every_entry_survives_a_null_borrow(void)
+{
+    call_every_entry(NULL);
+    TEST_PASS();
+}
+
+// The borrow IS the interface, and the operand block is in it, so two interfaces share no byte at
+// all. This is the property the whole storage model rests on.
+void test_two_borrows_share_no_byte(void)
+{
+    Slaac.clear(work_a);
+    Slaac.clear(work_b);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_TRUE(IO(work_a)->created);
+
+    find_addr(work_b, g_formed);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "one borrow found the other's address");
+    find_addr(work_a, g_formed);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+}
+
+// A call on one borrow reaches no byte of another, clear included, which is the widest-reaching entry
+// this module has.
+void test_clear_on_one_borrow_leaves_the_other_untouched(void)
+{
+    memset(work_b + STATE_OFF, 0xC3, STATE_END - STATE_OFF);
+    Slaac.clear(work_a);
+    for (size_t i = STATE_OFF; i < STATE_END; i++)
+    {
+        TEST_ASSERT_EQUAL_HEX8_MESSAGE(0xC3u, work_b[i], "clear on one borrow wrote into another");
+    }
+}
+
+// An entry is a function of its borrow alone, so a call interleaved on another borrow cannot change
+// what this one reports.
+void test_a_call_is_a_function_of_its_borrow_alone(void)
+{
+    Slaac.clear(work_a);
+    Slaac.clear(work_b);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    find_addr(work_a, g_formed);
+    uint32_t first = IO(work_a)->valid_ms;
+
+    prefix_in(work_b, g_prefix, 64u, 10u, 10u, 500u, IDEMIP_TRUE, IDEMIP_FALSE);
+    find_addr(work_a, g_formed);
+    TEST_ASSERT_EQUAL_UINT32(first, IO(work_a)->valid_ms);
+}
+
+// --- the published map -------------------------------------------------------
+
+void test_the_published_offsets_are_ordered_and_do_not_overlap(void)
+{
+    TEST_ASSERT_EQUAL_size_t(0u, (size_t)IDEMIP_SLAAC_OFF_IO);
+    TEST_ASSERT_TRUE_MESSAGE((size_t)IDEMIP_SLAAC_OFF_CTX >= sizeof(SlaacIo),
+                             "the context starts inside the operand block");
+    TEST_ASSERT_TRUE_MESSAGE(TABLE_OFF >= (size_t)IDEMIP_SLAAC_OFF_CTX, "the list starts before the context");
+    TEST_ASSERT_EQUAL_size_t(TABLE_OFF + ((size_t)IDEMIP_IP6_ADDRESSES << IDEMIP_SLAAC_ENTRY_SHIFT), STATE_END);
+    TEST_ASSERT_TRUE_MESSAGE(STATE_END <= (size_t)IDEMIP_SLAAC_BORROW, "the map runs past IDEMIP_SLAAC_BORROW");
+}
+
+void test_every_published_offset_is_aligned(void)
+{
+    TEST_ASSERT_EQUAL_size_t(0u, (size_t)IDEMIP_SLAAC_OFF_CTX & (IDEMIP_ALIGN - 1u));
+    TEST_ASSERT_EQUAL_size_t(0u, TABLE_OFF & (IDEMIP_ALIGN - 1u));
+}
+
+void test_the_io_macro_reaches_the_operand_block(void)
+{
+    TEST_ASSERT_EQUAL_PTR(work_a + IDEMIP_SLAAC_OFF_IO, (uint8_t *)IO(work_a));
+    TEST_ASSERT_EQUAL_PTR(work_b + IDEMIP_SLAAC_OFF_IO, (uint8_t *)IO(work_b));
+}
+
+// --- clear -------------------------------------------------------------------
+
+void test_clear_reports_ok(void)
+{
+    Slaac.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+}
+
+void test_clear_zeroes_the_list(void)
+{
+    memset(work_a, 0xFF, IDEMIP_SLAAC_BORROW);
+    Slaac.clear(work_a);
+    for (size_t i = TABLE_OFF; i < STATE_END; i++)
+    {
+        TEST_ASSERT_EQUAL_HEX8_MESSAGE(0x00u, work_a[i], "clear left a list byte set");
+    }
+}
+
+void test_clear_zeroes_the_context_apart_from_the_mark(void)
+{
+    memset(work_a, 0xFF, IDEMIP_SLAAC_BORROW);
+    Slaac.clear(work_a);
+    size_t set = 0;
+    for (size_t i = STATE_OFF; i < TABLE_OFF; i++)
+    {
+        if (work_a[i] != 0x00u)
+        {
+            set++;
+        }
+    }
+    TEST_ASSERT_EQUAL_size_t_MESSAGE(4u, set, "clear must zero the context apart from the cleared mark");
+}
+
+void test_clear_leaves_the_operand_block_alone(void)
+{
+    Slaac.clear(work_a);
+    IO(work_a)->prefix_args.prefix = g_prefix;
+    IO(work_a)->prefix_args.prefix_len = 64u;
+    Slaac.clear(work_a);
+    TEST_ASSERT_EQUAL_PTR(g_prefix, IO(work_a)->prefix_args.prefix);
+    TEST_ASSERT_EQUAL_UINT8(64u, IO(work_a)->prefix_args.prefix_len);
+}
+
+// A borrow no one cleared holds no mark, so every entry but clear refuses it.
+void test_an_uncleared_borrow_is_refused(void)
+{
+    link_local(work_a, g_iid, 64u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+    tick_at(work_a, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+    find_addr(work_a, g_formed);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+// --- link-local addresses, sec 5.3 -------------------------------------------
+
+// RFC 2464 sec 4 and sec 5, the one printed vector: the identifier for 34-56-78-9A-BC-DE appended to
+// FE80::/64.
+void test_the_link_local_address_is_the_rfc_2464_example(void)
+{
+    Slaac.clear(work_a);
+    link_local(work_a, g_iid, 64u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->created);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(g_link_local, IO(work_a)->addr, IDEMIP_IP6_ADDR_LEN);
+}
+
+// sec 5.3: "A link-local address has an infinite preferred and valid lifetime; it is never timed
+// out."
+void test_the_link_local_address_has_infinite_lifetimes(void)
+{
+    Slaac.clear(work_a);
+    link_local(work_a, g_iid, 64u);
+    TEST_ASSERT_TRUE(IO(work_a)->valid_infinite);
+    TEST_ASSERT_TRUE(IO(work_a)->preferred_infinite);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_SLAAC_ADDR_PREFERRED, IO(work_a)->state);
+
+    // Which no tick ever ages, however far the clock runs.
+    tick_at(work_a, 0xFFFFFFFFu);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+    find_addr(work_a, g_link_local);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+}
+
+// sec 5.3 step 1: "The left-most 'prefix length' bits of the address are those of the link-local
+// prefix", which RFC 4291 sec 2.5.6 gives as 1111111010, and step 2 zeroes what lies between.
+void test_the_link_local_address_carries_the_prefix_and_zeroes_between(void)
+{
+    Slaac.clear(work_a);
+    link_local(work_a, g_iid, 64u);
+    TEST_ASSERT_EQUAL_HEX8(0xFEu, IO(work_a)->addr[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x80u, IO(work_a)->addr[1]);
+    for (size_t i = 2; i < 8; i++)
+    {
+        TEST_ASSERT_EQUAL_HEX8_MESSAGE(0x00u, IO(work_a)->addr[i], "sec 5.3 zeroes the bits below the prefix");
+    }
+}
+
+void test_link_local_refuses_a_null_identifier(void)
+{
+    Slaac.clear(work_a);
+    link_local(work_a, NULL, 64u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+// An identifier that is not whole octets cannot be laid into an address held as octets, and a retry
+// with the same length cannot change that.
+void test_link_local_refuses_an_identifier_that_is_not_whole_octets(void)
+{
+    Slaac.clear(work_a);
+    link_local(work_a, g_iid, 63u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+// sec 5.3: "If the sum of the link-local prefix length and N is larger than 128, autoconfiguration
+// fails and manual configuration is required."
+void test_link_local_refuses_an_identifier_the_prefix_has_no_room_for(void)
+{
+    Slaac.clear(work_a);
+    link_local(work_a, g_iid, 120u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+// The same interface enabled twice holds one address, not two.
+void test_link_local_twice_holds_one_address(void)
+{
+    Slaac.clear(work_a);
+    link_local(work_a, g_iid, 64u);
+    TEST_ASSERT_TRUE(IO(work_a)->created);
+    link_local(work_a, g_iid, 64u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_FALSE(IO(work_a)->created);
+    TEST_ASSERT_EQUAL_UINT8(1u, IO(work_a)->addresses);
+}
+
+// --- sec 5.5.3 (a), (b), (c) -------------------------------------------------
+
+// (a) "If the Autonomous flag is not set, silently ignore the Prefix Information option."
+void test_a_prefix_without_the_autonomous_flag_is_ignored(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_FALSE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->ignored);
+    TEST_ASSERT_FALSE(IO(work_a)->created);
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->addresses);
+}
+
+// (b) "If the prefix is the link-local prefix, silently ignore the Prefix Information option."
+void test_the_link_local_prefix_is_ignored(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_ll_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->ignored);
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->addresses);
+}
+
+// (c) "If the preferred lifetime is greater than the valid lifetime, silently ignore the Prefix
+// Information option."
+void test_a_preferred_lifetime_above_the_valid_lifetime_is_ignored(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S + 1u, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->ignored);
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->addresses);
+}
+
+// --- sec 5.5.3 (d), forming an address ---------------------------------------
+
+// (d) forms the address by "combining the advertised prefix with an interface identifier of the
+// link", the prefix over the left 128 - N bits and the identifier over the right N.
+void test_a_new_prefix_forms_the_address_from_the_prefix_and_the_identifier(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->created);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(g_formed, IO(work_a)->addr, IDEMIP_IP6_ADDR_LEN);
+    TEST_ASSERT_EQUAL_UINT8(64u, IO(work_a)->prefix_len);
+}
+
+// (d) "initializing its preferred and valid lifetime values from the Prefix Information option".
+void test_the_lifetimes_are_initialized_from_the_option(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, TWO_HOURS_S, HOUR_S, 1000u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (TWO_HOURS_S * 1000u), IO(work_a)->valid_ms);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (HOUR_S * 1000u), IO(work_a)->preferred_ms);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_SLAAC_ADDR_PREFERRED, IO(work_a)->state);
+}
+
+// (d) forms an address only "if the Valid Lifetime is not 0".
+void test_a_new_prefix_with_a_zero_valid_lifetime_is_ignored(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, 0u, 0u, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->ignored);
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->addresses);
+}
+
+// (d) "If the sum of the prefix length and interface identifier length does not equal 128 bits, the
+// Prefix Information option MUST be ignored."
+void test_a_prefix_length_that_does_not_sum_to_128_is_ignored(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 48u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->ignored);
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->addresses);
+
+    prefix_in(work_a, g_prefix, 96u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_TRUE(IO(work_a)->ignored);
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->addresses);
+}
+
+// RFC 4861 sec 4.6.2 puts Prefix Length "from 0 to 128", so a field above that is not one this unit
+// can match or form on, and a retry cannot fix it.
+void test_a_prefix_length_past_128_is_refused(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 129u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+// A list with no free slot is BUSY, because a removal or an expiry frees one and the same call then
+// succeeds.
+void test_a_full_list_is_busy_and_a_removal_frees_a_slot(void)
+{
+    Slaac.clear(work_a);
+    uint8_t prefix[IDEMIP_IP6_ADDR_LEN];
+    memcpy(prefix, g_prefix, sizeof prefix);
+    for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP6_ADDRESSES; i++)
+    {
+        prefix[7] = (uint8_t)(0x10u + i);
+        prefix_in(work_a, prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        TEST_ASSERT_TRUE(IO(work_a)->created);
+    }
+    prefix[7] = 0xEE;
+    prefix_in(work_a, prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+
+    uint8_t held[IDEMIP_IP6_ADDR_LEN];
+    memcpy(held, g_formed, sizeof held);
+    held[7] = 0x10u;
+    IO(work_a)->addr_args.addr = held;
+    Slaac.remove(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    prefix[7] = 0xEE;
+    prefix_in(work_a, prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->created);
+}
+
+// Two prefixes are two addresses, and neither disturbs the other.
+void test_two_prefixes_are_two_addresses(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    prefix_in(work_a, g_prefix2, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_TRUE(IO(work_a)->created);
+    TEST_ASSERT_EQUAL_UINT8(2u, IO(work_a)->addresses);
+}
+
+// --- sec 5.5.3 (e), the two-hour rule ----------------------------------------
+
+// (e) opens: "If the advertised prefix is equal to the prefix of an address configured by stateless
+// autoconfiguration in the list", which is the same prefix length and the same leading bits, so the
+// second advertisement updates rather than adding.
+void test_the_same_prefix_updates_rather_than_adding(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_TRUE(IO(work_a)->created);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 1000u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->updated);
+    TEST_ASSERT_FALSE(IO(work_a)->created);
+    TEST_ASSERT_EQUAL_UINT8(1u, IO(work_a)->addresses);
+}
+
+// (e): "the preferred lifetime of the corresponding address is always reset to the Preferred Lifetime
+// in the received Prefix Information option, regardless of whether the valid lifetime is also reset
+// or ignored".
+void test_the_preferred_lifetime_is_always_reset(void)
+{
+    Slaac.clear(work_a);
+    // Ten minutes valid, so the valid lifetime below takes rule 2 and is ignored.
+    prefix_in(work_a, g_prefix, 64u, 600u, 600u, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    uint32_t held_valid = IO(work_a)->valid_ms;
+
+    prefix_in(work_a, g_prefix, 64u, 300u, 120u, 1000u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_TRUE(IO(work_a)->two_hour);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(held_valid, IO(work_a)->valid_ms, "rule 2 must leave the valid lifetime alone");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1000u + (120u * 1000u), IO(work_a)->preferred_ms,
+                                     "the preferred lifetime is reset whatever the valid lifetime does");
+}
+
+// (e) 1: "If the received Valid Lifetime is greater than 2 hours ... set the valid lifetime of the
+// corresponding address to the advertised Valid Lifetime."
+void test_rule_1_a_valid_lifetime_above_two_hours_is_taken(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, 600u, 600u, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    prefix_in(work_a, g_prefix, 64u, TWO_HOURS_S + 1u, 600u, 1000u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_UINT32(1000u + ((TWO_HOURS_S + 1u) * 1000u), IO(work_a)->valid_ms);
+    TEST_ASSERT_FALSE(IO(work_a)->two_hour);
+}
+
+// (e) 1, the other half: "or greater than RemainingLifetime". One hour is under two hours, but it is
+// more than the ten minutes left, so it is taken.
+void test_rule_1_a_valid_lifetime_above_the_remaining_lifetime_is_taken(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, 600u, 600u, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, 600u, 1000u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (HOUR_S * 1000u), IO(work_a)->valid_ms);
+    TEST_ASSERT_FALSE(IO(work_a)->two_hour);
+}
+
+// (e) 2: "If RemainingLifetime is less than or equal to 2 hours, ignore the Prefix Information option
+// with regards to the valid lifetime". Ten minutes remain and five are advertised, so the five are
+// ignored.
+void test_rule_2_a_shorter_lifetime_is_ignored_when_under_two_hours_remain(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, 600u, 600u, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    uint32_t held = IO(work_a)->valid_ms;
+    prefix_in(work_a, g_prefix, 64u, 300u, 300u, 1000u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(held, IO(work_a)->valid_ms, "a short lifetime cut an address that was expiring");
+    TEST_ASSERT_TRUE(IO(work_a)->two_hour);
+}
+
+// (e) 2's one exception: "unless the Router Advertisement from which this option was obtained has
+// been authenticated ... the valid lifetime of the corresponding address should be set to the Valid
+// Lifetime in the received option."
+void test_rule_2_an_authenticated_advertisement_sets_the_shorter_lifetime(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, 600u, 600u, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    prefix_in(work_a, g_prefix, 64u, 300u, 300u, 1000u, IDEMIP_TRUE, IDEMIP_TRUE);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (300u * 1000u), IO(work_a)->valid_ms);
+    TEST_ASSERT_FALSE(IO(work_a)->two_hour);
+}
+
+// (e) 3: "Otherwise, reset the valid lifetime of the corresponding address to 2 hours." Ten hours
+// remain, five minutes are advertised, and neither rule 1 nor rule 2 applies.
+void test_rule_3_a_short_lifetime_against_a_long_one_resets_to_two_hours(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, 10u * HOUR_S, 10u * HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    prefix_in(work_a, g_prefix, 64u, 300u, 300u, 1000u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, IO(work_a)->valid_ms);
+    TEST_ASSERT_TRUE(IO(work_a)->two_hour);
+}
+
+// (e) 3 again with the boundary the section names: a valid lifetime of exactly 2 hours is not
+// "greater than 2 hours", so rule 1's first half does not fire.
+void test_rule_3_holds_at_exactly_two_hours(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, 10u * HOUR_S, 10u * HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    prefix_in(work_a, g_prefix, 64u, TWO_HOURS_S, TWO_HOURS_S, 1000u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, IO(work_a)->valid_ms);
+    TEST_ASSERT_TRUE(IO(work_a)->two_hour);
+}
+
+// The rules exist for this: "a bogus advertisement could contain prefixes with very small Valid
+// Lifetimes ... could cause all of a node's addresses to expire prematurely". A single unauthenticated
+// advertisement of one second must not bring a ten-hour address down to one second.
+void test_the_two_hour_rule_stops_an_advertisement_expiring_an_address_early(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, 10u * HOUR_S, 10u * HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    prefix_in(work_a, g_prefix, 64u, 1u, 1u, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_TRUE(IO(work_a)->two_hour);
+
+    // A second later the address is deprecated, the preferred lifetime always being taken, but it is
+    // still valid and still in the list. That is the whole point of the rule.
+    tick_at(work_a, 1000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->deprecated);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->invalidated, "one bogus advertisement invalidated the address");
+    find_addr(work_a, g_formed);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, IO(work_a)->valid_ms);
+}
+
+// RFC 4861 sec 4.6.2: a Valid Lifetime "of all one bits (0xffffffff) represents infinity", which is
+// greater than 2 hours and so takes rule 1.
+void test_rule_1_an_infinite_valid_lifetime_is_taken(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    prefix_in(work_a, g_prefix, 64u, IDEMIP_SLAAC_LIFETIME_INFINITE, HOUR_S, 1000u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_TRUE(IO(work_a)->valid_infinite);
+    TEST_ASSERT_FALSE(IO(work_a)->two_hour);
+}
+
+// An infinite RemainingLifetime is neither below a finite received lifetime nor at or under 2 hours,
+// so a short advertisement against it lands on rule 3, which is what the section states.
+void test_a_short_lifetime_against_an_infinite_one_resets_to_two_hours(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, IDEMIP_SLAAC_LIFETIME_INFINITE, IDEMIP_SLAAC_LIFETIME_INFINITE, 0u, IDEMIP_TRUE,
+              IDEMIP_FALSE);
+    TEST_ASSERT_TRUE(IO(work_a)->valid_infinite);
+    prefix_in(work_a, g_prefix, 64u, 300u, 300u, 1000u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_FALSE(IO(work_a)->valid_infinite);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, IO(work_a)->valid_ms);
+    TEST_ASSERT_TRUE(IO(work_a)->two_hour);
+}
+
+// A zero Valid Lifetime on a prefix already in the list is not (d)'s "not 0" test: it is (e), and it
+// takes the same three rules, so it cannot invalidate the address on the spot.
+void test_a_zero_valid_lifetime_on_a_held_prefix_takes_the_two_hour_rule(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, 10u * HOUR_S, 10u * HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    prefix_in(work_a, g_prefix, 64u, 0u, 0u, 1000u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_TRUE(IO(work_a)->updated);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, IO(work_a)->valid_ms);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_SLAAC_ADDR_DEPRECATED, IO(work_a)->state,
+                                  "a zero preferred lifetime deprecates the address at once");
+}
+
+// --- sec 5.5.4, lifetime expiry ----------------------------------------------
+
+// "A preferred address becomes deprecated when its preferred lifetime expires."
+void test_a_preferred_lifetime_expiry_deprecates_the_address(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, 10u, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    tick_at(work_a, 9999u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+
+    tick_at(work_a, 10000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->deprecated);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_SLAAC_ADDR_DEPRECATED, IO(work_a)->state);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(g_formed, IO(work_a)->addr, IDEMIP_IP6_ADDR_LEN);
+
+    // Deprecation fires once, not on every later tick.
+    tick_at(work_a, 20000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+}
+
+// "An address (and its association with an interface) becomes invalid when its valid lifetime
+// expires", and sec 2 makes an invalid address "an address that is not assigned to any interface".
+void test_a_valid_lifetime_expiry_invalidates_the_address_and_frees_the_slot(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, 10u, 10u, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    tick_at(work_a, 10000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->invalidated);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(g_formed, IO(work_a)->addr, IDEMIP_IP6_ADDR_LEN,
+                                          "an invalidated address must still be readable");
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->addresses);
+
+    find_addr(work_a, g_formed);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+// A tick with no lifetime reached is BUSY: nothing is wrong, and a later tick makes progress.
+void test_a_tick_with_nothing_due_is_busy(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    tick_at(work_a, 1000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+}
+
+// One event per call, so two addresses due at once take two ticks and neither is lost.
+void test_a_tick_reports_one_event_per_call(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, 10u, 10u, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    prefix_in(work_a, g_prefix2, 64u, 10u, 10u, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_UINT8(2u, IO(work_a)->addresses);
+
+    tick_at(work_a, 10000u);
+    TEST_ASSERT_TRUE(IO(work_a)->invalidated);
+    TEST_ASSERT_EQUAL_UINT8(1u, IO(work_a)->addresses);
+    tick_at(work_a, 10000u);
+    TEST_ASSERT_TRUE(IO(work_a)->invalidated);
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->addresses);
+    tick_at(work_a, 10000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+}
+
+// sec 5.5.4 makes the valid lifetime the outer one, so a slot with both expired is invalidated rather
+// than deprecated.
+void test_both_lifetimes_expired_invalidates_rather_than_deprecating(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, 10u, 5u, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    tick_at(work_a, 10000u);
+    TEST_ASSERT_TRUE(IO(work_a)->invalidated);
+    TEST_ASSERT_FALSE(IO(work_a)->deprecated);
+}
+
+// --- find, get and remove ----------------------------------------------------
+
+void test_find_refuses_an_address_that_is_not_in_the_list(void)
+{
+    Slaac.clear(work_a);
+    find_addr(work_a, g_formed);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+void test_get_walks_the_list(void)
+{
+    Slaac.clear(work_a);
+    link_local(work_a, g_iid, 64u);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+
+    IO(work_a)->addr_args.index = 0u;
+    Slaac.get(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(g_link_local, IO(work_a)->addr, IDEMIP_IP6_ADDR_LEN);
+
+    IO(work_a)->addr_args.index = 1u;
+    Slaac.get(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(g_formed, IO(work_a)->addr, IDEMIP_IP6_ADDR_LEN);
+}
+
+void test_get_refuses_a_slot_that_holds_nothing(void)
+{
+    Slaac.clear(work_a);
+    IO(work_a)->addr_args.index = 0u;
+    Slaac.get(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+
+    IO(work_a)->addr_args.index = (uint8_t)IDEMIP_IP6_ADDRESSES;
+    Slaac.get(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+void test_remove_refuses_an_address_that_is_not_in_the_list(void)
+{
+    Slaac.clear(work_a);
+    IO(work_a)->addr_args.addr = g_formed;
+    Slaac.remove(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+// A removed address is gone, and its prefix forms it again from scratch.
+void test_remove_frees_the_slot(void)
+{
+    Slaac.clear(work_a);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    IO(work_a)->addr_args.addr = g_formed;
+    Slaac.remove(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->addresses);
+
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+    TEST_ASSERT_TRUE(IO(work_a)->created);
+}
+
+// A different interface identifier on the same prefix is a different address, which is what (d)
+// forms, so the two lists hold different addresses from the same advertisement.
+void test_two_interfaces_form_their_own_addresses(void)
+{
+    Slaac.clear(work_a);
+    Slaac.clear(work_b);
+    prefix_in(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, IDEMIP_TRUE, IDEMIP_FALSE);
+
+    IO(work_b)->prefix_args.prefix = g_prefix;
+    IO(work_b)->prefix_args.prefix_len = 64u;
+    IO(work_b)->prefix_args.iid = g_iid2;
+    IO(work_b)->prefix_args.iid_bits = 64u;
+    IO(work_b)->prefix_args.valid_s = HOUR_S;
+    IO(work_b)->prefix_args.preferred_s = HOUR_S;
+    IO(work_b)->prefix_args.now_ms = 0u;
+    IO(work_b)->prefix_args.autonomous = IDEMIP_TRUE;
+    IO(work_b)->prefix_args.authenticated = IDEMIP_FALSE;
+    Slaac.prefix_in(work_b);
+    TEST_ASSERT_TRUE(IO(work_b)->created);
+
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(g_iid2, IO(work_b)->addr + 8, 8);
+    find_addr(work_b, g_formed);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "one interface holds the other's address");
+}
