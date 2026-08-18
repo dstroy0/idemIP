@@ -125,12 +125,19 @@ typedef struct
  * @brief What a Default Router List call takes (RFC 4861 sec 4.2, sec 6.3.4).
  *
  * @var Nd6RouterArgs::addr       the advertising router's source address, IDEMIP_IP6_ADDR_LEN octets
+ * @var Nd6RouterArgs::lladdr     the sec 4.6.1 Source Link-Layer Address option the advertisement
+ *                                carried, IDEMIP_MAC_LEN octets, or NULL when it carried none. sec
+ *                                4.2 says that option "MAY be omitted to facilitate in-bound load
+ *                                balancing over replicated interfaces", and sec 7.2 makes the
+ *                                difference matter: a message without one "MUST NOT create or update
+ *                                neighbor cache entries, except with respect to the IsRouter flag".
  * @var Nd6RouterArgs::lifetime_s the sec 4.2 Router Lifetime in seconds. sec 6.3.4: a zero one
  *                                "immediately time-out the entry".
  */
 typedef struct
 {
     const uint8_t *addr;
+    const uint8_t *lladdr;
     uint16_t lifetime_s;
 } Nd6RouterArgs;
 

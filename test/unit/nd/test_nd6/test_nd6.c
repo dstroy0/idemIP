@@ -401,11 +401,21 @@ static idemip_bool on_link_of(uint8_t *w, const uint8_t *addr)
     return IDEMIP_ND6_IO(w)->on_link;
 }
 
-static void rtr_set(uint8_t *w, const uint8_t *addr, uint16_t life_s)
+// An advertisement carrying a Source Link-Layer Address option, which RFC 4861 sec 6.3.4 needs
+// before it may touch the Neighbor Cache.
+static void rtr_set_ll(uint8_t *w, const uint8_t *addr, const uint8_t *ll, uint16_t life_s)
 {
     IDEMIP_ND6_IO(w)->router_args.addr = addr;
+    IDEMIP_ND6_IO(w)->router_args.lladdr = ll;
     IDEMIP_ND6_IO(w)->router_args.lifetime_s = life_s;
     Nd6.router_set(w);
+}
+
+// One without it, which sec 4.2 permits "to facilitate in-bound load balancing over replicated
+// interfaces".
+static void rtr_set(uint8_t *w, const uint8_t *addr, uint16_t life_s)
+{
+    rtr_set_ll(w, addr, NULL, life_s);
 }
 
 static void push(uint8_t *w, uint8_t neighbor, uint16_t desc, uint16_t len)
@@ -1081,19 +1091,69 @@ void test_a_prefix_length_past_128_is_refused(void)
 // --- the default router list, sec 6.3.4 and sec 6.3.6 ------------------------
 
 // RFC 4861 sec 6.3.4: "If the address is not already present in the host's Default Router List, and
-// the advertisement's Router Lifetime is non-zero, create a new entry in the list", and sec 5.1 has
-// that entry point at a Neighbor Cache entry.
-void test_a_router_with_a_non_zero_lifetime_is_listed_and_points_at_a_neighbor(void)
+// the advertisement's Router Lifetime is non-zero, create a new entry in the list." With a Source
+// Link-Layer Address option the same section reaches the Neighbor Cache too: "the link-layer address
+// SHOULD be recorded in the Neighbor Cache entry for the router (creating an entry if necessary) and
+// the IsRouter flag in the Neighbor Cache entry MUST be set to TRUE... If a Neighbor Cache entry is
+// created for the router, its reachability state MUST be set to STALE."
+void test_a_router_advertising_its_link_layer_address_is_listed_and_cached_stale(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    rtr_set_ll(work_a, g_addr_a, g_lladdr, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_ND6_IO(work_a)->router);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, nb_find(work_a, g_addr_a));
+    TEST_ASSERT_EQUAL_INT_MESSAGE(T, IDEMIP_ND6_IO(work_a)->is_router, "sec 6.3.4 sets IsRouter TRUE");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ND6_STALE, IDEMIP_ND6_IO(work_a)->state,
+                                  "a cache entry created for a router MUST be set to STALE");
+}
+
+// RFC 4861 sec 7.2: "It is possible that a host may receive a solicitation, a router advertisement,
+// or a Redirect message without a link-layer address option included. These messages MUST NOT create
+// or update neighbor cache entries, except with respect to the IsRouter flag as specified in Sections
+// 6.3.4 and 7.2.5. If a Neighbor Cache entry does not exist for the source of such a message, Address
+// Resolution will be required before unicast communications with that address can begin."
+//
+// sec 4.2 permits the omission "to facilitate in-bound load balancing over replicated interfaces", so
+// the router is still listed - sec 6.3.4 keeps the Default Router List in terms of addresses, and
+// requires a host to "retain at least two router addresses". Without this, one advertisement per
+// source fills the Neighbor Cache with entries that hold no link-layer address.
+void test_a_router_advertising_no_link_layer_address_is_listed_without_a_cache_entry(void)
 {
     Nd6.clear(work_a);
     at(work_a, 0u);
     rtr_set(work_a, g_addr_a, 1800u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, IDEMIP_ND6_IO(work_a)->router,
+                                    "sec 6.3.4 lists the router whether or not it advertised an address");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, nb_find(work_a, g_addr_a),
+                                  "sec 7.2 forbids an advertisement with no link-layer address option "
+                                  "from creating a neighbor cache entry");
+
+    // It is still the router the selection returns, and the next hop is its address, which is what
+    // address resolution then runs on.
+    Nd6.router_select(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_ND6_IO(work_a)->router);
+    TEST_ASSERT_NOT_NULL_MESSAGE(IDEMIP_ND6_IO(work_a)->next_hop, "the selected router named no next hop");
+    TEST_ASSERT_EQUAL_MEMORY(g_addr_a, IDEMIP_ND6_IO(work_a)->next_hop, IDEMIP_IP6_ADDR_LEN);
+}
+
+// A later advertisement that does carry the option fills in the cache entry sec 7.2 held back.
+void test_a_later_advertisement_with_a_link_layer_address_fills_the_cache_entry(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    rtr_set(work_a, g_addr_a, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, nb_find(work_a, g_addr_a));
+
+    rtr_set_ll(work_a, g_addr_a, g_lladdr, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, IDEMIP_ND6_IO(work_a)->router, "the router was listed twice");
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, nb_find(work_a, g_addr_a));
-    TEST_ASSERT_EQUAL_INT_MESSAGE(T, IDEMIP_ND6_IO(work_a)->is_router, "sec 6.3.4 sets IsRouter TRUE");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ND6_INCOMPLETE, IDEMIP_ND6_IO(work_a)->state,
-                                  "sec 6.3.6 reads an entry with no link-layer address as unknown");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ND6_STALE, IDEMIP_ND6_IO(work_a)->state);
+    TEST_ASSERT_EQUAL_INT(T, IDEMIP_ND6_IO(work_a)->is_router);
 }
 
 // RFC 4861 sec 6.3.4 conditions creation on a non-zero Router Lifetime, so a zero one on a router
@@ -1149,7 +1209,7 @@ void test_removing_a_router_makes_its_destinations_redo_next_hop_determination(v
 {
     Nd6.clear(work_a);
     at(work_a, 0u);
-    rtr_set(work_a, g_addr_a, 1800u);
+    rtr_set_ll(work_a, g_addr_a, g_lladdr, 1800u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, nb_find(work_a, g_addr_a));
     uint8_t ni = IDEMIP_ND6_IO(work_a)->neighbor;
 
@@ -1174,7 +1234,7 @@ void test_select_prefers_a_router_that_is_not_incomplete(void)
 {
     Nd6.clear(work_a);
     at(work_a, 0u);
-    rtr_set(work_a, g_addr_a, 1800u); // stays INCOMPLETE, no link-layer address was advertised
+    rtr_set(work_a, g_addr_a, 1800u); // no link-layer address advertised, so no cache entry exists
     nb_set(work_a, g_addr_b, g_lladdr2, IDEMIP_ND6_STALE, T, F, T);
     rtr_set(work_a, g_addr_b, 1800u);
 

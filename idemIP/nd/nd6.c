@@ -70,12 +70,20 @@ typedef struct
 
 // RFC 4861 sec 5.1 Default Router List: "Router list entries point to entries in the Neighbor Cache",
 // and each "has an associated invalidation timer value (extracted from Router Advertisements)".
+//
+// The address is held here rather than only in the Neighbor Cache entry, because sec 6.3.4 states
+// the list in terms of addresses - "a host MUST retain at least two router addresses" - and sec 7.2
+// forbids an advertisement with no Source Link-Layer Address option from creating a cache entry at
+// all. sec 4.2 says that option "MAY be omitted to facilitate in-bound load balancing over
+// replicated interfaces", so a router that never sends one must still be listed. neighbor is the
+// sec 5.1 pointer once a cache entry exists, and IDEMIP_ND6_NONE until then.
 typedef struct
 {
     uint32_t invalidate_ms;
+    uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     uint8_t neighbor;
     idemip_bool used;
-    uint8_t pad[2];
+    uint8_t pad[10];
 } Nd6Router;
 
 // One frame held while address resolution completes (RFC 4861 sec 7.2.2). The octets stay in the
@@ -490,6 +498,7 @@ static void nd6_drop_router(uint8_t *restrict work, uint8_t ri)
     r->used = IDEMIP_FALSE;
     r->invalidate_ms = 0u;
     r->neighbor = IDEMIP_ND6_NONE;
+    memset(r->addr, 0, IDEMIP_IP6_ADDR_LEN);
     if (ctx->routers != 0u)
     {
         ctx->routers--;
@@ -1034,9 +1043,19 @@ static void nd6_router_set(uint8_t *restrict work)
     // RFC 4861 sec 6.3.4, on the source address of a valid Router Advertisement: a router that is not
     // listed and advertises a non-zero Router Lifetime creates an entry whose invalidation timer
     // starts at that lifetime; a router already listed has its timer reset; a router already listed
-    // that advertises a zero lifetime is timed out at once as sec 6.3.5 specifies. sec 5.1 has each
-    // entry point at a Neighbor Cache entry, so one is created INCOMPLETE when the router has none,
-    // which is the state sec 6.3.6 reads as reachability unknown.
+    // that advertises a zero lifetime is timed out at once as sec 6.3.5 specifies. The list is keyed
+    // on the address, which is what sec 6.3.4 says a host retains.
+    //
+    // The Neighbor Cache is a separate question. sec 6.3.4: "If the advertisement contains a Source
+    // Link-Layer Address option, the link-layer address SHOULD be recorded in the Neighbor Cache
+    // entry for the router (creating an entry if necessary) and the IsRouter flag in the Neighbor
+    // Cache entry MUST be set to TRUE. If no Source Link-Layer Address is included, but a
+    // corresponding Neighbor Cache entry exists, its IsRouter flag MUST be set to TRUE... If a
+    // Neighbor Cache entry is created for the router, its reachability state MUST be set to STALE."
+    // sec 7.2 closes the remaining case: an advertisement without that option "MUST NOT create or
+    // update neighbor cache entries, except with respect to the IsRouter flag", and "If a Neighbor
+    // Cache entry does not exist for the source of such a message, Address Resolution will be
+    // required before unicast communications with that address can begin."
     ctx->now_ms = io->tick_args.now_ms;
     const Nd6RouterArgs *a = &io->router_args;
     uint8_t ni = nd6_neighbor_lookup(work, a->addr);
@@ -1044,7 +1063,7 @@ static void nd6_router_set(uint8_t *restrict work)
     for (uint8_t k = 0u; k < ND6_ROUTERS; k++)
     {
         const Nd6Router *r = ND6_ROUTER_AT(work, k);
-        if (r->used && r->neighbor == ni && ni != IDEMIP_ND6_NONE)
+        if (r->used && nd6_addr_eq(r->addr, a->addr))
         {
             ri = k;
             break;
@@ -1059,13 +1078,28 @@ static void nd6_router_set(uint8_t *restrict work)
         io->status = IDEMIP_OK;
         return;
     }
-    if (ni == IDEMIP_ND6_NONE)
+    if (a->lladdr != NULL)
     {
-        ni = nd6_create_neighbor(work, a->addr, NULL, IDEMIP_ND6_INCOMPLETE, IDEMIP_TRUE);
         if (ni == IDEMIP_ND6_NONE)
         {
-            io->status = IDEMIP_BUSY; // a slot frees as sec 7.3.3 deletes an unanswered entry
-            return;
+            ni = nd6_create_neighbor(work, a->addr, a->lladdr, IDEMIP_ND6_STALE, IDEMIP_TRUE);
+            if (ni == IDEMIP_ND6_NONE)
+            {
+                io->status = IDEMIP_BUSY; // a slot frees as sec 7.3.3 deletes an unanswered entry
+                return;
+            }
+        }
+        else
+        {
+            Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, ni);
+            if (memcmp(n->lladdr, a->lladdr, IDEMIP_MAC_LEN) != 0)
+            {
+                // "If a cache entry already exists and is updated with a different link-layer
+                // address, the reachability state MUST also be set to STALE."
+                memcpy(n->lladdr, a->lladdr, IDEMIP_MAC_LEN);
+                n->state = IDEMIP_ND6_STALE;
+                nd6_arm(ctx, n);
+            }
         }
     }
     if (ri == IDEMIP_ND6_NONE)
@@ -1085,13 +1119,17 @@ static void nd6_router_set(uint8_t *restrict work)
         }
         Nd6Router *r = ND6_ROUTER_AT(work, ri);
         r->used = IDEMIP_TRUE;
-        r->neighbor = ni;
+        memcpy(r->addr, a->addr, IDEMIP_IP6_ADDR_LEN);
         ctx->routers++;
     }
+    ND6_ROUTER_AT(work, ri)->neighbor = ni;
     ND6_ROUTER_AT(work, ri)->invalidate_ms = ctx->now_ms + nd6_lifetime_ms((uint32_t)a->lifetime_s);
-    ND6_NEIGHBOR_AT(work, ni)->is_router = IDEMIP_TRUE;
+    if (ni < ND6_NEIGHBORS)
+    {
+        ND6_NEIGHBOR_AT(work, ni)->is_router = IDEMIP_TRUE;
+        nd6_report_neighbor(work, ni);
+    }
     io->router = ri;
-    nd6_report_neighbor(work, ni);
     io->status = IDEMIP_OK;
 }
 
@@ -1164,12 +1202,20 @@ static void nd6_router_select(uint8_t *restrict work)
     {
         return;
     }
-    uint8_t ni = ND6_ROUTER_AT(work, probable)->neighbor;
+    const Nd6Router *sel = ND6_ROUTER_AT(work, probable);
+    uint8_t ni = sel->neighbor;
     io->router = probable;
     if (ni < ND6_NEIGHBORS && ND6_NEIGHBOR_AT(work, ni)->used)
     {
         io->next_hop = ND6_NEIGHBOR_AT(work, ni)->addr;
         nd6_report_neighbor(work, ni);
+    }
+    else
+    {
+        // sec 7.2: with no cache entry for it, "Address Resolution will be required before unicast
+        // communications with that address can begin". The next hop is the router's address either
+        // way, so the caller resolves it.
+        io->next_hop = sel->addr;
     }
     io->status = IDEMIP_OK;
 }
