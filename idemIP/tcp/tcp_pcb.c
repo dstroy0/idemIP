@@ -130,12 +130,12 @@ static_assert(sizeof(TcpPcbOosFields) <= sizeof(TcpPcbOosEntry),
               "the out-of-order field set outgrew one entry - raise IDEMIP_TCP_OOSEQ_ENTRY_SHIFT");
 
 // The one definition, private to this TU. A borrow that was never cleared carries no mark, so every
-// entry refuses it rather than reading tables that were never zeroed. next_port is where a bind of
-// IDEMIP_TCP_PCB_PORT_ANY starts looking.
+// entry refuses it rather than reading tables that were never zeroed. A bind of
+// IDEMIP_TCP_PCB_PORT_ANY starts looking where the caller's random word points, so no cursor is kept
+// here: RFC 6056 sec 3.3.1 draws each port independently.
 typedef struct
 {
     uint32_t ready;
-    uint16_t next_port;
 } TcpPcbCtx;
 
 // The mark clear leaves.
@@ -387,10 +387,15 @@ static idemip_bool tcp_pcb_oos_unlink(uint8_t *restrict work, uint16_t pcb, uint
 
 // --- the local port --------------------------------------------------------
 
-// A local port is taken while any open TCB holds it. RFC 9293 sec 3.9.1.1 (MUST-42) requires that a
-// LISTEN on a port be possible "while a connection block with the same local port is in SYN-SENT or
-// SYN-RECEIVED state", so a listener's port does not make one taken here and a TCB's does not make
-// one taken for a listen.
+// Whether any open TCB already holds this local port. This is RFC 6056 sec 3.3.1's
+// check_suitable_port, which the ephemeral draw uses to pass over a port in use; it is not a rule
+// about what may be bound. RFC 9293 sec 3.4.1 makes a connection "defined by a pair of sockets", so
+// two peers reaching one local socket are two connections and tcp_pcb_connect is what keeps the pair
+// unique.
+//
+// sec 3.9.1.1 (MUST-42) requires that a LISTEN on a port be possible "while a connection block with
+// the same local port is in SYN-SENT or SYN-RECEIVED state", so a listener's port does not make one
+// taken here and a TCB's does not make one taken for a listen.
 static idemip_bool tcp_pcb_port_taken(uint8_t *restrict work, uint16_t port, uint16_t except)
 {
     for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_PCBS; i++)
@@ -404,23 +409,27 @@ static idemip_bool tcp_pcb_port_taken(uint8_t *restrict work, uint16_t port, uin
     return IDEMIP_FALSE;
 }
 
-// RFC 6335 sec 6's Dynamic Ports, walked from where the last draw left off. They number a power of
-// two, so the wrap is an AND and an OR rather than a divide.
-static uint16_t tcp_pcb_port_draw(uint8_t *restrict work, uint16_t except)
+// RFC 6335 sec 6's Dynamic Ports, drawn by RFC 6056 sec 3.3.1 Algorithm 1:
+//
+//   next_ephemeral = min_ephemeral + (random() % num_ephemeral);
+//   count = num_ephemeral;
+//   do { if (check_suitable_port(port)) return next_ephemeral;
+//        if (next_ephemeral == max_ephemeral) next_ephemeral = min_ephemeral; else next_ephemeral++;
+//        count--; } while (count > 0);
+//
+// They number a power of two, so the modulo is an AND and the wrap is an AND and an OR: no divide
+// runs. sec 3.3 makes the obfuscation a SHOULD, "since this helps to mitigate a number of attacks
+// that depend on the attacker's ability to guess or know the five-tuple", and a walk from where the
+// last draw left off is guessable from one observed port.
+static uint16_t tcp_pcb_port_draw(uint8_t *restrict work, uint16_t except, uint32_t rand)
 {
-    TcpPcbCtx *ctx = TCP_PCB_CTX(work);
-    uint16_t at = ctx->next_port;
-    if (at < (uint16_t)IDEMIP_TCP_PCB_PORT_DYN_FIRST)
-    {
-        at = (uint16_t)IDEMIP_TCP_PCB_PORT_DYN_FIRST;
-    }
+    uint16_t at = (uint16_t)(IDEMIP_TCP_PCB_PORT_DYN_FIRST | (uint16_t)(rand & IDEMIP_TCP_PCB_PORT_DYN_MASK));
     for (uint32_t n = 0u; n < (uint32_t)IDEMIP_TCP_PCB_PORT_DYN_COUNT; n++)
     {
         uint16_t port = at;
         at = (uint16_t)(IDEMIP_TCP_PCB_PORT_DYN_FIRST | (uint16_t)((port + 1u) & IDEMIP_TCP_PCB_PORT_DYN_MASK));
         if (!tcp_pcb_port_taken(work, port, except))
         {
-            ctx->next_port = at;
             return port;
         }
     }
@@ -502,7 +511,6 @@ static void tcp_pcb_clear(uint8_t *restrict work)
     TcpPcbIo *io = TCP_PCB_IO(work);
     memset(work + IDEMIP_TCP_PCB_OFF_CTX, 0, (size_t)IDEMIP_TCP_PCB_BORROW - IDEMIP_TCP_PCB_OFF_CTX);
     TCP_PCB_CTX(work)->ready = TCP_PCB_READY;
-    TCP_PCB_CTX(work)->next_port = (uint16_t)IDEMIP_TCP_PCB_PORT_DYN_FIRST;
     memset(&io->vars, 0, sizeof io->vars);
     memset(&io->ctl, 0, sizeof io->ctl);
     memset(&io->info, 0, sizeof io->info);
@@ -620,20 +628,19 @@ static void tcp_pcb_bind(uint8_t *restrict work)
     {
         return;
     }
+    // A named port is taken as given. RFC 9293 sec 3.4.1: "A connection is defined by a pair of
+    // sockets", so another TCB holding this local port is another connection, not a collision - a
+    // listener serving many peers on one port is every one of them. tcp_pcb_connect is where the pair
+    // is made unique.
     uint16_t port = io->bind_args.port;
     if (port == IDEMIP_TCP_PCB_PORT_ANY)
     {
-        port = tcp_pcb_port_draw(work, io->bind_args.index);
+        port = tcp_pcb_port_draw(work, io->bind_args.index, io->bind_args.rand);
         if (port == IDEMIP_TCP_PCB_PORT_ANY)
         {
             io->status = IDEMIP_BUSY;
             return;
         }
-    }
-    else if (tcp_pcb_port_taken(work, port, io->bind_args.index))
-    {
-        io->status = IDEMIP_BUSY;
-        return;
     }
     tcp_pcb_addr_set(t->local_ip, io->bind_args.ip, n);
     t->local_port = port;

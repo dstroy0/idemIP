@@ -232,10 +232,17 @@ typedef struct
  *                            the remote port on a connect
  * @var TcpPcbAddrArgs::zone  the RFC 4007 sec 6 zone index qualifying a non-global IPv6 address
  * @var TcpPcbAddrArgs::netif the interface this end is pinned to, 0 for none
+ * @var TcpPcbAddrArgs::rand  an unpredictable 32-bit word, read only by a bind of
+ *                            IDEMIP_TCP_PCB_PORT_ANY. RFC 6056 sec 3.3: "Ephemeral port selection
+ *                            algorithms SHOULD obfuscate the selection of their ephemeral ports,
+ *                            since this helps to mitigate a number of attacks that depend on the
+ *                            attacker's ability to guess or know the five-tuple". sec 3.3.1 notes
+ *                            "the output needs to be unpredictable", so a counter will not do.
  */
 typedef struct
 {
     const uint8_t *ip;
+    uint32_t rand;
     uint16_t index;
     uint16_t port;
     uint8_t zone;

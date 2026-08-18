@@ -656,6 +656,7 @@ void test_a_bind_of_port_any_draws_from_the_rfc_6335_dynamic_range(void)
     IO(work_a)->bind_args.index = a;
     IO(work_a)->bind_args.ip = g_local;
     IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
+    IO(work_a)->bind_args.rand = 0x1234ABCDu;
     TcpPcb.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     uint16_t p1 = IO(work_a)->port;
@@ -663,6 +664,7 @@ void test_a_bind_of_port_any_draws_from_the_rfc_6335_dynamic_range(void)
     IO(work_a)->bind_args.index = b;
     IO(work_a)->bind_args.ip = g_local;
     IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
+    IO(work_a)->bind_args.rand = 0x5678BEEFu;
     TcpPcb.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     uint16_t p2 = IO(work_a)->port;
@@ -672,34 +674,117 @@ void test_a_bind_of_port_any_draws_from_the_rfc_6335_dynamic_range(void)
     TEST_ASSERT_TRUE_MESSAGE(p1 != p2, "two draws handed out the same local port");
 }
 
-// A local port another open TCB holds is BUSY: RFC 9293 sec 3.10.4's "Delete TCB" frees it, so
-// retrying can succeed, and reporting ERR would abandon a port that is about to be free.
-void test_a_local_port_another_open_tcb_holds_is_busy(void)
+// RFC 6056 sec 3.3: "Ephemeral port selection algorithms SHOULD obfuscate the selection of their
+// ephemeral ports, since this helps to mitigate a number of attacks that depend on the attacker's
+// ability to guess or know the five-tuple that identifies the transport-protocol instance to be
+// attacked." sec 3.3.1 Algorithm 1 draws the first candidate as
+// "min_ephemeral + (random() % num_ephemeral)", so the caller's word is what places it and two
+// different words on an empty table place it differently. A cursor walked from the last draw would
+// hand out the next port every time, which one observed port tells an attacker.
+void test_the_ephemeral_draw_follows_the_callers_random_word(void)
 {
+    TcpPcb.clear(work_a);
+    uint16_t idx = open4(work_a);
+    IO(work_a)->bind_args.index = idx;
+    IO(work_a)->bind_args.ip = g_local;
+    IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
+    IO(work_a)->bind_args.rand = 0u;
+    TcpPcb.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE((uint16_t)IDEMIP_TCP_PCB_PORT_DYN_FIRST, IO(work_a)->port,
+                                     "a zero word must land on the first Dynamic Port");
+
+    TcpPcb.clear(work_a);
+    idx = open4(work_a);
+    IO(work_a)->bind_args.index = idx;
+    IO(work_a)->bind_args.ip = g_local;
+    IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
+    IO(work_a)->bind_args.rand = IDEMIP_TCP_PCB_PORT_DYN_MASK; // the top of the range
+    TcpPcb.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(
+        (uint16_t)(IDEMIP_TCP_PCB_PORT_DYN_FIRST | IDEMIP_TCP_PCB_PORT_DYN_MASK), IO(work_a)->port,
+        "the draw did not follow the caller's word");
+}
+
+// RFC 9293 sec 3.4.1: "A connection is defined by a pair of sockets." Two peers reaching one local
+// socket are two connections, so both TCBs bind that port and the pair is what has to differ. A
+// server that could not do this would serve one client per port for as long as that client stayed
+// connected.
+void test_two_connections_share_one_local_port_and_differ_by_the_remote_socket(void)
+{
+    static const uint8_t peer_b[IDEMIP_TCP_PCB_ADDR_BYTES] = {192u, 0u, 2u, 10u};
     TcpPcb.clear(work_a);
     uint16_t a = open4(work_a);
     uint16_t b = open4(work_a);
 
     IO(work_a)->bind_args.index = a;
     IO(work_a)->bind_args.ip = g_local;
-    IO(work_a)->bind_args.port = 8080u;
+    IO(work_a)->bind_args.port = 80u;
     TcpPcb.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
     IO(work_a)->bind_args.index = b;
     IO(work_a)->bind_args.ip = g_local;
-    IO(work_a)->bind_args.port = 8080u;
+    IO(work_a)->bind_args.port = 80u;
     TcpPcb.bind(work_a);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
-    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_PORT_ANY, IO(work_a)->port);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
+                                  "a second connection could not take the local port the first holds");
+    TEST_ASSERT_EQUAL_UINT16(80u, IO(work_a)->port);
+
+    IO(work_a)->connect_args.index = a;
+    IO(work_a)->connect_args.ip = g_remote;
+    IO(work_a)->connect_args.port = 40000u;
+    TcpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    IO(work_a)->connect_args.index = b;
+    IO(work_a)->connect_args.ip = peer_b;
+    IO(work_a)->connect_args.port = 40001u;
+    TcpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
+                                  "two peers on one local socket are two connections");
+}
+
+// The pair is where uniqueness lives, so the same pair twice is BUSY: sec 3.10.4's "Delete TCB" frees
+// it, and reporting ERR would abandon a four-tuple that is about to be free.
+void test_the_same_pair_of_sockets_twice_is_busy(void)
+{
+    TcpPcb.clear(work_a);
+    uint16_t a = open4(work_a);
+    uint16_t b = open4(work_a);
+    for (uint16_t idx = a; ; idx = b)
+    {
+        IO(work_a)->bind_args.index = idx;
+        IO(work_a)->bind_args.ip = g_local;
+        IO(work_a)->bind_args.port = 80u;
+        TcpPcb.bind(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        if (idx == b)
+        {
+            break;
+        }
+    }
+
+    IO(work_a)->connect_args.index = a;
+    IO(work_a)->connect_args.ip = g_remote;
+    IO(work_a)->connect_args.port = 40000u;
+    TcpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    IO(work_a)->connect_args.index = b;
+    IO(work_a)->connect_args.ip = g_remote;
+    IO(work_a)->connect_args.port = 40000u;
+    TcpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status, "one pair of sockets was held twice");
 
     IO(work_a)->pcb_args.index = a;
     TcpPcb.close(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-    IO(work_a)->bind_args.index = b;
-    IO(work_a)->bind_args.ip = g_local;
-    IO(work_a)->bind_args.port = 8080u;
-    TcpPcb.bind(work_a);
+    IO(work_a)->connect_args.index = b;
+    IO(work_a)->connect_args.ip = g_remote;
+    IO(work_a)->connect_args.port = 40000u;
+    TcpPcb.connect(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 }
 
