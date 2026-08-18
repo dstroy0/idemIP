@@ -88,8 +88,94 @@ IDEMIP_BEGIN_DECLS
 #define IDEMIP_DHCP6_OPT_RAPID_COMMIT 14u ///< sec 21.14, option-len zero
 #define IDEMIP_DHCP6_OPT_DNS_SERVERS 23u  ///< RFC 3646 sec 3, 16 octets per server
 #define IDEMIP_DHCP6_OPT_DOMAIN_LIST 24u  ///< RFC 3646 sec 4, the search list
+#define IDEMIP_DHCP6_OPT_INFO_REFRESH 32u ///< sec 21.23, seconds, Information-request only
 #define IDEMIP_DHCP6_OPT_SOL_MAX_RT 82u   ///< sec 21.24, seconds
 #define IDEMIP_DHCP6_OPT_INF_MAX_RT 83u   ///< sec 21.25, seconds
+
+/** @brief Octets of the sec 21.9 elapsed-time, sec 21.13 status-code and sec 21.8 preference fields. */
+#define IDEMIP_DHCP6_ELAPSED_LEN 2u
+#define IDEMIP_DHCP6_STATUS_LEN 2u
+#define IDEMIP_DHCP6_PREFERENCE_LEN 1u
+
+/** @brief Octets of a sec 21.24 or sec 21.25 option-data, and of a sec 21.23 one. */
+#define IDEMIP_DHCP6_MAX_RT_LEN 4u
+#define IDEMIP_DHCP6_INFO_REFRESH_LEN 4u
+
+/** @brief sec 21.8: "If the client receives a valid Advertise message that includes a Preference
+ * option with a preference value of 255", it stops collecting and requests at once. */
+#define IDEMIP_DHCP6_PREF_IMMEDIATE 255u
+
+// ---------------------------------------------------------------------------
+// Transmission and retransmission parameters (RFC 8415 sec 7.6, Table 1)
+// ---------------------------------------------------------------------------
+// Table 1 prints every timeout in seconds. Each is held here in milliseconds, so a deadline is the
+// millisecond clock plus one of these and no conversion divide exists (PLAN sec 5.2).
+
+#define IDEMIP_DHCP6_SOL_MAX_DELAY_MS 1000u    ///< Max delay of first Solicit, 1 sec
+#define IDEMIP_DHCP6_SOL_TIMEOUT_MS 1000u      ///< Initial Solicit timeout, 1 sec
+#define IDEMIP_DHCP6_SOL_MAX_RT_MS 3600000u    ///< Max Solicit timeout value, 3600 secs
+#define IDEMIP_DHCP6_REQ_TIMEOUT_MS 1000u      ///< Initial Request timeout, 1 sec
+#define IDEMIP_DHCP6_REQ_MAX_RT_MS 30000u      ///< Max Request timeout value, 30 secs
+#define IDEMIP_DHCP6_REQ_MAX_RC 10u            ///< Max Request retry attempts
+#define IDEMIP_DHCP6_CNF_MAX_DELAY_MS 1000u    ///< Max delay of first Confirm, 1 sec
+#define IDEMIP_DHCP6_CNF_TIMEOUT_MS 1000u      ///< Initial Confirm timeout, 1 sec
+#define IDEMIP_DHCP6_CNF_MAX_RT_MS 4000u       ///< Max Confirm timeout, 4 secs
+#define IDEMIP_DHCP6_CNF_MAX_RD_MS 10000u      ///< Max Confirm duration, 10 secs
+#define IDEMIP_DHCP6_REN_TIMEOUT_MS 10000u     ///< Initial Renew timeout, 10 secs
+#define IDEMIP_DHCP6_REN_MAX_RT_MS 600000u     ///< Max Renew timeout value, 600 secs
+#define IDEMIP_DHCP6_REB_TIMEOUT_MS 10000u     ///< Initial Rebind timeout, 10 secs
+#define IDEMIP_DHCP6_REB_MAX_RT_MS 600000u     ///< Max Rebind timeout value, 600 secs
+#define IDEMIP_DHCP6_INF_MAX_DELAY_MS 1000u    ///< Max delay of first Information-request, 1 sec
+#define IDEMIP_DHCP6_INF_TIMEOUT_MS 1000u      ///< Initial Information-request timeout, 1 sec
+#define IDEMIP_DHCP6_INF_MAX_RT_MS 3600000u    ///< Max Information-request timeout value, 3600 secs
+#define IDEMIP_DHCP6_REL_TIMEOUT_MS 1000u      ///< Initial Release timeout, 1 sec
+#define IDEMIP_DHCP6_REL_MAX_RC 4u             ///< Max Release retry attempts
+#define IDEMIP_DHCP6_DEC_TIMEOUT_MS 1000u      ///< Initial Decline timeout, 1 sec
+#define IDEMIP_DHCP6_DEC_MAX_RC 4u             ///< Max Decline retry attempts
+#define IDEMIP_DHCP6_MAX_WAIT_TIME_MS 60000u   ///< Max required time to wait for a response, 60 secs
+#define IDEMIP_DHCP6_IRT_DEFAULT_S 86400u      ///< Default information refresh time, 86400 secs
+#define IDEMIP_DHCP6_IRT_MINIMUM_S 600u        ///< Min information refresh time, 600 secs
+
+/**
+ * @brief The bound a sec 21.24 or sec 21.25 override must sit inside.
+ *
+ * Both sections read "MUST be in this range: 60 <= \"value\" <= 86400 (1 day)", and both add that a
+ * client "MUST ignore any ... option values that are less than 60 or more than 86400".
+ */
+#define IDEMIP_DHCP6_MAX_RT_MIN_S 60u
+#define IDEMIP_DHCP6_MAX_RT_MAX_S 86400u
+
+/**
+ * @brief The sec 15 RAND factor, quantized.
+ *
+ * sec 15 puts RAND at "a random number chosen with a uniform distribution between -0.1 and +0.1".
+ * A tenth has no exact binary form, so RAND is held as a signed @c k >> IDEMIP_DHCP6_RAND_SHIFT with
+ * @c k drawn over 0 through IDEMIP_DHCP6_RAND_K_MAX: the largest magnitude is 102/1024, which is
+ * 0.099609375, and the term is @c (x*k)>>10 with no divide.
+ */
+#define IDEMIP_DHCP6_RAND_SHIFT 10u
+#define IDEMIP_DHCP6_RAND_K_MAX 102u
+
+/**
+ * @brief The sec 21.9 elapsed-time unit, hundredths of a second, without a divide.
+ *
+ * floor(ms/100) is @c (ms*IDEMIP_DHCP6_CS_RECIP)>>IDEMIP_DHCP6_CS_SHIFT for every millisecond span
+ * the 2-octet field can carry. sec 21.9 caps the field at 0xffff, so a span at or past
+ * IDEMIP_DHCP6_ELAPSED_MAX_MS is sent as 0xffff and the identity is only needed below it.
+ */
+#define IDEMIP_DHCP6_CS_SHIFT 30u
+#define IDEMIP_DHCP6_CS_RECIP 10737419u
+#define IDEMIP_DHCP6_ELAPSED_MAX_MS 6553500u
+
+/**
+ * @brief The longest lifetime a millisecond deadline carries.
+ *
+ * sec 7.7 states every lifetime, T1 and T2 as an unsigned 32-bit count of seconds. A deadline here is
+ * a 32-bit millisecond clock compared by signed difference, so a span stays under 2^31 milliseconds.
+ * A longer lifetime is held at this value, which makes the client renew or rebind earlier than the
+ * server asked and never later.
+ */
+#define IDEMIP_DHCP6_MAX_DEADLINE_S 2097151u
 
 /** @brief Octets of the sec 21.4 IA_NA before its options: IAID, T1 and T2. */
 #define IDEMIP_DHCP6_IA_NA_FIXED_LEN 12u
@@ -147,7 +233,9 @@ typedef enum IDEMIP_ENUM_PACKED
     IDEMIP_DHCP6_INFO_REQUESTING, ///< sec 18.2.6, configuration without leases
     IDEMIP_DHCP6_RELEASING,       ///< sec 18.2.7, giving leases up
     IDEMIP_DHCP6_DECLINING,       ///< sec 18.2.8, reporting an address already in use
-    IDEMIP_DHCP6_BOUND,           ///< sec 18.2.10.1, leases assigned and lifetimes running
+    IDEMIP_DHCP6_BOUND,           ///< sec 18.2.10.1, leases assigned and lifetimes running; for a
+                                  ///< stateless client, sec 18.2.10.4 configuration held with T1
+                                  ///< carrying the sec 21.23 information-refresh-time
 } IdemIpDhcp6State;
 
 /**
@@ -369,6 +457,34 @@ static_assert(IDEMIP_DHCP6_IA_NA_FIXED_LEN == 12u && IDEMIP_DHCP6_IAADDR_FIXED_L
               "the IA_NA and IAADDR fixed parts are 12 and 24 octets (RFC 8415 sec 21.4, sec 21.6)");
 static_assert(IDEMIP_DHCP6_IAADDR_FIXED_LEN == IDEMIP_IP6_ADDR_LEN + 8u,
               "an IAADDR is one address and two 4-octet lifetimes (RFC 8415 sec 21.6)");
+
+// sec 15 bounds RAND at a tenth either way, so the quantized magnitude stays under it: k at its
+// largest times ten is short of one whole 1 << IDEMIP_DHCP6_RAND_SHIFT.
+static_assert(IDEMIP_DHCP6_RAND_K_MAX * 10u < (1u << IDEMIP_DHCP6_RAND_SHIFT),
+              "the quantized RAND magnitude must stay inside RFC 8415 sec 15's 0.1");
+// The reciprocal is the rounded-up 2^30/100, and the accumulated error over the whole elapsed-time
+// range stays under one unit, so the shift lands on floor(ms/100) exactly.
+static_assert(IDEMIP_DHCP6_CS_RECIP == ((1u << IDEMIP_DHCP6_CS_SHIFT) / 100u) + 1u,
+              "IDEMIP_DHCP6_CS_RECIP is the rounded-up reciprocal of the sec 21.9 hundredth");
+static_assert((uint64_t)((IDEMIP_DHCP6_CS_RECIP * 100u) - (1u << IDEMIP_DHCP6_CS_SHIFT)) *
+                      (uint64_t)IDEMIP_DHCP6_ELAPSED_MAX_MS <=
+                  ((uint64_t)1u << IDEMIP_DHCP6_CS_SHIFT),
+              "the reciprocal multiply drifts off floor(ms/100) inside the sec 21.9 range");
+static_assert(IDEMIP_DHCP6_ELAPSED_MAX_MS == 0xFFFFu * 100u,
+              "sec 21.9 caps elapsed-time at 0xffff hundredths of a second");
+// A deadline is compared by signed difference, so the widest span it holds stays under half the clock.
+static_assert(IDEMIP_DHCP6_MAX_DEADLINE_S * 1000u < 0x80000000u,
+              "IDEMIP_DHCP6_MAX_DEADLINE_S in milliseconds must stay under 2^31");
+// sec 7.6 Table 1 in milliseconds, against the seconds it prints.
+static_assert(IDEMIP_DHCP6_SOL_MAX_RT_MS == 3600u * 1000u && IDEMIP_DHCP6_REQ_MAX_RT_MS == 30u * 1000u &&
+                  IDEMIP_DHCP6_CNF_MAX_RT_MS == 4u * 1000u && IDEMIP_DHCP6_CNF_MAX_RD_MS == 10u * 1000u &&
+                  IDEMIP_DHCP6_REN_TIMEOUT_MS == 10u * 1000u && IDEMIP_DHCP6_REN_MAX_RT_MS == 600u * 1000u &&
+                  IDEMIP_DHCP6_REB_TIMEOUT_MS == 10u * 1000u && IDEMIP_DHCP6_REB_MAX_RT_MS == 600u * 1000u &&
+                  IDEMIP_DHCP6_INF_MAX_RT_MS == 3600u * 1000u && IDEMIP_DHCP6_MAX_WAIT_TIME_MS == 60u * 1000u,
+              "the sec 7.6 Table 1 timeouts in milliseconds must match the seconds it prints");
+// The largest RAND term is over a whole MRT, so the product stays inside 32 bits.
+static_assert(IDEMIP_DHCP6_SOL_MAX_RT_MS <= (0xFFFFFFFFu / IDEMIP_DHCP6_RAND_K_MAX),
+              "the sec 15 RAND product over the widest MRT must stay inside 32 bits");
 
 IDEMIP_END_DECLS
 
