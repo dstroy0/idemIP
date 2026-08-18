@@ -293,16 +293,30 @@ static void netif_report(uint8_t *restrict work, uint8_t index)
     io->index = index;
 }
 
+// RFC 1122 sec 3.2.1.3 (a): "{ 0, 0 } This host on this network. MUST NOT be sent, except as a
+// source address as part of an initialization procedure by which the host learns its own IP
+// address." A bound interface is zeroed until set_addr4 gives it one, so 0.0.0.0 is the address it
+// does not have rather than an address it holds.
+static idemip_bool netif_has_addr4(const NetifEntry *entry)
+{
+    return (entry->phy != NULL && entry->addr != 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+}
+
 // RFC 1122 sec 3.3.1.1 (b): "If the IP destination address bits extracted by the address mask match
 // the IP source address bits extracted by the same mask, then the destination is on the
 // corresponding connected network". The same section's special cases, "For a limited broadcast or a
 // multicast address, simply pass the datagram to the link layer for the appropriate interface", are
-// on the link without extracting anything.
+// on the link without extracting anything, which is the form an address this host does not have yet
+// still sends. An interface with no address extracts no bits, so nothing else is on its link.
 static idemip_bool netif_on_link(const NetifEntry *entry, uint32_t dst)
 {
     if (dst == NETIF_IP4_LIMITED_BROADCAST || netif_ip4_multicast(dst))
     {
         return IDEMIP_TRUE;
+    }
+    if (!netif_has_addr4(entry))
+    {
+        return IDEMIP_FALSE;
     }
     return ((dst & entry->mask) == (entry->addr & entry->mask)) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
@@ -565,7 +579,7 @@ static void netif_find4(uint8_t *restrict work)
     for (uint8_t i = 0u; i < IDEMIP_NETIF_COUNT; i++)
     {
         const NetifEntry *entry = NETIF_AT(work, i);
-        if (entry->phy != NULL && entry->addr == io->route_args.dst)
+        if (netif_has_addr4(entry) && entry->addr == io->route_args.dst)
         {
             netif_report(work, i);
             io->status = IDEMIP_OK;

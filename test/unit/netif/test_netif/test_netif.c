@@ -908,18 +908,55 @@ void test_find4_reports_err_on_an_address_no_interface_holds(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status);
 }
 
-// A zeroed entry holds address 0, so an unbound interface would answer a search for 0.0.0.0 that is
-// not its own. Only a bound interface is walked.
-void test_find4_skips_an_interface_with_no_link(void)
+// A zeroed entry holds address 0, so an interface would answer a search for 0.0.0.0 that is not its
+// own. RFC 1122 sec 3.2.1.3 (a): "{ 0, 0 } This host on this network. MUST NOT be sent, except as a
+// source address as part of an initialization procedure by which the host learns its own IP
+// address." That is the address a host does not have yet, so neither an unbound interface, nor a
+// bound one still waiting on a DHCP lease, nor a configured one holds it.
+void test_find4_never_answers_for_the_unspecified_address(void)
 {
     Netif.clear(work_a);
     find4(work_a, 0u);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "an unbound interface answered for 0.0.0.0");
 
     up(work_a, 1u, phy_b, g_mac_b, 1500u);
     find4(work_a, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "an interface bound but not yet addressed answered for 0.0.0.0");
+
+    addr4(work_a, 1u, V4_HOST, V4_MASK, V4_GW);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status);
+    find4(work_a, V4_HOST);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_NETIF_IO(work_a)->index);
+    find4(work_a, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "a configured interface answered for 0.0.0.0");
+}
+
+// The same zeroed entry carries mask 0, and RFC 1122 sec 3.3.1.1 (b) extracts with the mask, so
+// every destination would match one that has none. Only sec 3.3.1.1's two special cases, "For a
+// limited broadcast or a multicast address, simply pass the datagram to the link layer for the
+// appropriate interface", stay on the link - which is what lets a host that has not learned its
+// address reach a DHCP server.
+void test_local4_puts_only_broadcast_and_multicast_on_an_unaddressed_link(void)
+{
+    Netif.clear(work_a);
+    up(work_a, 0u, phy_a, g_mac_a, 1500u);
+
+    local4(work_a, 0u, V4_ON_LINK);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_NETIF_IO(work_a)->local,
+                              "an interface with no address claimed a host was on its link");
+    local4(work_a, 0u, V4_OFF_LINK);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_NETIF_IO(work_a)->local,
+                              "an interface with no address claimed a remote host was on its link");
+
+    local4(work_a, 0u, V4_LIMITED_BROADCAST);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_NETIF_IO(work_a)->local, "the limited broadcast is always on link");
+    local4(work_a, 0u, V4_MCAST_ALL_HOSTS);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_NETIF_IO(work_a)->local, "a multicast group is always on link");
 }
 
 // --- local4 ------------------------------------------------------------------

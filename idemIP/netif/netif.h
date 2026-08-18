@@ -324,10 +324,14 @@ typedef struct
  * @var NetifNs::get          report one interface's whole record
  * @var NetifNs::find4        report which interface holds @ref NetifRouteArgs::dst as its own
  *                            address (RFC 1122 sec 3.2.1.3, "the IP source address MUST be one of
- *                            its own IP addresses"). ERR when no interface holds it, a miss no
+ *                            its own IP addresses"). An interface with no address holds none, so
+ *                            0.0.0.0 is never found: sec 3.2.1.3 (a) makes { 0, 0 } the address a
+ *                            host has not learned yet. ERR when no interface holds it, a miss no
  *                            retry can turn into a hit.
  * @var NetifNs::local4       the RFC 1122 sec 3.3.1.1 local/remote decision for one interface,
- *                            reported in @ref NetifIo::local. OK whichever way it went.
+ *                            reported in @ref NetifIo::local. An interface with no address extracts
+ *                            no bits, so only the limited broadcast and a multicast group are on its
+ *                            link. OK whichever way it went.
  * @var NetifNs::add_addr6    assign an IPv6 address with its RFC 4862 sec 2 state and lifetimes.
  *                            BUSY when the interface's IDEMIP_IP6_ADDRESSES slots are all taken.
  * @var NetifNs::remove_addr6 return an IPv6 address to IDEMIP_NETIF_ADDR6_INVALID
