@@ -59,9 +59,9 @@ scan is `scratchpad/unwired.py`.
 |---|---|---|---|
 | `ip/ipv6.h` `idemip_ip6_walk` | RFC 8200 sec 4.4 | A Routing header was stepped over on its length alone. This library executes no Routing Type, so every one with a non-zero Segments Left is sec 4.4's unrecognized case and must be discarded. `idemip_ip6_rt_segs_left` quoted the rule in its own doc comment and had no caller. | `5aaecc8` |
 | `ip/ipv6.h` `idemip_ip6_walk` | RFC 8200 sec 4.2 | The options of a Hop-by-Hop or Destination Options header were never walked, so every unrecognized option behaved as action 00 whatever its two high-order bits said. All four action constants had no reader. | `ca7dff7` |
-| `core/dispatch.c` `d_icmp` | RFC 1122 sec 3.2.2 | `IDEMIP_ICMP_IN_ACT_DISCARD` was raised at eight sites in  and read at none. Dispatch, its only caller, delivered every message the unit refused: unknown type, a checksum that does not hold, a message shorter than its type requires, and the types sec 3.2.2.7 and sec 3.2.2.8 leave unimplemented. | `4aeec20` |
-| `core/dispatch.c` `d_icmp` | RFC 2011 | Fifty-three ICMP counters were defined and not one was bumped anywhere under , while IP, interface, TCP and UDP all counted. icmpInMsgs, icmpInErrors and the per-Type counters are now kept. | `4aeec20` |
-| `core/dispatch.c` `d_icmp6` | RFC 4443 sec 2.4 (b) | The same defect on the ICMPv6 side, over four sites in . | `d0a463c` |
+| `core/dispatch.c` `d_icmp` | RFC 1122 sec 3.2.2 | `IDEMIP_ICMP_IN_ACT_DISCARD` was raised at eight sites in `icmp_in.c` and read at none. Dispatch, its only caller, delivered every message the unit refused: unknown type, a checksum that does not hold, a message shorter than its type requires, and the types sec 3.2.2.7 and sec 3.2.2.8 leave unimplemented. | `4aeec20` |
+| `core/dispatch.c` `d_icmp` | RFC 2011 | Fifty-three ICMP counters were defined and not one was bumped anywhere under `idemIP/`, while IP, interface, TCP and UDP all counted. icmpInMsgs, icmpInErrors and the per-Type counters are now kept. | `4aeec20` |
+| `core/dispatch.c` `d_icmp6` | RFC 4443 sec 2.4 (b) | The same defect on the ICMPv6 side, over four sites in `icmp6_in.c`. | `d0a463c` |
 
 Checked and found correct, against the same suspicion: UDP-Lite verifies both its Checksum Coverage
 and its checksum (`udplite_check`), and the unused `idemip_udplite_cksum_valid` is only a wrapper.
