@@ -9,6 +9,11 @@
  * TimeoutsNs::tick. Deadlines are held in milliseconds throughout this tree, so no tick period
  * scales one and no conversion exists.
  *
+ * The count wraps at 2^32. Every comparison here is the unsigned difference of two counts, so a
+ * deadline whose count is numerically below the clock's is still ahead of it, and a deadline reads as
+ * ahead of the recorded count for up to 0x80000000 milliseconds. One past that reads as behind it and
+ * is due at once, which bounds a deadline to 24.8 days out.
+ *
  * No entry holds a function pointer. An entry names the unit whose own tick owns the work and an
  * index into that unit's own table, and @ref TimeoutsNs::expire hands the pair back to the caller.
  * The order those units run in is core/dispatch.c's.
