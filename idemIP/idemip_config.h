@@ -462,6 +462,37 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_ND6_MAX_RTR_SOLICITATIONS 3u
 #endif
 
+/**
+ * @brief RFC 4862 sec 5.1 DupAddrDetectTransmits, "Default: 1".
+ *
+ * "The number of consecutive Neighbor Solicitation messages sent while performing Duplicate Address
+ * Detection on a tentative address. A value of zero indicates that Duplicate Address Detection is not
+ * performed on tentative addresses." sec 5.1 requires the value be settable "for each
+ * multicast-capable interface", so dad.h takes it in IdemIpDadCfg and this is the default a caller
+ * fills that with.
+ */
+#ifndef IDEMIP_DAD_TRANSMITS_DEFAULT
+#define IDEMIP_DAD_TRANSMITS_DEFAULT 1u
+#endif
+
+/**
+ * @brief RFC 4862 sec 5.5.3 (e) 3: "reset the valid lifetime of the corresponding address to 2
+ * hours", in milliseconds, deadlines being held in milliseconds throughout this tree.
+ */
+#ifndef IDEMIP_SLAAC_TWO_HOURS_MS
+#define IDEMIP_SLAAC_TWO_HOURS_MS 7200000u
+#endif
+
+/**
+ * @brief RDNSS addresses the RFC 8106 sec 6.1 DNS Server List holds.
+ *
+ * sec 5.3.1: "the ability to store a total of at least three RDNSS addresses (or DNSSL domain names)
+ * from the multiple sources is RECOMMENDED".
+ */
+#ifndef IDEMIP_RDNSS_SERVERS
+#define IDEMIP_RDNSS_SERVERS 3u
+#endif
+
 // RFC 4861 sec 6.3.2: ReachableTime is drawn between MIN_RANDOM_FACTOR and MAX_RANDOM_FACTOR times
 // BaseReachableTime. Both factors are exact in shifts, .5 being x >> 1 and 1.5 being x + (x >> 1),
 // so neither needs a float or a divide.
@@ -973,6 +1004,64 @@ typedef enum IDEMIP_ENUM_PACKED
      (IDEMIP_ND6_NUM_ROUTERS << IDEMIP_ND6_ROUTER_ENTRY_SHIFT) +                                                       \
      (IDEMIP_ND6_PENDING << IDEMIP_ND6_PENDING_ENTRY_SHIFT))
 
+// --- dad: RFC 4862 sec 5.4, PER INTERFACE --------------------------------------------------------
+// sec 5.4: "Duplicate Address Detection MUST be performed on all unicast addresses prior to assigning
+// them to an interface", so one machine runs per tentative address and the table is as wide as the
+// interface's address list. An entry holds the tentative address, its state, the solicitations sent
+// against DupAddrDetectTransmits and the ones received against the loopback semantics of sec 5.4.3,
+// its RetransTimer, the sec 5.4.5 flag saying the identifier came from the hardware address, and the
+// millisecond its next deadline falls on: 16, 1, 1, 1, 4, 1 and 4 octets, at a power of two.
+#ifndef IDEMIP_DAD_ENTRY_SHIFT
+#define IDEMIP_DAD_ENTRY_SHIFT 5u
+#endif
+// Spans the operand block and the context together, as IDEMIP_PHY_BORROW does: dad.h puts DadIo at
+// offset zero and the context behind it, holding the bound sec 5.1 configuration and the mark clear
+// leaves. sizeof(DadIo) is 112 on a target with 8-octet pointers and the context is 16, so the assert
+// in dad.c holds at 128.
+#ifndef IDEMIP_DAD_CTX_BYTES
+#define IDEMIP_DAD_CTX_BYTES 128u
+#endif
+#define IDEMIP_DAD_BORROW (IDEMIP_DAD_CTX_BYTES + (IDEMIP_IP6_ADDRESSES << IDEMIP_DAD_ENTRY_SHIFT))
+
+// --- slaac: RFC 4862 sec 5.3, sec 5.5, PER INTERFACE ---------------------------------------------
+// sec 5.2: "A host maintains a list of addresses together with their corresponding lifetimes." An
+// entry holds the address, the prefix length it was formed at, which sec 5.5.3 (e) matches an
+// advertised prefix against, what sec 2 makes it (preferred or deprecated), and the two sec 5.5.4
+// deadlines with the flag each carries for RFC 4861 sec 4.6.2's all-ones infinity: 16, 1, 1, 4, 4 and
+// 2 octets, at a power of two.
+#ifndef IDEMIP_SLAAC_ENTRY_SHIFT
+#define IDEMIP_SLAAC_ENTRY_SHIFT 5u
+#endif
+// Spans the operand block and the context together: slaac.h puts SlaacIo at offset zero and the
+// context behind it, which is the mark clear leaves. sizeof(SlaacIo) is 112 on a target with 8-octet
+// pointers and the context is 4, so the assert in slaac.c holds at 128.
+#ifndef IDEMIP_SLAAC_CTX_BYTES
+#define IDEMIP_SLAAC_CTX_BYTES 128u
+#endif
+#define IDEMIP_SLAAC_BORROW (IDEMIP_SLAAC_CTX_BYTES + (IDEMIP_IP6_ADDRESSES << IDEMIP_SLAAC_ENTRY_SHIFT))
+
+// --- rdnss: RFC 8106 sec 5.1, sec 6.1, PER INTERFACE ---------------------------------------------
+// sec 6.1 keeps "the DNS Server List, which keeps the list of RDNSS addresses", each entry "a pair of
+// an RDNSS address ... and Expiration-time": 16 and 4 octets, plus the flag carrying sec 5.1's
+// all-ones infinity, at a power of two. sec 6.1 refreshes an entry when the option arrives "on the
+// same interface as a previous RDNSS option", so the list is one interface's.
+#ifndef IDEMIP_RDNSS_ENTRY_SHIFT
+#define IDEMIP_RDNSS_ENTRY_SHIFT 5u
+#endif
+// Spans the operand block and the context together: rdnss.h puts RdnssIo at offset zero and the
+// context behind it, which is the mark clear leaves. sizeof(RdnssIo) is 80 on a target with 8-octet
+// pointers and the context is 4, so the assert in rdnss.c holds at 96.
+#ifndef IDEMIP_RDNSS_CTX_BYTES
+#define IDEMIP_RDNSS_CTX_BYTES 96u
+#endif
+#define IDEMIP_RDNSS_BORROW (IDEMIP_RDNSS_CTX_BYTES + (IDEMIP_RDNSS_SERVERS << IDEMIP_RDNSS_ENTRY_SHIFT))
+
+// Each of the three tables above starts at the end of its context, so a context that is not a
+// multiple of IDEMIP_ALIGN would misalign one.
+static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX_BYTES) & (IDEMIP_ALIGN - 1u)) == 0u,
+              "IDEMIP_DAD_CTX_BYTES, IDEMIP_SLAAC_CTX_BYTES and IDEMIP_RDNSS_CTX_BYTES must be multiples of "
+              "IDEMIP_ALIGN: a table starts at the end of its context");
+
 // --- mld6: RFC 2710 ------------------------------------------------------------------------------
 // One table across interfaces, as lwIP MEMP_NUM_MLD6_GROUP counts them. An entry holds the 16-octet
 // group address, the interface index, the state, the last-reporter flag, and the report deadline in
@@ -1172,10 +1261,14 @@ typedef enum IDEMIP_ENUM_PACKED
  *
  * phy, dma, nd6, acd, autoip, dhcp4 and dhcp6 hold state the RFC puts on one interface, so the
  * caller takes IDEMIP_NETIF_COUNT of each.
+ *
+ * dad, slaac and rdnss are the same: RFC 4862 sec 5 performs autoconfiguration "on a per-interface
+ * basis", and RFC 8106 sec 6.1 refreshes a DNS Server List entry per interface.
  */
 #define IDEMIP_PER_NETIF_BORROW                                                                                        \
     (IDEMIP_PHY_BORROW + IDEMIP_DMA_BORROW + IDEMIP_ND6_BORROW + IDEMIP_ACD_BORROW + IDEMIP_AUTOIP_BORROW +            \
-     IDEMIP_DHCP4_BORROW + IDEMIP_DHCP6_BORROW)
+     IDEMIP_DHCP4_BORROW + IDEMIP_DHCP6_BORROW +                                                                       \
+     IDEMIP_DAD_BORROW + IDEMIP_SLAAC_BORROW + IDEMIP_RDNSS_BORROW)
 
 /** @brief Every borrow a unit holding one table across all interfaces takes. */
 #define IDEMIP_SHARED_BORROW                                                                                           \
