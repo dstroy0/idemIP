@@ -1016,6 +1016,18 @@ typedef enum IDEMIP_ENUM_PACKED
 #endif
 #define IDEMIP_UDP_PCB_BORROW (IDEMIP_UDP_PCB_CTX_BYTES + (IDEMIP_UDP_PCBS << IDEMIP_UDP_PCB_ENTRY_SHIFT))
 
+// --- udplite: RFC 3828 ---------------------------------------------------------------------------
+// udplite holds no table, so this region is the whole borrow and carries the operand block of
+// udplite.h as well as the context. The block is one received datagram's operands (the datagram, the
+// two IP addresses and the RFC 3828 sec 3.4 IP payload length), one sent datagram's (those plus the
+// RFC 768 ports and the sec 3.1 Checksum Coverage), and what the call reports (the payload, the
+// covered span, the Coverage and Checksum fields, the status and the reason): 104 octets on a target
+// with 8-octet pointers. The context behind it is the mark clear leaves, 4 more.
+#ifndef IDEMIP_UDPLITE_CTX_BYTES
+#define IDEMIP_UDPLITE_CTX_BYTES 128u
+#endif
+#define IDEMIP_UDPLITE_BORROW (IDEMIP_UDPLITE_CTX_BYTES)
+
 // --- tcp_pcb: RFC 9293 sec 3.3.1 -----------------------------------------------------------------
 // Four tables. A TCB carries what RFC 9293 sec 3.3.1 lists: "the local and remote IP addresses and
 // port numbers", then the send variables SND.UNA, SND.NXT, SND.WND, SND.UP, SND.WL1, SND.WL2 and
@@ -1182,6 +1194,7 @@ typedef enum IDEMIP_ENUM_PACKED
     (IDEMIP_NETIF_BORROW + IDEMIP_LOOPIF_BORROW + IDEMIP_ARP_BORROW + IDEMIP_IP4_ROUTE_BORROW +                        \
      IDEMIP_IP4_REASS_BORROW + IDEMIP_IGMP_BORROW + IDEMIP_IP6_REASS_BORROW + IDEMIP_MLD6_BORROW +                     \
      IDEMIP_RAW_PCB_BORROW + IDEMIP_UDP_PCB_BORROW + IDEMIP_TCP_PCB_BORROW + IDEMIP_TCP_IN_BORROW +                    \
+     IDEMIP_UDPLITE_BORROW +                                                                                           \
      IDEMIP_TCP_OUT_BORROW + IDEMIP_TCP_ISN_BORROW +                                                                   \
      IDEMIP_DNS_BORROW + IDEMIP_TIMEOUTS_BORROW + IDEMIP_STATS_BORROW)
 
@@ -1244,6 +1257,7 @@ static_assert(((IDEMIP_NETIF_CTX_BYTES | IDEMIP_LOOPIF_CTX_BYTES | IDEMIP_DMA_CT
                 IDEMIP_IP4_ROUTE_CTX_BYTES | IDEMIP_IP4_REASS_CTX_BYTES | IDEMIP_ACD_CTX_BYTES |
                 IDEMIP_AUTOIP_CTX_BYTES | IDEMIP_IGMP_CTX_BYTES | IDEMIP_IP6_REASS_CTX_BYTES | IDEMIP_ND6_CTX_BYTES |
                 IDEMIP_MLD6_CTX_BYTES | IDEMIP_RAW_PCB_CTX_BYTES | IDEMIP_UDP_PCB_CTX_BYTES |
+                IDEMIP_UDPLITE_CTX_BYTES |
                 IDEMIP_TCP_PCB_CTX_BYTES | IDEMIP_TCP_IN_CTX_BYTES | IDEMIP_TCP_OUT_CTX_BYTES |
                 IDEMIP_TCP_ISN_CTX_BYTES | IDEMIP_DHCP4_CTX_BYTES |
                 IDEMIP_DHCP6_CTX_BYTES | IDEMIP_DNS_CTX_BYTES | IDEMIP_TIMEOUTS_CTX_BYTES | IDEMIP_STATS_CTX_BYTES) &
