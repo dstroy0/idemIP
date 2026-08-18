@@ -33,14 +33,13 @@ fails when the fix is reverted, and the file hash returns to its pre-mutation va
 | 12 | `icmp/icmp6_in.c` `icmp6_in_error` | RFC 4443 sec 2.2 | Copied the invoking packet's Destination Address into the Source Address of an error the node originates, for every case but multicast - including a unicast address that is not the node's. `dst_local_unicast` now separates sec 2.2 (a) from (b). | `3349e1b` |
 | 20 | `tcp/tcp_pcb.c` `tcp_pcb_bind` | RFC 9293 sec 3.4.1 | Refused a local port another TCB held, so a server served one client per port. Uniqueness is the pair of sockets, which `tcp_pcb_connect` already enforces. | `d7fe64f` |
 | 21 | `tcp/tcp_pcb.c` `tcp_pcb_port_draw` | RFC 6056 sec 3.3.1 | The ephemeral draw walked from a stored cursor, so one observed port named the next. Now Algorithm 1, placed by the caller's random word, with the modulo as an AND. | `d7fe64f` |
+| 13 | `ip/ip6_reass.c` `ip6_reass_file` | RFC 8200 sec 4.5, RFC 815 sec 3 | Nothing held the packet to the end its M-flag-zero fragment fixed, so a last fragment landing in a bounded hole completed a datagram whose middle was never received. The datagram now records that end and abandons any packet inconsistent with it. | `93b8cb2` |
+| 3 | `ip/ip6_reass.c` `ip6_reass_payload_len` | RFC 8200 sec 4.5 | Took FO.last and FL.last from the tail of the offset-sorted list rather than from the fragment carrying the M flag clear. Now reads the recorded end. | `93b8cb2` |
+| 14 | `ip/ip6_reass.c` `ip6_reass_file` | RFC 8200 sec 4.5, sec 10 | An atomic fragment was matched into whatever HOLDING datagram shared its key. sec 4.5 processes it as a fully reassembled packet and every matching fragment independently, so it now joins nothing. | `93b8cb2` |
 
 ## Security, open
 
-| # | Site | Law | Fault |
-|---|---|---|---|
-| 3 | `ip/ip6_reass.c` `ip6_reass_payload_len` | RFC 8200 sec 4.5 | Takes FO.last and FL.last from the tail of the linked list. The tail is the greatest Fragment Offset, not the fragment with the greatest end, so the reassembled Payload Length can be short. |
-| 13 | `ip/ip6_reass.c` `ip6_reass_carve` | RFC 8200 sec 4.5, RFC 815 sec 3 step 6 | A last fragment landing inside a bounded hole leaves neither head nor tail hole, so the datagram is declared complete while octets of the Fragmentable Part were never received. The stack delivers bytes it never got. |
-| 14 | `ip/ip6_reass.c` `ip6_reass_file` | RFC 8200 sec 4.5, sec 10 (RFC 6946) | An atomic fragment (Fragment Offset 0, M 0) is matched into whatever HOLDING datagram shares its {Source, Destination, Identification} instead of being processed independently, so one atomic fragment poisons a legitimate reassembly. |
+None. All twenty-four are closed.
 
 ## The rest
 
