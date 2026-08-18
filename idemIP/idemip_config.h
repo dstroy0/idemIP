@@ -1535,17 +1535,20 @@ static_assert((1u << IDEMIP_PMTU6_ENTRY_SHIFT) >= IDEMIP_ALIGN,
  * dad, slaac and rdnss are the same: RFC 4862 sec 5 performs autoconfiguration "on a per-interface
  * basis", and RFC 8106 sec 6.1 refreshes a DNS Server List entry per interface.
  */
+// One term per line, so a unit adding itself appends a line and never rewrites the macro. Two
+// agents rewrote it at once and a union merge kept both copies; a line each cannot collide.
 #define IDEMIP_PER_NETIF_BORROW                                                                                        \
-    (IDEMIP_PHY_BORROW + IDEMIP_DMA_BORROW + IDEMIP_ND6_BORROW + IDEMIP_ACD_BORROW + IDEMIP_AUTOIP_BORROW +            \
-     IDEMIP_DHCP4_BORROW + IDEMIP_DHCP6_BORROW +                                                                       \
-     IDEMIP_DAD_BORROW + IDEMIP_SLAAC_BORROW + IDEMIP_RDNSS_BORROW)
- * phy, dma, nd6, acd, autoip, pmtu6, dhcp4 and dhcp6 hold state the RFC puts on one interface, so
- * the caller takes IDEMIP_NETIF_COUNT of each.
- */
-#define IDEMIP_PER_NETIF_BORROW                                                                                        \
-    (IDEMIP_PHY_BORROW + IDEMIP_DMA_BORROW + IDEMIP_ND6_BORROW + IDEMIP_ACD_BORROW + IDEMIP_AUTOIP_BORROW +            \
+    (IDEMIP_PHY_BORROW +                                                                                               \
+     IDEMIP_DMA_BORROW +                                                                                               \
+     IDEMIP_ND6_BORROW +                                                                                               \
+     IDEMIP_ACD_BORROW +                                                                                               \
+     IDEMIP_AUTOIP_BORROW +                                                                                            \
      IDEMIP_PMTU6_BORROW +                                                                                             \
-     IDEMIP_DHCP4_BORROW + IDEMIP_DHCP6_BORROW)
+     IDEMIP_DHCP4_BORROW +                                                                                             \
+     IDEMIP_DHCP6_BORROW +                                                                                             \
+     IDEMIP_DAD_BORROW +                                                                                               \
+     IDEMIP_SLAAC_BORROW +                                                                                             \
+     IDEMIP_RDNSS_BORROW)
 
 /** @brief Every borrow a unit holding one table across all interfaces takes. */
 #define IDEMIP_SHARED_BORROW                                                                                           \
@@ -1559,9 +1562,11 @@ static_assert((1u << IDEMIP_PMTU6_ENTRY_SHIFT) >= IDEMIP_ALIGN,
      IDEMIP_IP4_FRAG_BORROW + IDEMIP_IP6_FRAG_BORROW +                                                                 \
      IDEMIP_IP4_ADDR_BORROW + IDEMIP_IP6_ADDR_BORROW + IDEMIP_IP6_SELECT_BORROW +                                      \
      IDEMIP_PMTU4_BORROW +                                                                                             \
-     IDEMIP_DNS_BORROW + IDEMIP_TIMEOUTS_BORROW + IDEMIP_STATS_BORROW)
-     IDEMIP_DNS_BORROW + IDEMIP_TIMEOUTS_BORROW + IDEMIP_STATS_BORROW +                                                \
-     IDEMIP_VLAN_BORROW + IDEMIP_ETHIP6_BORROW)
+     IDEMIP_VLAN_BORROW +                                                                                              \
+     IDEMIP_ETHIP6_BORROW +                                                                                            \
+     IDEMIP_DNS_BORROW +                                                                                               \
+     IDEMIP_TIMEOUTS_BORROW +                                                                                          \
+     IDEMIP_STATS_BORROW)
 
 /**
  * @brief Every octet of .bss a full build takes, so the footprint is one number a reader can see.
