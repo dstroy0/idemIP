@@ -33,6 +33,7 @@ typedef struct
     uint32_t ipaddr;
     uint32_t deadline_ms;
     uint32_t last_defend_ms;
+    uint32_t next_claim_ms;
     const uint8_t *mac;
     IdemIpAcdState state;
     IdemIpAcdDefense defense;
@@ -127,11 +128,19 @@ static void acd_clear_results(AcdIo *io)
 
 // sec 2.1.1 counts "MAX_CONFLICTS or more address conflicts on a given interface", holding the count at
 // its ceiling so a long-defended address cannot wrap it back below the limit.
-static void acd_count_conflict(AcdCtx *ctx)
+//
+// Reaching the limit arms the interval the next claim waits out. sec 2.1.1 applies the rule "not only
+// to conflicts experienced during the initial probing phase, but also to conflicts experienced later,
+// as described in Section 2.4", so a conflict that is defended rather than abandoned arms it too.
+static void acd_count_conflict(AcdCtx *ctx, uint32_t now_ms)
 {
     if (ctx->conflicts < ACD_CONFLICTS_MAX)
     {
         ctx->conflicts++;
+    }
+    if (ctx->conflicts >= IDEMIP_ACD_MAX_CONFLICTS)
+    {
+        ctx->next_claim_ms = now_ms + IDEMIP_ACD_RATE_LIMIT_INTERVAL_MS;
     }
 }
 
@@ -141,7 +150,7 @@ static void acd_count_conflict(AcdCtx *ctx)
 static void acd_abandon(uint8_t *restrict work, uint32_t now_ms)
 {
     AcdCtx *ctx = ACD_CTX(work);
-    acd_count_conflict(ctx);
+    acd_count_conflict(ctx, now_ms);
     ctx->ipaddr = 0u;
     ctx->sent = 0u;
     ctx->defended = IDEMIP_FALSE;
@@ -213,14 +222,14 @@ static void acd_defend(uint8_t *restrict work, uint32_t now_ms)
         }
         else
         {
-            acd_count_conflict(ctx);
+            acd_count_conflict(ctx, now_ms);
         }
         return;
     }
     ctx->last_defend_ms = now_ms;
     ctx->defended = IDEMIP_TRUE;
     io->send_announce = IDEMIP_TRUE;
-    acd_count_conflict(ctx);
+    acd_count_conflict(ctx, now_ms);
 }
 
 // One received ARP packet, against sec 2.1.1's probe tests while the address is being claimed and
@@ -369,12 +378,21 @@ static void acd_claim(uint8_t *restrict work)
     AcdCtx *ctx = ACD_CTX(work);
 
     // sec 2.1.1 limits a host past MAX_CONFLICTS "to no more than one attempted new address per
-    // RATE_LIMIT_INTERVAL". BUSY, not ERR: the interval ends, and the same call then claims the address.
-    if (ctx->state == IDEMIP_ACD_STATE_RATE_LIMIT && !acd_due(io->start_args.now_ms, ctx->deadline_ms))
+    // RATE_LIMIT_INTERVAL". The count is what the limit reads, not the state: a conflict sec 2.4 (b)
+    // or (c) defends raises the count and leaves the machine claiming its address, so a machine that
+    // never abandoned can still be past the limit. BUSY, not ERR: the interval ends, and the same call
+    // then claims the address.
+    if (ctx->conflicts >= IDEMIP_ACD_MAX_CONFLICTS && !acd_due(io->start_args.now_ms, ctx->next_claim_ms))
     {
         acd_publish(work);
         io->status = IDEMIP_BUSY;
         return;
+    }
+    // "no more than one attempted new address per RATE_LIMIT_INTERVAL": this attempt starts the next
+    // interval, so the one after it waits too.
+    if (ctx->conflicts >= IDEMIP_ACD_MAX_CONFLICTS)
+    {
+        ctx->next_claim_ms = io->start_args.now_ms + IDEMIP_ACD_RATE_LIMIT_INTERVAL_MS;
     }
     ctx->mac = io->start_args.mac;
     ctx->ipaddr = io->start_args.ipaddr;

@@ -962,6 +962,48 @@ void test_a_conflict_below_max_conflicts_does_not_rate_limit(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_ACD_STATE_PROBE_WAIT, IDEMIP_ACD_IO(work_a)->state);
 }
 
+// sec 2.1.1: "This rate-limiting rule applies not only to conflicts experienced during the initial
+// probing phase, but also to conflicts experienced later, as described in Section 2.4 'Ongoing Address
+// Conflict Detection and Address Defense'."
+//
+// A conflict sec 2.4 (c) defends raises the count and leaves the machine ONGOING, holding its address,
+// so the count reaches MAX_CONFLICTS without the machine ever entering RATE_LIMIT. The limit reads the
+// count, not the state, or a host under a defended conflict storm probes a new address as fast as it
+// is asked to - the ARP storm sec 2.1.1 exists to prevent.
+void test_defended_conflicts_reach_the_rate_limit_without_an_abandon(void)
+{
+    clear_and_start(work_a, ADDR_A, IDEMIP_ACD_DEFEND_ALWAYS, 0u, 0u);
+    drive_to(work_a, IDEMIP_ACD_STATE_ONGOING);
+
+    mk_request(g_other_mac, ADDR_A, ADDR_A);
+    uint32_t at = 20000u;
+    for (uint32_t k = 0; k < IDEMIP_ACD_MAX_CONFLICTS; k++)
+    {
+        at = 20000u + (k * IDEMIP_ACD_DEFEND_INTERVAL_MS);
+        arp_at(work_a, at);
+        TEST_ASSERT_TRUE(IDEMIP_ACD_IO(work_a)->conflict);
+        TEST_ASSERT_FALSE_MESSAGE(IDEMIP_ACD_IO(work_a)->abandon, "(c) never gives up the address");
+    }
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_ACD_MAX_CONFLICTS, IDEMIP_ACD_IO(work_a)->conflicts);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ACD_STATE_ONGOING, IDEMIP_ACD_IO(work_a)->state,
+                                  "a defended machine keeps its address, so it never enters RATE_LIMIT");
+
+    uint32_t ends = at + IDEMIP_ACD_RATE_LIMIT_INTERVAL_MS;
+    start_at(work_a, ADDR_B, IDEMIP_ACD_DEFEND_NEVER, ends - 1u, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_ACD_IO(work_a)->status,
+                                  "a host past MAX_CONFLICTS probed a new address inside the interval");
+
+    start_at(work_a, ADDR_B, IDEMIP_ACD_DEFEND_NEVER, ends, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ACD_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_HEX32(ADDR_B, IDEMIP_ACD_IO(work_a)->ipaddr);
+
+    // "no more than one attempted new address per RATE_LIMIT_INTERVAL", so the attempt after it waits
+    // out an interval of its own.
+    start_at(work_a, ADDR_A, IDEMIP_ACD_DEFEND_NEVER, ends + 1u, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_ACD_IO(work_a)->status,
+                                  "two new addresses were attempted inside one RATE_LIMIT_INTERVAL");
+}
+
 // A claim inside the interval is BUSY, not ERR: the interval ends and the same call then claims the
 // address. Reported as ERR a caller would abandon a healthy address for good.
 void test_a_claim_inside_the_rate_limit_interval_is_busy(void)
