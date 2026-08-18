@@ -314,3 +314,527 @@ void test_the_timing_constants_are_shared_with_rfc_5227(void)
     TEST_ASSERT_EQUAL_UINT32(60000u, IDEMIP_ACD_RATE_LIMIT_INTERVAL_MS);
     TEST_ASSERT_EQUAL_UINT32(10000u, IDEMIP_ACD_DEFEND_INTERVAL_MS);
 }
+
+// =============================================================================
+// The behavior cases.
+//
+// RFC 3927 prints no example address, no seed and no generator, so there is no vector in the document
+// to replay. What it does state is asserted instead: the range a draw lands in, the ends it must never
+// land on, the per-host seeding, the retained first candidate, the new address a conflict draws, the
+// rate limit past MAX_CONFLICTS, and the mask sec 2.8 fixes.
+// =============================================================================
+
+// A second interface address, differing from g_mac in the last octet.
+static const uint8_t g_mac2[IDEMIP_ARP_HLN_ETHERNET] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x02};
+
+#define IO(w) IDEMIP_AUTOIP_IO(w)
+
+static void start_at(uint8_t *w, const uint8_t *mac, uint32_t rand, uint32_t now_ms)
+{
+    IO(w)->start_args.mac = mac;
+    IO(w)->start_args.rand = rand;
+    IO(w)->start_args.now_ms = now_ms;
+    AutoIp.start(w);
+}
+
+static void fresh_start(uint8_t *w, const uint8_t *mac, uint32_t rand)
+{
+    AutoIp.clear(w);
+    start_at(w, mac, rand, 1000u);
+}
+
+static void conflict_at(uint8_t *w, uint32_t rand, uint32_t now_ms)
+{
+    IO(w)->conflict_args.rand = rand;
+    IO(w)->conflict_args.now_ms = now_ms;
+    AutoIp.conflict(w);
+}
+
+static void tick_at(uint8_t *w, uint32_t now_ms, uint32_t rand)
+{
+    IO(w)->tick_args.now_ms = now_ms;
+    IO(w)->tick_args.rand = rand;
+    AutoIp.tick(w);
+}
+
+// RFC 3927 sec 2.1: "a uniform distribution in the range from 169.254.1.0 to 169.254.254.255
+// inclusive", the first and last 256 of the prefix being reserved.
+static void assert_in_range(uint32_t addr)
+{
+    TEST_ASSERT_TRUE_MESSAGE(addr >= IDEMIP_AUTOIP_FIRST, "a draw landed in the reserved first 256");
+    TEST_ASSERT_TRUE_MESSAGE(addr <= IDEMIP_AUTOIP_LAST, "a draw landed in the reserved last 256");
+    TEST_ASSERT_TRUE_MESSAGE(addr != IDEMIP_AUTOIP_BROADCAST, "a draw landed on the sec 2.6.2 broadcast");
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(IDEMIP_AUTOIP_PREFIX, addr & IDEMIP_AUTOIP_NETMASK, "a draw left 169.254/16");
+}
+
+// --- sec 2.1, the draw -------------------------------------------------------
+
+// sec 2.2: after selecting, a host "MUST test to see if the IPv4 Link-Local address is already in use
+// before beginning to use it", which is the claim the caller hands to acd. No mask until sec 2.4.
+void test_start_draws_a_candidate_and_asks_for_the_claim(void)
+{
+    fresh_start(work_a, g_mac, 0x12345678u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->claim);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_AUTOIP_STATE_CHECKING, IO(work_a)->state);
+    assert_in_range(IO(work_a)->ipaddr);
+    TEST_ASSERT_EQUAL_HEX32(0u, IO(work_a)->netmask);
+    TEST_ASSERT_EQUAL_UINT8(1u, IO(work_a)->tried);
+}
+
+// sec 2.1 reserves "The first 256 and last 256 addresses in the 169.254/16 prefix", so no seed and no
+// step of the generator may produce one. Every draw a start and eight conflicts take, over 512 seeds.
+void test_no_draw_lands_on_a_reserved_address(void)
+{
+    for (uint32_t r = 0; r < 512u; r++)
+    {
+        uint32_t seed = r * 2654435761u;
+        fresh_start(work_a, g_mac, seed);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        assert_in_range(IO(work_a)->ipaddr);
+        for (uint32_t k = 0; k < 8u; k++)
+        {
+            conflict_at(work_a, seed ^ k, 1000u);
+            TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+            assert_in_range(IO(work_a)->ipaddr);
+        }
+    }
+}
+
+// sec 2.2.1: a conflict means the host "MUST select a new pseudo-random address and repeat the
+// process", so the address the other host answered for is not the one drawn next.
+void test_a_conflict_draws_a_new_address(void)
+{
+    fresh_start(work_a, g_mac, 0x0BADC0DEu);
+    uint32_t first = IO(work_a)->ipaddr;
+
+    conflict_at(work_a, 0x11111111u, 2000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->claim);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_AUTOIP_STATE_CHECKING, IO(work_a)->state);
+    assert_in_range(IO(work_a)->ipaddr);
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(first, IO(work_a)->ipaddr, "sec 2.2.1 requires a new address");
+    TEST_ASSERT_EQUAL_UINT8(2u, IO(work_a)->tried);
+}
+
+// sec 2.1: the generator is seeded from per-host information, so the same interface address and the
+// same word draw the same address. "a host will usually select the same IPv4 Link-Local address each
+// time it is booted".
+void test_one_interface_draws_the_same_address_every_time(void)
+{
+    fresh_start(work_a, g_mac, 0xA5A5A5A5u);
+    fresh_start(work_b, g_mac, 0xA5A5A5A5u);
+    TEST_ASSERT_EQUAL_HEX32(IO(work_a)->ipaddr, IO(work_b)->ipaddr);
+}
+
+// sec 2.1: "The pseudo-random number generation algorithm MUST be chosen so that different hosts do not
+// generate the same sequence of numbers." Two interface addresses, the same word, four draws each.
+void test_two_interfaces_do_not_walk_the_same_sequence(void)
+{
+    uint32_t a[4];
+    uint32_t b[4];
+    fresh_start(work_a, g_mac, 0xA5A5A5A5u);
+    fresh_start(work_b, g_mac2, 0xA5A5A5A5u);
+    a[0] = IO(work_a)->ipaddr;
+    b[0] = IO(work_b)->ipaddr;
+    for (int i = 1; i < 4; i++)
+    {
+        conflict_at(work_a, 0u, 2000u);
+        conflict_at(work_b, 0u, 2000u);
+        a[i] = IO(work_a)->ipaddr;
+        b[i] = IO(work_b)->ipaddr;
+    }
+    int same = 1;
+    for (int i = 0; i < 4; i++)
+    {
+        if (a[i] != b[i])
+        {
+            same = 0;
+        }
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, same, "two interface addresses walked the same sec 2.1 sequence");
+}
+
+// sec 2.1 seeds from "its IEEE 802 MAC address", so every octet of it reaches the draw: changing any
+// one of the six changes the address selected.
+void test_every_octet_of_the_interface_address_reaches_the_draw(void)
+{
+    uint8_t mac[IDEMIP_ARP_HLN_ETHERNET];
+    memcpy(mac, g_mac, sizeof mac);
+    fresh_start(work_a, mac, 0x5EEDu);
+    uint32_t base = IO(work_a)->ipaddr;
+
+    for (size_t i = 0; i < sizeof mac; i++)
+    {
+        memcpy(mac, g_mac, sizeof mac);
+        mac[i] = (uint8_t)(mac[i] ^ 0x40u);
+        fresh_start(work_b, mac, 0x5EEDu);
+        TEST_ASSERT_NOT_EQUAL_MESSAGE(base, IO(work_b)->ipaddr, "an octet of the interface address is not seeded in");
+    }
+}
+
+// sec 2.1: "hosts with a previously recorded address SHOULD use that address as their first candidate
+// when probing", so the address held through a stop is the one the next start claims.
+void test_a_held_address_is_the_first_candidate_after_a_stop(void)
+{
+    fresh_start(work_a, g_mac, 0xFEEDFACEu);
+    uint32_t first = IO(work_a)->ipaddr;
+    AutoIp.bound(work_a);
+    AutoIp.stop(work_a);
+
+    start_at(work_a, g_mac, 0x00000000u, 9000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->claim);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(first, IO(work_a)->ipaddr, "sec 2.1's first candidate was redrawn");
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, IO(work_a)->tried, "a reused candidate is not a new draw");
+}
+
+// --- sec 2.4 and sec 2.8, the bound address ----------------------------------
+
+// sec 2.4 puts the announced address in use, and sec 2.8's "The 169.254/16 address prefix MUST NOT be
+// subnetted" fixes the mask at the prefix length.
+void test_bound_configures_the_address_with_the_prefix_mask(void)
+{
+    fresh_start(work_a, g_mac, 0x1234u);
+    uint32_t addr = IO(work_a)->ipaddr;
+
+    AutoIp.bound(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_AUTOIP_STATE_BOUND, IO(work_a)->state);
+    TEST_ASSERT_EQUAL_HEX32(addr, IO(work_a)->ipaddr);
+    TEST_ASSERT_EQUAL_HEX32(0xFFFF0000u, IO(work_a)->netmask);
+    TEST_ASSERT_FALSE(IO(work_a)->claim);
+}
+
+// sec 2.5: conflict detection "is an ongoing process that is in effect for as long as a host is using
+// an IPv4 Link-Local address", and (a) permits the host to "immediately configure a new IPv4 Link-Local
+// address", so a bound address leaves the interface and a new one is drawn.
+void test_a_conflict_on_a_bound_address_replaces_it(void)
+{
+    fresh_start(work_a, g_mac, 0xC0FFEEu);
+    AutoIp.bound(work_a);
+    uint32_t bound_addr = IO(work_a)->ipaddr;
+
+    conflict_at(work_a, 0x77u, 4000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->claim);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_AUTOIP_STATE_CHECKING, IO(work_a)->state);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(0u, IO(work_a)->netmask, "the mask stayed on a conflicting address");
+    TEST_ASSERT_NOT_EQUAL(bound_addr, IO(work_a)->ipaddr);
+}
+
+// sec 1.9: a host "SHOULD NOT have both an operable routable address and an IPv4 Link-Local address
+// configured on the same interface", so stop leaves the interface with neither address nor mask.
+void test_stop_leaves_no_address_on_the_interface(void)
+{
+    fresh_start(work_a, g_mac, 0x99u);
+    AutoIp.bound(work_a);
+
+    AutoIp.stop(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_AUTOIP_STATE_OFF, IO(work_a)->state);
+    TEST_ASSERT_EQUAL_HEX32(0u, IO(work_a)->ipaddr);
+    TEST_ASSERT_EQUAL_HEX32(0u, IO(work_a)->netmask);
+    TEST_ASSERT_FALSE(IO(work_a)->claim);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, IO(work_a)->tried, "stop dropped the count of addresses drawn");
+}
+
+// --- sec 2.2.1, the rate limit -----------------------------------------------
+
+// sec 2.2.1 limits the rate only once the count "exceeds MAX_CONFLICTS", so MAX_CONFLICTS conflicts are
+// each answered with a new address at once.
+void test_max_conflicts_are_each_answered_at_once(void)
+{
+    fresh_start(work_a, g_mac, 0x2222u);
+    for (uint32_t i = 0; i < IDEMIP_ACD_MAX_CONFLICTS; i++)
+    {
+        conflict_at(work_a, i, 1000u + i);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "a conflict at or under MAX_CONFLICTS was held");
+        TEST_ASSERT_TRUE(IO(work_a)->claim);
+        assert_in_range(IO(work_a)->ipaddr);
+        TEST_ASSERT_EQUAL_HEX32(0u, IO(work_a)->deadline_ms);
+    }
+    TEST_ASSERT_EQUAL_UINT8(1u + IDEMIP_ACD_MAX_CONFLICTS, IO(work_a)->tried);
+}
+
+// sec 2.2.1: once the count "exceeds MAX_CONFLICTS then the host MUST limit the rate at which it probes
+// for new addresses to no more than one new address per RATE_LIMIT_INTERVAL". The conflict past the
+// count asks for no claim and reports BUSY, which a later tick makes progress on.
+void test_the_conflict_past_max_conflicts_is_rate_limited(void)
+{
+    fresh_start(work_a, g_mac, 0x3333u);
+    for (uint32_t i = 0; i < IDEMIP_ACD_MAX_CONFLICTS; i++)
+    {
+        conflict_at(work_a, i, 1000u);
+    }
+    conflict_at(work_a, 0xABCDu, 50000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->claim, "a rate limited draw was handed out anyway");
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(0u, IO(work_a)->ipaddr, "a taken address stayed on the interface");
+    TEST_ASSERT_EQUAL_UINT8(1u + IDEMIP_ACD_MAX_CONFLICTS, IO(work_a)->tried);
+}
+
+// The deadline is a millisecond clock plus RATE_LIMIT_INTERVAL in milliseconds, so no conversion
+// happens anywhere on the path.
+void test_the_rate_limit_deadline_is_one_interval_in_milliseconds(void)
+{
+    fresh_start(work_a, g_mac, 0x4444u);
+    for (uint32_t i = 0; i < IDEMIP_ACD_MAX_CONFLICTS; i++)
+    {
+        conflict_at(work_a, i, 1000u);
+    }
+    conflict_at(work_a, 0u, 50000u);
+    TEST_ASSERT_EQUAL_HEX32(50000u + IDEMIP_ACD_RATE_LIMIT_INTERVAL_MS, IO(work_a)->deadline_ms);
+}
+
+// A held draw inside the interval reports BUSY, and at the deadline it is taken and handed over. The
+// address another host answered for is not the one drawn.
+void test_the_held_draw_is_released_at_the_deadline(void)
+{
+    fresh_start(work_a, g_mac, 0x5555u);
+    for (uint32_t i = 0; i < IDEMIP_ACD_MAX_CONFLICTS; i++)
+    {
+        conflict_at(work_a, i, 1000u);
+    }
+    uint32_t taken = IO(work_a)->ipaddr;
+    conflict_at(work_a, 0u, 50000u);
+    uint32_t due = IO(work_a)->deadline_ms;
+
+    tick_at(work_a, due - 1u, 0x77u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status, "the hold ended before RATE_LIMIT_INTERVAL");
+    TEST_ASSERT_FALSE(IO(work_a)->claim);
+
+    tick_at(work_a, due, 0x77u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->claim);
+    assert_in_range(IO(work_a)->ipaddr);
+    TEST_ASSERT_NOT_EQUAL(taken, IO(work_a)->ipaddr);
+    TEST_ASSERT_EQUAL_UINT8(2u + IDEMIP_ACD_MAX_CONFLICTS, IO(work_a)->tried);
+    TEST_ASSERT_EQUAL_HEX32(0u, IO(work_a)->deadline_ms);
+}
+
+// One new address per RATE_LIMIT_INTERVAL: the conflict after a released draw is held again.
+void test_every_draw_past_max_conflicts_waits_an_interval(void)
+{
+    fresh_start(work_a, g_mac, 0x6666u);
+    for (uint32_t i = 0; i < IDEMIP_ACD_MAX_CONFLICTS; i++)
+    {
+        conflict_at(work_a, i, 1000u);
+    }
+    conflict_at(work_a, 0u, 50000u);
+    tick_at(work_a, IO(work_a)->deadline_ms, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    conflict_at(work_a, 0u, 200000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+    TEST_ASSERT_FALSE(IO(work_a)->claim);
+    TEST_ASSERT_EQUAL_HEX32(200000u + IDEMIP_ACD_RATE_LIMIT_INTERVAL_MS, IO(work_a)->deadline_ms);
+}
+
+// The deadline is compared as a signed difference, so a millisecond clock that rolls over past
+// 0xFFFFFFFF still holds the draw for the whole interval and releases it after.
+void test_the_rate_limit_survives_a_clock_rollover(void)
+{
+    fresh_start(work_a, g_mac, 0x7777u);
+    for (uint32_t i = 0; i < IDEMIP_ACD_MAX_CONFLICTS; i++)
+    {
+        conflict_at(work_a, i, 1000u);
+    }
+    conflict_at(work_a, 0u, 0xFFFFF000u);
+    uint32_t due = IO(work_a)->deadline_ms;
+    TEST_ASSERT_TRUE_MESSAGE(due < 0xFFFFF000u, "the deadline did not roll over");
+
+    tick_at(work_a, 0xFFFFF001u, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status, "a rolled over deadline read as passed");
+    tick_at(work_a, due, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->claim);
+}
+
+// sec 2.2.1 counts conflicts "in the process of trying to acquire an address", which sec 2.4's
+// announcement ends, so the count starts over and MAX_CONFLICTS more are answered at once.
+void test_binding_the_address_starts_the_conflict_count_over(void)
+{
+    fresh_start(work_a, g_mac, 0x8888u);
+    for (uint32_t i = 0; i < IDEMIP_ACD_MAX_CONFLICTS; i++)
+    {
+        conflict_at(work_a, i, 1000u);
+    }
+    AutoIp.bound(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    for (uint32_t i = 0; i < IDEMIP_ACD_MAX_CONFLICTS; i++)
+    {
+        conflict_at(work_a, i, 2000u);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "the count did not start over at sec 2.4");
+    }
+    conflict_at(work_a, 0u, 3000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+}
+
+// --- the states that refuse ---------------------------------------------------
+
+// An interface with no address out has nothing acd could have answered for or announced, and calling
+// again cannot change that, so both are ERR rather than BUSY.
+void test_a_conflict_and_a_bind_with_no_address_out_are_refused(void)
+{
+    AutoIp.clear(work_a);
+    conflict_at(work_a, 0u, 1000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+    AutoIp.bound(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+// The same holds while a draw waits out sec 2.2.1's rate limit: no address is on the interface, so a
+// conflict or an announcement over one is refused.
+void test_a_conflict_and_a_bind_inside_the_rate_limit_are_refused(void)
+{
+    fresh_start(work_a, g_mac, 0x9999u);
+    for (uint32_t i = 0; i < IDEMIP_ACD_MAX_CONFLICTS; i++)
+    {
+        conflict_at(work_a, i, 1000u);
+    }
+    conflict_at(work_a, 0u, 50000u);
+    uint32_t due = IO(work_a)->deadline_ms;
+
+    conflict_at(work_a, 0u, 50001u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+    AutoIp.bound(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(due, IO(work_a)->deadline_ms, "a refused call moved the deadline");
+}
+
+// An interface already claiming an address is left as it stands, and no second claim is asked for: the
+// address is already with acd.
+void test_a_second_start_asks_for_no_second_claim(void)
+{
+    fresh_start(work_a, g_mac, 0xAAAAu);
+    uint32_t addr = IO(work_a)->ipaddr;
+
+    start_at(work_a, g_mac, 0xBBBBu, 2000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->claim, "a second start asked acd to claim the address again");
+    TEST_ASSERT_EQUAL_HEX32(addr, IO(work_a)->ipaddr);
+    TEST_ASSERT_EQUAL_UINT8(1u, IO(work_a)->tried);
+}
+
+// A start on an interface whose draw is behind sec 2.2.1's rate limit reports BUSY: the same call on a
+// later tick makes progress.
+void test_a_start_inside_the_rate_limit_reports_busy(void)
+{
+    fresh_start(work_a, g_mac, 0xCCCCu);
+    for (uint32_t i = 0; i < IDEMIP_ACD_MAX_CONFLICTS; i++)
+    {
+        conflict_at(work_a, i, 1000u);
+    }
+    conflict_at(work_a, 0u, 50000u);
+
+    start_at(work_a, g_mac, 0u, 50001u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+    TEST_ASSERT_FALSE(IO(work_a)->claim);
+}
+
+// A start over the count draws no address at once either: sec 2.2.1's limit counts new addresses, so a
+// stop and a start do not buy one.
+void test_a_start_after_a_stop_over_the_count_is_still_rate_limited(void)
+{
+    fresh_start(work_a, g_mac, 0xDDDDu);
+    for (uint32_t i = 0; i < IDEMIP_ACD_MAX_CONFLICTS; i++)
+    {
+        conflict_at(work_a, i, 1000u);
+    }
+    uint32_t taken = IO(work_a)->ipaddr;
+    conflict_at(work_a, 0u, 50000u);
+    AutoIp.stop(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    start_at(work_a, g_mac, 0u, 60000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+    TEST_ASSERT_FALSE(IO(work_a)->claim);
+    TEST_ASSERT_EQUAL_HEX32(60000u + IDEMIP_ACD_RATE_LIMIT_INTERVAL_MS, IO(work_a)->deadline_ms);
+
+    tick_at(work_a, IO(work_a)->deadline_ms, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE(IO(work_a)->claim);
+    assert_in_range(IO(work_a)->ipaddr);
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(taken, IO(work_a)->ipaddr, "a taken address came back as the candidate");
+}
+
+// --- the tick -----------------------------------------------------------------
+
+// A sweep with no draw held ran and found nothing due, on a claiming interface and on a stopped one
+// alike, and it asks for no claim.
+void test_a_tick_with_nothing_due_is_ok_and_asks_for_no_claim(void)
+{
+    AutoIp.clear(work_a);
+    tick_at(work_a, 1000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_FALSE(IO(work_a)->claim);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_AUTOIP_STATE_OFF, IO(work_a)->state);
+
+    start_at(work_a, g_mac, 0xEEEEu, 1000u);
+    tick_at(work_a, 100000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_FALSE(IO(work_a)->claim);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_AUTOIP_STATE_CHECKING, IO(work_a)->state);
+}
+
+// A tick is a function of the borrow, so a sweep with nothing due repeats: the same bytes go in and the
+// same bytes come out.
+void test_a_tick_with_nothing_due_repeats(void)
+{
+    fresh_start(work_a, g_mac, 0x0F0Fu);
+    tick_at(work_a, 5000u, 0x11u);
+    memcpy(work_b, work_a, IDEMIP_AUTOIP_BORROW);
+    tick_at(work_a, 5000u, 0x11u);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(work_b, work_a, IDEMIP_AUTOIP_BORROW);
+}
+
+// An interface stopped while a draw was held stays stopped: a tick does not put an address back on it.
+void test_a_tick_does_not_restart_a_stopped_interface(void)
+{
+    fresh_start(work_a, g_mac, 0x1F1Fu);
+    for (uint32_t i = 0; i < IDEMIP_ACD_MAX_CONFLICTS; i++)
+    {
+        conflict_at(work_a, i, 1000u);
+    }
+    conflict_at(work_a, 0u, 50000u);
+    uint32_t due = IO(work_a)->deadline_ms;
+    AutoIp.stop(work_a);
+
+    tick_at(work_a, due + 1000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->claim, "a tick claimed an address on a stopped interface");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_AUTOIP_STATE_OFF, IO(work_a)->state);
+    TEST_ASSERT_EQUAL_HEX32(0u, IO(work_a)->ipaddr);
+}
+
+// --- the borrow is the interface, with the logic in place ---------------------
+
+// The rate limit, the conflict count and the candidate all live in the borrow, so a rogue host on one
+// interface does not hold back the interface next to it.
+void test_a_conflict_storm_on_one_borrow_leaves_the_other_running(void)
+{
+    fresh_start(work_a, g_mac, 0x2F2Fu);
+    fresh_start(work_b, g_mac2, 0x3F3Fu);
+    uint32_t b_addr = IO(work_b)->ipaddr;
+
+    for (uint32_t i = 0; i < IDEMIP_ACD_MAX_CONFLICTS; i++)
+    {
+        conflict_at(work_a, i, 1000u);
+    }
+    conflict_at(work_a, 0u, 50000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+
+    conflict_at(work_b, 0u, 50000u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_b)->status, "one interface's conflicts held back another");
+    TEST_ASSERT_TRUE(IO(work_b)->claim);
+    TEST_ASSERT_EQUAL_UINT8(2u, IO(work_b)->tried);
+    TEST_ASSERT_NOT_EQUAL(b_addr, IO(work_b)->ipaddr);
+
+    AutoIp.bound(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_b)->status);
+    TEST_ASSERT_EQUAL_HEX32(0xFFFF0000u, IO(work_b)->netmask);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_AUTOIP_STATE_CHECKING, IO(work_a)->state);
+    TEST_ASSERT_EQUAL_HEX32(0u, IO(work_a)->netmask);
+}
