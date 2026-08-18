@@ -111,6 +111,77 @@ def generate_runner(suite_dir, unity_rb):
     return out
 
 
+# A suite that binds a dependency and never drives it looks covered and is not. test_dispatch bound
+# the IGMP borrow from the day it was written and no case ever fed it a message, so RFC 2236
+# sec 2.3's "the checksum MUST be verified" went missing for a whole phase behind a green suite.
+BIND_DEP = re.compile(r"bind_args\.(\w+)\s*=\s*(\w+_mem)\b")
+
+
+def _is_setup_use(line, mem):
+    """True when this line only declares, binds, or clears the borrow.
+
+    Those three are how a dependency is made ready, not how it is exercised, and a suite that does
+    only them has bound a unit it never asks anything of. Where the setup lives does not matter:
+    test_dispatch clears in a wire_units() helper rather than in setUp, so keying on the function
+    would have missed exactly the case this check exists for.
+    """
+    esc = re.escape(mem)
+    if re.search(r"\b(static|uint8_t)\b.*\b" + esc + r"\b\s*\[", line):
+        return True  # the declaration
+    if re.search(r"bind_args\.\w+\s*=\s*" + esc + r"\b", line):
+        return True  # the bind
+    if re.search(r"\w+\.(clear|reset)\s*\(\s*" + esc + r"\s*\)", line):
+        return True  # made ready, not asked anything
+    return False
+
+
+def undriven_deps(path):
+    """Dependencies a suite binds that no line exercises beyond declaring, binding and clearing."""
+    with open(path, encoding="utf-8") as fh:
+        lines = fh.read().split("\n")
+    text = "\n".join(lines)
+    out = []
+    for dep, mem in set(BIND_DEP.findall(text)):
+        driven = any(mem in ln and not _is_setup_use(ln, mem) for ln in lines)
+        if not driven:
+            out.append((dep, mem))
+    return sorted(out)
+
+
+def cmd_deps(a):
+    bad = 0
+    for d in discover():
+        src = suite_source(d)
+        if not src:
+            continue
+        un = undriven_deps(src)
+        rel = os.path.relpath(d, ROOT).replace("\\", "/")
+        if un:
+            bad += len(un)
+            print("%s" % rel)
+            for dep, mem in un:
+                print("   UNASSERTED  %-14s (%s)" % (dep, mem))
+    if not bad:
+        print("every bound dependency is asserted on by at least one case")
+        return 0
+    print(
+        "\n%d dependencies are bound and then never named again outside setup.\n"
+        "\n"
+        "  This is a smell, not a proof. A unit the suite reaches only THROUGH the unit under\n"
+        "  test is still exercised, and this cannot see that. What it does prove is that no case\n"
+        "  ASSERTS anything about the dependency's own state, so a defect in the interaction\n"
+        "  between the two is invisible either way.\n"
+        "\n"
+        "  test_dispatch bound the IGMP borrow this way from the day it was written. No case ever\n"
+        "  fed it a message, RFC 2236 sec 2.3's 'the checksum MUST be verified' was simply absent,\n"
+        "  and the suite was green throughout.\n"
+        "\n"
+        "  Fix one of two ways: drive it and assert its state, or stop binding it so the suite\n"
+        "  says what it tests." % bad
+    )
+    return 1 if a.strict else 0
+
+
 def cmd_suites(_a):
     for d in discover():
         found, missed = runner_cases(suite_source(d))
@@ -146,6 +217,10 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("suites", help="list every suite CMake will build").set_defaults(fn=cmd_suites)
+
+    p = sub.add_parser("deps", help="dependencies a suite binds but no case asserts on")
+    p.add_argument("--strict", action="store_true", help="exit non-zero on a finding, for a CI gate")
+    p.set_defaults(fn=cmd_deps)
 
     p = sub.add_parser("cases", help="what Unity will register, and what it will walk past")
     p.add_argument("suite", nargs="+")
