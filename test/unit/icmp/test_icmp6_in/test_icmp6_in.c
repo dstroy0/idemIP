@@ -133,6 +133,8 @@ static void load_recv(uint8_t *w)
     io->recv_args.dst_anycast = IDEMIP_FALSE;
 }
 
+// The invoking packet went to one of this node's own unicast addresses, which is RFC 4443 sec 2.2
+// (a). Every case sec 2.2 (b) lists is loaded with load_error_foreign below.
 static void load_error(uint8_t *w, uint8_t type, uint8_t code)
 {
     Icmp6InIo *io = IDEMIP_ICMP6_IN_IO(w);
@@ -148,6 +150,15 @@ static void load_error(uint8_t *w, uint8_t type, uint8_t code)
     io->err_args.link_mcast = IDEMIP_FALSE;
     io->err_args.link_bcast = IDEMIP_FALSE;
     io->err_args.src_anycast = IDEMIP_FALSE;
+    io->err_args.dst_local_unicast = IDEMIP_TRUE;
+}
+
+// The invoking packet went somewhere sec 2.2 (b) covers: a multicast group, an anycast address the
+// node implements, or a unicast address that is not the node's at all.
+static void load_error_foreign(uint8_t *w, uint8_t type, uint8_t code)
+{
+    load_error(w, type, code);
+    IDEMIP_ICMP6_IN_IO(w)->err_args.dst_local_unicast = IDEMIP_FALSE;
 }
 
 static uint8_t suppress_of(uint8_t *w)
@@ -561,6 +572,42 @@ void test_an_error_goes_back_to_the_invoking_source(void)
     Icmp6In.error(work_a);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(PEER6, IDEMIP_ICMP6_IN_IO(work_a)->dst, IDEMIP_IP6_ADDR_LEN);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(HOST6, IDEMIP_ICMP6_IN_IO(work_a)->src, IDEMIP_IP6_ADDR_LEN);
+}
+
+// sec 2.2 (b): "If the message is a response to a message sent to any other address, such as - a
+// multicast group address, - an anycast address implemented by the node, or - a unicast address that
+// does not belong to the node ... the Source Address of the ICMPv6 packet MUST be a unicast address
+// belonging to the node."
+//
+// The last of those three is the one that matters most: a packet this node only forwards toward
+// carries a Destination Address that is somebody else's, and copying it into the Source Address of an
+// error the node originates puts that party's address on a packet they did not send.
+void test_an_error_for_a_destination_that_is_not_the_nodes_uses_the_interface_address(void)
+{
+    static const uint8_t elsewhere[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0x99,
+                                                           0,    0,    0,    0,    0, 0, 0, 0x77};
+    put_victim6(PEER6, elsewhere);
+    load_error_foreign(work_a, (uint8_t)IDEMIP_ICMP6_TIME_EXCEEDED, IDEMIP_ICMP6_TE_HOP_LIMIT);
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ICMP6_IN_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(PEER6, IDEMIP_ICMP6_IN_IO(work_a)->dst, IDEMIP_IP6_ADDR_LEN);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(IFADDR6, IDEMIP_ICMP6_IN_IO(work_a)->src, IDEMIP_IP6_ADDR_LEN,
+                                          "sec 2.2 (b) requires a unicast address belonging to the node");
+}
+
+// The same rule over the anycast case sec 2.2 (b) names in its own words. An anycast address the node
+// implements is reachable at this node, so the destination is not "somebody else's" - and sec 2.2 (b)
+// still bars it, because the Source Address must be a unicast address.
+void test_an_error_for_an_anycast_destination_uses_the_interface_address(void)
+{
+    static const uint8_t anycast[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
+                                                         0,    0,    0,    0,    0, 0, 0, 0};
+    put_victim6(PEER6, anycast);
+    load_error_foreign(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_ADDR_UNREACH);
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ICMP6_IN_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(IFADDR6, IDEMIP_ICMP6_IN_IO(work_a)->src, IDEMIP_IP6_ADDR_LEN,
+                                          "an anycast address is not a unicast address of the node");
 }
 
 // sec 2.3, over the message the caller will send between those two addresses.

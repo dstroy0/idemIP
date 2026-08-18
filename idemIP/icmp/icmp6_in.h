@@ -131,8 +131,14 @@ typedef struct
  *                               @p invoking
  * @var Icmp6InErrArgs::out_cap  octets available at @p out
  * @var Icmp6InErrArgs::if_addr  a unicast address of the interface, IDEMIP_IP6_ADDR_LEN octets, which
- *                               sec 2.2 (b) makes the Source Address when the invoking packet went to
- *                               a multicast address
+ *                               sec 2.2 (b) makes the Source Address for every destination case but
+ *                               one: "a multicast group address, an anycast address implemented by
+ *                               the node, or a unicast address that does not belong to the node"
+ * @var Icmp6InErrArgs::dst_local_unicast the invoking packet's Destination Address is a unicast
+ *                               address belonging to this node, which is sec 2.2 (a)'s one case:
+ *                               "the Source Address of the reply MUST be that same address". An
+ *                               anycast address the node implements is not one of these - sec 2.2 (b)
+ *                               lists it - and neither is an address the node only forwards toward.
  * @var Icmp6InErrArgs::word     the 32 bits at IDEMIP_ICMP6_OFF_BODY: Unused for sec 3.1 and sec 3.3,
  *                               MTU for sec 3.2, Pointer for sec 3.4
  * @var Icmp6InErrArgs::now_ms   the caller's monotonic millisecond count, which the sec 2.4 (f) token
@@ -158,6 +164,7 @@ typedef struct
     idemip_bool link_mcast;
     idemip_bool link_bcast;
     idemip_bool src_anycast;
+    idemip_bool dst_local_unicast;
 } Icmp6InErrArgs;
 
 /**

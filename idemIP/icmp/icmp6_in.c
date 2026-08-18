@@ -438,8 +438,14 @@ static void icmp6_in_error(uint8_t *restrict work)
     ctx->tokens = (uint8_t)(ctx->tokens - 1u);
     io->tokens = ctx->tokens;
 
+    // sec 2.2 (a): "If the message is a response to a message sent to one of the node's unicast
+    // addresses, the Source Address of the reply MUST be that same address." (b) covers every other
+    // destination the invoking packet could carry - "a multicast group address, an anycast address
+    // implemented by the node, or a unicast address that does not belong to the node" - and requires
+    // "a unicast address belonging to the node", which is the interface's. A multicast destination is
+    // never a node's unicast address, so it takes the interface's whatever the caller reports.
     const uint8_t *dst = idemip_ip6_dst(a->invoking);
-    io->src = icmp6_in_is_multicast(dst) ? a->if_addr : dst;
+    io->src = (a->dst_local_unicast && !icmp6_in_is_multicast(dst)) ? dst : a->if_addr;
     io->dst = idemip_ip6_src(a->invoking);
     io->out_len = idemip_icmp6_err_build(a->out, a->type, a->code, a->word, a->invoking, avail);
     idemip_wr16(a->out + IDEMIP_ICMP6_OFF_CKSUM,
