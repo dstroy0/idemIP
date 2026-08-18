@@ -867,6 +867,26 @@ static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
     (IDEMIP_DMA_CTX_BYTES + (IDEMIP_RX_DESCRIPTORS << IDEMIP_DMA_DESC_ENTRY_SHIFT) +                                   \
      (IDEMIP_TX_DESCRIPTORS << IDEMIP_DMA_DESC_ENTRY_SHIFT))
 
+// --- vlan: IEEE 802.1Q C-Tag, corroborated in RFC 6325 sec 4.1 and RFC 7042 App B.2 --------------
+// vlan holds no table, so this region is the whole borrow and carries the operand block of vlan.h as
+// well as the context. The block is the frame a parse reads and the frame a build writes, the three
+// tag fields RFC 6325 sec 4.1.1 Figure 8 draws, and what the call reports: 72 octets on a target with
+// 8-octet pointers. The context behind it is the mark clear leaves, 8 more.
+#ifndef IDEMIP_VLAN_CTX_BYTES
+#define IDEMIP_VLAN_CTX_BYTES 96u
+#endif
+#define IDEMIP_VLAN_BORROW (IDEMIP_VLAN_CTX_BYTES)
+
+// --- ethip6: RFC 2464 ----------------------------------------------------------------------------
+// ethip6 holds no table either. The operand block is the sec 7 multicast destination and the sec 4
+// built-in address a call names, with the three answers it writes: the 6-octet Ethernet multicast
+// address, the 8-octet interface identifier, and the 16-octet link-local address, 48 octets in all on
+// a target with 8-octet pointers. The context behind it is the mark clear leaves, 8 more.
+#ifndef IDEMIP_ETHIP6_CTX_BYTES
+#define IDEMIP_ETHIP6_CTX_BYTES 64u
+#endif
+#define IDEMIP_ETHIP6_BORROW (IDEMIP_ETHIP6_CTX_BYTES)
+
 // --- arp_table: RFC 826 --------------------------------------------------------------------------
 // RFC 826 puts "the <protocol type, sender protocol address, sender hardware address> triplet" in
 // the table, which over IPv4 on Ethernet is 2, 4 and 6 octets; an entry adds the state, the
@@ -1440,6 +1460,8 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
      IDEMIP_IP4_FRAG_BORROW + IDEMIP_IP6_FRAG_BORROW +                                                                 \
      IDEMIP_IP4_ADDR_BORROW + IDEMIP_IP6_ADDR_BORROW + IDEMIP_IP6_SELECT_BORROW +                                      \
      IDEMIP_DNS_BORROW + IDEMIP_TIMEOUTS_BORROW + IDEMIP_STATS_BORROW)
+     IDEMIP_DNS_BORROW + IDEMIP_TIMEOUTS_BORROW + IDEMIP_STATS_BORROW +                                                \
+     IDEMIP_VLAN_BORROW + IDEMIP_ETHIP6_BORROW)
 
 /**
  * @brief Every octet of .bss a full build takes, so the footprint is one number a reader can see.
