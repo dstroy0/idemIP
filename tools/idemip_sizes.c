@@ -40,6 +40,8 @@ int main(void)
     ROW(IDEMIP_DNS_BORROW);
     ROW(IDEMIP_TIMEOUTS_BORROW);
     ROW(IDEMIP_STATS_BORROW);
+    ROW(IDEMIP_VLAN_BORROW);
+    ROW(IDEMIP_ETHIP6_BORROW);
     printf("  %-28s %7zu\n\n", "= IDEMIP_SHARED_BORROW", (size_t)IDEMIP_SHARED_BORROW);
 
     printf("per interface, taken IDEMIP_NETIF_COUNT times:\n");
