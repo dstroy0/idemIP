@@ -862,6 +862,17 @@ typedef enum IDEMIP_ENUM_PACKED
      (IDEMIP_IP4_REASS_FRAGS << IDEMIP_IP4_REASS_FRAG_ENTRY_SHIFT) +                                                   \
      (IDEMIP_IP4_REASS_HOLES << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT))
 
+// --- ip4_frag: RFC 791 sec 3.2 -------------------------------------------------------------------
+// The RFC 791 sec 3.2 fragmentation procedure holds no table: the split it walks is one datagram's,
+// so the region is the operand block of ip4_frag.h and the cursor behind it. sizeof(Ip4FragIo) is 56
+// on a target with 8-octet pointers, and the cursor is 40: where the datagram lies, the original and
+// the reduced header lengths step (9) computes, the "NFB*8" octets steps (3) and (4) size, and how
+// far the walk has come.
+#ifndef IDEMIP_IP4_FRAG_CTX_BYTES
+#define IDEMIP_IP4_FRAG_CTX_BYTES 128u
+#endif
+#define IDEMIP_IP4_FRAG_BORROW (IDEMIP_IP4_FRAG_CTX_BYTES)
+
 // --- acd: RFC 5227, PER INTERFACE ----------------------------------------------------------------
 // RFC 5227 sec 2.1 through sec 2.4 run one machine over one address: the address being probed, the
 // state, the probes or announcements sent, the next deadline, the millisecond of the last defense,
@@ -925,6 +936,17 @@ typedef enum IDEMIP_ENUM_PACKED
     (IDEMIP_IP6_REASS_CTX_BYTES + (IDEMIP_IP6_REASS_DATAGRAMS << IDEMIP_IP6_REASS_DATAGRAM_ENTRY_SHIFT) +              \
      (IDEMIP_IP6_REASS_FRAGS << IDEMIP_IP6_REASS_FRAG_ENTRY_SHIFT) +                                                   \
      (IDEMIP_IP6_REASS_HOLES << IDEMIP_IP6_REASS_HOLE_ENTRY_SHIFT))
+
+// --- ip6_frag: RFC 8200 sec 4.5 ------------------------------------------------------------------
+// Fragmentation is "performed only by source nodes, not by routers", and one source node splits one
+// packet at a time, so this unit holds no table either. The region is the operand block of ip6_frag.h
+// and the cursor behind it: where the packet lies, the octets the Per-Fragment headers span, the
+// Next Header field of the last of them, the Identification, and how far the walk has come.
+// sizeof(Ip6FragIo) is 64 on a target with 8-octet pointers, and the cursor is 40.
+#ifndef IDEMIP_IP6_FRAG_CTX_BYTES
+#define IDEMIP_IP6_FRAG_CTX_BYTES 128u
+#endif
+#define IDEMIP_IP6_FRAG_BORROW (IDEMIP_IP6_FRAG_CTX_BYTES)
 
 // --- nd6: RFC 4861 sec 5.1, RFC 4862, PER INTERFACE ----------------------------------------------
 // RFC 4861 sec 5.1: "Hosts will need to maintain the following pieces of information for each
@@ -1183,6 +1205,7 @@ typedef enum IDEMIP_ENUM_PACKED
      IDEMIP_IP4_REASS_BORROW + IDEMIP_IGMP_BORROW + IDEMIP_IP6_REASS_BORROW + IDEMIP_MLD6_BORROW +                     \
      IDEMIP_RAW_PCB_BORROW + IDEMIP_UDP_PCB_BORROW + IDEMIP_TCP_PCB_BORROW + IDEMIP_TCP_IN_BORROW +                    \
      IDEMIP_TCP_OUT_BORROW + IDEMIP_TCP_ISN_BORROW +                                                                   \
+     IDEMIP_IP4_FRAG_BORROW + IDEMIP_IP6_FRAG_BORROW +                                                                 \
      IDEMIP_DNS_BORROW + IDEMIP_TIMEOUTS_BORROW + IDEMIP_STATS_BORROW)
 
 /**
