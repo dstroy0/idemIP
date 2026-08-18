@@ -491,7 +491,7 @@ static void d_tcp_hold(uint8_t *restrict work, uint16_t pcb)
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(ctx->tcp_pcb);
     tp->oos_args.pcb = pcb;
     tp->oos_args.seq = ti->res.text_seq;
-    tp->oos_args.desc = a->desc;
+    tp->oos_args.desc = IDEMIP_DISPATCH_DESC_HANDLE(io->netif, a->desc);
     tp->oos_args.offset = (uint16_t)(io->payload_off + ti->res.text_off);
     tp->oos_args.len = ti->res.text_len;
     TcpPcb.oos_alloc(ctx->tcp_pcb);
@@ -967,7 +967,7 @@ static void d_ip4_frag(uint8_t *restrict work, const uint8_t *ip4, size_t total_
     Ip4ReassIo *re = IDEMIP_IP4_REASS_IO(ctx->ip4_reass);
     re->now_ms = a->now_ms;
     re->hold_args.hdr = ip4;
-    re->hold_args.desc = a->desc;
+    re->hold_args.desc = IDEMIP_DISPATCH_DESC_HANDLE(io->netif, a->desc);
     re->hold_args.len = (uint16_t)total_len;
     Ip4Reass.hold(ctx->ip4_reass);
     if (re->status != IDEMIP_OK)
@@ -1260,7 +1260,7 @@ static void d_ip6_frag(uint8_t *restrict work, const uint8_t *ip6, size_t total_
     re->input_args.pkt = ip6;
     re->input_args.len = total_len;
     re->input_args.frag_hdr = frag_hdr;
-    re->input_args.desc = a->desc;
+    re->input_args.desc = IDEMIP_DISPATCH_DESC_HANDLE(io->netif, a->desc);
     re->input_args.now_ms = a->now_ms;
     Ip6Reass.input(ctx->ip6_reass);
     if (re->status != IDEMIP_OK)

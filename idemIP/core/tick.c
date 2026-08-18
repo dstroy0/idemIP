@@ -99,29 +99,17 @@ static void t_reset(TickIo *io)
     io->ip = 0u;
 }
 
-// The interface a descriptor a shared unit handed back belongs to.
+// The interface a descriptor a shared unit handed back belongs to, read out of the descriptor.
 //
-// A retaining unit reports the descriptor index alone: RFC-level reassembly holds fragments and
-// names them by descriptor, and neither ip4_reass.h nor ip6_reass.h carries the interface the
-// fragment arrived on. The ring a descriptor index belongs to is therefore recoverable only while
-// exactly one interface has one, and with more than one the descriptor is reported and left pinned
-// rather than unpinned on a ring that may not own it.
-static uint8_t t_sole_netif(uint8_t *restrict work)
+// A retaining unit stores what dispatch handed it and reads no interface out of it, so what it
+// hands back must name its own ring: dispatch files
+// IDEMIP_DISPATCH_DESC_HANDLE(netif, index) and this takes the two apart again. An index alone
+// would be ambiguous the moment a second interface has a ring, and the descriptor would be
+// returned to an engine that never owned it, or to none.
+static uint8_t t_desc_netif(uint16_t handle)
 {
-    uint8_t found = IDEMIP_DISPATCH_NETIF_NONE;
-    for (uint8_t i = 0u; i < (uint8_t)IDEMIP_NETIF_COUNT; i++)
-    {
-        if (T_IF_AT(work, i)->f.dma == NULL)
-        {
-            continue;
-        }
-        if (found != IDEMIP_DISPATCH_NETIF_NONE)
-        {
-            return IDEMIP_DISPATCH_NETIF_NONE;
-        }
-        found = i;
-    }
-    return found;
+    return (handle == IDEMIP_DISPATCH_DESC_NONE) ? (uint8_t)IDEMIP_DISPATCH_NETIF_NONE
+                                                 : IDEMIP_DISPATCH_DESC_NETIF(handle);
 }
 
 static void t_unpin(uint8_t *restrict work, uint8_t netif, uint16_t desc)
@@ -135,7 +123,7 @@ static void t_unpin(uint8_t *restrict work, uint8_t netif, uint16_t desc)
     {
         return;
     }
-    IDEMIP_DMA_IO(row->f.dma)->desc_args.index = (uint8_t)desc;
+    IDEMIP_DMA_IO(row->f.dma)->desc_args.index = IDEMIP_DISPATCH_DESC_INDEX(desc);
     Dma.unpin(row->f.dma);
 }
 
@@ -227,7 +215,7 @@ static idemip_bool t_service_arp(uint8_t *restrict work)
     io->ip = ar->ip;
     if (ar->len != 0u)
     {
-        t_hold(work, t_sole_netif(work), ar->desc, ar->len);
+        t_hold(work, t_desc_netif(ar->desc), ar->desc, ar->len);
     }
     return IDEMIP_TRUE;
 }
@@ -396,7 +384,7 @@ static idemip_bool t_flush_ip4_reass(uint8_t *restrict work)
     {
         return IDEMIP_FALSE;
     }
-    t_hold(work, t_sole_netif(work), IDEMIP_IP4_REASS_IO(ctx->ip4_reass)->desc, 0u);
+    t_hold(work, t_desc_netif(IDEMIP_IP4_REASS_IO(ctx->ip4_reass)->desc), IDEMIP_IP4_REASS_IO(ctx->ip4_reass)->desc, 0u);
     return IDEMIP_TRUE;
 }
 
@@ -424,7 +412,10 @@ static idemip_bool t_flush_ip6_reass(uint8_t *restrict work)
     }
     uint8_t datagram = re->datagram;
     uint8_t frags = re->frag_count;
-    uint8_t netif = t_sole_netif(work);
+    uint8_t netif = IDEMIP_DISPATCH_NETIF_NONE;
+    // The fragments of one datagram can have arrived on different interfaces, so each descriptor
+    // names its own ring and is returned to that one. io->netif reports the last, which is what a
+    // caller reads to know a ring moved.
     for (uint8_t i = 0u; i < frags; i++)
     {
         re->frag_args.datagram = datagram;
@@ -432,6 +423,7 @@ static idemip_bool t_flush_ip6_reass(uint8_t *restrict work)
         Ip6Reass.frag_at(ctx->ip6_reass);
         if (re->status == IDEMIP_OK)
         {
+            netif = t_desc_netif(re->frag_desc);
             t_unpin(work, netif, re->frag_desc);
         }
     }

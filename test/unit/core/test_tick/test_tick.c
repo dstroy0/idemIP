@@ -43,6 +43,7 @@ static _Alignas(8) uint8_t mld6_mem[IDEMIP_MLD6_BORROW];
 static _Alignas(8) uint8_t nd6_mem[IDEMIP_ND6_BORROW];
 #endif
 static _Alignas(8) uint8_t dma_mem[IDEMIP_DMA_BORROW];
+static _Alignas(8) uint8_t dma1_mem[IDEMIP_DMA_BORROW]; // the second interface's ring
 static _Alignas(8) uint8_t phy_mem[IDEMIP_PHY_BORROW];
 static uint8_t out_buf[256];
 
@@ -729,6 +730,115 @@ void test_an_interface_with_no_ring_is_stepped_over(void)
     Tick.drain(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_TICK_IO(work_a)->status);
 }
+
+// --- two interfaces ----------------------------------------------------------
+// Every case above binds exactly one ring, which is why a descriptor that could not name its own
+// ring went back to nothing for a whole phase. IDEMIP_NETIF_COUNT is 2 by default, so the shipped
+// build is the one that was broken.
+
+#if IDEMIP_ENABLE_IPV4
+
+// A descriptor a shared unit hands back carries the interface it arrived on, so it returns to that
+// ring and not to whichever one happens to be first. With a bare index the second interface's
+// descriptors were reported and left pinned, and the ring emptied one frame at a time until
+// IDEMIP_MAX_PINNED_FRAMES was reached and receive stopped.
+void test_a_descriptor_from_the_second_interface_goes_back_to_it(void)
+{
+    // Two rings, so the case can tell "returned to the right one" from "returned to the only one".
+    Dma.clear(dma1_mem);
+    IDEMIP_DMA_IO(dma1_mem)->bind_args.drv = &g_drv;
+    IDEMIP_DMA_IO(dma1_mem)->bind_args.rx_base = rx_bufs;
+    IDEMIP_DMA_IO(dma1_mem)->bind_args.tx_base = tx_bufs;
+    Dma.bind(dma1_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(dma1_mem)->status);
+
+    TickIo *io = IDEMIP_TICK_IO(work_a);
+    io->if_args.index = 1u;
+    io->if_args.dma = dma1_mem;
+#if IDEMIP_ENABLE_IPV6
+    io->if_args.nd6 = nd6_mem;
+#endif
+    io->if_args.out = out_buf;
+    io->if_args.out_cap = sizeof out_buf;
+    Tick.if_bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+
+    // Claim a descriptor first: pinning one the engine still owns is refused, which is the whole
+    // point of the pin protocol. Then pin it the way dispatch does before handing it to a
+    // retaining unit, and post it back so only the pin keeps it out of the ring.
+    engine_queue(3u, 64u);
+    Dma.rx_take(dma1_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(dma1_mem)->status);
+    uint8_t held = IDEMIP_DMA_IO(dma1_mem)->index;
+    IDEMIP_DMA_IO(dma1_mem)->desc_args.index = held;
+    Dma.pin(dma1_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(dma1_mem)->status);
+    IDEMIP_DMA_IO(dma1_mem)->desc_args.index = held;
+    Dma.rx_post(dma1_mem);
+
+    Dma.pinned(dma1_mem);
+    TEST_ASSERT_EQUAL_UINT16(1u, IDEMIP_DMA_IO(dma1_mem)->pinned);
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_DMA_IO(dma_mem)->pinned);
+
+    // Queue it on ARP for an address nothing answers, so the pending deadline hands it back.
+    ArpTableIo *ar = IDEMIP_ARP_IO(arp_mem);
+    ar->queue_args.ip = REMOTE_IP4;
+    ar->queue_args.desc = IDEMIP_DISPATCH_DESC_HANDLE(1u, held);
+    ar->queue_args.len = 64u;
+    ar->now_ms = 0u;
+    ArpTable.queue(arp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ar->status);
+
+    // Run whole ticks until the service phase reports the timed-out hold, then one more step so the
+    // deferred unpin lands (tick.h: the descriptor stays pinned until the step after the report).
+    idemip_bool reported = IDEMIP_FALSE;
+    for (uint32_t t = 1000u; t <= 1000u + (IDEMIP_ARP_MAXPENDING_S * 2000u) && !reported; t += 1000u)
+    {
+        open_tick(work_a, t);
+        while (Tick.drain(work_a), io->status == IDEMIP_OK)
+        {
+        }
+        while (Tick.service(work_a), io->status == IDEMIP_OK)
+        {
+            if (io->len != 0u && io->desc != IDEMIP_DISPATCH_DESC_NONE)
+            {
+                TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, io->netif, "the hold was reported on the wrong interface");
+                reported = IDEMIP_TRUE;
+            }
+        }
+        while (Tick.flush(work_a), io->status == IDEMIP_OK)
+        {
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(reported, "the ARP hold was never reported at all");
+
+    Dma.pinned(dma1_mem);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(dma1_mem)->pinned,
+                                     "the descriptor never came back to interface 1's ring");
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(dma_mem)->pinned,
+                                     "interface 0's ring was touched by interface 1's descriptor");
+}
+
+// The two halves of a handle come apart as they went together, over every index and interface the
+// build can hold. A handle can never collide with the sentinel, which is what keeps "no descriptor"
+// distinguishable from descriptor zero on the last interface.
+void test_a_descriptor_handle_round_trips(void)
+{
+    for (uint8_t n = 0u; n < (uint8_t)IDEMIP_NETIF_COUNT; n++)
+    {
+        for (uint16_t d = 0u; d < (uint16_t)IDEMIP_RX_DESCRIPTORS; d++)
+        {
+            uint16_t h = IDEMIP_DISPATCH_DESC_HANDLE(n, d);
+            TEST_ASSERT_EQUAL_UINT8(n, IDEMIP_DISPATCH_DESC_NETIF(h));
+            TEST_ASSERT_EQUAL_UINT8((uint8_t)d, IDEMIP_DISPATCH_DESC_INDEX(h));
+            TEST_ASSERT_TRUE(h != IDEMIP_DISPATCH_DESC_NONE);
+        }
+    }
+}
+
+#endif // IDEMIP_ENABLE_IPV4
 
 // A build with a borrow left unbound still ticks: the step that would have driven it is skipped.
 void test_an_unbound_service_is_skipped(void)

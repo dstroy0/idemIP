@@ -79,6 +79,23 @@ IDEMIP_BEGIN_DECLS
 #define IDEMIP_DISPATCH_DESC_NONE 0xFFFFu
 
 /**
+ * @brief A pinned descriptor, named together with the ring it belongs to.
+ *
+ * A retaining unit stores what it is handed and reads no interface out of it: ip4_reass.h and
+ * ip6_reass.h key a fragment on {source, destination, protocol, identification} and tcp_pcb.h keys
+ * an out-of-order segment on its sequence number, so neither carries the interface the frame
+ * arrived on. A bare index is therefore ambiguous the moment two interfaces have a ring, and the
+ * descriptor cannot be handed back to the right engine.
+ *
+ * The handle closes that: the low octet is the index into the ring, the high octet is the
+ * interface. IDEMIP_DISPATCH_DESC_NONE stays distinct because its high octet is
+ * IDEMIP_DISPATCH_NETIF_NONE, which no interface index reaches.
+ */
+#define IDEMIP_DISPATCH_DESC_HANDLE(netif, index) ((uint16_t)(((uint16_t)(netif) << 8) | (uint16_t)(index)))
+#define IDEMIP_DISPATCH_DESC_NETIF(handle) ((uint8_t)((handle) >> 8))
+#define IDEMIP_DISPATCH_DESC_INDEX(handle) ((uint8_t)((handle) & 0xFFu))
+
+/**
  * @brief The VLAN ID a per-interface row holds when no policy drop has happened since clear.
  *
  * RFC 6325 sec 4.1.1: "VLAN ID zero is the null VLAN identifier and indicates that no VLAN is
@@ -457,6 +474,12 @@ static_assert(IDEMIP_NETIF_COUNT < IDEMIP_DISPATCH_NETIF_NONE,
 static_assert(IDEMIP_RX_DESCRIPTORS < IDEMIP_DISPATCH_DESC_NONE,
               "IDEMIP_RX_DESCRIPTORS must stay below IDEMIP_DISPATCH_DESC_NONE: the sentinel names no "
               "descriptor");
+static_assert(IDEMIP_RX_DESCRIPTORS <= 0x100u,
+              "IDEMIP_RX_DESCRIPTORS must fit the low octet of a descriptor handle, which carries the "
+              "ring index; the high octet carries the interface");
+static_assert(IDEMIP_NETIF_COUNT < IDEMIP_DISPATCH_NETIF_NONE,
+              "IDEMIP_NETIF_COUNT must fit the high octet of a descriptor handle, below the value "
+              "IDEMIP_DISPATCH_DESC_NONE reserves");
 
 IDEMIP_END_DECLS
 
