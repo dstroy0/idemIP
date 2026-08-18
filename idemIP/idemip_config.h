@@ -1346,6 +1346,73 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 #endif
 #define IDEMIP_STATS_BORROW (IDEMIP_STATS_CTX_BYTES + (IDEMIP_NETIF_COUNT << IDEMIP_STATS_IF_ENTRY_SHIFT))
 
+// --- ip4_addr: RFC 791 sec 3.2, RFC 1122 sec 3.2.1.3, RFC 1112 sec 6.4 ---------------------------
+// ip4_addr holds no table, so this region is the whole borrow and carries the operand block of
+// ip4_addr.h as well as the context. The block is the three operand sets, the network, directed
+// broadcast and host parts a netmask test reports, and the six octets RFC 1112 sec 6.4 maps a group
+// onto: 56 octets. The context behind it is the mark clear leaves.
+#ifndef IDEMIP_IP4_ADDR_CTX_BYTES
+#define IDEMIP_IP4_ADDR_CTX_BYTES 96u
+#endif
+#define IDEMIP_IP4_ADDR_BORROW (IDEMIP_IP4_ADDR_CTX_BYTES)
+
+// --- ip6_addr: RFC 4291 sec 2, RFC 4007 sec 5, sec 6 ---------------------------------------------
+// ip6_addr holds no table either. The block is the four operand sets, the RFC 4007 sec 6 zone index,
+// the sixteen octets of an RFC 4291 sec 2.7.1 solicited-node address, and the type, scope and flags
+// a classify reports: 88 octets on a target with 8-octet pointers. The context behind it is the mark
+// clear leaves.
+#ifndef IDEMIP_IP6_ADDR_CTX_BYTES
+#define IDEMIP_IP6_ADDR_CTX_BYTES 128u
+#endif
+#define IDEMIP_IP6_ADDR_BORROW (IDEMIP_IP6_ADDR_CTX_BYTES)
+
+// --- ip6_select: RFC 6724 sec 2.1, sec 4, sec 5, sec 6 -------------------------------------------
+// Four regions. A candidate entry is the address RFC 6724 sec 4 admits into the candidate set with
+// its RFC 4007 zone and interface, plus the five flags sec 5 cannot derive from the address: the
+// RFC 4862 deprecated state Rule 3 reads, the RFC 6275 home and care-of designations Rule 4 reads,
+// the RFC 4941 temporary kind Rule 7 reads, and Rule 5.5's next-hop assignment. A destination entry
+// is the address, its zone and interface, the candidate index sec 6 writes Source(D) as, Rule 1's
+// unreachable flag and Rule 7's encapsulation flag. A policy entry is one row of the sec 2.1 table:
+// "a longest-matching-prefix lookup table", holding the prefix, its length, Precedence(A), Label(A)
+// and the optional zone index sec 2.1 lets a non-global row be qualified with. The order region is
+// one octet per destination, the sorted positions sec 6 produces.
+//
+// The candidate set holds every address the node has, sec 4 recommending "the set of unicast
+// addresses assigned to the interface that will be used to send to the destination" and allowing a
+// router "unicast addresses assigned to any interface that forwards packets".
+#ifndef IDEMIP_IP6_SELECT_SOURCES
+#define IDEMIP_IP6_SELECT_SOURCES (IDEMIP_NETIF_COUNT * IDEMIP_IP6_ADDRESSES)
+#endif
+/** @brief Destinations one sec 6 sort orders, the list an address lookup returned. */
+#ifndef IDEMIP_IP6_SELECT_DESTS
+#define IDEMIP_IP6_SELECT_DESTS 8u
+#endif
+/** @brief Rows the sec 2.1 policy table holds, the nine default ones included. */
+#ifndef IDEMIP_IP6_SELECT_POLICIES
+#define IDEMIP_IP6_SELECT_POLICIES 16u
+#endif
+#ifndef IDEMIP_IP6_SELECT_SOURCE_ENTRY_SHIFT
+#define IDEMIP_IP6_SELECT_SOURCE_ENTRY_SHIFT 5u
+#endif
+#ifndef IDEMIP_IP6_SELECT_DEST_ENTRY_SHIFT
+#define IDEMIP_IP6_SELECT_DEST_ENTRY_SHIFT 5u
+#endif
+#ifndef IDEMIP_IP6_SELECT_POLICY_ENTRY_SHIFT
+#define IDEMIP_IP6_SELECT_POLICY_ENTRY_SHIFT 5u
+#endif
+// Spans the operand block and the context together, as IDEMIP_PHY_BORROW does: ip6_select.h puts
+// Ip6SelectIo at offset zero and the context behind it, and the assert in ip6_select.c fires naming
+// this macro if the pair outgrows it. The block is the four operand sets and what a selection, a
+// sort read and a sec 2.1 lookup report: 144 octets on a target with 8-octet pointers.
+#ifndef IDEMIP_IP6_SELECT_CTX_BYTES
+#define IDEMIP_IP6_SELECT_CTX_BYTES 192u
+#endif
+#define IDEMIP_IP6_SELECT_BORROW                                                                                       \
+    (IDEMIP_IP6_SELECT_CTX_BYTES + (IDEMIP_IP6_SELECT_SOURCES << IDEMIP_IP6_SELECT_SOURCE_ENTRY_SHIFT) +               \
+     (IDEMIP_IP6_SELECT_DESTS << IDEMIP_IP6_SELECT_DEST_ENTRY_SHIFT) +                                                 \
+     (IDEMIP_IP6_SELECT_POLICIES << IDEMIP_IP6_SELECT_POLICY_ENTRY_SHIFT) +                                            \
+     IDEMIP_ROUND_UP(IDEMIP_IP6_SELECT_DESTS, IDEMIP_ALIGN))
+
 // --- the whole footprint -------------------------------------------------------------------------
 
 /**
@@ -1371,6 +1438,7 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
      IDEMIP_UDPLITE_BORROW +                                                                                           \
      IDEMIP_TCP_OUT_BORROW + IDEMIP_TCP_ISN_BORROW +                                                                   \
      IDEMIP_IP4_FRAG_BORROW + IDEMIP_IP6_FRAG_BORROW +                                                                 \
+     IDEMIP_IP4_ADDR_BORROW + IDEMIP_IP6_ADDR_BORROW + IDEMIP_IP6_SELECT_BORROW +                                      \
      IDEMIP_DNS_BORROW + IDEMIP_TIMEOUTS_BORROW + IDEMIP_STATS_BORROW)
 
 /**
