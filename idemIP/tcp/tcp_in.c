@@ -591,7 +591,14 @@ static idemip_bool tcp_in_check_syn(uint8_t *restrict work, TcpInIo *io)
     // "SYN-RECEIVED STATE: If the connection was initiated with a passive OPEN, then return this
     // connection to the LISTEN state and return. Otherwise, handle per the directions for
     // synchronized states below."
-    if (io->state == IDEMIP_TCP_STATE_SYN_RECEIVED && io->listener != IDEMIP_TCP_PCB_NONE)
+    //
+    // That bullet sits under sec 3.10.7.4 fourth, which sec 3.10.7.4 first reaches only for a segment
+    // that passed Table 6: "After sending the acknowledgment, drop the unacceptable segment and
+    // return." RFC 5961 sec 4.2's "irrespective of the sequence number" is written for the
+    // synchronized states, and SYN-RECEIVED is not one, so an out-of-window SYN takes the challenge
+    // below and leaves the connection where it is.
+    if (io->state == IDEMIP_TCP_STATE_SYN_RECEIVED && io->listener != IDEMIP_TCP_PCB_NONE &&
+        io->res.acceptable)
     {
         io->state = IDEMIP_TCP_STATE_LISTEN;
         io->res.act |= IDEMIP_TCP_IN_ACT_LISTEN;

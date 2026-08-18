@@ -555,6 +555,28 @@ void test_a_syn_in_syn_received_from_a_passive_open_returns_to_listen(void)
     TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_LISTEN);
 }
 
+// That bullet sits under sec 3.10.7.4 fourth, and sec 3.10.7.4 first stops an unacceptable segment
+// before that step is reached: "After sending the acknowledgment, drop the unacceptable segment and
+// return." RFC 5961 sec 4.2's "irrespective of the sequence number" is written for the synchronized
+// states, which SYN-RECEIVED is not, so a SYN outside the window draws the challenge and leaves the
+// half-open connection standing. Without the window test, an off-path attacker who knows only the
+// four-tuple tears down a pending passive open with one packet.
+void test_a_syn_outside_the_window_does_not_return_syn_received_to_listen(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_SYN_RECEIVED, 300u, 301u, 101u, 4096u);
+    IO(work_a)->listener = 0u;
+    seg(work_a, 90000u, 0u, 1u, 0u, (uint8_t)IDEMIP_TCP_SYN);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.acceptable, "the segment under test must be out of window");
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)IDEMIP_TCP_STATE_SYN_RECEIVED, (int)IO(work_a)->state,
+                                  "a blind SYN tore down a half-open connection");
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_LISTEN,
+                              "a blind SYN returned a passive open to LISTEN");
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_CHALLENGE,
+                             "an out-of-window SYN must draw RFC 5961 sec 4.2's challenge ACK");
+}
+
 // RFC 5961 sec 7: "in any 5 second window, no more than 10 challenge ACKs should be sent" and "no
 // timer is needed to implement the above mechanism, instead a timestamp and a counter can be used."
 void test_the_challenge_ack_throttle_bounds_them_per_window(void)
