@@ -75,6 +75,36 @@ static_assert(IDEMIP_STATS_OFF_IF + STATS_IF_BYTES <= IDEMIP_STATS_BORROW,
 #define STATS_IF_AT(w, i)                                                                                              \
     ((StatsIfEntry *)(void *)((w) + IDEMIP_STATS_OFF_IF + ((size_t)(i) << IDEMIP_STATS_IF_ENTRY_SHIFT)))
 
+// --- which objects are Gauges ----------------------------------------------
+
+// RFC 1213 sec 6.8 gives tcpCurrEstab SYNTAX Gauge. Every other object of sec 6.6 through sec 6.9 is
+// SYNTAX Counter.
+static idemip_bool stats_group_is_gauge(IdemIpStatsCounter id)
+{
+    return (id == IDEMIP_STAT_TCP_CURR_ESTAB) ? IDEMIP_TRUE : IDEMIP_FALSE;
+}
+
+// RFC 1213 sec 6.4 gives ifSpeed and ifOutQLen SYNTAX Gauge. The other eleven ifEntry objects here
+// are SYNTAX Counter.
+static idemip_bool stats_if_is_gauge(IdemIpStatsIfCounter id)
+{
+    return (id == IDEMIP_STAT_IF_SPEED || id == IDEMIP_STAT_IF_OUT_QLEN) ? IDEMIP_TRUE : IDEMIP_FALSE;
+}
+
+// --- the counter a call names ----------------------------------------------
+
+// The group counter at (id << IDEMIP_STATS_CTR_SHIFT) in the counter block.
+static uint32_t *stats_group_at(uint8_t *restrict work, IdemIpStatsCounter id)
+{
+    return &STATS_CTR(work)[id];
+}
+
+// The ifEntry counter the id names, in the row at (netif << IDEMIP_STATS_IF_ENTRY_SHIFT).
+static uint32_t *stats_if_at(uint8_t *restrict work, uint8_t netif, IdemIpStatsIfCounter id)
+{
+    return &STATS_IF_AT(work, netif)->ctr[id];
+}
+
 // --- the entries -----------------------------------------------------------
 
 // Zeroes the counter block, the interface table and the context, then marks the borrow bound.
@@ -94,6 +124,12 @@ static void stats_clear(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
+// Adds ctr_args.value to a group Counter. RFC 1155 sec 3.2.3.3: a Counter increases monotonically to
+// 2^32-1, then wraps and increases again from zero, which is the uint32_t sum. A Gauge id is refused,
+// sec 3.2.3.4 letting a Gauge fall, so it is written by set instead.
+//
+// Every refusal is ERR and none is BUSY: an uncleared borrow, an id past the block, and a Gauge id
+// all read the same on the next call, so retrying cannot succeed. Nothing here defers.
 static void stats_bump(uint8_t *restrict work)
 {
     if (!work)
@@ -103,14 +139,18 @@ static void stats_bump(uint8_t *restrict work)
     StatsIo *io = STATS_IO(work);
     io->status = IDEMIP_ERR;
     StatsCtx *ctx = STATS_CTX(work);
-    if (ctx->magic != STATS_MAGIC || io->ctr_args.id >= IDEMIP_STAT_COUNT)
+    if (ctx->magic != STATS_MAGIC || io->ctr_args.id >= IDEMIP_STAT_COUNT || stats_group_is_gauge(io->ctr_args.id))
     {
         return;
     }
-    // PHASE 3: RFC 1155 sec 3.2.3.3, a Counter wraps at 2^32-1 and starts again from zero.
-    io->status = IDEMIP_ERR;
+    uint32_t *ctr = stats_group_at(work, io->ctr_args.id);
+    *ctr = (uint32_t)(*ctr + io->ctr_args.value);
+    io->status = IDEMIP_OK;
 }
 
+// Assigns ctr_args.value to a group Gauge. RFC 1155 sec 3.2.3.4: a Gauge rises and falls and latches
+// at 2^32-1, which a uint32_t store cannot pass. A Counter id is refused, sec 3.2.3.3 having it
+// increase monotonically, so it is reached by bump instead.
 static void stats_set(uint8_t *restrict work)
 {
     if (!work)
@@ -120,14 +160,16 @@ static void stats_set(uint8_t *restrict work)
     StatsIo *io = STATS_IO(work);
     io->status = IDEMIP_ERR;
     StatsCtx *ctx = STATS_CTX(work);
-    if (ctx->magic != STATS_MAGIC || io->ctr_args.id >= IDEMIP_STAT_COUNT)
+    if (ctx->magic != STATS_MAGIC || io->ctr_args.id >= IDEMIP_STAT_COUNT || !stats_group_is_gauge(io->ctr_args.id))
     {
         return;
     }
-    // PHASE 3: RFC 1155 sec 3.2.3.4, a Gauge may rise or fall and latches at 2^32-1.
-    io->status = IDEMIP_ERR;
+    *stats_group_at(work, io->ctr_args.id) = io->ctr_args.value;
+    io->status = IDEMIP_OK;
 }
 
+// Reports a group counter in io->value. RFC 1213 sec 6.6 through sec 6.9 give every object of those
+// groups ACCESS read-only, Counter and Gauge alike, so both kinds read here.
 static void stats_read(uint8_t *restrict work)
 {
     if (!work)
@@ -142,10 +184,12 @@ static void stats_read(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 1213 sec 6.6 through sec 6.9, the group counter the id names.
-    io->status = IDEMIP_ERR;
+    io->value = *stats_group_at(work, io->ctr_args.id);
+    io->status = IDEMIP_OK;
 }
 
+// Adds if_args.value to one interface's ifEntry Counter, RFC 1213 sec 6.4. RFC 1155 sec 3.2.3.3
+// wraps it at 2^32-1, which is the uint32_t sum. ifSpeed and ifOutQLen are refused, being Gauges.
 static void stats_if_bump(uint8_t *restrict work)
 {
     if (!work)
@@ -155,14 +199,18 @@ static void stats_if_bump(uint8_t *restrict work)
     StatsIo *io = STATS_IO(work);
     io->status = IDEMIP_ERR;
     StatsCtx *ctx = STATS_CTX(work);
-    if (ctx->magic != STATS_MAGIC || io->if_args.netif >= IDEMIP_NETIF_COUNT || io->if_args.id >= IDEMIP_STAT_IF_COUNT)
+    if (ctx->magic != STATS_MAGIC || io->if_args.netif >= IDEMIP_NETIF_COUNT ||
+        io->if_args.id >= IDEMIP_STAT_IF_COUNT || stats_if_is_gauge(io->if_args.id))
     {
         return;
     }
-    // PHASE 3: RFC 1213 sec 6.4, the ifEntry Counter objects of one interface.
-    io->status = IDEMIP_ERR;
+    uint32_t *ctr = stats_if_at(work, io->if_args.netif, io->if_args.id);
+    *ctr = (uint32_t)(*ctr + io->if_args.value);
+    io->status = IDEMIP_OK;
 }
 
+// Assigns if_args.value to one interface's ifSpeed or ifOutQLen, the RFC 1213 sec 6.4 Gauges. RFC 1155
+// sec 3.2.3.4 latches a Gauge at 2^32-1, which a uint32_t store cannot pass. A Counter id is refused.
 static void stats_if_set(uint8_t *restrict work)
 {
     if (!work)
@@ -172,14 +220,16 @@ static void stats_if_set(uint8_t *restrict work)
     StatsIo *io = STATS_IO(work);
     io->status = IDEMIP_ERR;
     StatsCtx *ctx = STATS_CTX(work);
-    if (ctx->magic != STATS_MAGIC || io->if_args.netif >= IDEMIP_NETIF_COUNT || io->if_args.id >= IDEMIP_STAT_IF_COUNT)
+    if (ctx->magic != STATS_MAGIC || io->if_args.netif >= IDEMIP_NETIF_COUNT ||
+        io->if_args.id >= IDEMIP_STAT_IF_COUNT || !stats_if_is_gauge(io->if_args.id))
     {
         return;
     }
-    // PHASE 3: RFC 1213 sec 6.4, ifSpeed and ifOutQLen are the ifEntry Gauge objects.
-    io->status = IDEMIP_ERR;
+    *stats_if_at(work, io->if_args.netif, io->if_args.id) = io->if_args.value;
+    io->status = IDEMIP_OK;
 }
 
+// Reports one interface's ifEntry counter in io->value, RFC 1213 sec 6.4, Counter and Gauge alike.
 static void stats_if_read(uint8_t *restrict work)
 {
     if (!work)
@@ -194,8 +244,8 @@ static void stats_if_read(uint8_t *restrict work)
     {
         return;
     }
-    // PHASE 3: RFC 1213 sec 6.4, the ifEntry counter the id names, on the interface it names.
-    io->status = IDEMIP_ERR;
+    io->value = *stats_if_at(work, io->if_args.netif, io->if_args.id);
+    io->status = IDEMIP_OK;
 }
 
 const StatsNs Stats = {.clear = stats_clear,
