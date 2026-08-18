@@ -214,7 +214,9 @@ typedef struct
  * @var IgmpIo::index         the entry the call touched, or IDEMIP_IGMP_NONE
  * @var IgmpIo::state         that group's sec 6 state
  * @var IgmpIo::netif         the interface that entry belongs to
- * @var IgmpIo::expired       report delay timers a sweep fired
+ * @var IgmpIo::expired       report delay timers a sweep found due. The lowest-numbered entry among
+ *                            them is the one the sweep fires, so a caller ticks again while this is
+ *                            non-zero and each call hands it one group to report.
  * @var IgmpIo::last_reporter sec 6's "set flag that we were the last host to send a report for this
  *                            group"
  * @var IgmpIo::send_report   sec 6's "send report" for @ref IgmpIo::group, to the group itself
@@ -284,6 +286,10 @@ typedef struct
  * Nothing here blocks. A table with no free entry reports IDEMIP_BUSY, since an entry frees when a
  * membership is dropped. A bad argument, an uncleared borrow or a group that is not joined reports
  * IDEMIP_ERR.
+ *
+ * An arriving Query or Report the host holds no membership for reports IDEMIP_OK with
+ * @ref IgmpIo::index at IDEMIP_IGMP_NONE. RFC 2236 sec 6 ignores both "for memberships in the
+ * Non-Member state" rather than refusing them, so the call completed and changed nothing.
  *
  * @var IgmpNs::clear     zero the context and the group table, and mark the borrow cleared
  * @var IgmpNs::join      sec 6's "join group", which "may occur only in the Non-Member state"
