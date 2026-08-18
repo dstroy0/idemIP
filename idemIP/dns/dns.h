@@ -71,6 +71,75 @@ IDEMIP_BEGIN_DECLS
  */
 #define IDEMIP_DNS_MSG_MAX 512u
 
+/** @brief Octets of QTYPE and QCLASS behind a QNAME (RFC 1035 sec 4.1.2). */
+#define IDEMIP_DNS_QFIXED_LEN 4u
+
+/** @brief Octets of TYPE, CLASS, TTL and RDLENGTH behind a record's NAME (RFC 1035 sec 4.1.3). */
+#define IDEMIP_DNS_RR_FIXED_LEN 10u
+
+/** @brief Offsets of those fields from the end of a record's NAME (RFC 1035 sec 4.1.3). */
+#define IDEMIP_DNS_RR_OFF_TYPE 0u
+#define IDEMIP_DNS_RR_OFF_CLASS 2u
+#define IDEMIP_DNS_RR_OFF_TTL 4u
+#define IDEMIP_DNS_RR_OFF_RDLENGTH 8u
+
+/**
+ * @brief RFC 1035 sec 3.1: "the total length of a domain name (i.e., label octets and label length
+ * octets) is restricted to 255 octets or less".
+ */
+#define IDEMIP_DNS_NAME_WIRE_MAX 255u
+
+/**
+ * @brief Octets of the dotted form whose sec 3.1 label encoding still fits
+ * IDEMIP_DNS_NAME_WIRE_MAX: one length octet replaces each separator and one root octet is added.
+ */
+#define IDEMIP_DNS_NAME_TEXT_MAX (IDEMIP_DNS_NAME_WIRE_MAX - 2u)
+
+/**
+ * @brief Pointers one name may be assembled from before it is refused (RFC 1035 sec 4.1.4).
+ *
+ * A name spans at most IDEMIP_DNS_NAME_WIRE_MAX octets (sec 3.1) and a pointer hop yields at least
+ * one length octet and one label octet, so a name needing more hops than half that bound cannot be
+ * a name. A hop also has to land strictly below the pointer that made it, which sec 4.1.4's "a
+ * pointer to a prior occurance of the same name" states.
+ */
+#define IDEMIP_DNS_PTR_HOPS_MAX (IDEMIP_DNS_NAME_WIRE_MAX >> 1)
+
+/**
+ * @brief RFC 2181 sec 8: a TTL "received with the most significant bit set" is taken as zero.
+ */
+#define IDEMIP_DNS_TTL_SIGN 0x80000000u
+
+/**
+ * @brief Seconds an answer is held at most.
+ *
+ * RFC 2181 sec 8: "Implementations are always free to place an upper bound on any TTL received, and
+ * treat any larger values as if they were that upper bound." lwIP DNS_MAX_TTL is the same 604800.
+ */
+#ifndef IDEMIP_DNS_TTL_MAX_S
+#define IDEMIP_DNS_TTL_MAX_S 604800u
+#endif
+
+/** @brief Milliseconds a second holds, the factor a TTL becomes a deadline by. */
+#define IDEMIP_DNS_MS_PER_S 1000u
+
+/**
+ * @brief Milliseconds between two tries of one question.
+ *
+ * RFC 1035 sec 4.2.1: "the minimum retransmission interval should be 2-5 seconds".
+ */
+#ifndef IDEMIP_DNS_RETRY_MS
+#define IDEMIP_DNS_RETRY_MS 2000u
+#endif
+
+/**
+ * @brief The lowest source port a question may leave from, port 53 aside.
+ *
+ * RFC 5452 sec 9.2: "Use an unpredictable source port for outgoing queries from the range of
+ * available ports (53, or 1024 and above)".
+ */
+#define IDEMIP_DNS_SRC_PORT_MIN 1024u
+
 /** @brief Octets one answer address spans: RFC 3596 sec 2.2's 128-bit AAAA is the widest. */
 #define IDEMIP_DNS_ADDR_LEN 16u
 
@@ -247,11 +316,13 @@ typedef struct
  * @var DnsIo::tick_args   the clock
  * @var DnsIo::status      what the call reports: OK, BUSY, or ERR
  * @var DnsIo::addr        the answer, IDEMIP_DNS_ADDR_LEN octets, 4 of them used by an A record
- * @var DnsIo::ipv6        true when the answer is an AAAA
- * @var DnsIo::type        the TYPE the answer carried
- * @var DnsIo::ttl_s       the RFC 1035 sec 4.1.3 TTL, seconds
- * @var DnsIo::query       the slot query took, or input matched
- * @var DnsIo::rcode       the sec 4.1.1 RCODE the response carried
+ * @var DnsIo::ipv6        the family of @ref DnsIo::addr, and on build the family of @ref DnsIo::dst
+ * @var DnsIo::type        the TYPE the answer carried, and on build the QTYPE it wrote
+ * @var DnsIo::ttl_s       the RFC 1035 sec 4.1.3 TTL the answer was given, seconds, not the remainder
+ * @var DnsIo::query       the slot query took, build wrote, or input matched, IDEMIP_DNS_QUERIES for
+ *                         none, which is what lookup reports when no question is outstanding
+ * @var DnsIo::rcode       the sec 4.1.1 RCODE the response carried, and on lookup the one the
+ *                         outstanding question last got
  * @var DnsIo::answers     the sec 4.1.1 ANCOUNT it carried
  * @var DnsIo::len         octets build wrote
  * @var DnsIo::dst         the server build addressed, IDEMIP_DNS_ADDR_LEN octets
@@ -343,13 +414,25 @@ typedef struct
  * Nothing here blocks. A name that is not cached yet is IDEMIP_BUSY, never an error: the caller asks
  * again on a later tick, after the question has gone out and the answer has come back.
  *
+ * The send loop is a walk over the query table, because a question needing the wire is one in the
+ * IDEMIP_DNS_QUERY_NEW state and build is what puts it there:
+ *
+ *   Dns.tick(work);
+ *   for (i = 0; i < IDEMIP_DNS_QUERIES; i++) { build_args.query = i; Dns.build(work); if OK send }
+ *
  * @var DnsNs::clear      zero every byte of the borrow, so it runs before the operands are set
  * @var DnsNs::bind       take the configuration, after checking every member is present
  * @var DnsNs::set_server put one server in the table
- * @var DnsNs::query      register one question. BUSY when every query slot is taken.
+ * @var DnsNs::query      register one question. BUSY when every query slot is taken. A question for
+ *                        the same name, type and class already outstanding is answered with that
+ *                        slot rather than a second one, which is RFC 5452 sec 5's birthday case.
  * @var DnsNs::lookup     answer from the cache alone. BUSY when the name is not cached.
- * @var DnsNs::build      write a registered question into the caller's buffer (sec 4.1.2)
- * @var DnsNs::input      take one response, matched on every attribute RFC 5452 sec 9.1 lists
+ * @var DnsNs::build      write a registered question into the caller's buffer (sec 4.1.2). ERR
+ *                        unless the slot is IDEMIP_DNS_QUERY_NEW, BUSY while the server table is
+ *                        empty, since DHCP option 6 or RFC 8106 RDNSS may still fill it.
+ * @var DnsNs::input      take one response, matched on every attribute RFC 5452 sec 9.1 lists. ERR
+ *                        leaves every question exactly as it was, which is what sec 9.1's "A
+ *                        mismatch and the response MUST be considered invalid" requires of a forgery.
  * @var DnsNs::tick       run the retry deadlines and expire answers past their TTL
  * @var DnsNs::cancel     drop one outstanding question
  * @var DnsNs::flush      empty the answer cache, leaving the servers and the questions alone
@@ -386,6 +469,35 @@ static_assert(IDEMIP_DNS_LABEL_MAX == (uint8_t)~IDEMIP_DNS_LABEL_PTR,
               "a label length shares its octet with the sec 4.1.4 pointer bits");
 static_assert(IDEMIP_DNS_ADDR_LEN == IDEMIP_DNS_AAAA_RDLEN,
               "an answer address holds an AAAA record's RDATA (RFC 3596 sec 2.2)");
+// A record's fixed fields are TYPE, CLASS, TTL and RDLENGTH, in that order (RFC 1035 sec 4.1.3).
+static_assert(IDEMIP_DNS_RR_OFF_RDLENGTH + 2u == IDEMIP_DNS_RR_FIXED_LEN,
+              "the sec 4.1.3 fixed fields are two, two, four and two octets");
+static_assert(IDEMIP_DNS_RR_OFF_TTL + 4u == IDEMIP_DNS_RR_OFF_RDLENGTH,
+              "the sec 4.1.3 TTL is a 32 bit field");
+// sec 4.2.1 caps a UDP message, so the shortest response is a header, a root QNAME and its fixed
+// fields, and the longest question this resolver can ask has to fit under that cap.
+static_assert(IDEMIP_DNS_HDR_LEN + 1u + IDEMIP_DNS_QFIXED_LEN < IDEMIP_DNS_MSG_MAX,
+              "the sec 4.1.2 question does not fit a sec 4.2.1 UDP message");
+static_assert(IDEMIP_DNS_HDR_LEN + IDEMIP_DNS_NAME_WIRE_MAX + IDEMIP_DNS_QFIXED_LEN <= IDEMIP_DNS_MSG_MAX,
+              "the widest sec 3.1 name does not fit a sec 4.2.1 UDP message");
+// The dotted form a question is given trades one separator for each length octet and adds the root.
+static_assert(IDEMIP_DNS_NAME_TEXT_MAX + 2u == IDEMIP_DNS_NAME_WIRE_MAX,
+              "the dotted bound is not the sec 3.1 wire bound less the length and root octets");
+static_assert(IDEMIP_DNS_NAME_TEXT_MAX < IDEMIP_DNS_NAME_MAX,
+              "a name and its terminator do not fit a name region: raise IDEMIP_DNS_NAME_SHIFT");
+// A pointer hop yields a length octet and a label octet at least, so half the sec 3.1 name bound is
+// more hops than any name can need.
+static_assert(IDEMIP_DNS_PTR_HOPS_MAX < IDEMIP_DNS_NAME_WIRE_MAX,
+              "the sec 4.1.4 hop bound exceeds the sec 3.1 name bound");
+// RFC 1035 sec 4.2.1: "the minimum retransmission interval should be 2-5 seconds".
+static_assert(IDEMIP_DNS_RETRY_MS >= 2000u && IDEMIP_DNS_RETRY_MS <= 5000u,
+              "IDEMIP_DNS_RETRY_MS is outside RFC 1035 sec 4.2.1's 2 to 5 seconds");
+// A TTL becomes a millisecond deadline by one multiply, so the ceiling has to leave that in 32 bits.
+static_assert(IDEMIP_DNS_TTL_MAX_S <= (0xFFFFFFFFu / IDEMIP_DNS_MS_PER_S),
+              "IDEMIP_DNS_TTL_MAX_S milliseconds overflows a 32 bit deadline");
+// RFC 2181 sec 8: a TTL is "an unsigned number, with a minimum value of 0, and a maximum value of
+// 2147483647".
+static_assert(IDEMIP_DNS_TTL_MAX_S < IDEMIP_DNS_TTL_SIGN, "IDEMIP_DNS_TTL_MAX_S is past RFC 2181 sec 8's 2^31 - 1");
 
 IDEMIP_END_DECLS
 
