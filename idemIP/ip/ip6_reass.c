@@ -49,14 +49,16 @@ typedef struct
     uint8_t src[IDEMIP_IP6_ADDR_LEN];
     uint8_t dst[IDEMIP_IP6_ADDR_LEN];
     uint16_t total_len;
+    uint16_t frag_end; ///< where the M flag zero fragment put the end of the Fragmentable Part
     uint8_t frag_head;
     uint8_t hole_head;
     uint8_t frag_count;
     uint8_t next_hdr;
     idemip_bool first_seen; ///< the Fragment Offset zero fragment has arrived
+    idemip_bool last_seen;  ///< the M flag zero fragment has arrived, so frag_end stands
     idemip_bool used;
     uint8_t state; ///< IP6_REASS_HOLDING, COMPLETE, EXPIRED or ABANDONED
-    uint8_t pad[15];
+    uint8_t pad[12];
 } Ip6ReassDatagram;
 
 // One held fragment. The octets stay in the buffer the engine wrote them to, pinned by desc.
@@ -387,20 +389,35 @@ static void ip6_reass_trim(uint8_t *restrict work, uint8_t d, uint32_t end)
     }
 }
 
-// RFC 8200 sec 4.5: "PL.orig = PL.first - FL.first - 8 + (8 * FO.last) + FL.last". The head of the
-// list is the Fragment Offset zero fragment, whose hdr_len is PL.first - FL.first plus the fixed
-// header, and the tail is the last, whose offset is 8 * FO.last already in octets.
+// RFC 8200 sec 4.5: "PL.orig = PL.first - FL.first - 8 + (8 * FO.last) + FL.last", where "FO.last =
+// Fragment Offset field of Fragment header of last fragment packet" and "FL.last = length of fragment
+// following Fragment header of last fragment packet". The head of the list is the Fragment Offset
+// zero fragment, whose hdr_len is PL.first - FL.first plus the fixed header, and frag_end is
+// 8 * FO.last + FL.last, taken from the fragment that carried the M flag clear rather than from
+// whichever entry the list ends on.
 static uint32_t ip6_reass_payload_len(uint8_t *restrict work, uint8_t d)
 {
-    Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
-    Ip6ReassFrag *head = IP6_REASS_FRAG_AT(work, dg->frag_head);
-    uint8_t cur = dg->frag_head;
-    while (IP6_REASS_FRAG_AT(work, cur)->next != IDEMIP_IP6_REASS_NONE)
+    const Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
+    const Ip6ReassFrag *head = IP6_REASS_FRAG_AT(work, dg->frag_head);
+    return (uint32_t)(head->hdr_len - IP6_REASS_FIXED) + (uint32_t)dg->frag_end;
+}
+
+// Whether any fragment already held reaches past @p end. RFC 8200 sec 4.5 computes the reassembled
+// Payload Length from "the length and offset of the last fragment", so the M flag zero fragment fixes
+// where the Fragmentable Part ends and nothing of the same packet can lie beyond it.
+static idemip_bool ip6_reass_past_end(uint8_t *restrict work, uint8_t d, uint32_t end)
+{
+    uint8_t cur = IP6_REASS_DATAGRAM_AT(work, d)->frag_head;
+    while (cur != IDEMIP_IP6_REASS_NONE)
     {
-        cur = IP6_REASS_FRAG_AT(work, cur)->next;
+        const Ip6ReassFrag *fr = IP6_REASS_FRAG_AT(work, cur);
+        if ((uint32_t)fr->offset + (uint32_t)fr->len > end)
+        {
+            return IDEMIP_TRUE;
+        }
+        cur = fr->next;
     }
-    Ip6ReassFrag *tail = IP6_REASS_FRAG_AT(work, cur);
-    return (uint32_t)(head->hdr_len - IP6_REASS_FIXED) + (uint32_t)tail->offset + (uint32_t)tail->len;
+    return IDEMIP_FALSE;
 }
 
 // --- the arriving fragment -------------------------------------------------
@@ -497,7 +514,14 @@ static void ip6_reass_file(uint8_t *restrict work)
 
     const uint8_t *src = idemip_ip6_src(pkt);
     const uint8_t *dst = idemip_ip6_dst(pkt);
-    uint8_t d = ip6_reass_match(work, src, dst, f.ident);
+    // sec 4.5: "If the fragment is a whole datagram (that is, both the Fragment Offset field and the M
+    // flag are zero), then it does not need any further reassembly and should be processed as a fully
+    // reassembled packet ... Any other fragments that match this packet (i.e., the same IPv6 Source
+    // Address, IPv6 Destination Address, and Fragment Identification) should be processed
+    // independently." It joins nothing already held, so one of these cannot reach into a reassembly it
+    // shares a key with.
+    const idemip_bool atomic = (idemip_bool)(f.offset == 0u && !f.more);
+    uint8_t d = atomic ? (uint8_t)IDEMIP_IP6_REASS_NONE : ip6_reass_match(work, src, dst, f.ident);
     uint8_t prev = IDEMIP_IP6_REASS_NONE;
 
     if (d != IDEMIP_IP6_REASS_NONE)
@@ -518,9 +542,32 @@ static void ip6_reass_file(uint8_t *restrict work)
             io->frag_count = IP6_REASS_DATAGRAM_AT(work, d)->frag_count;
             return;
         }
+        // The M flag zero fragment fixes where the Fragmentable Part ends, so a fragment held past
+        // that end, a fragment arriving past it, or a second last fragment naming a different one is a
+        // packet that cannot be reassembled. sec 4.5's disposition for that is the one it gives
+        // overlap: "reassembly of that packet must be abandoned and all the fragments that have been
+        // received for that packet must be discarded, and no ICMP error messages should be sent."
+        Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
+        idemip_bool inconsistent = IDEMIP_FALSE;
+        if (!f.more)
+        {
+            inconsistent = (idemip_bool)(ip6_reass_past_end(work, d, f.end) ||
+                                         (dg->last_seen && (uint32_t)dg->frag_end != f.end));
+        }
+        else if (dg->last_seen && f.end > (uint32_t)dg->frag_end)
+        {
+            inconsistent = IDEMIP_TRUE;
+        }
+        if (inconsistent)
+        {
+            dg->state = IP6_REASS_ABANDONED;
+            io->err = IDEMIP_IP6_REASS_ERR_OVERLAP;
+            io->datagram = d;
+            io->frag_count = dg->frag_count;
+            return;
+        }
         // the same test against the Fragment Offset zero fragment's per-fragment headers, which fix
         // the reassembled Payload Length the formula in sec 4.5 computes
-        Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
         if (dg->first_seen)
         {
             uint32_t unfrag = (uint32_t)(IP6_REASS_FRAG_AT(work, dg->frag_head)->hdr_len - IP6_REASS_FIXED);
@@ -595,6 +642,13 @@ static void ip6_reass_file(uint8_t *restrict work)
     {
         dg->next_hdr = f.next_hdr;
         dg->first_seen = IDEMIP_TRUE;
+    }
+    // "FO.last" and "FL.last" come from the fragment packet whose M flag is zero, so that is where the
+    // Fragmentable Part ends and what the sec 4.5 Payload Length formula reads.
+    if (!f.more)
+    {
+        dg->frag_end = (uint16_t)f.end;
+        dg->last_seen = IDEMIP_TRUE;
     }
 
     io->datagram = d;

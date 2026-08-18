@@ -674,6 +674,103 @@ void test_overlapping_fragments_abandon_the_packet(void)
     TEST_ASSERT_EQUAL_HEX16(1u, IDEMIP_IP6_REASS_IO(work_a)->frag_desc);
 }
 
+// RFC 815 sec 3 step six creates the hole behind a fragment only "if fragment.more fragments is
+// true", which discards "that hole descriptor which reaches from the last octet of the buffer to
+// infinity". A hole whose last is finite was cut by a fragment lying beyond it, so a last fragment
+// landing inside one leaves octets still missing.
+//
+// RFC 8200 sec 4.5 computes the Payload Length from "the length and offset of the last fragment", so
+// a fragment held past the end this one fixes cannot belong to the same packet: the reassembly is
+// abandoned rather than declared complete. Without this the datagram completes with the octets
+// between them never received, and the stack delivers a packet containing bytes it never got.
+void test_a_last_fragment_does_not_complete_a_packet_with_data_beyond_it(void)
+{
+    ready();
+    // 1000..1096, so the hole list becomes [0, 999] and [1096, infinity).
+    feed_plain(work_a, 40u, 1000u, 1, IDEMIP_IP6_NH_UDP, 96u, 1000u, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+    uint8_t d = IDEMIP_IP6_REASS_IO(work_a)->datagram;
+
+    // 0..8, so the first hole becomes [8, 999] - finite, because 1000..1096 cut it.
+    feed_plain(work_a, 40u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 1001u, 2u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_FALSE(IDEMIP_IP6_REASS_IO(work_a)->complete);
+
+    // 8..16 with the M flag clear. It starts where the hole starts and ends inside it, so RFC 815
+    // step six with the M test alone puts nothing back and the hole [8, 999] is dropped whole.
+    feed_plain(work_a, 40u, 8u, 0, IDEMIP_IP6_NH_UDP, 8u, 1002u, 3u);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP6_REASS_IO(work_a)->complete,
+                              "octets 16 through 999 were never received, and the packet was completed");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_REASS_ERR_OVERLAP, IDEMIP_IP6_REASS_IO(work_a)->err);
+    TEST_ASSERT_EQUAL_UINT8(d, IDEMIP_IP6_REASS_IO(work_a)->datagram);
+    // every fragment already received is still reachable, so the caller unpins each descriptor
+    TEST_ASSERT_EQUAL_UINT8(2u, IDEMIP_IP6_REASS_IO(work_a)->frag_count);
+    frag_at(work_a, d, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+}
+
+// The same rule the other way round: the end is fixed, so a fragment arriving past it is the same
+// contradiction.
+void test_a_fragment_past_the_end_a_last_fragment_fixed_abandons_the_packet(void)
+{
+    ready();
+    feed_plain(work_a, 41u, 8u, 0, IDEMIP_IP6_NH_UDP, 8u, 1000u, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_FALSE(IDEMIP_IP6_REASS_IO(work_a)->complete);
+
+    feed_plain(work_a, 41u, 64u, 1, IDEMIP_IP6_NH_UDP, 8u, 1001u, 2u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_REASS_ERR_OVERLAP, IDEMIP_IP6_REASS_IO(work_a)->err);
+}
+
+// Two last fragments naming different ends cannot both be the sec 4.5 "last fragment packet".
+void test_two_last_fragments_naming_different_ends_abandon_the_packet(void)
+{
+    ready();
+    feed_plain(work_a, 42u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 1000u, 1u);
+    feed_plain(work_a, 42u, 8u, 0, IDEMIP_IP6_NH_UDP, 8u, 1001u, 2u);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP6_REASS_IO(work_a)->complete, "0 through 16 arrived whole");
+
+    ready();
+    feed_plain(work_a, 43u, 8u, 0, IDEMIP_IP6_NH_UDP, 8u, 1000u, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+    feed_plain(work_a, 43u, 24u, 0, IDEMIP_IP6_NH_UDP, 8u, 1001u, 2u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_REASS_ERR_OVERLAP, IDEMIP_IP6_REASS_IO(work_a)->err);
+}
+
+// RFC 8200 sec 4.5: "If the fragment is a whole datagram (that is, both the Fragment Offset field and
+// the M flag are zero), then it does not need any further reassembly and should be processed as a
+// fully reassembled packet ... Any other fragments that match this packet (i.e., the same IPv6 Source
+// Address, IPv6 Destination Address, and Fragment Identification) should be processed independently."
+//
+// RFC 6946 is why this matters: an attacker who guesses a reassembly's {Source, Destination,
+// Identification} sends one atomic fragment, and if it were filed into that reassembly it would either
+// overlap the offset-zero fragment already held and abandon the whole packet, or displace it.
+void test_an_atomic_fragment_is_processed_independently_of_a_reassembly_it_matches(void)
+{
+    ready();
+    feed_plain(work_a, 44u, 0u, 1, IDEMIP_IP6_NH_UDP, 1000u, 1000u, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_FALSE(IDEMIP_IP6_REASS_IO(work_a)->complete);
+    uint8_t held = IDEMIP_IP6_REASS_IO(work_a)->datagram;
+
+    // The same {src, dst, ident}, offset zero, M zero: a whole datagram of its own.
+    feed_plain(work_a, 44u, 0u, 0, IDEMIP_IP6_NH_UDP, 8u, 1001u, 2u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP6_REASS_IO(work_a)->complete,
+                             "a whole datagram needs no further reassembly");
+    TEST_ASSERT_NOT_EQUAL_UINT8_MESSAGE(held, IDEMIP_IP6_REASS_IO(work_a)->datagram,
+                                        "the atomic fragment was filed into the reassembly it matched");
+
+    // The reassembly it shares a key with is untouched, and its fragment still reachable to unpin.
+    frag_at(work_a, held, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status,
+                                  "the atomic fragment disturbed the reassembly it matched");
+    TEST_ASSERT_EQUAL_HEX16(1u, IDEMIP_IP6_REASS_IO(work_a)->frag_desc);
+}
+
 // An abandoned packet takes no further fragment: sec 4.5 abandons "reassembly of that packet", so a
 // matching fragment starts a new one rather than joining it.
 void test_an_abandoned_packet_takes_no_more_fragments(void)
