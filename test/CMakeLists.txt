@@ -99,6 +99,12 @@ set(IDEMIP_SUITE_CAP_test_tick     IPV4)
 # dispatch is the join, so its suite carries one frame all the way to a binding in each of the four.
 set(IDEMIP_SUITE_CAP_test_dispatch IPV4 IPV6 TCP UDP)
 # test_checksum has no gate: checksum.h is a base facility, ungated like ProtoCore's mmgr/endian.h.
+# test_loopback drives ARP (RFC 826), ICMP (RFC 792), IPv4 fragmentation (RFC 791 sec 3.2), UDP and
+# TCP over two instances. Every one of those exchanges is IPv4, and IDEMIP_ENABLE_IPV4 already
+# requires IDEMIP_ENABLE_ETHERNET, so IPV4 is the gate whose absence removes the whole suite. The
+# map holds one capability per suite, the same limit test_raw_pcb records above: a build with IPV4
+# on and TCP or UDP off would still not compile this suite.
+set(IDEMIP_SUITE_CAP_test_loopback IPV4)
 
 set(IDEMIP_SKIPPED "")
 
