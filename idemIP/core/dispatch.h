@@ -159,6 +159,12 @@ typedef enum IDEMIP_ENUM_PACKED
     IDEMIP_DISPATCH_DROP_IP_ADDRESS, ///< ipInAddrErrors: the destination is not this host's
     IDEMIP_DISPATCH_DROP_IP_SOURCE,  ///< ipInAddrErrors: the source is one RFC 1122 sec 3.2.1.3 bars
     IDEMIP_DISPATCH_DROP_IP_PROTO,   ///< ipInUnknownProtos: no pcb kind claims the Protocol field
+    /** ipInHdrErrors: a RFC 8200 sec 4.4 Routing header carrying a non-zero Segments Left, whose
+     *  Routing Type this library executes none of. sec 4.4: "the node must discard the packet and send
+     *  an ICMP Parameter Problem, Code 0, message to the packet's Source Address, pointing to the
+     *  unrecognized Routing Type." The discard is here; the message is the caller's to build through
+     *  icmp6_in.h, the same division DROP_NO_PCB uses for Port Unreachable. */
+    IDEMIP_DISPATCH_DROP_IP6_ROUTING,
     IDEMIP_DISPATCH_DROP_NO_PCB,     ///< ipInDiscards: nothing is bound to the port or protocol
     IDEMIP_DISPATCH_DROP_REASS,      ///< ipInDiscards: the reassembler had no room, or refused it
     IDEMIP_DISPATCH_DROP_NO_DESC,    ///< ipInDiscards: retention needs a descriptor and there is none
@@ -344,6 +350,9 @@ typedef struct
  * @var DispatchIo::text_len    octets of segment text the delivery covers
  * @var DispatchIo::acked       octets SND.UNA advanced by
  * @var DispatchIo::reply       the segment tcp_in asked to be sent, or the aggregate an ack flush owes
+ * @var DispatchIo::err_ptr     octets from the start of the IP header to the field a drop points at,
+ *                              which is what an RFC 4443 sec 3.4 Parameter Problem carries in its
+ *                              Pointer. Read only for a drop whose reason names it.
  */
 typedef struct
 {
@@ -372,6 +381,7 @@ typedef struct
     uint8_t datagram;
     uint8_t netif;
     uint16_t desc;
+    uint16_t err_ptr;
 
 #if IDEMIP_ENABLE_TCP
     uint32_t tcp_act;

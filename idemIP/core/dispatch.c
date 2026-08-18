@@ -254,6 +254,7 @@ static void d_reset(DispatchIo *io)
     io->datagram = 0u;
     io->netif = IDEMIP_DISPATCH_NETIF_NONE;
     io->desc = IDEMIP_DISPATCH_DESC_NONE;
+    io->err_ptr = 0u;
 #if IDEMIP_ENABLE_TCP
     io->tcp_act = 0u;
     io->text_seq = 0u;
@@ -1364,6 +1365,19 @@ static void d_ip6(uint8_t *restrict work, const uint8_t *ip6, size_t avail)
     if (!d_ip6_local(work, idemip_ip6_dst(ip6)))
     {
         io->act |= IDEMIP_DISPATCH_ACT_FORWARD;
+        return;
+    }
+    // RFC 8200 sec 4.4: "If, while processing a received packet, a node encounters a Routing header
+    // with an unrecognized Routing Type value ... If Segments Left is non-zero, the node must discard
+    // the packet and send an ICMP Parameter Problem, Code 0, message to the packet's Source Address,
+    // pointing to the unrecognized Routing Type." A node only processes the Routing header of a packet
+    // addressed to it, so this sits behind the local test. The walk records nothing for a Segments
+    // Left of zero, which the same section ignores.
+    if (chain.routed)
+    {
+        io->err_ptr = (uint16_t)(chain.routing_hdr + IDEMIP_IP6_RT_OFF_TYPE);
+        d_drop(work, IDEMIP_DISPATCH_DROP_IP6_ROUTING, IDEMIP_STAT_IF_IN_ERRORS);
+        d_bump(work, IDEMIP_STAT_IP6_IN_HDR_ERRORS);
         return;
     }
     if (chain.fragmented)

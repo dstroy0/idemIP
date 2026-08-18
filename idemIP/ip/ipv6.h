@@ -390,7 +390,15 @@ IDEMIP_INLINE uint8_t idemip_ip6_rt_type(const uint8_t *r)
  * @var IdemIpIp6Chain::frag_hdr   octets to the Fragment header, set only when @c fragmented
  * @var IdemIpIp6Chain::next_hdr   the upper-layer protocol, or IDEMIP_IP6_NH_NONE per sec 4.7
  * @var IdemIpIp6Chain::hops       extension headers stepped over
+ * @var IdemIpIp6Chain::routing_hdr octets to the first sec 4.4 Routing header carrying a non-zero
+ *                                 Segments Left, set only when @c routed. This library executes no
+ *                                 Routing Type, so every one of them is sec 4.4's unrecognized case:
+ *                                 "If Segments Left is non-zero, the node must discard the packet and
+ *                                 send an ICMP Parameter Problem, Code 0, message to the packet's
+ *                                 Source Address, pointing to the unrecognized Routing Type." One
+ *                                 whose Segments Left is zero is ignored, as the same section says.
  * @var IdemIpIp6Chain::fragmented a sec 4.5 Fragment header appeared in the chain
+ * @var IdemIpIp6Chain::routed     such a Routing header appeared
  * @var IdemIpIp6Chain::ok         every stepped header lay wholly inside the span, and no Next
  *                                 Header of zero appeared below the IPv6 header
  */
@@ -398,9 +406,11 @@ typedef struct
 {
     size_t offset;
     size_t frag_hdr;
+    size_t routing_hdr;
     uint8_t next_hdr;
     uint16_t hops;
     idemip_bool fragmented;
+    idemip_bool routed;
     idemip_bool ok;
 } IdemIpIp6Chain;
 
@@ -427,9 +437,11 @@ IDEMIP_INLINE IdemIpIp6Chain idemip_ip6_walk(const uint8_t *p, size_t len)
     IdemIpIp6Chain c;
     c.offset = IDEMIP_IP6_OFF_PAYLOAD;
     c.frag_hdr = 0u;
+    c.routing_hdr = 0u;
     c.next_hdr = IDEMIP_IP6_NH_NONE;
     c.hops = 0u;
     c.fragmented = IDEMIP_FALSE;
+    c.routed = IDEMIP_FALSE;
     c.ok = IDEMIP_FALSE;
 
     if (len < IDEMIP_IPV6_HDR_LEN)
@@ -459,6 +471,13 @@ IDEMIP_INLINE IdemIpIp6Chain idemip_ip6_walk(const uint8_t *p, size_t len)
         {
             c.fragmented = IDEMIP_TRUE;
             c.frag_hdr = c.offset;
+        }
+        // sec 4.4, over a Routing Type this library executes none of. Segments Left zero is the case
+        // the same section ignores, so only a non-zero one is recorded.
+        if (c.next_hdr == IDEMIP_IP6_NH_ROUTING && !c.routed && idemip_ip6_rt_segs_left(p + c.offset) != 0u)
+        {
+            c.routed = IDEMIP_TRUE;
+            c.routing_hdr = c.offset;
         }
         c.next_hdr = idemip_ip6_ext_next_hdr(p + c.offset);
         c.offset += step;

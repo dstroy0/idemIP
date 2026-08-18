@@ -191,6 +191,26 @@ static uint16_t bind_udp4(uint16_t port)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
     return pcb;
 }
+
+#if IDEMIP_ENABLE_IPV6
+static uint16_t bind_udp6(uint16_t port)
+{
+    UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
+    up->open_args.ip_version = 6u;
+    up->open_args.lite = IDEMIP_FALSE;
+    UdpPcb.open(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+    uint16_t pcb = up->index;
+    up->bind_args.index = pcb;
+    up->bind_args.ip = g_local_ip6;
+    up->bind_args.port = port;
+    up->bind_args.zone = 0u;
+    up->bind_args.netif = 0u;
+    UdpPcb.bind(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+    return pcb;
+}
+#endif
 #endif
 
 static void wire_units(void)
@@ -1214,6 +1234,68 @@ void test_an_ipv6_packet_for_our_address_is_delivered(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_UDP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_RECEIVES));
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_DELIVERS));
+}
+
+// A Routing header carrying @p segs_left, ahead of an eight-octet UDP header. The Routing Type is 43,
+// which no allocation names and this library executes none of either way.
+static size_t build_ip6_routing(uint8_t *f, size_t off, uint8_t segs_left)
+{
+    const size_t rt = off + IDEMIP_IPV6_HDR_LEN;
+    (void)build_ip6(f, off, IDEMIP_IP6_NH_ROUTING, g_remote_ip6, g_local_ip6,
+                    IDEMIP_IP6_EXT_UNIT + IDEMIP_UDP_HDR_LEN);
+    f[rt + IDEMIP_IP6_EXT_OFF_NEXT_HDR] = IDEMIP_IP6_NH_UDP;
+    f[rt + IDEMIP_IP6_EXT_OFF_LEN] = 0u; // 8 octets, the header alone
+    f[rt + IDEMIP_IP6_RT_OFF_TYPE] = 43u;
+    f[rt + IDEMIP_IP6_RT_OFF_SEGS_LEFT] = segs_left;
+    for (size_t i = 4u; i < IDEMIP_IP6_EXT_UNIT; i++)
+    {
+        f[rt + i] = 0u;
+    }
+    return rt + IDEMIP_IP6_EXT_UNIT;
+}
+
+// RFC 8200 sec 4.4: "If, while processing a received packet, a node encounters a Routing header with
+// an unrecognized Routing Type value, the required behavior of the node depends on the value of the
+// Segments Left field ... If Segments Left is non-zero, the node must discard the packet and send an
+// ICMP Parameter Problem, Code 0, message to the packet's Source Address, pointing to the
+// unrecognized Routing Type."
+//
+// This library executes no Routing Type, so every one of them is that case. The chain walk stepped
+// over the header on its length alone and delivered the packet.
+void test_a_routing_header_with_segments_left_is_discarded(void)
+{
+    (void)bind_udp6(4001u);
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t udp_off = build_ip6_routing(g_frame, off, 1u);
+    size_t end = build_udp(g_frame, udp_off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, udp_off, g_remote_ip6, g_local_ip6);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP6_ROUTING, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a Routing header this node cannot execute was stepped over");
+    TEST_ASSERT_FALSE(IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER);
+    // "pointing to the unrecognized Routing Type", which is the third octet of that header
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE((uint16_t)(IDEMIP_IPV6_HDR_LEN + IDEMIP_IP6_RT_OFF_TYPE),
+                                     IDEMIP_DISPATCH_IO(work_a)->err_ptr,
+                                     "the Pointer a Parameter Problem would carry is wrong");
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_HDR_ERRORS));
+}
+
+// "If Segments Left is zero, the node must ignore the Routing header and proceed to process the next
+// header in the packet, whose type is identified by the Next Header field in the Routing header."
+void test_a_routing_header_with_no_segments_left_is_ignored(void)
+{
+    uint16_t pcb = bind_udp6(4001u);
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t udp_off = build_ip6_routing(g_frame, off, 0u);
+    size_t end = build_udp(g_frame, udp_off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, udp_off, g_remote_ip6, g_local_ip6);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "sec 4.4 ignores a Routing header whose Segments Left is zero");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
 }
 
 // RFC 8200 sec 8.1: "IPv6 receivers must discard UDP packets containing a zero checksum". The
