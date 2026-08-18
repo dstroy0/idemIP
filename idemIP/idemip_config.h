@@ -834,6 +834,16 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_IP4_ROUTE_BORROW                                                                                        \
     (IDEMIP_IP4_ROUTE_CTX_BYTES + (IDEMIP_IP4_ROUTES << IDEMIP_IP4_ROUTE_ENTRY_SHIFT))
 
+// --- ip4_forward: RFC 1812 sec 5.2.1.2 -----------------------------------------------------------
+// No table: an RFC 1812 sec 5.2.1.2 decision is a function of one datagram and the route the caller
+// already looked up, so the borrow is the ip4_forward.h operand block and the sec 5.3.5.2 and sec
+// 5.3.7 switches. sizeof(Ip4ForwardIo) is 80 on a 64-bit host and the context is 8, so the assert in
+// ip4_forward.c holds at 128.
+#ifndef IDEMIP_IP4_FORWARD_CTX_BYTES
+#define IDEMIP_IP4_FORWARD_CTX_BYTES 128u
+#endif
+#define IDEMIP_IP4_FORWARD_BORROW (IDEMIP_IP4_FORWARD_CTX_BYTES)
+
 // --- ip4_reass: RFC 791 sec 3.2, RFC 815 ---------------------------------------------------------
 // Three tables. A datagram entry keys on the RFC 791 sec 3.2 buffer identifier, "the concatenation
 // of the source, destination, protocol, and identification fields", and carries its deadline, its
@@ -925,6 +935,16 @@ typedef enum IDEMIP_ENUM_PACKED
     (IDEMIP_IP6_REASS_CTX_BYTES + (IDEMIP_IP6_REASS_DATAGRAMS << IDEMIP_IP6_REASS_DATAGRAM_ENTRY_SHIFT) +              \
      (IDEMIP_IP6_REASS_FRAGS << IDEMIP_IP6_REASS_FRAG_ENTRY_SHIFT) +                                                   \
      (IDEMIP_IP6_REASS_HOLES << IDEMIP_IP6_REASS_HOLE_ENTRY_SHIFT))
+
+// --- ip6_forward: RFC 8200 sec 3, RFC 4861 sec 8 -------------------------------------------------
+// No table: an RFC 8200 sec 3 Hop Limit decision is a function of one packet and the route the caller
+// already looked up, so the borrow is the ip6_forward.h operand block and the mark clear leaves.
+// sizeof(Ip6ForwardIo) is 64 on a 64-bit host and the context is 4, so the assert in ip6_forward.c
+// holds at 128.
+#ifndef IDEMIP_IP6_FORWARD_CTX_BYTES
+#define IDEMIP_IP6_FORWARD_CTX_BYTES 128u
+#endif
+#define IDEMIP_IP6_FORWARD_BORROW (IDEMIP_IP6_FORWARD_CTX_BYTES)
 
 // --- nd6: RFC 4861 sec 5.1, RFC 4862, PER INTERFACE ----------------------------------------------
 // RFC 4861 sec 5.1: "Hosts will need to maintain the following pieces of information for each
@@ -1180,6 +1200,7 @@ typedef enum IDEMIP_ENUM_PACKED
 /** @brief Every borrow a unit holding one table across all interfaces takes. */
 #define IDEMIP_SHARED_BORROW                                                                                           \
     (IDEMIP_NETIF_BORROW + IDEMIP_LOOPIF_BORROW + IDEMIP_ARP_BORROW + IDEMIP_IP4_ROUTE_BORROW +                        \
+     IDEMIP_IP4_FORWARD_BORROW + IDEMIP_IP6_FORWARD_BORROW +                                                           \
      IDEMIP_IP4_REASS_BORROW + IDEMIP_IGMP_BORROW + IDEMIP_IP6_REASS_BORROW + IDEMIP_MLD6_BORROW +                     \
      IDEMIP_RAW_PCB_BORROW + IDEMIP_UDP_PCB_BORROW + IDEMIP_TCP_PCB_BORROW + IDEMIP_TCP_IN_BORROW +                    \
      IDEMIP_TCP_OUT_BORROW + IDEMIP_TCP_ISN_BORROW +                                                                   \
