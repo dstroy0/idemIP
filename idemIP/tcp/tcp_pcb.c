@@ -311,9 +311,11 @@ static idemip_bool tcp_pcb_transition_ok(IdemIpTcpState from, IdemIpTcpState to)
 
 // --- the three queues ------------------------------------------------------
 
-// Every send-queue segment on one TCB's two queues, then every held segment on its out-of-order
-// queue, released. Each walk is bounded by its table's count, so a link cycle cannot spin it.
-static void tcp_pcb_queues_free(uint8_t *restrict work, uint16_t pcb)
+// Every segment on one TCB's two send queues, released. Each walk is bounded by the table's count,
+// so a link cycle cannot spin it. A send-queue segment names the caller's octets through a pointer
+// and pins nothing, so dropping it releases no descriptor. The out-of-order queue is left alone:
+// each entry there names a pinned receive descriptor, and only tcp_pcb_oos_free reports one back.
+static void tcp_pcb_send_queues_free(uint8_t *restrict work, uint16_t pcb)
 {
     TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, pcb)->f;
     for (uint8_t which = 0u; which < 2u; which++)
@@ -326,16 +328,8 @@ static void tcp_pcb_queues_free(uint8_t *restrict work, uint16_t pcb)
             at = next;
         }
     }
-    uint16_t held = t->ooseq;
-    for (uint16_t n = 0u; n < (uint16_t)TCP_PCB_OOSEQ_ENTRIES && held < (uint16_t)TCP_PCB_OOSEQ_ENTRIES; n++)
-    {
-        uint16_t next = TCP_PCB_OOS_AT(work, held)->f.next;
-        memset(TCP_PCB_OOS_AT(work, held)->raw, 0, sizeof(TcpPcbOosEntry));
-        held = next;
-    }
     t->unsent = IDEMIP_TCP_PCB_NONE;
     t->unacked = IDEMIP_TCP_PCB_NONE;
-    t->ooseq = IDEMIP_TCP_PCB_NONE;
 }
 
 // RFC 9293 sec 3.4 case (b), "all sequence numbers occupied by a segment have been acknowledged
@@ -567,9 +561,11 @@ static void tcp_pcb_open(uint8_t *restrict work)
 
 // RFC 9293 sec 3.3.2's "delete TCB", which sec 3.10.4 CLOSE reaches from LISTEN and SYN-SENT, sec
 // 3.10.5 ABORT reaches from every state, Figure 5 reaches from LAST-ACK on "rcv ACK of FIN", and
-// Figure 5 reaches from TIME-WAIT on "Timeout=2MSL". Every segment on the TCB's three queues goes
-// with it. A TCB that is not open is sec 3.10.4's CLOSED case, "error: connection does not exist",
-// which no retry changes.
+// Figure 5 reaches from TIME-WAIT on "Timeout=2MSL". Every segment on the TCB's two send queues goes
+// with it. A TCB still holding an out-of-order segment is BUSY: each of those names a pinned receive
+// descriptor, and an oos_free is what reports one back, so draining the hold makes this call succeed.
+// A TCB that is not open is sec 3.10.4's CLOSED case, "error: connection does not exist", which no
+// retry changes.
 static void tcp_pcb_close(uint8_t *restrict work)
 {
     if (!work)
@@ -587,7 +583,12 @@ static void tcp_pcb_close(uint8_t *restrict work)
     {
         return;
     }
-    tcp_pcb_queues_free(work, io->pcb_args.index);
+    if (t->ooseq != IDEMIP_TCP_PCB_NONE)
+    {
+        io->status = IDEMIP_BUSY; // held segments pin receive descriptors, and an oos_free returns each
+        return;
+    }
+    tcp_pcb_send_queues_free(work, io->pcb_args.index);
     memset(TCP_PCB_TCB_AT(work, io->pcb_args.index)->raw, 0, sizeof(TcpPcbTcbEntry));
     io->status = IDEMIP_OK;
 }

@@ -1768,9 +1768,10 @@ void test_a_held_segment_with_no_octets_is_refused(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
 }
 
-// A close takes the whole hold with it, so every pinned descriptor the connection named is reported
-// free for the caller to unpin.
-void test_a_close_frees_every_held_segment(void)
+// A close cannot take the hold with it. Every held segment names a receive descriptor the caller
+// pinned, and RFC 9293 sec 3.10.7.4's release is the only thing that reports one back, so sec 3.10.4's
+// "Delete TCB" is BUSY while the hold is not empty and leaves every entry standing.
+void test_a_close_is_busy_while_the_hold_still_names_a_pinned_descriptor(void)
 {
     TcpPcb.clear(work_a);
     uint16_t pcb = open4(work_a);
@@ -1779,18 +1780,70 @@ void test_a_close_frees_every_held_segment(void)
         IO(work_a)->oos_args.pcb = pcb;
         IO(work_a)->oos_args.seq = (uint32_t)(1000u + (i * 100u));
         IO(work_a)->oos_args.len = 100u;
-        IO(work_a)->oos_args.desc = i;
+        IO(work_a)->oos_args.desc = (uint16_t)(i + 1u);
         TcpPcb.oos_alloc(work_a);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     }
     IO(work_a)->pcb_args.index = pcb;
     TcpPcb.close(work_a);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status, "a close discarded the pinned frames");
+
+    IO(work_a)->pcb_args.index = pcb;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "a BUSY close deleted the TCB anyway");
+    uint16_t at = IO(work_a)->info.ooseq;
+    for (uint16_t i = 0u; i < IDEMIP_TCP_OOSEQ_SEGS; i++)
+    {
+        TEST_ASSERT_TRUE_MESSAGE(at < OOSEQ_ENTRIES, "a BUSY close shortened the hold");
+        IO(work_a)->oos_args.index = at;
+        TcpPcb.oos_load(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        TEST_ASSERT_EQUAL_UINT16_MESSAGE((uint16_t)(i + 1u), IO(work_a)->oos.desc,
+                                         "a held segment lost the descriptor it pins");
+        at = IO(work_a)->oos.next;
+    }
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, at);
+}
+
+// Draining the hold through oos_free reports every pinned descriptor back, one per call, and the
+// close that was BUSY then completes sec 3.10.4's "Delete TCB" with the whole hold accounted for.
+void test_a_close_succeeds_once_the_hold_is_drained(void)
+{
+    TcpPcb.clear(work_a);
+    uint16_t pcb = open4(work_a);
+    for (uint16_t i = 0u; i < IDEMIP_TCP_OOSEQ_SEGS; i++)
+    {
+        IO(work_a)->oos_args.pcb = pcb;
+        IO(work_a)->oos_args.seq = (uint32_t)(1000u + (i * 100u));
+        IO(work_a)->oos_args.len = 100u;
+        IO(work_a)->oos_args.desc = (uint16_t)(i + 1u);
+        TcpPcb.oos_alloc(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    }
+    for (uint16_t i = 0u; i < IDEMIP_TCP_OOSEQ_SEGS; i++)
+    {
+        IO(work_a)->pcb_args.index = pcb;
+        TcpPcb.load(work_a);
+        uint16_t head = IO(work_a)->info.ooseq;
+        TEST_ASSERT_TRUE_MESSAGE(head < OOSEQ_ENTRIES, "the hold ran out before every frame came back");
+        IO(work_a)->oos_args.index = head;
+        TcpPcb.oos_load(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        TEST_ASSERT_EQUAL_UINT16_MESSAGE((uint16_t)(i + 1u), IO(work_a)->oos.desc,
+                                         "the drain reported a descriptor that was never pinned");
+        IO(work_a)->oos_args.index = head;
+        IO(work_a)->oos_args.pcb = pcb;
+        TcpPcb.oos_free(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    }
+    IO(work_a)->pcb_args.index = pcb;
+    TcpPcb.close(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "a drained connection would not close");
     for (uint16_t i = 0u; i < OOSEQ_ENTRIES; i++)
     {
         IO(work_a)->oos_args.index = i;
         TcpPcb.oos_load(work_a);
-        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a close leaked a held segment");
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a held segment outlived the close");
     }
 }
 

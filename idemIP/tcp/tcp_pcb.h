@@ -551,14 +551,18 @@ typedef struct
  *
  * Nothing here blocks. An entry that cannot finish now reports IDEMIP_BUSY and returns, and the
  * caller comes back on a later tick. A table with no free entry and a bind with no free port are
- * BUSY, since a close frees both. A borrow that was never cleared, an index past a table, an entry
- * that is not open, and a state that forbids the call are ERR.
+ * BUSY, since a close frees both, and a close of a TCB still holding an out-of-order segment is BUSY,
+ * since an oos_free frees one. A borrow that was never cleared, an index past a table, an entry that
+ * is not open, and a state that forbids the call are ERR.
  *
  * @var TcpPcbNs::clear         zero the context and the four tables, and mark the borrow usable
  * @var TcpPcbNs::open          take a free TCB, reporting it in @ref TcpPcbIo::index. BUSY when every
  *                              TCB is open.
  * @var TcpPcbNs::close         release the TCB @ref TcpPcbPcbArgs::index names, with every segment on
- *                              its queues
+ *                              its two send queues. BUSY while its out-of-order queue still holds a
+ *                              segment, since each names a pinned receive descriptor that only an
+ *                              oos_free reports back; drain the hold from @ref TcpPcbInfo::ooseq and
+ *                              the call succeeds.
  * @var TcpPcbNs::bind          set that TCB's local address and port, reporting the port it settled
  *                              on in @ref TcpPcbIo::port. IDEMIP_TCP_PCB_PORT_ANY draws from RFC
  *                              6335 sec 6's Dynamic Ports. sec 3.9.1.1 (MUST-45) fixes the local
