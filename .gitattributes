@@ -1,3 +1,11 @@
 # Every file in this tree is LF in the repository and LF in the working copy. The Pi and WSL build
 # this too, and CRLF kills a shebang on Linux.
 * text=auto eol=lf
+
+# Three files every unit appends its own lines to and no unit rewrites: a borrow macro, a sizes
+# row, a suite capability. Concurrent appends are not a semantic conflict, so union keeps both
+# sides. A genuine clash still fails the build: two units defining one macro differently is an
+# error the compiler reports, which is where it belongs.
+idemIP/idemip_config.h merge=union
+tools/idemip_sizes.c    merge=union
+test/CMakeLists.txt     merge=union
