@@ -222,3 +222,753 @@ void test_the_hole_table_matches_rfc_815(void)
     TEST_ASSERT_TRUE((1u << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT) >= 8u);
     TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_INFINITY >= IDEMIP_IP4_TOTAL_LEN_MAX - 1u);
 }
+
+// =============================================================================
+// Behavior: RFC 791 sec 3.2 and RFC 815
+// =============================================================================
+// Neither RFC prints a reassembly byte vector. RFC 791 sec 3.2 prints the example procedure's
+// nineteen numbered steps and RFC 815 sec 3 prints the eight steps, both as pseudocode over named
+// header fields, so every fragment below is built with idemip_ip4_build from the RFC 791 sec 3.1
+// field values and the assertions are the properties those two texts state.
+
+#define FRAG_BUF 96
+#define FRAG_SLOTS 16
+static uint8_t g_frags[FRAG_SLOTS][FRAG_BUF];
+
+// The RFC 791 sec 3.2 buffer identifier this suite reuses, "the concatenation of the source,
+// destination, protocol, and identification fields".
+#define SRC 0x0A000001u
+#define DST 0x0A000002u
+#define PROTO IDEMIP_IP4_PROTO_UDP
+#define ID 0x1234u
+
+// A Time to Live under IDEMIP_IP_REASS_MAXAGE_S, so RFC 791 sec 3.2 step (17)'s MAX(TIMER,TTL) leaves
+// the deadline at step (7)'s lower bound unless a case raises it on purpose.
+#define TTL_LOW 8u
+
+// One fragment header. ihl is in 32-bit words, so 5 is the option-free header of RFC 791 sec 3.1 and
+// 6 carries one word of options, which RFC 815 sec 6 says only the first fragment need carry.
+static uint8_t *frag_full(int slot, uint32_t src, uint32_t dst, uint8_t proto, uint16_t id, uint16_t off_units,
+                          uint16_t data_len, int mf, uint8_t ttl, uint8_t ihl)
+{
+    uint8_t *h = g_frags[slot];
+    IdemIpIp4Fields f;
+    memset(h, 0, FRAG_BUF);
+    memset(&f, 0, sizeof f);
+    f.tos = 0u;
+    f.total_len = (uint16_t)((uint16_t)(ihl * 4u) + data_len);
+    f.id = id;
+    f.flags_frag = (uint16_t)((mf ? IDEMIP_IP4_FLAG_MF : 0u) | off_units);
+    f.ttl = ttl;
+    f.proto = proto;
+    f.src = src;
+    f.dst = dst;
+    idemip_ip4_build(h, &f);
+    if (ihl != IDEMIP_IP4_IHL_MIN)
+    {
+        idemip_ip4_set_ver_ihl(h, ihl);
+        idemip_ip4_recksum(h);
+    }
+    return h;
+}
+
+// A fragment of the suite's buffer identifier, offset in RFC 791 sec 3.1's eight-octet units.
+static uint8_t *fr(int slot, uint16_t off_units, uint16_t data_len, int mf)
+{
+    return frag_full(slot, SRC, DST, PROTO, ID, off_units, data_len, mf, TTL_LOW, (uint8_t)IDEMIP_IP4_IHL_MIN);
+}
+
+static uint8_t *fr_id(int slot, uint16_t id, uint16_t off_units, uint16_t data_len, int mf)
+{
+    return frag_full(slot, SRC, DST, PROTO, id, off_units, data_len, mf, TTL_LOW, (uint8_t)IDEMIP_IP4_IHL_MIN);
+}
+
+static IdemIpStatus hold_at(uint8_t *w, const uint8_t *h, uint16_t desc, uint32_t now_ms)
+{
+    IDEMIP_IP4_REASS_IO(w)->now_ms = now_ms;
+    IDEMIP_IP4_REASS_IO(w)->hold_args.hdr = h;
+    IDEMIP_IP4_REASS_IO(w)->hold_args.desc = desc;
+    IDEMIP_IP4_REASS_IO(w)->hold_args.len = idemip_ip4_total_len(h);
+    Ip4Reass.hold(w);
+    return IDEMIP_IP4_REASS_IO(w)->status;
+}
+
+#define T0 1000u
+
+static IdemIpStatus hold_frag(uint8_t *w, const uint8_t *h, uint16_t desc)
+{
+    return hold_at(w, h, desc, T0);
+}
+
+static IdemIpStatus tick_at(uint8_t *w, uint32_t now_ms)
+{
+    IDEMIP_IP4_REASS_IO(w)->now_ms = now_ms;
+    Ip4Reass.tick(w);
+    return IDEMIP_IP4_REASS_IO(w)->status;
+}
+
+static IdemIpStatus reclaim_one(uint8_t *w)
+{
+    Ip4Reass.reclaim(w);
+    return IDEMIP_IP4_REASS_IO(w)->status;
+}
+
+static IdemIpStatus next_one(uint8_t *w, uint8_t index)
+{
+    IDEMIP_IP4_REASS_IO(w)->next_args.index = index;
+    Ip4Reass.next(w);
+    return IDEMIP_IP4_REASS_IO(w)->status;
+}
+
+static IdemIpStatus release_row(uint8_t *w, uint8_t index)
+{
+    IDEMIP_IP4_REASS_IO(w)->release_args.index = index;
+    Ip4Reass.release(w);
+    return IDEMIP_IP4_REASS_IO(w)->status;
+}
+
+// The deadline RFC 791 sec 3.2 step (7) sets, "TIMER <- TLB", with the lower bound the section puts at
+// 15 seconds and idemip_config.h names IDEMIP_IP_REASS_MAXAGE_S.
+#define MAXAGE_MS (T0 + (IDEMIP_IP_REASS_MAXAGE_S * 1000u))
+
+// --- RFC 815 sec 3: the eight steps ------------------------------------------
+
+// The two-fragment case, in order. The list opens at one hole from zero to infinity, the first
+// fragment leaves a hole reaching to infinity because More Fragments is set, and the last fragment
+// empties the list, which is step 8: "the datagram is now complete".
+void test_two_fragments_in_order_complete_the_datagram(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 11u));
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_REASS_HOLDING, IDEMIP_IP4_REASS_IO(work_a)->state);
+    TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+    const uint8_t row = IDEMIP_IP4_REASS_IO(work_a)->index;
+    TEST_ASSERT_NOT_EQUAL_UINT8(IDEMIP_IP4_REASS_INDEX_NONE, row);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 1u, 8u, 0), 12u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT8(row, IDEMIP_IP4_REASS_IO(work_a)->index);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_REASS_COMPLETE, IDEMIP_IP4_REASS_IO(work_a)->state);
+    TEST_ASSERT_EQUAL_UINT16(16u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+}
+
+// RFC 815 sec 1: the algorithm "can reassemble a datagram from any number of fragments arriving in
+// any order". The last fragment first, then the first.
+void test_fragments_out_of_order_complete_the_datagram(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 1u, 8u, 0), 21u));
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    // RFC 791 sec 3.2 step (10) fixes TDL on the last fragment whatever its arrival order.
+    TEST_ASSERT_EQUAL_UINT16(16u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 0u, 8u, 1), 22u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT16(16u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+}
+
+// RFC 815 sec 3 step 5 makes a hole for "the first part of the original hole [that] is not filled by
+// this fragment", so a last fragment at a nonzero offset leaves the list non-empty.
+void test_the_last_fragment_alone_leaves_the_leading_hole(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 2u, 8u, 0), 31u));
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT16(24u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+
+    // Fills octets 0 through 7, leaving 8 through 15.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 0u, 8u, 1), 32u));
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(2, 1u, 8u, 1), 33u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT16(24u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+}
+
+// RFC 815 sec 3: a fragment "can lie in the middle of an existing hole, breaking the hole in half and
+// leaving a smaller hole at each end". Steps 5 and 6 both fire on the one hole, and neither of the two
+// pieces alone completes the datagram.
+void test_a_fragment_in_the_middle_of_a_hole_leaves_a_hole_at_each_end(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 1u, 8u, 1), 41u));
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+
+    // The leading piece, 0 through 7. The trailing hole 16 to infinity is still there.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 0u, 8u, 1), 42u));
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(2, 2u, 8u, 0), 43u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT16(24u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+}
+
+// RFC 815 sec 3 step 6 tests More Fragments so that the hole "from the end of the datagram to
+// infinity" is never created. Without that test the list never empties, so this is the case that
+// separates a datagram that completes from one that hangs.
+void test_step_six_makes_no_hole_past_the_last_fragment(void)
+{
+    Ip4Reass.clear(work_a);
+    // A last fragment reaching to octet 7, well short of IDEMIP_IP4_REASS_INFINITY.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 1u, 8u, 0), 51u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 0u, 8u, 1), 52u));
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP4_REASS_IO(work_a)->complete,
+                             "RFC 815 step 6 must not thread a hole from the last octet to infinity");
+}
+
+// RFC 815 sec 3 steps 2 and 3: a fragment that "does not overlap with the hole in any way" leaves the
+// list alone. A fragment overlapping no hole at all is octets the row already holds, so it pins
+// nothing and cannot be made to fit by a retry.
+void test_a_duplicate_fragment_is_refused_and_pins_nothing(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 61u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(1, 0u, 8u, 1), 62u));
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+
+    // The row is untouched, so the real last fragment still completes it.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(2, 1u, 8u, 0), 63u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+
+    // Exactly two descriptors were pinned: the duplicate took no fragment slot.
+    const uint8_t row = IDEMIP_IP4_REASS_IO(work_a)->index;
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, release_row(work_a, row));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+}
+
+// RFC 815 sec 3: a fragment "may leave some remaining space at either the beginning or the end of an
+// existing hole". One that partially overlaps a hole still fills it, so it is held.
+void test_a_partially_overlapping_fragment_fills_the_hole(void)
+{
+    Ip4Reass.clear(work_a);
+    // The last fragment first: octets 8 through 15, so TDL is 16 and hole 0 through 7 remains.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 1u, 8u, 0), 71u));
+    // Octets 0 through 15, overlapping the held fragment and filling the hole.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 0u, 16u, 1), 72u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT16(16u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+}
+
+// --- RFC 791 sec 3.2: the buffer identifier ----------------------------------
+
+// "For each datagram the buffer identifier is computed as the concatenation of the source,
+// destination, protocol, and identification fields", so a fragment differing in any one of the four
+// belongs to a different datagram and opens its own row.
+void test_each_field_of_the_buffer_identifier_selects_the_row(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 81u));
+    const uint8_t row = IDEMIP_IP4_REASS_IO(work_a)->index;
+
+    // Same offsets, one field of the identifier changed each time. None may complete row zero, and
+    // each must land on a row of its own.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, frag_full(1, SRC + 1u, DST, PROTO, ID, 1u, 8u, 0, TTL_LOW,
+                                                                 (uint8_t)IDEMIP_IP4_IHL_MIN),
+                                               82u));
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_NOT_EQUAL_UINT8(row, IDEMIP_IP4_REASS_IO(work_a)->index);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, frag_full(2, SRC, DST + 1u, PROTO, ID, 1u, 8u, 0, TTL_LOW,
+                                                                 (uint8_t)IDEMIP_IP4_IHL_MIN),
+                                               83u));
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK,
+                          hold_frag(work_a, frag_full(3, SRC, DST, IDEMIP_IP4_PROTO_TCP, ID, 1u, 8u, 0, TTL_LOW,
+                                                      (uint8_t)IDEMIP_IP4_IHL_MIN),
+                                    84u));
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr_id(4, ID + 1u, 1u, 8u, 0), 85u));
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+
+    // And the matching last fragment does complete it.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(5, 1u, 8u, 0), 86u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT8(row, IDEMIP_IP4_REASS_IO(work_a)->index);
+}
+
+// RFC 791 sec 3.2 steps (2) through (5): "IF FO = 0 AND MF = 0 THEN IF buffer with BUFID is allocated
+// THEN flush all reassembly for this BUFID". The whole datagram itself is the caller's to submit, so
+// nothing of it is held and the pinned fragments of the flushed row go to reclaim.
+void test_a_whole_datagram_flushes_its_buffer_identifier(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 91u));
+    const uint8_t row = IDEMIP_IP4_REASS_IO(work_a)->index;
+
+    // Fragment Offset zero and More Fragments clear: RFC 791 sec 3.2's "whole datagram".
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(1, 0u, 64u, 0), 92u));
+    TEST_ASSERT_EQUAL_UINT8(row, IDEMIP_IP4_REASS_IO(work_a)->index);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_REASS_RECLAIM, IDEMIP_IP4_REASS_IO(work_a)->state);
+
+    // The flushed row's one descriptor comes back, and the whole datagram's own does not, because it
+    // was never pinned.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_UINT16(91u, IDEMIP_IP4_REASS_IO(work_a)->desc);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+}
+
+// The same whole datagram against a table holding no such identifier flushes nothing and names no row.
+void test_a_whole_datagram_with_no_row_names_none(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(0, 0u, 64u, 0), 101u));
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP4_REASS_INDEX_NONE, IDEMIP_IP4_REASS_IO(work_a)->index);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+}
+
+// RFC 791 sec 3.2 step (10): "IF MF = 0 THEN TDL <- TL-(IHL*4)+(FO*8)". Fragment Offset 2 units is 16
+// octets and the last fragment carries 24, so the total data length is 40.
+void test_total_len_is_the_rfc_791_total_data_length(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 2u, 24u, 0), 111u));
+    TEST_ASSERT_EQUAL_UINT16(40u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 0u, 16u, 1), 112u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT16(40u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+}
+
+// --- RFC 791 sec 3.2 step (15): handing the datagram on ----------------------
+
+// The completed datagram comes back one held fragment at a time, in ascending Fragment Offset, each
+// with the descriptor its octets are pinned in. BUSY ends the walk and the walk then starts over.
+void test_next_reports_every_fragment_in_ascending_offset(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 2u, 8u, 0), 123u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 0u, 8u, 1), 121u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(2, 1u, 8u, 1), 122u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    const uint8_t row = IDEMIP_IP4_REASS_IO(work_a)->index;
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, next_one(work_a, row));
+    TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_IP4_REASS_IO(work_a)->off);
+    TEST_ASSERT_EQUAL_UINT16(8u, IDEMIP_IP4_REASS_IO(work_a)->len);
+    TEST_ASSERT_EQUAL_UINT16(121u, IDEMIP_IP4_REASS_IO(work_a)->desc);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IPV4_HDR_LEN, IDEMIP_IP4_REASS_IO(work_a)->hdr_len);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, next_one(work_a, row));
+    TEST_ASSERT_EQUAL_UINT16(8u, IDEMIP_IP4_REASS_IO(work_a)->off);
+    TEST_ASSERT_EQUAL_UINT16(122u, IDEMIP_IP4_REASS_IO(work_a)->desc);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, next_one(work_a, row));
+    TEST_ASSERT_EQUAL_UINT16(16u, IDEMIP_IP4_REASS_IO(work_a)->off);
+    TEST_ASSERT_EQUAL_UINT16(123u, IDEMIP_IP4_REASS_IO(work_a)->desc);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, next_one(work_a, row));
+
+    // The walk restarts, so the same row reports the same first fragment again.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, next_one(work_a, row));
+    TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_IP4_REASS_IO(work_a)->off);
+    TEST_ASSERT_EQUAL_UINT16(121u, IDEMIP_IP4_REASS_IO(work_a)->desc);
+}
+
+// RFC 815 sec 6: options "are put in the first fragment only", and "until one receives the first
+// fragment of the datagram, one cannot tell how big the internet header will be", so each fragment
+// reports its own header length.
+void test_next_reports_the_header_length_of_each_fragment(void)
+{
+    Ip4Reass.clear(work_a);
+    // IHL 6: twenty fixed octets and one 32-bit word of options.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, frag_full(0, SRC, DST, PROTO, ID, 0u, 8u, 1, TTL_LOW, 6u), 131u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 1u, 8u, 0), 132u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    const uint8_t row = IDEMIP_IP4_REASS_IO(work_a)->index;
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, next_one(work_a, row));
+    TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_IP4_REASS_IO(work_a)->off);
+    TEST_ASSERT_EQUAL_UINT8(24u, IDEMIP_IP4_REASS_IO(work_a)->hdr_len);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, next_one(work_a, row));
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IPV4_HDR_LEN, IDEMIP_IP4_REASS_IO(work_a)->hdr_len);
+}
+
+// A row with holes left has nothing to hand on yet, and a later fragment can change that, so it is
+// BUSY. A row past a row that exists at all is ERR, because no fragment ever lands there.
+void test_next_on_a_gathering_row_is_busy_and_past_the_table_is_refused(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 141u));
+    const uint8_t row = IDEMIP_IP4_REASS_IO(work_a)->index;
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, next_one(work_a, row));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_REASS_HOLDING, IDEMIP_IP4_REASS_IO(work_a)->state);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, next_one(work_a, (uint8_t)IDEMIP_IP4_REASS_DATAGRAMS));
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP4_REASS_INDEX_NONE, IDEMIP_IP4_REASS_IO(work_a)->index);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, next_one(work_a, (uint8_t)IDEMIP_IP4_REASS_INDEX_NONE));
+}
+
+// --- RFC 791 sec 3.2 step (16): release, then the pins come back -------------
+
+// "free all reassembly resources for this BUFID". The row stops carrying a datagram at once and its
+// descriptors come back one call at a time, after which the row is free again.
+void test_release_then_reclaim_hands_every_descriptor_back(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 151u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 1u, 8u, 0), 152u));
+    const uint8_t row = IDEMIP_IP4_REASS_IO(work_a)->index;
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, release_row(work_a, row));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_REASS_RECLAIM, IDEMIP_IP4_REASS_IO(work_a)->state);
+
+    // Nothing to hand on any more.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, next_one(work_a, row));
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_UINT16(151u, IDEMIP_IP4_REASS_IO(work_a)->desc);
+    TEST_ASSERT_EQUAL_UINT16(8u, IDEMIP_IP4_REASS_IO(work_a)->len);
+    TEST_ASSERT_EQUAL_UINT8(row, IDEMIP_IP4_REASS_IO(work_a)->index);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_UINT16(152u, IDEMIP_IP4_REASS_IO(work_a)->desc);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+
+    // The row is free, so the whole datagram can be reassembled again on it.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(2, 0u, 8u, 1), 153u));
+    TEST_ASSERT_EQUAL_UINT8(row, IDEMIP_IP4_REASS_IO(work_a)->index);
+}
+
+// A row that carries nothing cannot be freed, and one already on its way back cannot be freed twice:
+// neither becomes possible on a retry.
+void test_release_of_a_free_or_already_released_row_is_refused(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, release_row(work_a, 0u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, release_row(work_a, (uint8_t)IDEMIP_IP4_REASS_DATAGRAMS));
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 161u));
+    const uint8_t row = IDEMIP_IP4_REASS_IO(work_a)->index;
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, release_row(work_a, row));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, release_row(work_a, row));
+}
+
+// A partly gathered row can be given up on, which is the same step (16) release.
+void test_a_gathering_row_can_be_released(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 171u));
+    const uint8_t row = IDEMIP_IP4_REASS_IO(work_a)->index;
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, release_row(work_a, row));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_UINT16(171u, IDEMIP_IP4_REASS_IO(work_a)->desc);
+}
+
+// Nothing waiting to be handed back is BUSY: a released or timed-out row will produce one, so the
+// caller comes back on a later tick.
+void test_reclaim_with_nothing_waiting_is_busy(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP4_REASS_INDEX_NONE, IDEMIP_IP4_REASS_IO(work_a)->index);
+}
+
+// --- RFC 791 sec 3.2 steps (7), (17) and (19): the timer ---------------------
+
+// Step (19): "timer expires: flush all reassembly with this BUFID", with step (7)'s "TIMER <- TLB"
+// putting the lower bound at IDEMIP_IP_REASS_MAXAGE_S. One millisecond short of it, nothing goes.
+void test_a_partial_datagram_times_out_at_the_lower_bound(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 181u));
+    const uint8_t row = IDEMIP_IP4_REASS_IO(work_a)->index;
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, tick_at(work_a, MAXAGE_MS - 1u));
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP4_REASS_INDEX_NONE, IDEMIP_IP4_REASS_IO(work_a)->index);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tick_at(work_a, MAXAGE_MS));
+    TEST_ASSERT_EQUAL_UINT8(row, IDEMIP_IP4_REASS_IO(work_a)->index);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_REASS_RECLAIM, IDEMIP_IP4_REASS_IO(work_a)->state);
+
+    // And the pin comes back, which is what PLAN sec 3.5 requires of a timeout.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_UINT16(181u, IDEMIP_IP4_REASS_IO(work_a)->desc);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, tick_at(work_a, MAXAGE_MS + 1u));
+}
+
+// Step (17): "TIMER <- MAX(TIMER,TTL)". A Time to Live above the lower bound raises the deadline, and
+// the section says "the waiting time will be increased if the Time to Live in the arriving fragment is
+// greater than the current timer value".
+void test_a_higher_time_to_live_raises_the_deadline(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK,
+                          hold_frag(work_a, frag_full(0, SRC, DST, PROTO, ID, 0u, 8u, 1, 60u,
+                                                      (uint8_t)IDEMIP_IP4_IHL_MIN),
+                                    191u));
+    // Past the lower bound, still held.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, tick_at(work_a, MAXAGE_MS + 1000u));
+    // Past sixty seconds, gone.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tick_at(work_a, T0 + 60000u));
+}
+
+// The same step: the waiting time "will not be decreased if it is less", so a later fragment carrying
+// a smaller Time to Live cannot pull the deadline in.
+void test_a_lower_time_to_live_does_not_lower_the_deadline(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK,
+                          hold_frag(work_a, frag_full(0, SRC, DST, PROTO, ID, 0u, 8u, 1, 60u,
+                                                      (uint8_t)IDEMIP_IP4_IHL_MIN),
+                                    201u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK,
+                          hold_frag(work_a, frag_full(1, SRC, DST, PROTO, ID, 1u, 8u, 1, 1u,
+                                                      (uint8_t)IDEMIP_IP4_IHL_MIN),
+                                    202u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, tick_at(work_a, MAXAGE_MS + 1000u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tick_at(work_a, T0 + 60000u));
+}
+
+// A completed row the caller never released still pins descriptors, and PLAN sec 3.5 requires that
+// "no pin outlives its unit's own bound", so the sweep reaches it too.
+void test_a_completed_row_the_caller_left_also_times_out(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 211u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 1u, 8u, 0), 212u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tick_at(work_a, MAXAGE_MS));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_REASS_RECLAIM, IDEMIP_IP4_REASS_IO(work_a)->state);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+}
+
+// The sweep clears every row the clock has reached, not just the first, so one pass frees the whole
+// table.
+void test_the_sweep_times_out_every_reached_row(void)
+{
+    Ip4Reass.clear(work_a);
+    for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
+    {
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr_id((int)i, (uint16_t)(0x300u + i), 0u, 8u, 1),
+                                                   (uint16_t)(220u + i)));
+    }
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tick_at(work_a, MAXAGE_MS));
+    for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
+    {
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    }
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+}
+
+// The deadline lives on a clock that wraps, so a comparison taken in the clock's own width still
+// reaches a deadline the clock has passed.
+void test_the_deadline_survives_the_clock_wrapping(void)
+{
+    Ip4Reass.clear(work_a);
+    const uint32_t late = 0xFFFFF000u;
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_at(work_a, fr(0, 0u, 8u, 1), 231u, late));
+    // The deadline is IDEMIP_IP_REASS_MAXAGE_S past `late`, which is past the wrap.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, tick_at(work_a, 0x00000100u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tick_at(work_a, late + (IDEMIP_IP_REASS_MAXAGE_S * 1000u)));
+}
+
+// --- capacity: BUSY where a retry can succeed --------------------------------
+
+// The row table full is BUSY, not ERR, because the timeout sweep frees a row and the same fragment
+// then lands.
+void test_a_full_datagram_table_is_busy_and_the_retry_succeeds(void)
+{
+    Ip4Reass.clear(work_a);
+    for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
+    {
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr_id((int)i, (uint16_t)(0x400u + i), 0u, 8u, 1),
+                                                   (uint16_t)(240u + i)));
+    }
+    uint8_t *extra = fr_id(FRAG_SLOTS - 1, 0x4FFu, 0u, 8u, 1);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, hold_frag(work_a, extra, 249u));
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP4_REASS_INDEX_NONE, IDEMIP_IP4_REASS_IO(work_a)->index);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tick_at(work_a, MAXAGE_MS));
+    for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
+    {
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    }
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, extra, 249u));
+}
+
+// The fragment table full is BUSY for the same reason: it is IDEMIP_MAX_PINNED_FRAMES' share of the
+// receive ring, and reclaim gives one back.
+void test_a_full_fragment_table_is_busy_and_the_retry_succeeds(void)
+{
+    Ip4Reass.clear(work_a);
+    for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_FRAGS; i++)
+    {
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr((int)i, (uint16_t)i, 8u, 1), (uint16_t)(250u + i)));
+    }
+    uint8_t *extra = fr(FRAG_SLOTS - 1, (uint16_t)IDEMIP_IP4_REASS_FRAGS, 8u, 1);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, hold_frag(work_a, extra, 259u));
+
+    const uint8_t row = 0u;
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, release_row(work_a, row));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, extra, 259u));
+}
+
+// --- malformed fragments: ERR where a retry can never succeed ----------------
+
+// RFC 791 sec 3.2: "the minimum fragment is 8 octets", so a fragment carrying no data at all fills
+// no hole and never will.
+void test_a_fragment_with_no_data_is_refused(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(0, 1u, 0u, 1), 261u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(1, 1u, 0u, 0), 262u));
+}
+
+// RFC 791 sec 3.2: "If an internet datagram is fragmented, its data portion must be broken on 8 octet
+// boundaries", which binds every fragment but the last.
+void test_a_non_final_fragment_off_the_eight_octet_boundary_is_refused(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(0, 0u, 9u, 1), 271u));
+    // The last fragment carries whatever is left, so any length is in order there.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 1u, 9u, 0), 272u));
+    TEST_ASSERT_EQUAL_UINT16(17u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+}
+
+// RFC 791 sec 3.2 step (14), "TL <- TDL+(IHL*4)": the reassembled Total Length is a 16-bit field, so a
+// fragment whose last octet would carry it past 65,535 cannot belong to any datagram.
+void test_a_fragment_past_the_total_length_field_is_refused(void)
+{
+    Ip4Reass.clear(work_a);
+    // Fragment Offset at the top of its 13 bits is octet 65,528.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(0, (uint16_t)IDEMIP_IP4_FRAG_OFF_MASK, 8u, 0), 281u));
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP4_REASS_INDEX_NONE, IDEMIP_IP4_REASS_IO(work_a)->index);
+}
+
+// Once step (10) has fixed TDL, no octet of the datagram lies at or past it, so a fragment reaching
+// beyond it is not part of this datagram.
+void test_a_fragment_past_the_total_data_length_is_refused(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 1u, 8u, 0), 291u));
+    TEST_ASSERT_EQUAL_UINT16(16u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+    // Octets 8 through 23, past the total data length of 16.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(1, 1u, 16u, 1), 292u));
+}
+
+// Two last fragments naming different total data lengths cannot both be right, and neither becomes
+// right on a retry.
+void test_a_second_last_fragment_of_a_different_length_is_refused(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 1u, 8u, 0), 301u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(1, 2u, 8u, 0), 302u));
+    // The row is untouched: its total data length is still the first one's.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(2, 0u, 8u, 1), 303u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT16(16u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+}
+
+// A last fragment cannot name a total data length below octets the row already holds.
+void test_a_last_fragment_below_what_is_held_is_refused(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 2u, 8u, 1), 311u));
+    // Claims the datagram ends at octet 16, under the fragment already held out to 24.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(1, 1u, 8u, 0), 312u));
+}
+
+// The header carries the fields the row is keyed and indexed on, so it goes through the RFC 1122
+// sec 3.2.1 checks first. A header the caller says is shorter than its own Total Length, and one
+// whose checksum does not hold, are both refused.
+void test_a_malformed_header_is_refused(void)
+{
+    Ip4Reass.clear(work_a);
+    uint8_t *h = fr(0, 0u, 8u, 1);
+    IDEMIP_IP4_REASS_IO(work_a)->now_ms = T0;
+    IDEMIP_IP4_REASS_IO(work_a)->hold_args.hdr = h;
+    IDEMIP_IP4_REASS_IO(work_a)->hold_args.desc = 321u;
+    IDEMIP_IP4_REASS_IO(work_a)->hold_args.len = (uint16_t)(idemip_ip4_total_len(h) - 1u);
+    Ip4Reass.hold(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP4_REASS_IO(work_a)->status);
+
+    IDEMIP_IP4_REASS_IO(work_a)->hold_args.len = idemip_ip4_total_len(h);
+    idemip_ip4_set_cksum(h, (uint16_t)(idemip_ip4_cksum(h) ^ 0x0100u));
+    Ip4Reass.hold(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP4_REASS_IO(work_a)->status);
+
+    IDEMIP_IP4_REASS_IO(work_a)->hold_args.hdr = NULL;
+    Ip4Reass.hold(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP4_REASS_IO(work_a)->status);
+}
+
+// A refused fragment takes no row, no fragment slot and no hole, so the whole table is still there
+// afterwards.
+void test_a_refused_fragment_consumes_nothing(void)
+{
+    Ip4Reass.clear(work_a);
+    for (unsigned int i = 0u; i < 32u; i++)
+    {
+        TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(0, 0u, 9u, 1), 331u));
+    }
+    for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_FRAGS; i++)
+    {
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr((int)i, (uint16_t)i, 8u, 1), (uint16_t)(340u + i)));
+    }
+}
+
+// --- the borrow is the instance ----------------------------------------------
+
+// Two reassemblers over the same buffer identifier: the fragment that completes one leaves the other
+// exactly where it was.
+void test_two_borrows_reassemble_independently(void)
+{
+    Ip4Reass.clear(work_a);
+    Ip4Reass.clear(work_b);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 351u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_b, fr(1, 0u, 8u, 1), 352u));
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(2, 1u, 8u, 0), 353u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_b)->complete);
+
+    // b still holds one fragment and no completed datagram.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, next_one(work_b, 0u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, next_one(work_a, 0u));
+    TEST_ASSERT_EQUAL_UINT16(351u, IDEMIP_IP4_REASS_IO(work_a)->desc);
+}
+
+// An entry is a function of its borrow alone, so a call interleaved on another borrow cannot change
+// what this one reports. This is the determinism the design is named for.
+void test_a_hold_is_a_function_of_its_borrow_alone(void)
+{
+    Ip4Reass.clear(work_a);
+    Ip4Reass.clear(work_b);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 361u));
+    const uint8_t row_a = IDEMIP_IP4_REASS_IO(work_a)->index;
+
+    // b takes the same identifier and the same offsets, and finishes its datagram.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_b, fr(1, 0u, 8u, 1), 362u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_b, fr(2, 1u, 8u, 0), 363u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_b)->complete);
+
+    // a's own last fragment reports exactly what it would have without b's calls.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(3, 1u, 8u, 0), 364u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT8(row_a, IDEMIP_IP4_REASS_IO(work_a)->index);
+    TEST_ASSERT_EQUAL_UINT16(16u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+}
+
+// clear takes a borrow mid-reassembly back to empty, so nothing of the old datagram survives.
+void test_clear_drops_a_reassembly_in_progress(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 371u));
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, tick_at(work_a, MAXAGE_MS));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, next_one(work_a, 0u));
+}
