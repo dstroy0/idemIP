@@ -12,3 +12,6 @@ unity_runner.c
 
 # Agent worktrees and session state. Each worktree is its own checkout of this repo.
 .claude/
+
+# The capture test_loopback writes, one per run in whatever directory the suite ran from.
+loopback.pcap
