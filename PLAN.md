@@ -393,6 +393,20 @@ The tick order is fixed and matters, because a later stage consumes what an earl
 `core/tick.h` is therefore not just a clock: it is the scheduler, and it is the only thing in the
 tree that decides what runs when.
 
+**Policy lives in dispatch, never in a parser.** `vlan.h` reads and writes the 802.1Q tag and
+decides nothing. Dispatch holds the decisions, and each one that drops a frame bumps the MIB-II
+counter that names why:
+
+| Decision | Counter | Why that one |
+| --- | --- | --- |
+| the frame's VID is not this interface's | `IDEMIP_STAT_IF_IN_DISCARDS` | RFC 1213: "chosen to be discarded even though no errors had been detected". A VLAN policy drop is deliberate and the frame is intact, so it is not `IF_IN_ERRORS`. |
+| a malformed or short frame | `IDEMIP_STAT_IF_IN_ERRORS` | the frame itself is bad |
+| an EtherType nothing here handles | `IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS` | the frame is fine and the protocol is not ours |
+
+The 802.1Q Tag Control Information is PCP in bits 15:13, DEI in bit 12, and the 12-bit VID in bits
+11:0, behind the 0x8100 TPID that sits in the EtherType field. An untagged interface accepts every
+frame and reports the VID as absent; a tagged one accepts its own VID and discards the rest.
+
 ### 3.5 The DMA seam
 
 Frames arrive by DMA into a descriptor ring, not by a copy out of the driver. This is the correct
