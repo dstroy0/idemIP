@@ -421,9 +421,13 @@ So dispatch records the last VID it discarded, per interface:
   vendor object: an enterprise subtree, never inside ifEntry.
 - **A Gauge, not a Counter.** It rises and falls rather than accumulating, so it is written with
   `StatsNs::set` and never `bump`, per RFC 1155 sec 3.2.3.4 and the split stats.h already enforces.
-- **Zero means none seen since clear.** 802.1Q appears to reserve VID 0 for a priority tag carrying
-  no VLAN membership, which would make it a safe sentinel. Verify that against a source before
-  relying on it rather than taking it from this plan.
+- **4095 means none seen since clear, and 0 does NOT.** An earlier draft of this plan proposed zero
+  as the sentinel. That is wrong: VID 0 is a real value on the wire. It marks a priority-tagged
+  frame, one carrying 802.1p priority and no VLAN membership, which Cisco supports as a named
+  feature and associates with the interface's native VLAN. A discarded priority-tagged frame would
+  therefore record 0 and read as "nothing discarded". VID 4095 is reserved for implementation use
+  and can never be a legitimate membership, so it is the sentinel. The usable range is 1 through
+  4094, and a VID outside it in a received tag is itself malformed.
 
 ### 3.5 The DMA seam
 
