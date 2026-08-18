@@ -41,11 +41,32 @@ fails when the fix is reverted, and the file hash returns to its pre-mutation va
 
 None. All twenty-four are closed.
 
+## Correctness
+
+The phase 5 correctness, robustness and cosmetic findings were counted and never itemised. The
+transcript holds the twenty-four security items and nothing else, so this section is re-derived
+rather than recovered.
+
+The method that found the ones below generalises three of the security findings, which all had one
+shape: a requirement encoded in a header that no library code ever names. `idemip_udp_cksum_valid`
+sat in `udp.h` with no caller, `IDEMIP_IGMP_OFF_CKSUM` had no reader, and
+`IDEMIP_DISPATCH_DROP_IP_SOURCE` was an enumerator nothing raised. Scanning every header definition
+for one no `.c` under `idemIP/` names reports 249 candidates; most are legitimately caller-facing
+(packet builders, ICMP code values the caller chooses), so each has to be read against the RFC. The
+scan is `scratchpad/unwired.py`.
+
+| Site | Law | Fault | Closed by |
+|---|---|---|---|
+| `ip/ipv6.h` `idemip_ip6_walk` | RFC 8200 sec 4.4 | A Routing header was stepped over on its length alone. This library executes no Routing Type, so every one with a non-zero Segments Left is sec 4.4's unrecognized case and must be discarded. `idemip_ip6_rt_segs_left` quoted the rule in its own doc comment and had no caller. | `5aaecc8` |
+| `ip/ipv6.h` `idemip_ip6_walk` | RFC 8200 sec 4.2 | The options of a Hop-by-Hop or Destination Options header were never walked, so every unrecognized option behaved as action 00 whatever its two high-order bits said. All four action constants had no reader. | `ca7dff7` |
+
+Checked and found correct, against the same suspicion: UDP-Lite verifies both its Checksum Coverage
+and its checksum (`udplite_check`), and the unused `idemip_udplite_cksum_valid` is only a wrapper.
+
 ## The rest
 
-34 correctness, 26 robustness, 6 cosmetic, plus 83 test cases that assert nothing an RFC requires
-and 231 attacks that held. Those are tracked in the session that raised them and are not itemised
-here yet.
+26 robustness and 6 cosmetic findings, plus 83 test cases that assert nothing an RFC requires and 231
+attacks that held. Not itemised anywhere recoverable either.
 
 A pattern worth keeping: finding 2's test, `test_a_close_frees_every_held_segment`, described the
 correct behaviour in its comment - "every pinned descriptor the connection named is reported free
