@@ -407,6 +407,24 @@ The 802.1Q Tag Control Information is PCP in bits 15:13, DEI in bit 12, and the 
 11:0, behind the 0x8100 TPID that sits in the EtherType field. An untagged interface accepts every
 frame and reports the VID as absent; a tagged one accepts its own VID and discards the rest.
 
+**The count alone cannot be acted on, so the offending VID is reported beside it.** A rising
+`ifInDiscards` means either a policy drop or a misconfiguration, and those are the same number. On
+a trunk it is expected, since the switch floods other VLANs at us and we correctly drop them. On an
+access port it is a fault: the switch port carries the wrong VLAN, or one end is trunk and the
+other access. An operator cannot tell which from a count, and can from a VID.
+
+So dispatch records the last VID it discarded, per interface:
+
+- **Not in the ifEntry group.** RFC 1213 sec 6.4 fixes those thirteen objects and
+  `IDEMIP_STAT_IF_COUNT` is one past the last; adding a fourteenth would misrepresent a standard
+  table. It goes in an idemIP-private per-interface group, which is what an agent does with a
+  vendor object: an enterprise subtree, never inside ifEntry.
+- **A Gauge, not a Counter.** It rises and falls rather than accumulating, so it is written with
+  `StatsNs::set` and never `bump`, per RFC 1155 sec 3.2.3.4 and the split stats.h already enforces.
+- **Zero means none seen since clear.** 802.1Q appears to reserve VID 0 for a priority tag carrying
+  no VLAN membership, which would make it a safe sentinel. Verify that against a source before
+  relying on it rather than taking it from this plan.
+
 ### 3.5 The DMA seam
 
 Frames arrive by DMA into a descriptor ring, not by a copy out of the driver. This is the correct
