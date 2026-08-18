@@ -18,6 +18,18 @@
  *   B  FreeBSD sys/dev/mii/mii.h       (MII_*, BMCR_*, BMSR_*, ANAR_*, ANLPAR_*)
  *   R  FreeBSD sys/dev/mii/ukphy_subr.c and Linux include/linux/mii.h mii_nway_result(),
  *      for the order the base page resolves in
+ *   T  TI DP83848-EP datasheet SLLSEC6E, Tables 5-9 through 5-17, which print the Clause 22
+ *      register set bit by bit as one vendor implements it. A datasheet is what the silicon
+ *      actually does, so where T disagrees with L or B, T is followed and the disagreement is
+ *      named at the bit.
+ *
+ * Two bits are device-specific rather than disputed. T marks BMSR 10:07 reserved because that part
+ * carries no 100BASE-T2 and no gigabit, so its bits 10, 9 and 8 read zero; the names below are the
+ * IEEE assignments those bits carry on a part that does implement them.
+ *
+ * The management register set is the same whether the data path is MII, RMII or RGMII: those
+ * differ in the data pins and their clock, not in MDC/MDIO or in what a register means. Nothing in
+ * this file changes with the data path.
  *
  * A register value arrives as a 16-bit word from a management read, not as bytes in a frame, so
  * every accessor here takes a uint16_t and none of them reads memory.
@@ -95,8 +107,11 @@ static_assert(IDEMIP_MII_REG_MAX == (1u << 5), "the register address field is 5 
 // so a rate resolved from the base page alone is incomplete while it is set.
 #define IDEMIP_BMSR_EXT_STATUS (1u << 8) ///< Extended status in register 15.
 
-// B BMSR_MFPS 0x0040. L folds bits 7 and 6 into BMSR_RESV 0x00c0 and names neither, so this bit
-// carries one corroborating source, not two.
+// B BMSR_MFPS 0x0040, and TI SLLSEC6E Table 5-10 names bit 6 "MF Preamble Suppression": "1 =
+// Device able to perform management transaction with preamble suppressed, 32-bits of preamble
+// needed only once after reset". That table marks 10:07 reserved and bit 6 named, so L is wrong
+// to fold 7 and 6 together into BMSR_RESV 0x00c0. Two sources against one, and the two are the
+// silicon's own.
 #define IDEMIP_BMSR_MF_PREAMBLE_SUPP (1u << 6) ///< Accepts management frames with preamble suppressed.
 #define IDEMIP_BMSR_ANEG_COMPLETE (1u << 5)    ///< Auto-negotiation process completed.
 #define IDEMIP_BMSR_REMOTE_FAULT (1u << 4)     ///< Remote fault detected; latching.
@@ -135,7 +150,9 @@ static_assert(IDEMIP_MII_REG_MAX == (1u << 5), "the register address field is 5 
 // Auto-Negotiation Link Partner Ability, register 5 (Clause 22.2.4.5)
 // ---------------------------------------------------------------------------
 // The base page the partner sent, in register 4's bit positions. L LPA_*, B ANLPAR_*. Bit 12 is
-// named by neither and is left undefined.
+// reserved, not merely unnamed: TI SLLSEC6E Table 5-14 reads "RESERVED for Future IEEE use: Write
+// as 0, read as 0", and Table 5-13 says the same of register 4's bit 12. Left undefined, which is
+// what a reserved bit gets.
 
 #define IDEMIP_ANLPAR_NEXT_PAGE (1u << 15)    ///< The partner has more pages to send.
 #define IDEMIP_ANLPAR_ACK (1u << 14)          ///< The partner received this node's ability word.
