@@ -310,6 +310,27 @@ static size_t build_udp(uint8_t *f, size_t off, uint16_t sport, uint16_t dport, 
     memset(f + off + IDEMIP_UDP_HDR_LEN, 0xAB, data_len);
     return off + IDEMIP_UDP_HDR_LEN + data_len;
 }
+
+// The checksum over the pseudo-header RFC 768 prefixes, written into the datagram already at off.
+// Left zero, an IPv4 datagram still arrives (RFC 768's "no checksum" encoding) but an IPv6 one must
+// not (RFC 8200 sec 8.1), so a frame built without this tests less than it appears to.
+static void seal_udp4(uint8_t *f, size_t off, uint32_t src, uint32_t dst)
+{
+    uint8_t *u = f + off;
+    size_t len = (size_t)idemip_udp_len(u);
+    idemip_wr16(u + IDEMIP_UDP_OFF_CKSUM, 0u);
+    idemip_wr16(u + IDEMIP_UDP_OFF_CKSUM, idemip_udp_cksum_compute(u, len, src, dst));
+}
+
+static void seal_udp6(uint8_t *f, size_t off, const uint8_t *src, const uint8_t *dst)
+{
+    uint8_t *u = f + off;
+    size_t len = (size_t)idemip_udp_len(u);
+    idemip_wr16(u + IDEMIP_UDP_OFF_CKSUM, 0u);
+    uint32_t sum = idemip_ip6_pseudo_accum(0u, src, dst, (uint32_t)len, IDEMIP_IP6_NH_UDP);
+    uint16_t c = idemip_cksum_final(idemip_cksum_accum(sum, u, len));
+    idemip_wr16(u + IDEMIP_UDP_OFF_CKSUM, (c == 0u) ? (uint16_t)IDEMIP_UDP_CKSUM_ZERO_AS : c);
+}
 #endif
 
 static size_t build_icmp_echo(uint8_t *f, size_t off, size_t data_len)
@@ -765,6 +786,7 @@ void test_a_bound_udp_port_takes_the_datagram(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
     size_t end = build_udp(g_frame, off, 4000u, 4001u, 4u);
+    seal_udp4(g_frame, off, REMOTE_IP4, LOCAL_IP4);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
 
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
@@ -784,9 +806,141 @@ void test_an_unbound_udp_port_counts_no_ports(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN, 0u);
     size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp4(g_frame, off, REMOTE_IP4, LOCAL_IP4);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_DISPATCH_IO(work_a)->drop);
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_UDP_NO_PORTS));
+}
+
+// --- IGMP, RFC 2236 ----------------------------------------------------------
+// The IGMP borrow was bound here from the start and no case ever fed it a message, which is how a
+// missing MUST survived: an unexercised path cannot fail.
+
+#if IDEMIP_ENABLE_IPV4
+
+// One RFC 2236 sec 2 message at off, checksum sealed over all eight octets (sec 2.3, no
+// pseudo-header).
+static size_t build_igmp(uint8_t *f, size_t off, uint8_t type, uint8_t max_resp, uint32_t group)
+{
+    uint8_t *m = f + off;
+    m[IDEMIP_IGMP_OFF_TYPE] = type;
+    m[IDEMIP_IGMP_OFF_MAX_RESP] = max_resp;
+    idemip_wr16(m + IDEMIP_IGMP_OFF_CKSUM, 0u);
+    idemip_wr32(m + IDEMIP_IGMP_OFF_GROUP, group);
+    idemip_wr16(m + IDEMIP_IGMP_OFF_CKSUM, idemip_cksum(m, IDEMIP_IGMP_MSG_LEN));
+    return off + IDEMIP_IGMP_MSG_LEN;
+}
+
+static void join_group(uint32_t group)
+{
+    IgmpIo *ig = IDEMIP_IGMP_IO(igmp_mem);
+    ig->group_args.group = group;
+    ig->group_args.rand = 0x1234u;
+    ig->group_args.now_ms = 0u;
+    ig->group_args.netif = 0u;
+    Igmp.join(igmp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ig->status);
+}
+
+void test_an_igmp_query_with_a_good_checksum_is_processed(void)
+{
+    join_group(0xE0000102u);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, 0xE0000102u, IDEMIP_IGMP_MSG_LEN, 0u);
+    size_t end = build_igmp(g_frame, off, (uint8_t)IDEMIP_IGMP_TYPE_QUERY, 100u, 0xE0000102u);
+
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+}
+
+// RFC 2236 sec 2.3: "When receiving packets, the checksum MUST be verified before processing a
+// packet." sec 6 restates it: a Query is valid only if it is "at least 8 octets long, and have a
+// correct IGMP checksum". Without this an off-path forgery moved a group's timer.
+void test_an_igmp_query_with_a_bad_checksum_is_discarded(void)
+{
+    join_group(0xE0000102u);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, 0xE0000102u, IDEMIP_IGMP_MSG_LEN, 0u);
+    size_t end = build_igmp(g_frame, off, (uint8_t)IDEMIP_IGMP_TYPE_QUERY, 100u, 0xE0000102u);
+    idemip_wr16(g_frame + off + IDEMIP_IGMP_OFF_CKSUM,
+                (uint16_t)(idemip_rd16(g_frame + off + IDEMIP_IGMP_OFF_CKSUM) ^ 0x5A5Au));
+
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop);
+}
+
+// A Report suppresses this node's own pending Report (sec 3), so a forged one is worth the same
+// check as a forged Query.
+void test_an_igmp_report_with_a_bad_checksum_is_discarded(void)
+{
+    join_group(0xE0000102u);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, 0xE0000102u, IDEMIP_IGMP_MSG_LEN, 0u);
+    size_t end = build_igmp(g_frame, off, (uint8_t)IDEMIP_IGMP_TYPE_REPORT_V2, 0u, 0xE0000102u);
+    g_frame[off + IDEMIP_IGMP_OFF_CKSUM] ^= 0xFFu;
+
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop);
+}
+
+#endif // IDEMIP_ENABLE_IPV4
+
+// RFC 1122 sec 4.1.3.4: "If a UDP datagram is received with a checksum that is non-zero and
+// invalid, UDP MUST silently discard the datagram." Before this check existed dispatch read the
+// ports and delivered, so every datagram on the link reached a bound service whatever its sum said.
+void test_a_bad_udp_checksum_is_discarded(void)
+{
+    uint16_t pcb = bind_udp4(4001u);
+    (void)pcb;
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 4u);
+    seal_udp4(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    // One bit of the sealed sum, so the field is non-zero and wrong.
+    idemip_wr16(g_frame + off + IDEMIP_UDP_OFF_CKSUM,
+                (uint16_t)(idemip_udp_cksum(g_frame + off) ^ 0x0001u));
+
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_UDP_IN_ERRORS));
+}
+
+// RFC 768 leaves the field all-zero when the sender computed none, and RFC 1122 sec 4.1.3.4 accepts
+// that over IPv4. The exemption is the reason the check above tests a NON-ZERO wrong sum.
+void test_a_zero_udp_checksum_is_accepted_over_ipv4(void)
+{
+    uint16_t pcb = bind_udp4(4001u);
+    (void)pcb;
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    idemip_wr16(g_frame + off + IDEMIP_UDP_OFF_CKSUM, 0u);
+
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+}
+
+// RFC 768's Length "including this header and the data", minimum eight. A Length past the octets
+// the IP layer delivered would take the sum over bytes that are not the datagram's.
+void test_a_udp_length_past_the_ip_payload_is_an_error(void)
+{
+    uint16_t pcb = bind_udp4(4001u);
+    (void)pcb;
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    idemip_wr16(g_frame + off + IDEMIP_UDP_OFF_LEN, 4000u);
+
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
 }
 
 #endif // IDEMIP_ENABLE_UDP
@@ -1007,11 +1161,64 @@ void test_an_ipv6_packet_for_our_address_is_delivered(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_local_ip6, IDEMIP_UDP_HDR_LEN);
     size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, g_local_ip6);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_UDP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_RECEIVES));
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_DELIVERS));
+}
+
+// RFC 8200 sec 8.1: "IPv6 receivers must discard UDP packets containing a zero checksum". The
+// IPv4 exemption does not carry over, because an IPv6 header carries no checksum of its own, so a
+// zero here leaves the whole datagram unprotected.
+void test_a_zero_udp_checksum_is_discarded_over_ipv6(void)
+{
+    UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
+    up->open_args.ip_version = 6u;
+    up->open_args.lite = IDEMIP_FALSE;
+    UdpPcb.open(udp_mem);
+    up->bind_args.index = up->index;
+    up->bind_args.ip = g_local_ip6;
+    up->bind_args.port = 4001u;
+    up->bind_args.zone = 0u;
+    up->bind_args.netif = 0u;
+    UdpPcb.bind(udp_mem);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_local_ip6, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    idemip_wr16(g_frame + off + IDEMIP_UDP_OFF_CKSUM, 0u);
+
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+}
+
+// The same datagram with a wrong non-zero sum, so the two IPv6 rejections are told apart.
+void test_a_bad_udp_checksum_is_discarded_over_ipv6(void)
+{
+    UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
+    up->open_args.ip_version = 6u;
+    up->open_args.lite = IDEMIP_FALSE;
+    UdpPcb.open(udp_mem);
+    up->bind_args.index = up->index;
+    up->bind_args.ip = g_local_ip6;
+    up->bind_args.port = 4001u;
+    up->bind_args.zone = 0u;
+    up->bind_args.netif = 0u;
+    UdpPcb.bind(udp_mem);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_local_ip6, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, g_local_ip6);
+    idemip_wr16(g_frame + off + IDEMIP_UDP_OFF_CKSUM,
+                (uint16_t)(idemip_udp_cksum(g_frame + off) ^ 0x0001u));
+
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
 }
 
 #endif // IDEMIP_ENABLE_UDP
@@ -1021,6 +1228,7 @@ void test_an_ipv6_packet_for_somewhere_else_is_reported_for_forwarding(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_other_ip6, IDEMIP_UDP_HDR_LEN);
     size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, g_other_ip6);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) != 0u);
 }
@@ -1032,6 +1240,7 @@ void test_an_ipv6_payload_length_past_the_frame_is_a_header_error(void)
     size_t ip = off;
     off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_local_ip6, IDEMIP_UDP_HDR_LEN);
     size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, g_local_ip6);
     idemip_ip6_set_payload_len(g_frame + ip, 4000u);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_HEADER, IDEMIP_DISPATCH_IO(work_a)->drop);
@@ -1048,6 +1257,7 @@ void test_the_solicited_node_address_of_our_own_is_local(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, solicited, IDEMIP_UDP_HDR_LEN);
     size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, solicited);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u);
 }

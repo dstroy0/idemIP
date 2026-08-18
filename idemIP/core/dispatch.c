@@ -318,6 +318,32 @@ static void d_raw(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t
 // RFC 768, over the binding table, and RFC 3828 where the same header field is a Checksum Coverage
 // rather than a Length. RFC 1122 sec 4.1.3.1: with no binding, "UDP SHOULD send an ICMP Port
 // Unreachable message", which is the caller's to send and udpNoPorts is what counts it.
+// The RFC 768 checksum over the pseudo-header and the datagram, for whichever IP version carried
+// it. RFC 1122 sec 4.1.3.4: a datagram whose checksum "is non-zero and invalid" is discarded
+// silently, while an all-zero field means the sender computed none and the datagram is accepted.
+// RFC 8200 sec 8.1 removes that exemption over IPv6: "IPv6 receivers must discard UDP packets
+// containing a zero checksum", the IPv6 header carrying no checksum of its own.
+static idemip_bool d_udp_cksum_ok(const uint8_t *udp, const uint8_t *local_ip, const uint8_t *remote_ip,
+                                  uint8_t ip_version)
+{
+    size_t len = (size_t)idemip_udp_len(udp);
+
+    if (ip_version == 6u)
+    {
+        if (!idemip_udp_cksum_present(udp))
+        {
+            return IDEMIP_FALSE;
+        }
+        uint32_t sum = idemip_ip6_pseudo_accum(0u, remote_ip, local_ip, (uint32_t)len, IDEMIP_IP6_NH_UDP);
+        return idemip_cksum_final(idemip_cksum_accum(sum, udp, len)) == 0u;
+    }
+    if (!idemip_udp_cksum_present(udp))
+    {
+        return IDEMIP_TRUE;
+    }
+    return idemip_udp_cksum_valid(udp, len, idemip_rd32(remote_ip), idemip_rd32(local_ip));
+}
+
 static void d_udp(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t *remote_ip, uint8_t ip_version,
                   idemip_bool lite)
 {
@@ -340,6 +366,24 @@ static void d_udp(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t
     // asked with IDEMIP_UDPLITE_COV_ALL. RFC 3828 sec 3.1 puts the Checksum Coverage in the same
     // sixteen bits, and udplite reads it and checks the sum over the octets it names.
     uint16_t cov = (uint16_t)IDEMIP_UDPLITE_COV_ALL;
+    if (!lite)
+    {
+        // RFC 768: Length "is the length in octets of this user datagram including this header and
+        // the data", minimum eight. A Length past the octets the IP layer delivered would take the
+        // sum over bytes that are not the datagram's.
+        if (!idemip_udp_len_valid(udp) || (size_t)idemip_udp_len(udp) > io->payload_len)
+        {
+            d_drop(work, IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_STAT_IF_IN_ERRORS);
+            d_bump(work, IDEMIP_STAT_UDP_IN_ERRORS);
+            return;
+        }
+        if (!d_udp_cksum_ok(udp, local_ip, remote_ip, ip_version))
+        {
+            d_drop(work, IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_STAT_IF_IN_ERRORS);
+            d_bump(work, IDEMIP_STAT_UDP_IN_ERRORS);
+            return;
+        }
+    }
     if (lite)
     {
         if (ctx->udplite == NULL)
@@ -816,6 +860,15 @@ static void d_igmp(uint8_t *restrict work, const uint8_t *msg)
     if (io->payload_len < IDEMIP_IGMP_MSG_LEN)
     {
         d_drop(work, IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_STAT_IF_IN_ERRORS);
+        return;
+    }
+    // RFC 2236 sec 2.3: "When receiving packets, the checksum MUST be verified before processing a
+    // packet", and sec 6 repeats it for the Query and the Report. The sum covers the whole IGMP
+    // message, no pseudo-header, so RFC 1071 sec 1's fold to zero is the whole test. Nothing else
+    // on this path checks it: the IPv4 header checksum covers only the header.
+    if (!idemip_cksum_valid(msg, IDEMIP_IGMP_MSG_LEN))
+    {
+        d_drop(work, IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_STAT_IF_IN_ERRORS);
         return;
     }
     IgmpIo *ig = IDEMIP_IGMP_IO(ctx->igmp);

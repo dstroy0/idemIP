@@ -140,11 +140,18 @@ typedef enum IDEMIP_ENUM_PACKED
 
     IDEMIP_DISPATCH_DROP_IP_HEADER,  ///< ipInHdrErrors: version, IHL, length or checksum
     IDEMIP_DISPATCH_DROP_IP_ADDRESS, ///< ipInAddrErrors: the destination is not this host's
+    IDEMIP_DISPATCH_DROP_IP_SOURCE,  ///< ipInAddrErrors: the source is one RFC 1122 sec 3.2.1.3 bars
     IDEMIP_DISPATCH_DROP_IP_PROTO,   ///< ipInUnknownProtos: no pcb kind claims the Protocol field
     IDEMIP_DISPATCH_DROP_NO_PCB,     ///< ipInDiscards: nothing is bound to the port or protocol
     IDEMIP_DISPATCH_DROP_REASS,      ///< ipInDiscards: the reassembler had no room, or refused it
     IDEMIP_DISPATCH_DROP_NO_DESC,    ///< ipInDiscards: retention needs a descriptor and there is none
     IDEMIP_DISPATCH_DROP_UNBOUND,    ///< the borrow the path needs was never bound
+
+    /** The transport or control checksum over the datagram did not check out. Kept apart from
+     *  DROP_SHORT so a bad sum reads as a bad sum: RFC 1122 sec 4.1.3.4 requires a UDP datagram
+     *  with a non-zero invalid checksum to be discarded silently, and RFC 2236 sec 2.3 requires an
+     *  IGMP checksum to be "verified before processing a packet". */
+    IDEMIP_DISPATCH_DROP_CKSUM,
 } IdemIpDispatchDrop;
 
 /** @brief Which table the pcb index a delivery names belongs to. */
