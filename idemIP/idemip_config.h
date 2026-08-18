@@ -360,6 +360,17 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_IGMP_TMR_INTERVAL_MS 100u
 #endif
 
+/**
+ * @brief Answer an Echo Request whose internet destination was an IP broadcast or IP multicast
+ *        address.
+ *
+ * RFC 1122 sec 3.2.2.6: "An ICMP Echo Request destined to an IP broadcast or IP multicast address
+ * MAY be silently discarded." Zero discards it, one answers it.
+ */
+#ifndef IDEMIP_ICMP_ECHO_BROADCAST
+#define IDEMIP_ICMP_ECHO_BROADCAST 0
+#endif
+
 // ---------------------------------------------------------------------------
 // IPv6
 // ---------------------------------------------------------------------------
@@ -482,6 +493,32 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_MLD6_HL
 #define IDEMIP_MLD6_HL 1u
 #endif
+
+// RFC 4443 sec 2.4 (f): "an IPv6 node MUST limit the rate of ICMPv6 error messages it originates ...
+// A recommended method for implementing the rate-limiting function is a token bucket, limiting the
+// average rate of transmission to N ... but allowing up to B error messages to be transmitted in a
+// burst". The section prints the defaults this build takes: "in a small/mid-size device, the possible
+// defaults could be B=10, N=10/s."
+
+/** @brief RFC 4443 sec 2.4 (f) B, error messages the bucket holds for a burst. */
+#ifndef IDEMIP_ICMP6_ERR_BUCKET
+#define IDEMIP_ICMP6_ERR_BUCKET 10u
+#endif
+
+/** @brief RFC 4443 sec 2.4 (f) N, error messages a second refills, as messages per second. */
+#ifndef IDEMIP_ICMP6_ERR_RATE_PER_S
+#define IDEMIP_ICMP6_ERR_RATE_PER_S 10u
+#endif
+
+/** @brief Milliseconds between two refilled tokens, so the bucket needs no divide to age. */
+#ifndef IDEMIP_ICMP6_ERR_TOKEN_MS
+#define IDEMIP_ICMP6_ERR_TOKEN_MS 100u
+#endif
+
+static_assert(IDEMIP_ICMP6_ERR_RATE_PER_S != 0u && (1000u / IDEMIP_ICMP6_ERR_RATE_PER_S) == IDEMIP_ICMP6_ERR_TOKEN_MS,
+              "IDEMIP_ICMP6_ERR_TOKEN_MS must be the millisecond gap RFC 4443 sec 2.4 (f)'s N implies");
+static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
+              "RFC 4443 sec 2.4 (f) allows a burst of B messages: a bucket of zero originates none");
 
 // ---------------------------------------------------------------------------
 // Transport
@@ -902,6 +939,16 @@ typedef enum IDEMIP_ENUM_PACKED
 #endif
 #define IDEMIP_IGMP_BORROW (IDEMIP_IGMP_CTX_BYTES + (IDEMIP_IGMP_GROUPS << IDEMIP_IGMP_ENTRY_SHIFT))
 
+// --- icmp_in: RFC 792, RFC 1122 sec 3.2.2 --------------------------------------------------------
+// icmp_in holds no table, so this region is the whole borrow and carries the operand block of
+// icmp_in.h as well as the context. The block is what an arriving message takes, what originating an
+// error takes, and what a call reports: 136 octets on a target with 8-octet pointers. The context
+// behind it is the mark clear leaves, 4 more.
+#ifndef IDEMIP_ICMP_IN_CTX_BYTES
+#define IDEMIP_ICMP_IN_CTX_BYTES 160u
+#endif
+#define IDEMIP_ICMP_IN_BORROW (IDEMIP_ICMP_IN_CTX_BYTES)
+
 // --- ip6_reass: RFC 8200 sec 4.5 -----------------------------------------------------------------
 // The same three tables as IPv4, at IPv6 widths. RFC 8200 sec 4.5 matches the fragments of one
 // packet by "the same IPv6 Source Address, IPv6 Destination Address, and Fragment Identification",
@@ -987,6 +1034,17 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_MLD6_CTX_BYTES 96u
 #endif
 #define IDEMIP_MLD6_BORROW (IDEMIP_MLD6_CTX_BYTES + (IDEMIP_MLD6_GROUPS << IDEMIP_MLD6_ENTRY_SHIFT))
+
+// --- icmp6_in: RFC 4443 sec 2.4, sec 3, sec 4 ----------------------------------------------------
+// icmp6_in holds no table, so this region is the whole borrow and carries the operand block of
+// icmp6_in.h as well as the context. The block is what an arriving message takes, what originating an
+// error takes, and what a call reports: 168 octets on a target with 8-octet pointers. The context
+// behind it is the mark clear leaves and the sec 2.4 (f) token bucket, which is the tokens left and
+// the millisecond the next one refills at, 12 more.
+#ifndef IDEMIP_ICMP6_IN_CTX_BYTES
+#define IDEMIP_ICMP6_IN_CTX_BYTES 192u
+#endif
+#define IDEMIP_ICMP6_IN_BORROW (IDEMIP_ICMP6_IN_CTX_BYTES)
 
 // --- raw_pcb: RFC 1122 sec 3.4, RFC 3542 sec 3.1 -------------------------------------------------
 // RFC 1122 sec 3.4 names what a binding onto IP itself carries, "SEND(src, dst, prot, TOS, TTL,
@@ -1181,6 +1239,7 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_SHARED_BORROW                                                                                           \
     (IDEMIP_NETIF_BORROW + IDEMIP_LOOPIF_BORROW + IDEMIP_ARP_BORROW + IDEMIP_IP4_ROUTE_BORROW +                        \
      IDEMIP_IP4_REASS_BORROW + IDEMIP_IGMP_BORROW + IDEMIP_IP6_REASS_BORROW + IDEMIP_MLD6_BORROW +                     \
+     IDEMIP_ICMP_IN_BORROW + IDEMIP_ICMP6_IN_BORROW +                                                                  \
      IDEMIP_RAW_PCB_BORROW + IDEMIP_UDP_PCB_BORROW + IDEMIP_TCP_PCB_BORROW + IDEMIP_TCP_IN_BORROW +                    \
      IDEMIP_TCP_OUT_BORROW + IDEMIP_TCP_ISN_BORROW +                                                                   \
      IDEMIP_DNS_BORROW + IDEMIP_TIMEOUTS_BORROW + IDEMIP_STATS_BORROW)
@@ -1293,5 +1352,10 @@ static_assert(IDEMIP_ACD_PROBE_MAX_MS > IDEMIP_ACD_PROBE_MIN_MS,
 // One deadline per service, and every interface runs four of them.
 static_assert(IDEMIP_TIMEOUTS >= (IDEMIP_NETIF_COUNT * 4u),
               "IDEMIP_TIMEOUTS is short of four deadlines per interface: ACD, AutoIP, DHCPv4 and DHCPv6");
+
+// The two ICMP borrows carry an operand block and a context and no table, so each is its context
+// width alone and that width stays a multiple of IDEMIP_ALIGN.
+static_assert(((IDEMIP_ICMP_IN_CTX_BYTES | IDEMIP_ICMP6_IN_CTX_BYTES) & (IDEMIP_ALIGN - 1u)) == 0u,
+              "IDEMIP_ICMP_IN_CTX_BYTES and IDEMIP_ICMP6_IN_CTX_BYTES must be multiples of IDEMIP_ALIGN");
 
 #endif // IDEMIP_CONFIG_H
