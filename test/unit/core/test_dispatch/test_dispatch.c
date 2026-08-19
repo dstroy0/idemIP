@@ -784,6 +784,25 @@ void test_the_directed_broadcast_of_our_subnet_is_local(void)
     size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4 | ~NETMASK4);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u);
+
+    // The rule that decision rests on, in the unit that owns it. Nothing else in dispatch tells a
+    // directed broadcast from a host address in the same subnet.
+    Ip4AddrIo *ia = IDEMIP_IP4_ADDR_IO(ip4_addr_mem);
+    ia->match_args.addr = LOCAL_IP4 | ~NETMASK4;
+    ia->match_args.net = LOCAL_IP4;
+    ia->match_args.mask = NETMASK4;
+    Ip4Addr.match(ip4_addr_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ia->status);
+    TEST_ASSERT_TRUE(ia->on_subnet);
+    TEST_ASSERT_TRUE_MESSAGE(ia->is_broadcast, "the all-ones host part is the subnet's directed broadcast");
+
+    ia->match_args.addr = REMOTE_IP4;
+    ia->match_args.net = LOCAL_IP4;
+    ia->match_args.mask = NETMASK4;
+    Ip4Addr.match(ip4_addr_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ia->status);
+    TEST_ASSERT_TRUE(ia->on_subnet);
+    TEST_ASSERT_FALSE_MESSAGE(ia->is_broadcast, "a host address on the subnet is not its broadcast");
 }
 
 // A class D group this node never joined is not this host's, and RFC 1213 ipInAddrErrors counts it.
@@ -1174,6 +1193,20 @@ void test_an_echo_request_builds_a_reply(void)
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_SEND) != 0u);
     TEST_ASSERT_TRUE(IDEMIP_DISPATCH_IO(work_a)->out_len > 0u);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP_ECHO_REPLY, g_out[IDEMIP_ICMP_OFF_TYPE]);
+
+    // The unit's own decision, which is what dispatch turned into ACT_SEND. RFC 792: an Echo Reply
+    // carries back the Identifier and Sequence Number of the request.
+    IcmpInIo *ic = IDEMIP_ICMP_IN_IO(icmp_in_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ic->status);
+    TEST_ASSERT_TRUE(ic->cksum_ok);
+    TEST_ASSERT_TRUE((ic->act & IDEMIP_ICMP_IN_ACT_REPLY) != 0u);
+    TEST_ASSERT_TRUE((ic->act & IDEMIP_ICMP_IN_ACT_DISCARD) == 0u);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP_ECHO, ic->type);
+    // RFC 1122 sec 3.2.2.6: the reply's Source Address is the request's specific-destination address.
+    TEST_ASSERT_EQUAL_UINT32(LOCAL_IP4, ic->src);
+    TEST_ASSERT_EQUAL_UINT32(REMOTE_IP4, ic->dst);
+    TEST_ASSERT_EQUAL_UINT16(ic->id, idemip_rd16(g_out + IDEMIP_ICMP_OFF_ID));
+    TEST_ASSERT_EQUAL_UINT16(ic->seq, idemip_rd16(g_out + IDEMIP_ICMP_OFF_SEQ));
 }
 
 // A reply with nowhere to be built is BUSY, not ERR: a transmit buffer frees on a later tick and the
@@ -1300,6 +1333,76 @@ void test_a_fragment_with_no_descriptor_is_discarded(void)
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP4_REASM_REQDS));
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP4_REASM_FAILS));
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) == 0u);
+}
+
+#define IP4_FRAG_DESC 2u
+
+// One fragment, held. RFC 815 sec 3 leaves a hole from the end of this fragment to infinity, so the
+// row is HOLDING and hands on nothing, and the frame it lies in must not go back to the ring.
+void test_a_fragment_the_reassembler_kept_pins_its_descriptor(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, 8u, IDEMIP_IP4_FLAG_MF);
+    input(work_a, off + 8u, 0u, IP4_FRAG_DESC);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) != 0u,
+                             "a retained fragment must report the pin, or its buffer is recycled under it");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_REASSEMBLED) == 0u);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP4_REASM_REQDS));
+
+    // The reassembler's own state, not dispatch's report of it.
+    Ip4ReassIo *re = IDEMIP_IP4_REASS_IO(ip4_reass_mem);
+    re->next_args.index = IDEMIP_DISPATCH_IO(work_a)->datagram;
+    Ip4Reass.next(ip4_reass_mem);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, re->status, "a row with a hole left hands on no datagram");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_REASS_HOLDING, re->state);
+}
+
+// RFC 815 sec 3 step 8: the fragment carrying MF clear fixes where the datagram ends, and with the
+// hole list empty the row is COMPLETE. Its fragments come back in ascending offset, each naming the
+// descriptor handle, interface in the high octet, that lets the right ring take the buffer back.
+void test_the_last_fragment_completes_the_datagram(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, 8u, IDEMIP_IP4_FLAG_MF);
+    input(work_a, off + 8u, 0u, IP4_FRAG_DESC);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_REASSEMBLED) == 0u);
+
+    // Offset 1 is one eight-octet unit in, which is where the first fragment's data ended.
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, 8u, 1u);
+    input(work_a, off + 8u, 0u, IP4_FRAG_DESC + 1u);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_REASSEMBLED) != 0u,
+                             "the fragment that empties the hole list completes the datagram");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) != 0u);
+    TEST_ASSERT_EQUAL_UINT32(2u, ctr(IDEMIP_STAT_IP4_REASM_REQDS));
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP4_REASM_OKS));
+
+    Ip4ReassIo *re = IDEMIP_IP4_REASS_IO(ip4_reass_mem);
+    const uint8_t row = IDEMIP_DISPATCH_IO(work_a)->datagram;
+    re->next_args.index = row;
+    Ip4Reass.next(ip4_reass_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, re->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_REASS_COMPLETE, re->state);
+    TEST_ASSERT_EQUAL_UINT16(0u, re->off);
+    TEST_ASSERT_EQUAL_UINT16(8u, re->len);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN), re->hdr_len);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_DISPATCH_DESC_HANDLE(0u, IP4_FRAG_DESC), re->desc);
+
+    re->next_args.index = row;
+    Ip4Reass.next(ip4_reass_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, re->status);
+    TEST_ASSERT_EQUAL_UINT16(8u, re->off);
+    TEST_ASSERT_EQUAL_UINT16(8u, re->len);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_DISPATCH_DESC_HANDLE(0u, IP4_FRAG_DESC + 1u), re->desc);
+
+    re->next_args.index = row;
+    Ip4Reass.next(ip4_reass_mem);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, re->status, "the walk ends once every held fragment is reported");
 }
 
 // --- IPv6 --------------------------------------------------------------------
@@ -1488,6 +1591,17 @@ void test_an_icmpv6_message_of_unknown_type_is_discarded(void)
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_MSGS));
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS),
                                      "an unknown type is not an ICMP-specific error");
+
+    // The unit's own decision, which is the flag dispatch read. A checksum that holds is what tells
+    // sec 2.4 (b)'s unknown type from a corrupted message, and they take different drop paths.
+    Icmp6InIo *ic = IDEMIP_ICMP6_IN_IO(icmp6_in_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ic->status);
+    TEST_ASSERT_TRUE_MESSAGE(ic->cksum_ok, "the sec 2.3 checksum this case built must hold");
+    TEST_ASSERT_TRUE((ic->act & IDEMIP_ICMP6_IN_ACT_DISCARD) != 0u);
+    TEST_ASSERT_TRUE((ic->act & IDEMIP_ICMP6_IN_ACT_REPLY) == 0u);
+    TEST_ASSERT_EQUAL_UINT8(200u, ic->type);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a message whose checksum holds is not a checksum error");
 }
 
 // RFC 8200 sec 8.1: "IPv6 receivers must discard UDP packets containing a zero checksum". The
@@ -1632,6 +1746,20 @@ void test_a_neighbor_solicitation_reaches_the_neighbor_discovery_module(void)
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_MSGS));
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS),
                                      "a type this library implements is not an ICMP-specific error");
+
+    // What made that destination this host's. RFC 4291 sec 2.7.1: the Solicited-Node address is
+    // "formed by taking the low-order 24 bits of an address ... and appending those bits to the
+    // prefix FF02:0:0:0:0:1:FF00::/104". Dispatch walks the interface's addresses and compares each
+    // one's against the destination, so this unit is the whole of that decision.
+    static const uint8_t prefix[13] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0xFF};
+    Ip6AddrIo *i6 = IDEMIP_IP6_ADDR_IO(ip6_addr_mem);
+    i6->solicited_args.addr = g_local_ip6;
+    Ip6Addr.solicited(ip6_addr_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, i6->status);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(solicited, i6->solicited, IDEMIP_IP6_ADDR_LEN,
+                                          "the address the case addressed is not this node's solicited-node one");
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(prefix, i6->solicited, sizeof prefix);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(g_local_ip6 + IDEMIP_IP6_ADDR_LEN - 3u, i6->solicited + sizeof prefix, 3u);
 }
 
 // RFC 4861 sec 4.4, the reply to the above, which sec 7.2.5 feeds to the Neighbor Cache.
@@ -1810,6 +1938,48 @@ void test_a_multicast_group_this_node_never_joined_is_not_local(void)
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) != 0u);
 }
 
+// The positive twin, and the only thing that makes the negative one mean anything: RFC 4291 sec 2.8
+// puts "All other Multicast addresses of groups to which the node belongs" on the list a host must
+// recognize as its own, and belonging is what Mld6 records. The group table is the one thing that
+// tells this destination from the address above it.
+void test_a_multicast_group_this_node_joined_is_local(void)
+{
+    static const uint8_t joined[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x09};
+
+    Mld6Io *ml = IDEMIP_MLD6_IO(mld6_mem);
+    ml->group_args.group = joined;
+    ml->group_args.netif = 0u;
+    Mld6.join(mld6_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ml->status);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_MLD6_DELAYING_LISTENER, ml->state,
+                                  "RFC 2710 sec 3: a join starts the report delay timer");
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_MLD_QUERY, g_remote_ip6, joined,
+                                 IDEMIP_ICMP6_MLD_MSG_LEN);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_MLD_MSG_LEN, g_remote_ip6, joined);
+    input(work_a, msg + IDEMIP_ICMP6_MLD_MSG_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u,
+                             "a group the node joined was not recognized as its own");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_GROUP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+
+    // Leaving takes it back off the list, and the same frame is forwarded again.
+    ml->group_args.group = joined;
+    ml->group_args.netif = 0u;
+    Mld6.leave(mld6_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ml->status);
+    ml->group_args.group = joined;
+    ml->group_args.netif = 0u;
+    Mld6.find(mld6_mem);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, ml->status, "a left group is still on the list");
+
+    input(work_a, msg + IDEMIP_ICMP6_MLD_MSG_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) != 0u);
+}
+
 // The same walk, over an option whose Length reaches past the octets the message carries.
 void test_an_nd_option_running_past_the_message_discards_the_packet(void)
 {
@@ -1972,6 +2142,21 @@ void test_a_segment_with_no_tcb_reaches_the_closed_state(void)
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->tcp_act & IDEMIP_TCP_IN_ACT_RST) != 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_NONE, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_TCP_IN_SEGS));
+
+    // The segment the unit parsed, and the reset it built from it. RFC 9293 sec 3.5.2 group 2: with
+    // no ACK field "the reset has sequence number zero and the ACK field is set to the sum of the
+    // sequence number and segment length of the incoming segment", and sec 3.4 counts SEG.LEN
+    // "counting SYN and FIN", so a bare SYN at 100 is answered at 101.
+    TcpInIo *ti = IDEMIP_TCP_IN_IO(tcp_in_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ti->status);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_TCP_SYN, ti->seg.flags);
+    TEST_ASSERT_EQUAL_UINT32(100u, ti->seg.seq);
+    TEST_ASSERT_EQUAL_UINT32(1u, ti->seg.len);
+    TEST_ASSERT_EQUAL_UINT16(0u, ti->seg.data_len);
+    TEST_ASSERT_TRUE((ti->res.act & IDEMIP_TCP_IN_ACT_RST) != 0u);
+    TEST_ASSERT_EQUAL_UINT32(0u, ti->reply.seq);
+    TEST_ASSERT_EQUAL_UINT32(101u, ti->reply.ack);
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)(IDEMIP_TCP_RST | IDEMIP_TCP_ACK), ti->reply.flags);
 }
 
 // RFC 9293 sec 3.10.7.2 LISTEN STATE: a SYN to a listener creates the connection, which sec 3.5

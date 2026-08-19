@@ -286,6 +286,9 @@ static void open_tick(uint8_t *w, uint32_t now_ms)
 // through RFC 1213 ipInUnknownProtos without any transport binding.
 #define TICK_TEST_PROTO 253u
 #define TICK_TEST_DATA 8u
+// RFC 791 sec 3.2 step (17) raises a partial datagram's timer to the TTL, so a test that waits one
+// out waits this long, not IDEMIP_IP_REASS_MAXAGE_S.
+#define TICK_TEST_TTL 64u
 
 static uint16_t fill_ip4(unsigned slot, uint32_t dst, uint16_t flags_frag)
 {
@@ -297,7 +300,7 @@ static uint16_t fill_ip4(unsigned slot, uint32_t dst, uint16_t flags_frag)
     fields.total_len = (uint16_t)(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + TICK_TEST_DATA);
     fields.id = 0x4242u;
     fields.flags_frag = flags_frag;
-    fields.ttl = 64u;
+    fields.ttl = TICK_TEST_TTL;
     fields.proto = TICK_TEST_PROTO;
     fields.src = REMOTE_IP4;
     fields.dst = dst;
@@ -632,6 +635,64 @@ void test_a_retained_frame_keeps_its_descriptor_out_of_the_ring(void)
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, g_released, "a pinned descriptor was handed back to the engine");
 }
 
+// RFC 791 sec 3.2 step (19): "if the timer runs out, the all reassembly resources for this BUFID are
+// released". Each of those fragments pinned a receive descriptor, so releasing them is the only
+// thing that hands the buffers back. This suite bound the ip4_reass borrow to the tick and drove it
+// only through whole datagrams, so the sweep and the reclaim that follows it had never run.
+void test_an_expired_datagram_returns_every_descriptor_it_pinned(void)
+{
+    uint16_t len = fill_ip4(0u, LOCAL_IP4, IDEMIP_IP4_FLAG_MF);
+    engine_queue(0u, len);
+    open_tick(work_a, 1000u);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(dispatch_mem)->drop,
+                                  "the fragment did not reach the reassembler");
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(dispatch_mem)->act & IDEMIP_DISPATCH_ACT_PINNED) != 0u,
+                             "a held fragment was not reported as pinned");
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16(1u, IDEMIP_DMA_IO(dma_mem)->pinned);
+
+    // The timer step (17) raised, run out, with the fragment that would fill the hole never
+    // arriving. Each phase loop is capped: a phase that reports a step it did not take would
+    // otherwise never end.
+    open_tick(work_a, 1000u + ((uint32_t)TICK_TEST_TTL * 1000u));
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.drain));
+    TEST_ASSERT_TRUE_MESSAGE(run_phase(work_a, Tick.service),
+                             "the service phase never stopped reporting steps for the expired datagram");
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.flush));
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(dma_mem)->pinned,
+                                     "a timed-out datagram kept the descriptors its fragments pinned");
+
+    // The reassembler's own state: the row is gone, not merely unpinned. A row the sweep can still
+    // find is one the service phase reports a step for on every later tick.
+    IDEMIP_IP4_REASS_IO(ip4_reass_mem)->now_ms = 1000u + ((uint32_t)TICK_TEST_TTL * 1000u);
+    Ip4Reass.tick(ip4_reass_mem);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_IP4_REASS_IO(ip4_reass_mem)->status,
+                                  "the timed-out row was never freed");
+}
+
+// The same datagram, completed instead of timed out: the descriptors stay pinned, because the caller
+// has not yet read the reassembled datagram out of them.
+void test_a_completed_datagram_still_holds_its_descriptors(void)
+{
+    uint16_t len = fill_ip4(0u, LOCAL_IP4, IDEMIP_IP4_FLAG_MF);
+    engine_queue(0u, len);
+    // TICK_TEST_DATA octets in, which is where the first fragment's data ended, and MF clear.
+    len = fill_ip4(1u, LOCAL_IP4, (uint16_t)(TICK_TEST_DATA / 8u));
+    engine_queue(1u, len);
+
+    open_tick(work_a, 1000u);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(dispatch_mem)->act & IDEMIP_DISPATCH_ACT_REASSEMBLED) != 0u,
+                             "the last fragment did not complete the datagram");
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16(2u, IDEMIP_DMA_IO(dma_mem)->pinned);
+}
+
 #if IDEMIP_ENABLE_IPV6
 
 // RFC 8200 sec 4.5: "If insufficient fragments are received to complete reassembly of a packet
@@ -741,6 +802,43 @@ void test_a_completed_ipv6_datagram_still_holds_its_descriptors(void)
     TEST_ASSERT_EQUAL_UINT16(2u, IDEMIP_DMA_IO(dma_mem)->pinned);
 }
 
+// RFC 2710 sec 3: a node that has joined a group sends its Report after a delay, and the service
+// phase is what runs that clock down. This suite bound the mld6 borrow to the tick and never joined
+// a group, so t_service_mld6 was reached only with an empty table, where every path reports nothing.
+void test_the_service_phase_runs_the_mld_report_delay_down(void)
+{
+    static const uint8_t group[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x09};
+
+    Mld6Io *ml = IDEMIP_MLD6_IO(mld6_mem);
+    ml->group_args.group = group;
+    ml->group_args.netif = 0u;
+    Mld6.join(mld6_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ml->status);
+    TEST_ASSERT_TRUE_MESSAGE(ml->send_report, "a join owes an unsolicited Report");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_MLD6_DELAYING_LISTENER, ml->state);
+
+    // Past IDEMIP_MLD6_JOIN_DELAY_MS, measured from the clock the unit last read, which is zero
+    // until a tick sets it.
+    open_tick(work_a, 100000u);
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.drain));
+    TEST_ASSERT_TRUE_MESSAGE(run_phase(work_a, Tick.service),
+                             "the service phase never stopped reporting steps for the delayed Report");
+
+    // The unit's own state: the timer fired, the group is listening with no timer running, and a
+    // second sweep at the same clock finds nothing due. A row left DELAYING is one the service
+    // phase reports a step for on every later tick.
+    ml->group_args.group = group;
+    ml->group_args.netif = 0u;
+    Mld6.find(mld6_mem);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, ml->status, "the joined group left the table");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_MLD6_IDLE_LISTENER, ml->state, "the report delay timer never fired");
+
+    ml->tick_args.now_ms = 100000u;
+    Mld6.tick(mld6_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ml->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, ml->expired, "a report delay timer is still due after the sweep");
+}
+
 #endif // IDEMIP_ENABLE_IPV6
 
 // Every ring is drained before the phase moves on, so two frames are two steps.
@@ -759,6 +857,129 @@ void test_the_drain_takes_every_waiting_frame(void)
     }
     TEST_ASSERT_EQUAL_INT(2, taken);
     TEST_ASSERT_EQUAL_UINT16(2u, IDEMIP_TICK_IO(work_a)->frames);
+}
+
+// RFC 1122 sec 3.2.1.3 case (e), the directed broadcast of the receiving interface's own subnet, is
+// this host's. Every other drain case here addresses the interface's unicast address, which the
+// route lookup answers on its own, so the drain had never reached the unit that knows this one.
+void test_the_drain_takes_a_frame_addressed_to_our_directed_broadcast(void)
+{
+    uint16_t len = fill_ip4(0u, LOCAL_IP4 | ~NETMASK4, 0u);
+    engine_queue(0u, len);
+
+    open_tick(work_a, 1000u);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
+    // TICK_TEST_PROTO is unclaimed, so a destination this host accepted reaches the protocol
+    // dispatch and stops there. What it is not is IDEMIP_DISPATCH_DROP_IP_ADDRESS.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_PROTO, IDEMIP_DISPATCH_IO(dispatch_mem)->drop,
+                                  "the subnet's directed broadcast was not taken as this host's");
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(dispatch_mem)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u,
+                             "the subnet's directed broadcast was reported for forwarding");
+
+    // The control: the same address one subnet over is not this host's, and is forwarded.
+    len = fill_ip4(1u, (LOCAL_IP4 + 0x100u) | ~NETMASK4, 0u);
+    engine_queue(1u, len);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(dispatch_mem)->act & IDEMIP_DISPATCH_ACT_FORWARD) != 0u,
+                             "another subnet's directed broadcast was taken as this host's");
+
+    // The rule that decision rests on, in the unit that owns it.
+    Ip4AddrIo *ia = IDEMIP_IP4_ADDR_IO(ip4_addr_mem);
+    ia->match_args.addr = LOCAL_IP4 | ~NETMASK4;
+    ia->match_args.net = LOCAL_IP4;
+    ia->match_args.mask = NETMASK4;
+    Ip4Addr.match(ip4_addr_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ia->status);
+    TEST_ASSERT_TRUE_MESSAGE(ia->is_broadcast, "the all-ones host part is the subnet's directed broadcast");
+}
+
+// IEEE 802.1Q: an untagged interface accepts every frame and reads the payload behind whatever tag
+// it carries. Every frame this suite queued was untagged, so the drain had never read a payload at
+// the shifted offset, and the unit that finds that offset was bound and never questioned.
+void test_the_drain_reads_a_tagged_frame_behind_its_tag(void)
+{
+    uint8_t *f = rx_buf_at(0u);
+    memset(f, 0, IDEMIP_DMA_BUF_STRIDE);
+    idemip_eth_build(f, g_local_mac, g_remote_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    VlanIo *v = IDEMIP_VLAN_IO(vlan_mem);
+    v->build_args.frame = f;
+    v->build_args.type = (uint16_t)IDEMIP_ETHERTYPE_IPV4;
+    v->tag_args.vid = 100u;
+    v->tag_args.pcp = 0u;
+    v->tag_args.dei = IDEMIP_FALSE;
+    Vlan.build(vlan_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, v->status);
+
+    IdemIpIp4Fields fields;
+    memset(&fields, 0, sizeof fields);
+    fields.total_len = (uint16_t)(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + TICK_TEST_DATA);
+    fields.id = 0x4242u;
+    fields.ttl = TICK_TEST_TTL;
+    fields.proto = TICK_TEST_PROTO;
+    fields.src = REMOTE_IP4;
+    fields.dst = LOCAL_IP4;
+    idemip_ip4_build(f + IDEMIP_VLAN_OFF_PAYLOAD, &fields);
+    uint16_t len = (uint16_t)(IDEMIP_VLAN_OFF_PAYLOAD + IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + TICK_TEST_DATA);
+    engine_queue(0u, len);
+
+    open_tick(work_a, 1000u);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
+    DispatchIo *di = IDEMIP_DISPATCH_IO(dispatch_mem);
+    TEST_ASSERT_TRUE_MESSAGE(di->tagged, "the tag was not seen");
+    TEST_ASSERT_EQUAL_UINT16(100u, di->vid);
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)IDEMIP_ETHERTYPE_IPV4, di->type);
+    // The header was found behind the tag, so the datagram reached the protocol dispatch, which is
+    // where TICK_TEST_PROTO stops. A payload read at the untagged offset lands in the tag itself and
+    // reports a header error instead.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_PROTO, di->drop,
+                                  "the IPv4 header was not read from behind the tag");
+
+    // The unit's own reading of the same frame.
+    v->parse_args.frame = f;
+    v->parse_args.len = len;
+    Vlan.parse(vlan_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, v->status);
+    TEST_ASSERT_TRUE(v->tagged);
+    TEST_ASSERT_EQUAL_UINT16(100u, v->vid);
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)IDEMIP_VLAN_OFF_PAYLOAD, (uint16_t)v->payload_off);
+    TEST_ASSERT_FALSE(v->vid_reserved);
+}
+
+// RFC 1122 sec 3.2.1.3 case (g), "{ 127, <any> } Internal host loopback address", is the range, and
+// the loopback interface's address is one of "(one of) the host's IP address(es)" that clause (1) of
+// the same section makes a datagram destined for the host. Nothing else in the destination decision
+// knows the range, so this is the one unit that answers for it, and the drain had never asked.
+void test_the_drain_takes_a_frame_addressed_to_the_loopback_range(void)
+{
+    uint16_t len = fill_ip4(0u, 0x7F000001u, 0u);
+    engine_queue(0u, len);
+
+    open_tick(work_a, 1000u);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_PROTO, IDEMIP_DISPATCH_IO(dispatch_mem)->drop,
+                                  "a loopback destination was not taken as this host's");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(dispatch_mem)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u);
+
+    // The unit's own reading: the whole of 127/8 and nothing outside it.
+    LoopifIo *lo = IDEMIP_LOOPIF_IO(loopif_mem);
+    lo->match_args.addr4 = 0x7F000001u;
+    Loopif.owns4(loopif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, lo->status);
+    TEST_ASSERT_TRUE(lo->owned);
+
+    lo->match_args.addr4 = 0x7FFFFFFEu;
+    Loopif.owns4(loopif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, lo->status);
+    TEST_ASSERT_TRUE_MESSAGE(lo->owned, "case (g) is { 127, <any> }, not 127.0.0.1 alone");
+
+    lo->match_args.addr4 = LOCAL_IP4;
+    Loopif.owns4(loopif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, lo->status);
+    TEST_ASSERT_FALSE_MESSAGE(lo->owned, "an address outside 127/8 is not the loopback's");
 }
 
 // --- the flush, and the frames a resolver released ---------------------------
