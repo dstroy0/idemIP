@@ -21,8 +21,8 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/checksum.h"
-#include "idemIP/ip/ipv6.h"
+#include "src/checksum.h"
+#include "src/ip/ipv6.h"
 
 #include <string.h>
 #include <unity.h>

@@ -14,14 +14,14 @@
 //   RFC 791  sec 3.2 an oversized datagram fragmented and reassembled
 // and writes every frame that crossed the wire to a .pcap through test/support/pcap.h.
 //
-// THE TICK LOOP IS THIS SUITE'S. idemIP/core/tick.h and idemIP/core/dispatch.h are not in this
+// THE TICK LOOP IS THIS SUITE'S. src/core/tick.h and src/core/dispatch.h are not in this
 // checkout, so the three stages PLAN.md sec 3.4b names are written here by hand: drain receive,
 // run each service's timers, flush deferred transmit. With those two units present the loop moves
 // into them and this file calls them instead.
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/idemip.h"
+#include "src/idemip.h"
 
 #include "support/fake_phy.h"
 #include "support/pcap.h"

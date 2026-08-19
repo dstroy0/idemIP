@@ -14,10 +14,10 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/core/tick.h"
+#include "src/core/tick.h"
 
-#include "idemIP/arp/arp.h"
-#include "idemIP/ip/ipv4.h"
+#include "src/arp/arp.h"
+#include "src/ip/ipv4.h"
 
 #include <string.h>
 #include <unity.h>

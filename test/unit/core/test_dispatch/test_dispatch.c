@@ -13,19 +13,19 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/core/dispatch.h"
+#include "src/core/dispatch.h"
 
-#include "idemIP/arp/arp.h"
-#include "idemIP/icmp/icmp.h"
-#include "idemIP/ip/ipv4.h"
+#include "src/arp/arp.h"
+#include "src/icmp/icmp.h"
+#include "src/ip/ipv4.h"
 #if IDEMIP_ENABLE_IPV6
-#include "idemIP/ip/ipv6.h"
+#include "src/ip/ipv6.h"
 #endif
 #if IDEMIP_ENABLE_TCP
-#include "idemIP/tcp/tcp.h"
+#include "src/tcp/tcp.h"
 #endif
 #if IDEMIP_ENABLE_UDP
-#include "idemIP/udp/udp.h"
+#include "src/udp/udp.h"
 #endif
 
 #include <string.h>
@@ -1034,7 +1034,7 @@ void test_a_broadcast_delivery_counts_non_unicast(void)
 
 // RFC 2011 icmpInMsgs: "The total number of ICMP messages which the entity received. Note that this
 // counter includes all those counted by icmpInErrors." Each Type it names carries its own counter as
-// well, so an Echo is both an icmpInMsgs and an icmpInEchos. Nothing under idemIP/ bumped one of the
+// well, so an Echo is both an icmpInMsgs and an icmpInEchos. Nothing under src/ bumped one of the
 // fifty-three ICMP counters, while the IP, interface, TCP and UDP receive paths all counted.
 void test_an_icmp_echo_counts_itself_by_message_and_by_type(void)
 {

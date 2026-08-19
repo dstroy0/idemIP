@@ -12,7 +12,7 @@ import re
 import sys
 
 ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
-LIB = os.path.join(ROOT, "idemIP")
+LIB = os.path.join(ROOT, "src")
 TEST = os.path.join(ROOT, "test")
 
 # What a header defines: an inline function, a function-like or object-like macro, an enumerator.

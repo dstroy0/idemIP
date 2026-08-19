@@ -11,7 +11,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/ethernet/ethernet.h"
+#include "src/ethernet/ethernet.h"
 
 #include <string.h>
 #include <unity.h>

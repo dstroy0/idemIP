@@ -23,7 +23,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/nd/slaac.h"
+#include "src/nd/slaac.h"
 
 #include <string.h>
 #include <unity.h>

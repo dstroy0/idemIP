@@ -17,7 +17,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/raw/raw_pcb.h"
+#include "src/raw/raw_pcb.h"
 
 #include <string.h>
 #include <unity.h>

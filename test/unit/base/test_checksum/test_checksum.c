@@ -5,8 +5,8 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/checksum.h"
-#include "idemIP/endian.h"
+#include "src/checksum.h"
+#include "src/endian.h"
 
 #include <unity.h>
 

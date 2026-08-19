@@ -15,7 +15,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/pmtu/pmtu4.h"
+#include "src/pmtu/pmtu4.h"
 
 #include <string.h>
 #include <unity.h>

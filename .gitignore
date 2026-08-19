@@ -1,17 +1,1 @@
-# Build output, including the FetchContent cache Unity lands in. One per agent, so the pattern is
-# any directory whose name starts with build.
-build*/
-
-# The lwIP reference clone. Read for engineering constants, never built and never shipped, and it
-# carries its own history.
-lwip_ref/
-
-# Unity's generator bakes the absolute source path into the runner, so every tree produces a
-# different one and two trees always conflict. CMake regenerates it from the suite on each build.
-unity_runner.c
-
-# Agent worktrees and session state. Each worktree is its own checkout of this repo.
-.claude/
-
-# The capture test_loopback writes, one per run in whatever directory the suite ran from.
-loopback.pcap
+.vscode/

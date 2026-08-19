@@ -3,9 +3,18 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """idemIP test harness: suite discovery and Unity runner generation.
 
-  harness.py suites                          list every suite CMake will build
+  harness.py suites                          every suite, its cases, and the capabilities it needs
   harness.py runners gen <dir> --unity <rb>  write <dir>/unity_runner.c
   harness.py cases <dir>                     what Unity will register, and what it will walk past
+
+A capability is a set of translation units the feature tree selects, so a suite whose capabilities
+are off is not built at all:
+
+  cmake -S . -B ../build -G Ninja -DIDEMIP_ENABLE_TCP=OFF -DIDEMIP_ENABLE_UDP=OFF
+
+The capabilities each suite needs are test/CMakeLists.txt's map, which is what `suites` reads: a
+suite naming a capability it never drives, or driving one it does not name, is how a reduced build
+fails while the full one passes.
 
 A case Unity's generator does not collect is not an error to the generator: it is simply never
 registered, so the suite passes while the case never ran. `cases` and `runners gen` both break
@@ -28,6 +37,17 @@ GENERATED_RUNNER = "unity_runner.c"
 UNITY_CASE = re.compile(r"^[ \t]*void[ \t]+(test_\w+)[ \t]*\([ \t]*(?:void)?[ \t]*\)", re.M)
 NEAR_MISS = re.compile(r"^[ \t]*void[ \t]+(\w+)[ \t]*\([ \t]*(?:void)?[ \t]*\)[ \t]*\r?\n[ \t]*\{", re.M)
 NOT_A_CASE = ("setUp", "tearDown", "main", "suiteSetUp", "suiteTearDown")
+
+# test/CMakeLists.txt's map: which capabilities a suite needs before the build carries it.
+SUITE_CAP = re.compile(r"^set\(IDEMIP_SUITE_CAP_(\w+)\s+([^)]*)\)", re.M)
+
+
+def suite_caps():
+    """The capabilities each suite needs, as test/CMakeLists.txt's map states them."""
+    path = os.path.join(ROOT, "test", "CMakeLists.txt")
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    return {name: caps.split() for name, caps in SUITE_CAP.findall(text)}
 
 
 def runner_cases(path):
@@ -183,10 +203,13 @@ def cmd_deps(a):
 
 
 def cmd_suites(_a):
+    caps = suite_caps()
     for d in discover():
         found, missed = runner_cases(suite_source(d))
+        name = os.path.basename(d)
+        need = " ".join(caps.get(name, [])) or "-"
         note = "" if not missed else "   NOT REGISTERED: " + ", ".join(missed)
-        print("%-58s %2d cases%s" % (os.path.relpath(d, ROOT).replace("\\", "/"), len(found), note))
+        print("%-52s %2d cases  %-18s%s" % (os.path.relpath(d, ROOT).replace("\\", "/"), len(found), need, note))
     return 0
 
 
@@ -216,7 +239,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("suites", help="list every suite CMake will build").set_defaults(fn=cmd_suites)
+    sub.add_parser("suites", help="every suite, its cases, and the capabilities it needs").set_defaults(fn=cmd_suites)
 
     p = sub.add_parser("deps", help="dependencies a suite binds but no case asserts on")
     p.add_argument("--strict", action="store_true", help="exit non-zero on a finding, for a CI gate")

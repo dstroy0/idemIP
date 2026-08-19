@@ -18,8 +18,8 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/checksum.h"
-#include "idemIP/ip/ipv4.h"
+#include "src/checksum.h"
+#include "src/ip/ipv4.h"
 
 #include <string.h>
 #include <unity.h>

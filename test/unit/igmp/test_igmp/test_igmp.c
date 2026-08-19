@@ -15,7 +15,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/igmp/igmp.h"
+#include "src/igmp/igmp.h"
 
 #include <string.h>
 #include <unity.h>

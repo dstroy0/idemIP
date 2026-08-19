@@ -15,7 +15,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/mld/mld6.h"
+#include "src/mld/mld6.h"
 
 #include <string.h>
 #include <unity.h>

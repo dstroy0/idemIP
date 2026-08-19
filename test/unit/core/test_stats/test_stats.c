@@ -14,7 +14,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/core/stats.h"
+#include "src/core/stats.h"
 
 #include <string.h>
 #include <unity.h>

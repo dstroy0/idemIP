@@ -14,7 +14,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/tcp/tcp_pcb.h"
+#include "src/tcp/tcp_pcb.h"
 
 #include <stdio.h>
 #include <string.h>

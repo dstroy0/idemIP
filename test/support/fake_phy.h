@@ -33,8 +33,8 @@
 #ifndef IDEMIP_TEST_FAKE_PHY_H
 #define IDEMIP_TEST_FAKE_PHY_H
 
-#include "idemIP/ethernet/ethernet.h"
-#include "idemIP/ethernet/phy.h"
+#include "src/ethernet/ethernet.h"
+#include "src/ethernet/phy.h"
 
 #include <string.h>
 

@@ -19,7 +19,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/udp/udp_pcb.h"
+#include "src/udp/udp_pcb.h"
 
 #include <string.h>
 #include <unity.h>

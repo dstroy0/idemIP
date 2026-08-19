@@ -12,7 +12,7 @@
  * tools/ is exempt from the src/ style rules, so this reads as plain host C.
  */
 
-#include "idemIP/idemip_config.h"
+#include "src/idemip_config.h"
 
 #include <stdio.h>
 

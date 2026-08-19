@@ -13,7 +13,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/netif/loopif.h"
+#include "src/netif/loopif.h"
 
 #include <string.h>
 #include <unity.h>

@@ -6,6 +6,7 @@
 # row, a suite capability. Concurrent appends are not a semantic conflict, so union keeps both
 # sides. A genuine clash still fails the build: two units defining one macro differently is an
 # error the compiler reports, which is where it belongs.
-idemIP/idemip_config.h merge=union
+src/idemip_config.h merge=union
 tools/idemip_sizes.c    merge=union
 test/CMakeLists.txt     merge=union
+.vscode

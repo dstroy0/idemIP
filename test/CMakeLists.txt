@@ -30,8 +30,8 @@ if(NOT IDEMIP_SUITE_SOURCES)
 endif()
 
 # Which capabilities each suite needs, as a list. A suite missing any of them is not built, because
-# the header compiled to nothing and the suite would fail on undeclared constants. It is SKIPPED
-# LOUDLY: silently dropping it would leave a passing run that tested less than it looks like.
+# the capability names no translation unit in the library and the suite would fail to link. It is
+# SKIPPED LOUDLY: silently dropping it would leave a passing run that tested less than it looks like.
 #
 # The list is what a suite that joins capabilities needs: core/dispatch walks a frame to an IPv4 or
 # IPv6 header and on to a TCP or UDP binding, so its suite needs all four. Unity's runner generator
@@ -78,12 +78,12 @@ set(IDEMIP_SUITE_CAP_test_tcp      TCP)
 set(IDEMIP_SUITE_CAP_test_udp      UDP)
 set(IDEMIP_SUITE_CAP_test_tcp_pcb  TCP)
 set(IDEMIP_SUITE_CAP_test_tcp_isn  TCP)
-set(IDEMIP_SUITE_CAP_test_tcp_in   TCP)
-# tcp_out builds an RFC 8200 sec 8.1 pseudo-header in one case, so its suite needs IPv6 as well.
-set(IDEMIP_SUITE_CAP_test_tcp_out  TCP IPV6)
+set(IDEMIP_SUITE_CAP_test_tcp_in   TCP IPV4)
+# tcp_out builds both pseudo-headers, RFC 9293 sec 3.1 over IPv4 and RFC 8200 sec 8.1 over IPv6.
+set(IDEMIP_SUITE_CAP_test_tcp_out  TCP IPV4 IPV6)
 set(IDEMIP_SUITE_CAP_test_udp_pcb  UDP)
-# udplite's suite checks the RFC 8200 sec 8.1 pseudo-header as well as the RFC 768 one.
-set(IDEMIP_SUITE_CAP_test_udplite  UDP IPV6)
+# udplite checks both pseudo-headers, the RFC 768 one over IPv4 and the RFC 8200 sec 8.1 one.
+set(IDEMIP_SUITE_CAP_test_udplite  UDP IPV4 IPV6)
 # raw_pcb.h opens under IPV4 or IPV6, either one being an IP layer to bind a protocol number on. Its
 # suite exercises both, so it needs both.
 set(IDEMIP_SUITE_CAP_test_raw_pcb  IPV4 IPV6)
@@ -100,11 +100,9 @@ set(IDEMIP_SUITE_CAP_test_tick     IPV4)
 set(IDEMIP_SUITE_CAP_test_dispatch IPV4 IPV6 TCP UDP)
 # test_checksum has no gate: checksum.h is a base facility, ungated like ProtoCore's mmgr/endian.h.
 # test_loopback drives ARP (RFC 826), ICMP (RFC 792), IPv4 fragmentation (RFC 791 sec 3.2), UDP and
-# TCP over two instances. Every one of those exchanges is IPv4, and IDEMIP_ENABLE_IPV4 already
-# requires IDEMIP_ENABLE_ETHERNET, so IPV4 is the gate whose absence removes the whole suite. The
-# map holds one capability per suite, the same limit test_raw_pcb records above: a build with IPV4
-# on and TCP or UDP off would still not compile this suite.
-set(IDEMIP_SUITE_CAP_test_loopback IPV4)
+# TCP over two instances, so it needs all three. IDEMIP_ENABLE_IPV4 already requires
+# IDEMIP_ENABLE_ETHERNET.
+set(IDEMIP_SUITE_CAP_test_loopback IPV4 TCP UDP)
 
 set(IDEMIP_SKIPPED "")
 

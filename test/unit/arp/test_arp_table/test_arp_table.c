@@ -18,7 +18,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/arp/arp_table.h"
+#include "src/arp/arp_table.h"
 
 #include <string.h>
 #include <unity.h>

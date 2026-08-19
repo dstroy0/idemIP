@@ -19,7 +19,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/dhcp/dhcp4.h"
+#include "src/dhcp/dhcp4.h"
 
 #include <string.h>
 #include <unity.h>

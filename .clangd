@@ -1,9 +1,9 @@
 # idemIP v0.1.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Without this, clangd has no include path and reports every uint8_t and every idemIP/ header as
+# Without this, clangd has no include path and reports every uint8_t and every src/ header as
 # missing. Those are phantom errors: the build is clean. Chasing them into the source is how real
 # code gets damaged, so the compilation database is named here.
 
 CompileFlags:
-  CompilationDatabase: build
+  CompilationDatabase: ../build

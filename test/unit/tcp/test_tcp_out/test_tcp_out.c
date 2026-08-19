@@ -13,9 +13,9 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/ip/ipv6.h"
-#include "idemIP/tcp/tcp_in.h"
-#include "idemIP/tcp/tcp_out.h"
+#include "src/ip/ipv6.h"
+#include "src/tcp/tcp_in.h"
+#include "src/tcp/tcp_out.h"
 
 #include <string.h>
 #include <unity.h>

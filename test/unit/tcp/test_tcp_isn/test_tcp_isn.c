@@ -18,7 +18,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/tcp/tcp_isn.h"
+#include "src/tcp/tcp_isn.h"
 
 #include <string.h>
 #include <unity.h>

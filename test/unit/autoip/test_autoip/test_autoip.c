@@ -15,7 +15,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/autoip/autoip.h"
+#include "src/autoip/autoip.h"
 
 #include <string.h>
 #include <unity.h>

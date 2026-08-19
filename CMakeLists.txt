@@ -9,6 +9,9 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(FeatureTree)
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
@@ -18,24 +21,104 @@ endif()
 option(IDEMIP_LTO "Link-time optimization, which is what folds the namespace indirection" ON)
 
 # --- capabilities ------------------------------------------------------------
-# Every capability header wraps its declarations in its gate, so a capability that is off compiles
-# to nothing. CMake is the one source for the values: it passes each as a definition the library
-# and every consumer see, and test/ uses the same values to decide which suites exist. A gate set
-# only in idemip_config.h would be invisible to the build, and a suite for a disabled capability
-# would then fail to compile.
+# One option per capability, and the edges between them. CMake is the one source for the values: it
+# selects the translation units below, passes each value as a definition the library and every
+# consumer see, and test/ uses the same values to decide which suites exist.
 
 set(IDEMIP_CAPABILITIES ETHERNET IPV4 IPV6 TCP UDP)
-foreach(cap ${IDEMIP_CAPABILITIES})
-    option(IDEMIP_ENABLE_${cap} "Build the ${cap} capability" ON)
-endforeach()
+
+# The link layer is the root. Every other capability names the parent it sits on, and the refusal
+# message is the one idemip_config.h stated, RFC citation and all.
+add_root_option(IDEMIP_ENABLE_ETHERNET "Build the ETHERNET capability" ON)
+
+add_child_option(IDEMIP_ENABLE_IPV4 "Build the IPV4 capability" ON
+    "IDEMIP_ENABLE_IPV4 needs IDEMIP_ENABLE_ETHERNET: arp.h resolves to a 48-bit Ethernet address (RFC 826)"
+    IDEMIP_ENABLE_ETHERNET)
+add_child_option(IDEMIP_ENABLE_IPV6 "Build the IPV6 capability" ON
+    "IDEMIP_ENABLE_IPV6 needs IDEMIP_ENABLE_ETHERNET: the link layer here is Ethernet II (RFC 2464)"
+    IDEMIP_ENABLE_ETHERNET)
+add_child_option(IDEMIP_ENABLE_TCP "Build the TCP capability" ON
+    "IDEMIP_ENABLE_TCP needs IDEMIP_ENABLE_IPV4 or IDEMIP_ENABLE_IPV6: the checksum covers a pseudo-header"
+    IDEMIP_ENABLE_IPV4 IDEMIP_ENABLE_IPV6)
+add_child_option(IDEMIP_ENABLE_UDP "Build the UDP capability" ON
+    "IDEMIP_ENABLE_UDP needs IDEMIP_ENABLE_IPV4 or IDEMIP_ENABLE_IPV6: the checksum covers a pseudo-header"
+    IDEMIP_ENABLE_IPV4 IDEMIP_ENABLE_IPV6)
+
+# --- the translation units each capability is ---------------------------------
+# One list per capability, and a file appears in exactly one of them. An option that is off leaves
+# its files out of the target, so a disabled capability reaches the compiler as no file at all.
+
+set(IDEMIP_SOURCES "")
+
+feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_ETHERNET
+    src/core/dispatch.c
+    src/core/stats.c
+    src/core/tick.c
+    src/core/timeouts.c
+    src/ethernet/phy.c
+    src/ethernet/vlan.c
+    src/netif/dma.c
+    src/netif/loopif.c
+    src/netif/netif.c)
+
+feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_IPV4
+    src/acd/acd.c
+    src/arp/arp_table.c
+    src/autoip/autoip.c
+    src/dhcp/dhcp4.c
+    src/icmp/icmp_in.c
+    src/igmp/igmp.c
+    src/ip/ip4_addr.c
+    src/ip/ip4_forward.c
+    src/ip/ip4_frag.c
+    src/ip/ip4_reass.c
+    src/ip/ip4_route.c
+    src/pmtu/pmtu4.c)
+
+feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_IPV6
+    src/dhcp/dhcp6.c
+    src/ethernet/ethip6.c
+    src/icmp/icmp6_in.c
+    src/ip/ip6_addr.c
+    src/ip/ip6_forward.c
+    src/ip/ip6_frag.c
+    src/ip/ip6_reass.c
+    src/ip/ip6_select.c
+    src/mld/mld6.c
+    src/nd/dad.c
+    src/nd/nd6.c
+    src/nd/rdnss.c
+    src/nd/slaac.c
+    src/pmtu/pmtu6.c)
+
+feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_TCP
+    src/tcp/tcp_in.c
+    src/tcp/tcp_isn.c
+    src/tcp/tcp_out.c
+    src/tcp/tcp_pcb.c)
+
+feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_UDP
+    src/dns/dns.c
+    src/udp/udp_pcb.c
+    src/udp/udplite.c)
+
+# raw_pcb binds a protocol number on an IP layer, so either version carries it.
+if(IDEMIP_ENABLE_IPV4 OR IDEMIP_ENABLE_IPV6)
+    list(APPEND IDEMIP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/raw/raw_pcb.c")
+endif()
+
+# The pseudo-header every transport checksum covers: the version branch once, and one arm per
+# version. A transport holds the version at run time, so the arm a build left out is still called
+# and answers false.
+list(APPEND IDEMIP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/ip/pseudo.c")
+feature_source_swap(IDEMIP_SOURCES IDEMIP_ENABLE_IPV4 src/ip/pseudo_v4.c src/ip/pseudo_v4_off.c)
+feature_source_swap(IDEMIP_SOURCES IDEMIP_ENABLE_IPV6 src/ip/pseudo_v6.c src/ip/pseudo_v6_off.c)
 
 # --- the library -------------------------------------------------------------
 
-file(GLOB_RECURSE IDEMIP_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/idemIP/*.c")
-
 add_library(idemip STATIC ${IDEMIP_SOURCES})
 
-# The tree includes itself as "idemIP/...", so the repo root is the one include path.
+# The tree includes itself as "src/...", so the repo root is the one include path.
 target_include_directories(idemip PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
 foreach(cap ${IDEMIP_CAPABILITIES})
@@ -46,8 +129,11 @@ foreach(cap ${IDEMIP_CAPABILITIES})
     endif()
 endforeach()
 
+list(LENGTH IDEMIP_SOURCES IDEMIP_SOURCE_COUNT)
+message(STATUS "idemIP: ${IDEMIP_SOURCE_COUNT} translation units")
+
 # The warning set, on an INTERFACE target so it reaches the test suites too. Attached PRIVATE to
-# the library it never compiled most of the tree: no .c in idemIP/ includes tcp.h or ipv6.h or
+# the library it never compiled most of the tree: no .c in src/ includes tcp.h or ipv6.h or
 # udp.h, so those headers were built only by a test TU, which had no warning flags at all.
 add_library(idemip_warnings INTERFACE)
 target_compile_options(idemip_warnings INTERFACE

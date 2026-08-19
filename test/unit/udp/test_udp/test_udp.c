@@ -19,7 +19,7 @@
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
 
-#include "idemIP/udp/udp.h"
+#include "src/udp/udp.h"
 
 #include <string.h>
 #include <unity.h>
@@ -230,7 +230,7 @@ void test_checksum_over_a_bare_header(void)
 void test_a_computed_zero_is_transmitted_as_all_ones(void)
 {
     // The raw sum, taken here rather than through the helper, is the value the substitution hides.
-    uint32_t sum = idemip_udp_pseudo_accum(0u, SRC, DST, (uint16_t)sizeof v_zero, IDEMIP_IP4_PROTO_UDP);
+    uint32_t sum = idemip_udp_pseudo_accum(0u, SRC, DST, (uint16_t)sizeof v_zero, IDEMIP_UDP_PROTO);
     TEST_ASSERT_EQUAL_HEX16(0x0000u, idemip_cksum_final(idemip_cksum_accum(sum, v_zero, sizeof v_zero)));
 
     TEST_ASSERT_EQUAL_HEX16(IDEMIP_UDP_CKSUM_ZERO_AS,
@@ -274,20 +274,20 @@ void test_the_pseudo_header_covers_the_addresses_the_protocol_and_the_length(voi
     TEST_ASSERT_NOT_EQUAL(base, idemip_udp_cksum_compute(v_hello, sizeof v_hello, SRC + 1u, DST));
     TEST_ASSERT_NOT_EQUAL(base, idemip_udp_cksum_compute(v_hello, sizeof v_hello, SRC, DST + 1u));
 
-    uint32_t with_udp = idemip_udp_pseudo_accum(0u, SRC, DST, 13u, IDEMIP_IP4_PROTO_UDP);
+    uint32_t with_udp = idemip_udp_pseudo_accum(0u, SRC, DST, 13u, IDEMIP_UDP_PROTO);
     uint32_t with_lite = idemip_udp_pseudo_accum(0u, SRC, DST, 13u, IDEMIP_UDPLITE_PROTO);
-    TEST_ASSERT_EQUAL_UINT32(with_udp + (IDEMIP_UDPLITE_PROTO - IDEMIP_IP4_PROTO_UDP), with_lite);
+    TEST_ASSERT_EQUAL_UINT32(with_udp + (IDEMIP_UDPLITE_PROTO - IDEMIP_UDP_PROTO), with_lite);
 
-    uint32_t len13 = idemip_udp_pseudo_accum(0u, SRC, DST, 13u, IDEMIP_IP4_PROTO_UDP);
-    uint32_t len14 = idemip_udp_pseudo_accum(0u, SRC, DST, 14u, IDEMIP_IP4_PROTO_UDP);
+    uint32_t len13 = idemip_udp_pseudo_accum(0u, SRC, DST, 13u, IDEMIP_UDP_PROTO);
+    uint32_t len14 = idemip_udp_pseudo_accum(0u, SRC, DST, 14u, IDEMIP_UDP_PROTO);
     TEST_ASSERT_EQUAL_UINT32(len13 + 1u, len14);
 }
 
 // RFC 768: "This is protocol 17 (21 octal) when used in the Internet Protocol."
 void test_udp_is_protocol_seventeen(void)
 {
-    TEST_ASSERT_EQUAL_UINT8(17u, IDEMIP_IP4_PROTO_UDP);
-    TEST_ASSERT_EQUAL_UINT8(021u, IDEMIP_IP4_PROTO_UDP);
+    TEST_ASSERT_EQUAL_UINT8(17u, IDEMIP_UDP_PROTO);
+    TEST_ASSERT_EQUAL_UINT8(021u, IDEMIP_UDP_PROTO);
 }
 
 void test_cksum_write_stores_what_compute_returned(void)
@@ -361,7 +361,7 @@ void test_coverage_replaces_length_in_place(void)
 void test_udplite_is_protocol_one_hundred_thirty_six(void)
 {
     TEST_ASSERT_EQUAL_UINT8(136u, IDEMIP_UDPLITE_PROTO);
-    TEST_ASSERT_NOT_EQUAL(IDEMIP_IP4_PROTO_UDP, IDEMIP_UDPLITE_PROTO);
+    TEST_ASSERT_NOT_EQUAL(IDEMIP_UDP_PROTO, IDEMIP_UDPLITE_PROTO);
 }
 
 // RFC 3828 sec 3.1: "A Checksum Coverage of zero indicates that the entire UDP-Lite packet is
