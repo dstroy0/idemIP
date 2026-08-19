@@ -118,14 +118,14 @@ int main(void)
   run_test(test_a_frame_is_dispatched_and_its_descriptor_returned, "test_a_frame_is_dispatched_and_its_descriptor_returned", 593);
   run_test(test_a_retained_frame_keeps_its_descriptor_out_of_the_ring, "test_a_retained_frame_keeps_its_descriptor_out_of_the_ring", 620);
   run_test(test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned, "test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned", 686);
-  run_test(test_a_completed_ipv6_datagram_still_holds_its_descriptors, "test_a_completed_ipv6_datagram_still_holds_its_descriptors", 717);
-  run_test(test_the_drain_takes_every_waiting_frame, "test_the_drain_takes_every_waiting_frame", 739);
-  run_test(test_a_resolved_hold_is_reported_and_unpinned_one_step_later, "test_a_resolved_hold_is_reported_and_unpinned_one_step_later", 760);
-  run_test(test_the_flush_phase_reports_its_units_in_order, "test_the_flush_phase_reports_its_units_in_order", 816);
-  run_test(test_an_interface_with_no_ring_is_stepped_over, "test_an_interface_with_no_ring_is_stepped_over", 842);
-  run_test(test_a_descriptor_from_the_second_interface_goes_back_to_it, "test_a_descriptor_from_the_second_interface_goes_back_to_it", 870);
-  run_test(test_a_descriptor_handle_round_trips, "test_a_descriptor_handle_round_trips", 952);
-  run_test(test_an_unbound_service_is_skipped, "test_an_unbound_service_is_skipped", 969);
+  run_test(test_a_completed_ipv6_datagram_still_holds_its_descriptors, "test_a_completed_ipv6_datagram_still_holds_its_descriptors", 725);
+  run_test(test_the_drain_takes_every_waiting_frame, "test_the_drain_takes_every_waiting_frame", 747);
+  run_test(test_a_resolved_hold_is_reported_and_unpinned_one_step_later, "test_a_resolved_hold_is_reported_and_unpinned_one_step_later", 768);
+  run_test(test_the_flush_phase_reports_its_units_in_order, "test_the_flush_phase_reports_its_units_in_order", 824);
+  run_test(test_an_interface_with_no_ring_is_stepped_over, "test_an_interface_with_no_ring_is_stepped_over", 850);
+  run_test(test_a_descriptor_from_the_second_interface_goes_back_to_it, "test_a_descriptor_from_the_second_interface_goes_back_to_it", 878);
+  run_test(test_a_descriptor_handle_round_trips, "test_a_descriptor_handle_round_trips", 960);
+  run_test(test_an_unbound_service_is_skipped, "test_an_unbound_service_is_skipped", 977);
 
   return UNITY_END();
 }

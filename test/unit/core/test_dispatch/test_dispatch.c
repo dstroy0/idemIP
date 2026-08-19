@@ -1865,6 +1865,17 @@ void test_an_ipv6_fragment_the_reassembler_kept_pins_its_descriptor(void)
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_REASSEMBLED) == 0u);
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_REASM_REQDS));
+
+    // The reassembler's own state, not just dispatch's report of it. The descriptor it recorded is
+    // the handle, interface in the high octet, which is what lets the right ring take it back.
+    Ip6ReassIo *re = IDEMIP_IP6_REASS_IO(ip6_reass_mem);
+    re->frag_args.datagram = IDEMIP_DISPATCH_IO(work_a)->datagram;
+    re->frag_args.index = 0u;
+    Ip6Reass.frag_at(ip6_reass_mem);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, re->status, "the datagram dispatch named holds no fragment");
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_DISPATCH_DESC_HANDLE(0u, FRAG_DESC), re->frag_desc);
+    TEST_ASSERT_EQUAL_UINT16(0u, re->frag_offset);
+    TEST_ASSERT_EQUAL_UINT16(8u, re->frag_len);
 }
 
 // "0 = last fragment": the one that fixes where the datagram ends completes it.

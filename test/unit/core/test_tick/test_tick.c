@@ -710,6 +710,14 @@ void test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned(void)
     Dma.pinned(dma_mem);
     TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(dma_mem)->pinned,
                                      "an abandoned datagram kept the descriptors its fragments pinned");
+
+    // The reassembler's own state: the row is freed, not merely unpinned. A row left expired is one
+    // the flush phase reports again on every later tick.
+    IDEMIP_IP6_REASS_IO(ip6_reass_mem)->tick_args.now_ms = 1000u + IDEMIP_IP6_REASS_MAXAGE_MS;
+    Ip6Reass.tick(ip6_reass_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(ip6_reass_mem)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, IDEMIP_IP6_REASS_IO(ip6_reass_mem)->expired,
+                                    "the abandoned datagram's row was never freed");
 }
 
 // The same datagram, completed instead of abandoned: the descriptors stay pinned, because the
