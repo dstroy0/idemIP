@@ -94,8 +94,9 @@ set(IDEMIP_SUITE_CAP_test_dns      UDP)
 # core unit is present under.
 set(IDEMIP_SUITE_CAP_test_timeouts ETHERNET)
 set(IDEMIP_SUITE_CAP_test_stats    ETHERNET)
-# tick drives the receive path and the IPv4 services; its IPv6 steps are behind IDEMIP_ENABLE_IPV6.
-set(IDEMIP_SUITE_CAP_test_tick     IPV4)
+# tick drives the receive path and both address families' services: reassembly ageing on each, and
+# the MLD report delay. A case behind IDEMIP_ENABLE_IPV6 is still one the runner declares and calls.
+set(IDEMIP_SUITE_CAP_test_tick     IPV4 IPV6)
 # dispatch is the join, so its suite carries one frame all the way to a binding in each of the four.
 set(IDEMIP_SUITE_CAP_test_dispatch IPV4 IPV6 TCP UDP)
 # test_checksum has no gate: checksum.h is a base facility, ungated like ProtoCore's mmgr/endian.h.

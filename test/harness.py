@@ -41,6 +41,43 @@ NOT_A_CASE = ("setUp", "tearDown", "main", "suiteSetUp", "suiteTearDown")
 # test/CMakeLists.txt's map: which capabilities a suite needs before the build carries it.
 SUITE_CAP = re.compile(r"^set\(IDEMIP_SUITE_CAP_(\w+)\s+([^)]*)\)", re.M)
 
+# A conditional over a capability, and the two directives that end or invert one.
+CAP_IF = re.compile(r"^[ \t]*#[ \t]*if[ \t]+IDEMIP_ENABLE_(\w+)[ \t]*$", re.M)
+ANY_IF = re.compile(r"^[ \t]*#[ \t]*if")
+ANY_ELSE = re.compile(r"^[ \t]*#[ \t]*el(se|if)")
+ANY_ENDIF = re.compile(r"^[ \t]*#[ \t]*endif")
+
+
+def guarded_cases(path):
+    """Each registered case in @p path, with the capabilities whose #if it sits inside.
+
+    Unity's generator reads the case names out of the source text and does not see a preprocessor
+    conditional, so a case inside a capability's #if is still declared and called by the runner. With
+    that capability off the definition is gone and the suite fails to LINK, which is what makes this
+    the same finding as a capability the map does not name.
+    """
+    with open(path, encoding="utf-8") as fh:
+        lines = fh.read().splitlines()
+    out = {}
+    stack = []  # one entry per open #if: the capability it tests, or None
+    for line in lines:
+        if ANY_ENDIF.match(line):
+            if stack:
+                stack.pop()
+            continue
+        if ANY_ELSE.match(line):
+            if stack:
+                stack[-1] = None  # the other arm is not the capability's
+            continue
+        if ANY_IF.match(line):
+            m = CAP_IF.match(line)
+            stack.append(m.group(1) if m else None)
+            continue
+        m = UNITY_CASE.match(line)
+        if m:
+            out[m.group(1)] = sorted({c for c in stack if c})
+    return out
+
 
 def suite_caps():
     """The capabilities each suite needs, as test/CMakeLists.txt's map states them."""
@@ -202,15 +239,39 @@ def cmd_deps(a):
     return 1 if a.strict else 0
 
 
-def cmd_suites(_a):
+def cmd_suites(a):
     caps = suite_caps()
+    unnamed = []
     for d in discover():
-        found, missed = runner_cases(suite_source(d))
+        src = suite_source(d)
+        found, missed = runner_cases(src)
         name = os.path.basename(d)
-        need = " ".join(caps.get(name, [])) or "-"
+        need = caps.get(name, [])
         note = "" if not missed else "   NOT REGISTERED: " + ", ".join(missed)
-        print("%-52s %2d cases  %-18s%s" % (os.path.relpath(d, ROOT).replace("\\", "/"), len(found), need, note))
-    return 0
+        for case, guards in guarded_cases(src).items():
+            for cap in guards:
+                if cap not in need:
+                    unnamed.append((name, cap, case))
+        print("%-52s %2d cases  %-18s%s"
+              % (os.path.relpath(d, ROOT).replace("\\", "/"), len(found), " ".join(need) or "-", note))
+
+    if not unnamed:
+        print("\nevery case a capability guards is in a suite that names that capability")
+        return 0
+
+    print("\n%d cases sit inside a capability their suite does not name:\n" % len(unnamed))
+    for suite, cap, case in unnamed:
+        print("   %-22s needs %-10s %s" % (suite, cap, case))
+    print("""
+  Unity's generator reads the case names out of the source text and does not see a
+  preprocessor conditional, so the runner declares and calls each of these however the
+  capability is set. With it off the definition is gone and the suite fails to LINK, so
+  the reduced build breaks while the full one stays green.
+
+  Fix one of two ways: add the capability to the suite's IDEMIP_SUITE_CAP_ line in
+  test/CMakeLists.txt, which gates the whole suite on it, or move the cases to a suite
+  that already names it.""")
+    return 1 if a.strict else 0
 
 
 def cmd_cases(a):
@@ -239,7 +300,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("suites", help="every suite, its cases, and the capabilities it needs").set_defaults(fn=cmd_suites)
+    p = sub.add_parser("suites", help="every suite, its cases, and the capabilities it needs")
+    p.add_argument("--strict", action="store_true", help="exit non-zero on a finding, for a CI gate")
+    p.set_defaults(fn=cmd_suites)
 
     p = sub.add_parser("deps", help="dependencies a suite binds but no case asserts on")
     p.add_argument("--strict", action="store_true", help="exit non-zero on a finding, for a CI gate")
