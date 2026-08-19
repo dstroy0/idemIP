@@ -130,6 +130,16 @@ typedef enum IDEMIP_ENUM_PACKED
 // Every one carries its options at the offset its fixed part ends on, which is also the shortest a
 // message of that type can be.
 
+/**
+ * @brief The Hop Limit every one of the five arrives with, RFC 4861 sec 6.1.1, sec 6.1.2, sec 7.1.1,
+ *        sec 7.1.2 and sec 8.1: "The IP Hop Limit field has a value of 255, i.e., the packet could
+ *        not possibly have been forwarded by a router."
+ *
+ * sec 11.2 is what it buys: "received packets containing a Hop Limit of 255 must have originated
+ * from a neighbor". A message arriving with any other value is an off-link sender's.
+ */
+#define IDEMIP_ICMP6_ND_HOP_LIMIT 255u
+
 #define IDEMIP_ICMP6_OFF_RS_RESERVED 4u ///< 32-bit Reserved (sec 4.1)
 #define IDEMIP_ICMP6_RS_HDR_LEN 8u      ///< through it; options follow
 

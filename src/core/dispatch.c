@@ -1364,8 +1364,16 @@ static DispatchDest d_ip6_dest(uint8_t *restrict work, const uint8_t *dst)
 // implements, so RFC 4443 sec 2.4 (b), "If an ICMPv6 informational message of unknown type is
 // received, it MUST be silently discarded", is not theirs. The message reaches its module the way
 // an RFC 826 one does: this names where it lies and which module owns it, and the caller drives
-// nd6, dad, slaac, rdnss or mld6 with it. The sec 6.1, sec 7.1 and sec 8.1 receive validation is
-// that module's, as ARP's is arp_table's.
+// nd6, dad, slaac, rdnss or mld6 with it.
+//
+// RFC 4861 sec 6.1.1, sec 6.1.2, sec 7.1.1, sec 7.1.2 and sec 8.1 each open a MUST-silently-discard
+// list, and five entries are on every one of the five: the Hop Limit, the checksum, the Code, a
+// per-type minimum length, and every option's length being greater than zero. Those five hold
+// whatever the type, so they are checked here beside the length this already held. What stays with
+// the consuming module is the rest of each list, which reads fields only that module knows: the
+// Target Address not being multicast, the source being link-local, the Solicited flag against a
+// multicast destination, and the Redirect naming the current first-hop router. That is the division
+// arp_table and d_arp already use.
 static void d_icmp6_nd(uint8_t *restrict work, const uint8_t *ip6, const uint8_t *msg, size_t msg_len, uint8_t type)
 {
     DispatchIo *io = D_IO(work);
@@ -1373,6 +1381,23 @@ static void d_icmp6_nd(uint8_t *restrict work, const uint8_t *ip6, const uint8_t
 
     io->pcb_kind =
         idemip_icmp6_is_mld(type) ? IDEMIP_DISPATCH_PCB_GROUP : IDEMIP_DISPATCH_PCB_ND;
+
+    // sec 11.2: "The protocol reduces the exposure to the above threats in the absence of
+    // authentication by ignoring ND packets received from off-link senders. The Hop Limit field of
+    // all received packets is verified to contain 255, the maximum legal value. Because routers
+    // decrement the Hop Limit on all packets they forward, received packets containing a Hop Limit
+    // of 255 must have originated from a neighbor." RFC 2710 states no such receive rule for its
+    // three types, giving sec 3 only as a rule for what a node sends, so this is the five's.
+    if (idemip_icmp6_is_nd(type))
+    {
+        if (idemip_ip6_hop_limit(ip6) != IDEMIP_ICMP6_ND_HOP_LIMIT || idemip_icmp6_code(msg) != 0u)
+        {
+            d_drop(work, IDEMIP_DISPATCH_DROP_IP_HEADER, IDEMIP_STAT_IF_IN_ERRORS);
+            d_bump(work, IDEMIP_STAT_ICMP6_IN_ERRORS);
+            d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
+            return;
+        }
+    }
 
     // RFC 4443 sec 2.3: "an ICMPv6 message ... the checksum ... MUST be verified". icmp6_in keeps
     // this for the types it answers; these do not go through it.

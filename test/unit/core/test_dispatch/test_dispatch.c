@@ -1785,7 +1785,19 @@ void test_the_solicited_node_address_of_our_own_is_local(void)
 static size_t build_icmp6_msg(uint8_t *f, size_t off, uint8_t type, const uint8_t *src, const uint8_t *dst,
                               size_t msg_len)
 {
+    size_t ip = off;
     off = build_ip6(f, off, IDEMIP_IP6_NH_ICMPV6, src, dst, msg_len);
+    // RFC 4861 sec 6.1.1, sec 6.1.2, sec 7.1.1, sec 7.1.2 and sec 8.1 all require 255 of the five ND
+    // types, and RFC 2710 sec 3 sends its three with 1. A frame built any other way is one a
+    // neighbor never sent, so the valid cases here carry what the RFC that owns the type states.
+    if (idemip_icmp6_is_nd(type))
+    {
+        idemip_ip6_set_hop_limit(f + ip, IDEMIP_ICMP6_ND_HOP_LIMIT);
+    }
+    else if (idemip_icmp6_is_mld(type))
+    {
+        idemip_ip6_set_hop_limit(f + ip, 1u);
+    }
     memset(f + off, 0, msg_len);
     f[off + IDEMIP_ICMP6_OFF_TYPE] = type;
     f[off + IDEMIP_ICMP6_OFF_CODE] = 0u;
@@ -1970,6 +1982,70 @@ void test_an_icmpv6_message_too_short_for_its_type_is_an_error(void)
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS),
                                      "RFC 2466 names bad length an ICMP-specific error");
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+}
+
+// RFC 4861 sec 7.1.1, and the same line in sec 6.1.1, sec 6.1.2, sec 7.1.2 and sec 8.1: a node MUST
+// silently discard a message whose "IP Hop Limit field has a value of 255, i.e., the packet could not
+// possibly have been forwarded by a router" does not hold. sec 11.2 is why: "The protocol reduces the
+// exposure to the above threats in the absence of authentication by ignoring ND packets received from
+// off-link senders ... Because routers decrement the Hop Limit on all packets they forward, received
+// packets containing a Hop Limit of 255 must have originated from a neighbor." It is the whole of ND's
+// security model, and a forged Advertisement from off-link is what it stops.
+void test_a_neighbor_solicitation_from_off_link_is_discarded(void)
+{
+    uint8_t solicited[IDEMIP_IP6_ADDR_LEN];
+    idemip_ip6_addr_solicited(solicited, g_local_ip6);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t ip = off;
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, g_remote_ip6, solicited,
+                                 IDEMIP_ICMP6_NS_HDR_LEN);
+    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_NS_HDR_LEN, g_remote_ip6, solicited);
+    // A router forwarded it, so it is not a neighbor's. The sec 2.3 checksum covers no Hop Limit, so
+    // the message is otherwise exactly the one the valid case sends.
+    idemip_ip6_set_hop_limit(g_frame + ip, 254u);
+    input(work_a, msg + IDEMIP_ICMP6_NS_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u,
+                             "an off-link Neighbor Solicitation reached the module that answers it");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_HEADER, IDEMIP_DISPATCH_IO(work_a)->drop);
+}
+
+// The same line, on the message that would install a default router, and on the one that would
+// redirect traffic. sec 6.1.2 and sec 8.1 each state it in their own list.
+void test_a_router_advertisement_from_off_link_is_discarded(void)
+{
+    static const uint8_t all_nodes[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t ip = off;
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_ROUTER_ADVERT, g_remote_ip6, all_nodes,
+                                 IDEMIP_ICMP6_RA_HDR_LEN);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_RA_HDR_LEN, g_remote_ip6, all_nodes);
+    idemip_ip6_set_hop_limit(g_frame + ip, 64u);
+    input(work_a, msg + IDEMIP_ICMP6_RA_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u,
+                             "an off-link Router Advertisement reached the module that installs a router");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_HEADER, IDEMIP_DISPATCH_IO(work_a)->drop);
+}
+
+// Every one of the five lists also states "ICMP Code is 0", and every one of the five types is a
+// message whose Code the RFC never assigns a meaning.
+void test_a_neighbor_solicitation_with_a_nonzero_code_is_discarded(void)
+{
+    uint8_t solicited[IDEMIP_IP6_ADDR_LEN];
+    idemip_ip6_addr_solicited(solicited, g_local_ip6);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, g_remote_ip6, solicited,
+                                 IDEMIP_ICMP6_NS_HDR_LEN);
+    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    g_frame[msg + IDEMIP_ICMP6_OFF_CODE] = 1u;
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_NS_HDR_LEN, g_remote_ip6, solicited);
+    input(work_a, msg + IDEMIP_ICMP6_NS_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
 }
 
 // RFC 4861 sec 4.6: "Nodes MUST silently discard an ND packet that contains an option with length

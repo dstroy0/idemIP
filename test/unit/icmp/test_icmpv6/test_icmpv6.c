@@ -405,3 +405,183 @@ void test_rfc4443_sec23_checksum_covers_the_quote(void)
     msg[len - 1u] = (uint8_t)(msg[len - 1u] ^ 0x01u);
     TEST_ASSERT_NOT_EQUAL_UINT16(0u, verify(msg, len));
 }
+
+// --- RFC 4861 sec 4, the five message bodies, and RFC 2710 sec 3 ------------
+// These formats and their accessors are icmpv6.h's, which nd6.h:14 states, and dispatch classifies a
+// message without reading past the type and the length. Reading the body is the CALLER's, exactly as
+// an RFC 826 packet's body is, so every accessor below is one no library .c file names and only a
+// case can hold to its offset.
+
+// sec 3: "Maximum Response Delay" at octet 4, "Reserved" at 6, "Multicast Address" at 8, and the
+// message ends there. sec 3.5: the Reserved field is "ignored by receivers".
+void test_rfc2710_sec3_mld_field_offsets(void)
+{
+    static const uint8_t group[16] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x09};
+    TEST_ASSERT_EQUAL_UINT(4u, IDEMIP_ICMP6_OFF_MLD_MAX_RESP);
+    TEST_ASSERT_EQUAL_UINT(6u, IDEMIP_ICMP6_OFF_MLD_RESERVED);
+    TEST_ASSERT_EQUAL_UINT(8u, IDEMIP_ICMP6_OFF_MLD_GROUP);
+    TEST_ASSERT_EQUAL_UINT(24u, IDEMIP_ICMP6_MLD_MSG_LEN);
+
+    memset(msg, 0, IDEMIP_ICMP6_MLD_MSG_LEN);
+    msg[IDEMIP_ICMP6_OFF_TYPE] = (uint8_t)IDEMIP_ICMP6_MLD_QUERY;
+    idemip_wr16(msg + IDEMIP_ICMP6_OFF_MLD_MAX_RESP, 10000u); // sec 7.3's default, in milliseconds
+    idemip_wr16(msg + IDEMIP_ICMP6_OFF_MLD_RESERVED, 0xFFFFu);
+    memcpy(msg + IDEMIP_ICMP6_OFF_MLD_GROUP, group, 16u);
+
+    TEST_ASSERT_EQUAL_UINT16(10000u, idemip_icmp6_mld_max_resp(msg));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(group, idemip_icmp6_mld_group(msg), 16u);
+    TEST_ASSERT_TRUE(idemip_icmp6_is_mld((uint8_t)IDEMIP_ICMP6_MLD_QUERY));
+    TEST_ASSERT_FALSE_MESSAGE(idemip_icmp6_is_nd((uint8_t)IDEMIP_ICMP6_MLD_QUERY),
+                              "an MLD type is RFC 2710's, not one of RFC 4861 sec 4's five");
+}
+
+// sec 4.2's figure: Cur Hop Limit at octet 4, then M and O as the top two bits of octet 5, Router
+// Lifetime at 6, Reachable Time at 8, Retrans Timer at 12, and the options after octet 16.
+void test_rfc4861_sec42_router_advertisement_field_offsets(void)
+{
+    TEST_ASSERT_EQUAL_UINT(4u, IDEMIP_ICMP6_OFF_RA_CUR_HOP);
+    TEST_ASSERT_EQUAL_UINT(5u, IDEMIP_ICMP6_OFF_RA_FLAGS);
+    TEST_ASSERT_EQUAL_UINT(6u, IDEMIP_ICMP6_OFF_RA_LIFETIME);
+    TEST_ASSERT_EQUAL_UINT(8u, IDEMIP_ICMP6_OFF_RA_REACHABLE);
+    TEST_ASSERT_EQUAL_UINT(12u, IDEMIP_ICMP6_OFF_RA_RETRANS);
+    TEST_ASSERT_EQUAL_UINT(16u, IDEMIP_ICMP6_RA_HDR_LEN);
+    // M is the first bit of the octet and O the second, so they are the top two, in that order.
+    TEST_ASSERT_EQUAL_HEX8(0x80u, IDEMIP_ICMP6_RA_FLAG_M);
+    TEST_ASSERT_EQUAL_HEX8(0x40u, IDEMIP_ICMP6_RA_FLAG_O);
+
+    memset(msg, 0, IDEMIP_ICMP6_RA_HDR_LEN);
+    msg[IDEMIP_ICMP6_OFF_TYPE] = (uint8_t)IDEMIP_ICMP6_ROUTER_ADVERT;
+    msg[IDEMIP_ICMP6_OFF_RA_CUR_HOP] = 64u;
+    msg[IDEMIP_ICMP6_OFF_RA_FLAGS] = (uint8_t)(IDEMIP_ICMP6_RA_FLAG_M | IDEMIP_ICMP6_RA_FLAG_O);
+    idemip_wr16(msg + IDEMIP_ICMP6_OFF_RA_LIFETIME, 1800u);
+    idemip_wr32(msg + IDEMIP_ICMP6_OFF_RA_REACHABLE, 30000u);
+    idemip_wr32(msg + IDEMIP_ICMP6_OFF_RA_RETRANS, 1000u);
+
+    TEST_ASSERT_EQUAL_UINT8(64u, idemip_icmp6_ra_cur_hop(msg));
+    TEST_ASSERT_EQUAL_HEX8(0xC0u, idemip_icmp6_ra_flags(msg));
+    TEST_ASSERT_EQUAL_UINT16(1800u, idemip_icmp6_ra_lifetime(msg));
+    TEST_ASSERT_EQUAL_UINT32(30000u, idemip_icmp6_ra_reachable(msg));
+    TEST_ASSERT_EQUAL_UINT32(1000u, idemip_icmp6_ra_retrans(msg));
+
+    // Each flag alone, so neither reads the other's bit.
+    msg[IDEMIP_ICMP6_OFF_RA_FLAGS] = IDEMIP_ICMP6_RA_FLAG_M;
+    TEST_ASSERT_TRUE((idemip_icmp6_ra_flags(msg) & IDEMIP_ICMP6_RA_FLAG_M) != 0u);
+    TEST_ASSERT_FALSE((idemip_icmp6_ra_flags(msg) & IDEMIP_ICMP6_RA_FLAG_O) != 0u);
+    msg[IDEMIP_ICMP6_OFF_RA_FLAGS] = IDEMIP_ICMP6_RA_FLAG_O;
+    TEST_ASSERT_FALSE((idemip_icmp6_ra_flags(msg) & IDEMIP_ICMP6_RA_FLAG_M) != 0u);
+    TEST_ASSERT_TRUE((idemip_icmp6_ra_flags(msg) & IDEMIP_ICMP6_RA_FLAG_O) != 0u);
+}
+
+// sec 4.4's figure: R, S and O are the top three bits of octet 4, and the Target Address runs from
+// octet 8 to the end of the message at 24.
+void test_rfc4861_sec44_neighbor_advertisement_field_offsets(void)
+{
+    static const uint8_t target[16] = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x77};
+    TEST_ASSERT_EQUAL_UINT(4u, IDEMIP_ICMP6_OFF_NA_FLAGS);
+    TEST_ASSERT_EQUAL_UINT(8u, IDEMIP_ICMP6_OFF_NA_TARGET);
+    TEST_ASSERT_EQUAL_UINT(24u, IDEMIP_ICMP6_NA_HDR_LEN);
+    TEST_ASSERT_EQUAL_HEX8(0x80u, IDEMIP_ICMP6_NA_FLAG_R);
+    TEST_ASSERT_EQUAL_HEX8(0x40u, IDEMIP_ICMP6_NA_FLAG_S);
+    TEST_ASSERT_EQUAL_HEX8(0x20u, IDEMIP_ICMP6_NA_FLAG_O);
+
+    memset(msg, 0, IDEMIP_ICMP6_NA_HDR_LEN);
+    msg[IDEMIP_ICMP6_OFF_TYPE] = (uint8_t)IDEMIP_ICMP6_NEIGHBOR_ADVERT;
+    msg[IDEMIP_ICMP6_OFF_NA_FLAGS] = (uint8_t)(IDEMIP_ICMP6_NA_FLAG_S | IDEMIP_ICMP6_NA_FLAG_O);
+    memcpy(msg + IDEMIP_ICMP6_OFF_NA_TARGET, target, 16u);
+
+    TEST_ASSERT_EQUAL_HEX8(0x60u, idemip_icmp6_na_flags(msg));
+    TEST_ASSERT_FALSE_MESSAGE((idemip_icmp6_na_flags(msg) & IDEMIP_ICMP6_NA_FLAG_R) != 0u,
+                              "sec 4.4's Router flag was not set and must not read as set");
+    // sec 4.3 puts the Target Address of a Solicitation at octet 8 too, which nd_target reads for
+    // both, so the same accessor answers a message of either type.
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(target, idemip_icmp6_nd_target(msg), 16u);
+}
+
+// sec 4.5's figure: Target at octet 8 and Destination at 24, the message ending at 40. The two are
+// distinct addresses, so an accessor reading one must not answer with the other.
+void test_rfc4861_sec45_redirect_field_offsets(void)
+{
+    static const uint8_t target[16] = {0xFE, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
+    static const uint8_t dest[16] = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x99};
+    TEST_ASSERT_EQUAL_UINT(8u, IDEMIP_ICMP6_OFF_RD_TARGET);
+    TEST_ASSERT_EQUAL_UINT(24u, IDEMIP_ICMP6_OFF_RD_DEST);
+    TEST_ASSERT_EQUAL_UINT(40u, IDEMIP_ICMP6_RD_HDR_LEN);
+
+    memset(msg, 0, IDEMIP_ICMP6_RD_HDR_LEN);
+    msg[IDEMIP_ICMP6_OFF_TYPE] = (uint8_t)IDEMIP_ICMP6_REDIRECT;
+    memcpy(msg + IDEMIP_ICMP6_OFF_RD_TARGET, target, 16u);
+    memcpy(msg + IDEMIP_ICMP6_OFF_RD_DEST, dest, 16u);
+
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(target, idemip_icmp6_nd_target(msg), 16u);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(dest, idemip_icmp6_rd_dest(msg), 16u);
+}
+
+// sec 4.1 through sec 4.5 fix one length per type, which is what dispatch checks a message against
+// before naming its module.
+void test_rfc4861_sec4_each_type_has_its_own_length(void)
+{
+    TEST_ASSERT_EQUAL_UINT(8u, idemip_icmp6_nd_hdr_len((uint8_t)IDEMIP_ICMP6_ROUTER_SOLICIT));
+    TEST_ASSERT_EQUAL_UINT(16u, idemip_icmp6_nd_hdr_len((uint8_t)IDEMIP_ICMP6_ROUTER_ADVERT));
+    TEST_ASSERT_EQUAL_UINT(24u, idemip_icmp6_nd_hdr_len((uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT));
+    TEST_ASSERT_EQUAL_UINT(24u, idemip_icmp6_nd_hdr_len((uint8_t)IDEMIP_ICMP6_NEIGHBOR_ADVERT));
+    TEST_ASSERT_EQUAL_UINT(40u, idemip_icmp6_nd_hdr_len((uint8_t)IDEMIP_ICMP6_REDIRECT));
+
+    for (uint8_t t = 133u; t <= 137u; t++)
+    {
+        TEST_ASSERT_TRUE(idemip_icmp6_is_nd(t));
+        TEST_ASSERT_FALSE(idemip_icmp6_is_mld(t));
+    }
+    TEST_ASSERT_FALSE(idemip_icmp6_is_nd(132u));
+    TEST_ASSERT_FALSE(idemip_icmp6_is_nd(138u));
+}
+
+// sec 4.6: "The length of the option (including the type and length fields) in units of 8 octets."
+void test_rfc4861_sec46_option_length_counts_eight_octet_units(void)
+{
+    TEST_ASSERT_EQUAL_UINT(0u, IDEMIP_ICMP6_ND_OPT_OFF_TYPE);
+    TEST_ASSERT_EQUAL_UINT(1u, IDEMIP_ICMP6_ND_OPT_OFF_LEN);
+    TEST_ASSERT_EQUAL_UINT(2u, IDEMIP_ICMP6_ND_OPT_HDR_LEN);
+
+    uint8_t opt[16];
+    memset(opt, 0, sizeof opt);
+    opt[IDEMIP_ICMP6_ND_OPT_OFF_TYPE] = IDEMIP_ICMP6_ND_OPT_SLLA;
+    opt[IDEMIP_ICMP6_ND_OPT_OFF_LEN] = 1u;
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP6_ND_OPT_SLLA, idemip_icmp6_nd_opt_type(opt));
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(8u, idemip_icmp6_nd_opt_len(opt), "a Length of 1 is eight octets");
+    opt[IDEMIP_ICMP6_ND_OPT_OFF_LEN] = 2u;
+    TEST_ASSERT_EQUAL_UINT(16u, idemip_icmp6_nd_opt_len(opt));
+
+    // sec 4.6.2's Prefix Information carries a Length of 4, which is the 32 octets its fields need.
+    opt[IDEMIP_ICMP6_ND_OPT_OFF_LEN] = IDEMIP_ICMP6_ND_OPT_PREFIX_LEN;
+    TEST_ASSERT_EQUAL_UINT(32u, idemip_icmp6_nd_opt_len(opt));
+    TEST_ASSERT_EQUAL_UINT(32u, IDEMIP_ICMP6_ND_OPT_OFF_PREFIX + 16u);
+}
+
+// sec 4.6: "Nodes MUST silently discard an ND packet that contains an option with length zero." A
+// zero also never advances a walk, so the same rule is what keeps the walk finite.
+void test_rfc4861_sec46_the_option_walk_refuses_zero_and_overrun(void)
+{
+    uint8_t opts[24];
+    memset(opts, 0, sizeof opts);
+
+    // Two well-formed options, eight octets each.
+    opts[0] = IDEMIP_ICMP6_ND_OPT_SLLA;
+    opts[1] = 1u;
+    opts[8] = IDEMIP_ICMP6_ND_OPT_TLLA;
+    opts[9] = 1u;
+    TEST_ASSERT_TRUE(idemip_icmp6_nd_opts_ok(opts, 16u));
+    TEST_ASSERT_TRUE_MESSAGE(idemip_icmp6_nd_opts_ok(opts, 0u), "no options at all is a walk that ends");
+
+    // A Length of zero, which sec 4.6 discards.
+    opts[9] = 0u;
+    TEST_ASSERT_FALSE(idemip_icmp6_nd_opts_ok(opts, 16u));
+
+    // A Length reaching past the octets that arrived.
+    opts[9] = 2u;
+    TEST_ASSERT_FALSE(idemip_icmp6_nd_opts_ok(opts, 16u));
+
+    // An option header split by the end of the message, so not even the Length is there to read.
+    opts[9] = 1u;
+    TEST_ASSERT_FALSE_MESSAGE(idemip_icmp6_nd_opts_ok(opts, 17u), "a trailing octet is not an option");
+}
+

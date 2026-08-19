@@ -35,6 +35,13 @@ extern void test_rfc4443_sec23_checksum_verifies_over_an_odd_length_message(void
 extern void test_rfc4443_sec23_checksum_covers_the_addresses(void);
 extern void test_rfc4443_sec23_pseudo_header_next_header_is_58(void);
 extern void test_rfc4443_sec23_checksum_covers_the_quote(void);
+extern void test_rfc2710_sec3_mld_field_offsets(void);
+extern void test_rfc4861_sec42_router_advertisement_field_offsets(void);
+extern void test_rfc4861_sec44_neighbor_advertisement_field_offsets(void);
+extern void test_rfc4861_sec45_redirect_field_offsets(void);
+extern void test_rfc4861_sec4_each_type_has_its_own_length(void);
+extern void test_rfc4861_sec46_option_length_counts_eight_octet_units(void);
+extern void test_rfc4861_sec46_the_option_walk_refuses_zero_and_overrun(void);
 
 
 /*=======Mock Management=====*/
@@ -123,6 +130,13 @@ int main(void)
   run_test(test_rfc4443_sec23_checksum_covers_the_addresses, "test_rfc4443_sec23_checksum_covers_the_addresses", 370);
   run_test(test_rfc4443_sec23_pseudo_header_next_header_is_58, "test_rfc4443_sec23_pseudo_header_next_header_is_58", 388);
   run_test(test_rfc4443_sec23_checksum_covers_the_quote, "test_rfc4443_sec23_checksum_covers_the_quote", 400);
+  run_test(test_rfc2710_sec3_mld_field_offsets, "test_rfc2710_sec3_mld_field_offsets", 417);
+  run_test(test_rfc4861_sec42_router_advertisement_field_offsets, "test_rfc4861_sec42_router_advertisement_field_offsets", 440);
+  run_test(test_rfc4861_sec44_neighbor_advertisement_field_offsets, "test_rfc4861_sec44_neighbor_advertisement_field_offsets", 477);
+  run_test(test_rfc4861_sec45_redirect_field_offsets, "test_rfc4861_sec45_redirect_field_offsets", 502);
+  run_test(test_rfc4861_sec4_each_type_has_its_own_length, "test_rfc4861_sec4_each_type_has_its_own_length", 521);
+  run_test(test_rfc4861_sec46_option_length_counts_eight_octet_units, "test_rfc4861_sec46_option_length_counts_eight_octet_units", 539);
+  run_test(test_rfc4861_sec46_the_option_walk_refuses_zero_and_overrun, "test_rfc4861_sec46_the_option_walk_refuses_zero_and_overrun", 562);
 
   return UNITY_END();
 }
