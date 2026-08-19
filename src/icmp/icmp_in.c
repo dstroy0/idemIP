@@ -186,6 +186,7 @@ static void icmp_in_error_arrived(IcmpInIo *io, const uint8_t *msg, size_t msg_l
     {
         if (msg_len < (size_t)IDEMIP_ICMP_ERR_HDR_LEN)
         {
+            io->bad_len = IDEMIP_TRUE;
             io->act |= IDEMIP_ICMP_IN_ACT_DISCARD;
             return;
         }
@@ -195,6 +196,7 @@ static void icmp_in_error_arrived(IcmpInIo *io, const uint8_t *msg, size_t msg_l
     }
     if (!icmp_in_quoted_proto(msg, msg_len, &io->proto))
     {
+        io->bad_len = IDEMIP_TRUE;
         io->act |= IDEMIP_ICMP_IN_ACT_DISCARD;
         return;
     }
@@ -214,6 +216,7 @@ static void icmp_in_query_arrived(IcmpInIo *io, const uint8_t *msg, size_t msg_l
     }
     if (msg_len < (size_t)IDEMIP_ICMP_ECHO_HDR_LEN)
     {
+        io->bad_len = IDEMIP_TRUE;
         io->act |= IDEMIP_ICMP_IN_ACT_DISCARD;
         return;
     }
@@ -263,6 +266,7 @@ static void icmp_in_result_clear(IcmpInIo *io)
     io->seq = 0u;
     io->suppress = IDEMIP_ICMP_IN_SUPPRESS_NONE;
     io->cksum_ok = IDEMIP_FALSE;
+    io->bad_len = IDEMIP_FALSE;
     io->truncated = IDEMIP_FALSE;
 }
 
@@ -303,6 +307,7 @@ static void icmp_in_recv(uint8_t *restrict work)
     io->status = IDEMIP_OK;
     if (msg_len < (size_t)IDEMIP_ICMP_HDR_LEN)
     {
+        io->bad_len = IDEMIP_TRUE;
         io->act = IDEMIP_ICMP_IN_ACT_DISCARD;
         return;
     }

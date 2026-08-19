@@ -178,6 +178,11 @@ typedef struct
  * @var IcmpInIo::seq       the arriving Sequence Number
  * @var IcmpInIo::suppress  which RFC 1122 sec 3.2.2 rule refused an error message
  * @var IcmpInIo::cksum_ok  the RFC 792 checksum over the arriving message held
+ * @var IcmpInIo::bad_len   the message stopped before the field its own type reaches. RFC 2011
+ *                          icmpInErrors counts messages "determined as having ICMP-specific errors
+ *                          (bad ICMP checksums, bad length, etc.)", so this and @ref
+ *                          IcmpInIo::cksum_ok are the two that name one. A discard with neither set
+ *                          is one RFC 1122 sec 3.2.2 takes silently and is no error.
  * @var IcmpInIo::truncated the Echo Reply did not fit @ref IcmpInRecvArgs::out_cap and was cut to it
  */
 typedef struct
@@ -198,6 +203,7 @@ typedef struct
     uint16_t seq;
     uint8_t suppress;
     idemip_bool cksum_ok;
+    idemip_bool bad_len;
     idemip_bool truncated;
 } IcmpInIo;
 

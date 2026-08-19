@@ -196,6 +196,11 @@ typedef struct
  * @var Icmp6InIo::tokens    sec 2.4 (f) error messages the bucket still allows in a burst
  * @var Icmp6InIo::cksum_ok  the sec 2.3 checksum over the message and the RFC 8200 sec 8.1
  *                           pseudo-header held
+ * @var Icmp6InIo::bad_len   the message stopped before the field its own type reaches. RFC 2466
+ *                           ipv6IfIcmpInErrors counts messages "determined as having ICMP-specific
+ *                           errors (bad ICMP checksums, bad length, etc.)", so this and @ref
+ *                           Icmp6InIo::cksum_ok are the two that name one. A discard with neither
+ *                           set is sec 2.4 (b)'s unknown informational type and is no error.
  */
 typedef struct
 {
@@ -219,6 +224,7 @@ typedef struct
     uint8_t suppress;
     uint8_t tokens;
     idemip_bool cksum_ok;
+    idemip_bool bad_len;
 } Icmp6InIo;
 
 // ---------------------------------------------------------------------------

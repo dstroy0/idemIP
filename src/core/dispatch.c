@@ -919,9 +919,17 @@ static void d_icmp4(uint8_t *restrict work, const uint8_t *ip4, size_t total_len
     // sec 3.2.2: "If an ICMP message of unknown type is received, it MUST be silently discarded",
     // which icmp_in.h also raises for a message whose checksum does not hold, one shorter than its
     // type requires, and the types sec 3.2.2.7 and sec 3.2.2.8 leave unimplemented.
+    // RFC 2011 icmpInErrors: "The number of ICMP messages which the entity received but determined as
+    // having ICMP-specific errors (bad ICMP checksums, bad length, etc.)." Those are the unit's two
+    // flags. A discard with neither is the silent one, and is no error.
     if ((ic->act & IDEMIP_ICMP_IN_ACT_DISCARD) != 0u)
     {
-        if (!ic->cksum_ok)
+        if (ic->bad_len)
+        {
+            d_bump(work, IDEMIP_STAT_ICMP4_IN_ERRORS);
+            d_drop(work, IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_STAT_IF_IN_ERRORS);
+        }
+        else if (!ic->cksum_ok)
         {
             d_bump(work, IDEMIP_STAT_ICMP4_IN_ERRORS);
             d_drop(work, IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_STAT_IF_IN_ERRORS);
@@ -1375,15 +1383,19 @@ static void d_icmp6_nd(uint8_t *restrict work, const uint8_t *ip6, const uint8_t
     // RFC 2710 sec 3 ends an MLD message at its Multicast Address and gives it no options. RFC 4861
     // sec 4.1 through sec 4.5 fix one length per type, and sec 4.6 puts the options after it:
     // "Nodes MUST silently discard an ND packet that contains an option with length zero."
+    // Both refusals below are RFC 2466 ipv6IfIcmpInErrors' "bad length", and the message was already
+    // counted in ipv6IfIcmpInMsgs, which "includes all those counted by ipv6IfIcmpInErrors".
     size_t hdr_len = idemip_icmp6_is_mld(type) ? (size_t)IDEMIP_ICMP6_MLD_MSG_LEN : idemip_icmp6_nd_hdr_len(type);
     if (msg_len < hdr_len)
     {
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_ERRORS);
         d_drop(work, IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_STAT_IF_IN_ERRORS);
         d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
         return;
     }
     if (!idemip_icmp6_is_mld(type) && !idemip_icmp6_nd_opts_ok(msg + hdr_len, msg_len - hdr_len))
     {
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_ERRORS);
         d_drop(work, IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_STAT_IF_IN_ERRORS);
         d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
         return;
@@ -1455,9 +1467,16 @@ static void d_icmp6(uint8_t *restrict work, const uint8_t *ip6, size_t total_len
     // The same decision on the RFC 4443 side. sec 2.4 (b): "If an ICMPv6 informational message of
     // unknown type is received, it MUST be silently discarded", which icmp6_in also raises for a
     // message shorter than its own type requires and for one whose sec 2.3 checksum does not hold.
+    // RFC 2466 ipv6IfIcmpInErrors, in the same words RFC 2011 uses for the twin: "determined as
+    // having ICMP-specific errors (bad ICMP checksums, bad length, etc.)".
     if ((ic->act & IDEMIP_ICMP6_IN_ACT_DISCARD) != 0u)
     {
-        if (!ic->cksum_ok)
+        if (ic->bad_len)
+        {
+            d_bump(work, IDEMIP_STAT_ICMP6_IN_ERRORS);
+            d_drop(work, IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_STAT_IF_IN_ERRORS);
+        }
+        else if (!ic->cksum_ok)
         {
             d_bump(work, IDEMIP_STAT_ICMP6_IN_ERRORS);
             d_drop(work, IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_STAT_IF_IN_ERRORS);

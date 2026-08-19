@@ -216,6 +216,7 @@ static void icmp6_in_result_clear(Icmp6InIo *io)
     io->proto = 0u;
     io->suppress = IDEMIP_ICMP6_IN_SUPPRESS_NONE;
     io->cksum_ok = IDEMIP_FALSE;
+    io->bad_len = IDEMIP_FALSE;
 }
 
 // RFC 4443 sec 2.4 (d): "the upper-layer protocol type is extracted from the original packet
@@ -225,6 +226,7 @@ static void icmp6_in_error_arrived(Icmp6InIo *io, const uint8_t *msg, size_t msg
 {
     if (msg_len < (size_t)IDEMIP_ICMP6_ERR_HDR_LEN)
     {
+        io->bad_len = IDEMIP_TRUE;
         io->act = (uint8_t)(io->act | IDEMIP_ICMP6_IN_ACT_DISCARD);
         return;
     }
@@ -241,6 +243,7 @@ static void icmp6_in_error_arrived(Icmp6InIo *io, const uint8_t *msg, size_t msg
     const IdemIpIp6Chain c = idemip_ip6_walk(body, body_len);
     if (!c.ok || c.next_hdr == IDEMIP_IP6_NH_NONE)
     {
+        io->bad_len = IDEMIP_TRUE;
         io->act = (uint8_t)(io->act | IDEMIP_ICMP6_IN_ACT_DISCARD);
         return;
     }
@@ -329,6 +332,7 @@ static void icmp6_in_recv(uint8_t *restrict work)
 
     if (msg_len < (size_t)IDEMIP_ICMP6_HDR_LEN)
     {
+        io->bad_len = IDEMIP_TRUE;
         io->act = IDEMIP_ICMP6_IN_ACT_DISCARD;
         return;
     }
@@ -354,6 +358,7 @@ static void icmp6_in_recv(uint8_t *restrict work)
     }
     if (msg_len < (size_t)IDEMIP_ICMP6_ECHO_HDR_LEN)
     {
+        io->bad_len = IDEMIP_TRUE;
         io->act = IDEMIP_ICMP6_IN_ACT_DISCARD;
         return;
     }

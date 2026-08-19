@@ -1142,6 +1142,33 @@ void test_an_icmp_message_of_unknown_type_is_discarded(void)
                                      "an unknown type is not an ICMP-specific error");
 }
 
+// RFC 2011 icmpInErrors: "The number of ICMP messages which the entity received but determined as
+// having ICMP-specific errors (bad ICMP checksums, bad length, etc.)." An Echo Request that stops
+// before its Sequence Number is a bad length, and its checksum holds, so nothing about the checksum
+// tells it from the unknown type above, which RFC 1122 sec 3.2.2 discards SILENTLY and is no error.
+void test_an_icmp_message_too_short_for_its_type_is_an_error(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    const size_t len = (size_t)IDEMIP_ICMP_ECHO_HDR_LEN - 2u; // through the Identifier, and no more
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, LOCAL_IP4, len, 0u);
+    memset(g_frame + off, 0, len);
+    g_frame[off + IDEMIP_ICMP_OFF_TYPE] = IDEMIP_ICMP_ECHO;
+    idemip_wr16(g_frame + off + 2u, idemip_cksum(g_frame + off, len));
+    idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(off + len - ip));
+    idemip_ip4_recksum(g_frame + ip);
+    input(work_a, off + len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    IcmpInIo *ic = IDEMIP_ICMP_IN_IO(icmp_in_mem);
+    TEST_ASSERT_TRUE_MESSAGE(ic->cksum_ok, "this case is about a bad length, so its checksum must hold");
+    TEST_ASSERT_TRUE((ic->act & IDEMIP_ICMP_IN_ACT_DISCARD) != 0u);
+    TEST_ASSERT_FALSE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP4_IN_MSGS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP4_IN_ERRORS),
+                                     "RFC 2011 names bad length an ICMP-specific error");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+}
+
 // A protocol nothing here claims and no raw binding takes: ipInUnknownProtos.
 void test_an_unclaimed_ip_protocol_counts_unknown_protos(void)
 {
@@ -1602,6 +1629,7 @@ void test_an_icmpv6_message_of_unknown_type_is_discarded(void)
     TEST_ASSERT_EQUAL_UINT8(200u, ic->type);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_DISPATCH_IO(work_a)->drop,
                                   "a message whose checksum holds is not a checksum error");
+    TEST_ASSERT_FALSE_MESSAGE(ic->bad_len, "an unknown type is not a bad length");
 }
 
 // RFC 8200 sec 8.1: "IPv6 receivers must discard UDP packets containing a zero checksum". The
@@ -1863,6 +1891,34 @@ void test_a_neighbor_solicitation_without_its_target_address_is_discarded(void)
 
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+    // RFC 2466 ipv6IfIcmpInErrors: "determined as having ICMP-specific errors (bad ICMP checksums,
+    // bad length, etc.)", and ipv6IfIcmpInMsgs "includes all those counted by ipv6IfIcmpInErrors".
+    // This message never reaches icmp6_in, dispatch holding the per-type length itself, and is a bad
+    // length either way.
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_MSGS));
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS));
+}
+
+// The same rule on the path that does reach icmp6_in: an Echo Request stopping before its Sequence
+// Number, its checksum holding, so nothing about the checksum tells it from sec 2.4 (b)'s unknown
+// informational type, which is discarded silently and is no error.
+void test_an_icmpv6_message_too_short_for_its_type_is_an_error(void)
+{
+    const size_t len = (size_t)IDEMIP_ICMP6_ECHO_HDR_LEN - 2u;
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_ECHO_REQUEST, g_remote_ip6, g_local_ip6, len);
+    seal_icmp6(g_frame, msg, len, g_remote_ip6, g_local_ip6);
+    input(work_a, msg + len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    Icmp6InIo *ic = IDEMIP_ICMP6_IN_IO(icmp6_in_mem);
+    TEST_ASSERT_TRUE_MESSAGE(ic->cksum_ok, "this case is about a bad length, so its checksum must hold");
+    TEST_ASSERT_TRUE(ic->bad_len);
+    TEST_ASSERT_TRUE((ic->act & IDEMIP_ICMP6_IN_ACT_DISCARD) != 0u);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_MSGS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS),
+                                     "RFC 2466 names bad length an ICMP-specific error");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
 }
 
 // RFC 4861 sec 4.6: "Nodes MUST silently discard an ND packet that contains an option with length
