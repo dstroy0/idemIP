@@ -10,9 +10,11 @@ jobs:
     name: Analyze
     runs-on: ubuntu-latest
     env:
-      # Out of the tree, the way every other build here is configured, and an absolute path so the
-      # scanner resolves the compilation database from whatever directory it runs in.
-      BUILD_DIR: ${{ runner.temp }}/build-cov
+      # An absolute path, so the scanner resolves the compilation database from whatever directory
+      # it runs in. github.workspace and not runner.temp: the runner context does not exist when a
+      # job's env is evaluated, and naming it there is what makes the whole file fail to parse.
+      # sonar.sources is src,test, so a build directory inside the workspace is not analysed.
+      BUILD_DIR: ${{ github.workspace }}/build-cov
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:

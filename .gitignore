@@ -9,3 +9,6 @@ coverage.xml
 *.gcda
 *.gcno
 *.gcov
+
+# The coverage build directory, which the CI workflow puts inside the workspace.
+build-cov/
