@@ -193,6 +193,7 @@ typedef enum IDEMIP_ENUM_PACKED
     IDEMIP_DISPATCH_PCB_ICMP,     ///< the message went to icmp_in or icmp6_in
     IDEMIP_DISPATCH_PCB_GROUP,    ///< the message went to igmp or mld6
     IDEMIP_DISPATCH_PCB_ARP,      ///< the packet went to the RFC 826 table
+    IDEMIP_DISPATCH_PCB_ND,       ///< the message is one of RFC 4861 sec 4's five, for nd6, dad, slaac or rdnss
 } IdemIpDispatchPcb;
 
 /**

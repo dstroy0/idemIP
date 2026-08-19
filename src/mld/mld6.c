@@ -14,6 +14,7 @@
 
 #include "src/idemip_config.h" // the entry point: the enable gate below, and the widths
 
+#include "src/ip/ip6_addr.h"
 #include "src/mld/mld6.h"
 
 IDEMIP_BEGIN_DECLS
@@ -77,34 +78,17 @@ static_assert(IDEMIP_MLD6_GROUPS < IDEMIP_MLD6_NONE, "the table is wider than th
 
 // --- addresses -------------------------------------------------------------
 
-// RFC 4291 sec 2.7.1: the All Nodes Address FF02:0:0:0:0:0:0:1, which RFC 2710 sec 5 holds in Idle
-// Listener state on every interface and never reports.
-static idemip_bool mld6_is_all_nodes(const uint8_t *addr)
-{
-    if (addr[0] != MLD6_MULTICAST_PREFIX || addr[1] != 0x02u || addr[IDEMIP_IP6_ADDR_LEN - 1u] != 0x01u)
-    {
-        return IDEMIP_FALSE;
-    }
-    for (uint8_t i = 2u; i < (uint8_t)(IDEMIP_IP6_ADDR_LEN - 1u); i++)
-    {
-        if (addr[i] != 0u)
-        {
-            return IDEMIP_FALSE;
-        }
-    }
-    return IDEMIP_TRUE;
-}
-
 // RFC 2710 sec 5: "MLD messages are never sent for multicast addresses whose scope is 0 (reserved)
 // or 1 (node-local)", and the link-scope all-nodes address "never transitions to another state, and
-// never sends a Report or Done". Everything else, sec 5 included, is reported.
+// never sends a Report or Done". Everything else, sec 5 included, is reported. The scope test runs
+// first, so the RFC 4291 sec 2.7.1 form ip6_addr.h names reaches this only at link scope.
 static idemip_bool mld6_reportable(const uint8_t *addr)
 {
     if ((addr[1] & MLD6_SCOPE_MASK) <= MLD6_SCOPE_INTERFACE_LOCAL)
     {
         return IDEMIP_FALSE;
     }
-    return mld6_is_all_nodes(addr) ? IDEMIP_FALSE : IDEMIP_TRUE;
+    return idemip_ip6_addr_is_all_nodes(addr) ? IDEMIP_FALSE : IDEMIP_TRUE;
 }
 
 // The sec 3.6 Multicast Address a Report or Done carries names a multicast address, RFC 4291 sec 2.7.

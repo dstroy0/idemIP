@@ -44,7 +44,11 @@ IDEMIP_BEGIN_DECLS
  *
  * RFC 4443 sec 2.1 assigns 1 through 4 and 128 through 129. Other documents assign into the same
  * space: RFC 2710 sec 3.1 takes 130 through 132 for MLD, which sec 3 calls "a sub-protocol of
- * ICMPv6, that is, MLD message types are a subset of the set of ICMPv6 messages".
+ * ICMPv6, that is, MLD message types are a subset of the set of ICMPv6 messages", and RFC 4861
+ * sec 4.1 through sec 4.5 take 133 through 137 for Neighbor Discovery.
+ *
+ * A type listed here is one this library implements, so sec 2.4 (b), "If an ICMPv6 informational
+ * message of unknown type is received, it MUST be silently discarded", does not reach it.
  */
 typedef enum IDEMIP_ENUM_PACKED
 {
@@ -57,6 +61,11 @@ typedef enum IDEMIP_ENUM_PACKED
     IDEMIP_ICMP6_MLD_QUERY = 130,       ///< RFC 2710 sec 3.1, "Multicast Listener Query"
     IDEMIP_ICMP6_MLD_REPORT = 131,      ///< RFC 2710 sec 3.1, "Multicast Listener Report"
     IDEMIP_ICMP6_MLD_DONE = 132,        ///< RFC 2710 sec 3.1, "Multicast Listener Done"
+    IDEMIP_ICMP6_ROUTER_SOLICIT = 133,  ///< RFC 4861 sec 4.1, "Router Solicitation"
+    IDEMIP_ICMP6_ROUTER_ADVERT = 134,   ///< RFC 4861 sec 4.2, "Router Advertisement"
+    IDEMIP_ICMP6_NEIGHBOR_SOLICIT = 135, ///< RFC 4861 sec 4.3, "Neighbor Solicitation"
+    IDEMIP_ICMP6_NEIGHBOR_ADVERT = 136,  ///< RFC 4861 sec 4.4, "Neighbor Advertisement"
+    IDEMIP_ICMP6_REDIRECT = 137,         ///< RFC 4861 sec 4.5, "Redirect"
 } IdemIpIcmp6Type;
 
 // ---------------------------------------------------------------------------
@@ -102,6 +111,101 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_ICMP6_OFF_ID 4u       ///< 16-bit Identifier (sec 4.1)
 #define IDEMIP_ICMP6_OFF_SEQ 6u      ///< 16-bit Sequence Number (sec 4.1)
 #define IDEMIP_ICMP6_ECHO_HDR_LEN 8u ///< through the sequence number; data follows
+
+// ---------------------------------------------------------------------------
+// Multicast Listener Discovery message body (RFC 2710 sec 3)
+// ---------------------------------------------------------------------------
+// One body shape for all three types. The delay is in milliseconds, not IGMP's tenths of a second:
+// sec 3.4 reads "the maximum allowed delay before sending a responding Report, in units of
+// milliseconds".
+
+#define IDEMIP_ICMP6_OFF_MLD_MAX_RESP 4u ///< 16-bit Maximum Response Delay (sec 3.4)
+#define IDEMIP_ICMP6_OFF_MLD_RESERVED 6u ///< 16-bit Reserved, "ignored by receivers" (sec 3.5)
+#define IDEMIP_ICMP6_OFF_MLD_GROUP 8u    ///< 128-bit Multicast Address (sec 3.6)
+#define IDEMIP_ICMP6_MLD_MSG_LEN 24u     ///< through the Multicast Address, which ends the message
+
+// ---------------------------------------------------------------------------
+// Neighbor Discovery message bodies (RFC 4861 sec 4.1 through sec 4.5)
+// ---------------------------------------------------------------------------
+// Every one carries its options at the offset its fixed part ends on, which is also the shortest a
+// message of that type can be.
+
+#define IDEMIP_ICMP6_OFF_RS_RESERVED 4u ///< 32-bit Reserved (sec 4.1)
+#define IDEMIP_ICMP6_RS_HDR_LEN 8u      ///< through it; options follow
+
+#define IDEMIP_ICMP6_OFF_RA_CUR_HOP 4u   ///< 8-bit Cur Hop Limit (sec 4.2)
+#define IDEMIP_ICMP6_OFF_RA_FLAGS 5u     ///< M, O, and a 6-bit Reserved (sec 4.2)
+#define IDEMIP_ICMP6_OFF_RA_LIFETIME 6u  ///< 16-bit Router Lifetime, seconds (sec 4.2)
+#define IDEMIP_ICMP6_OFF_RA_REACHABLE 8u ///< 32-bit Reachable Time, milliseconds (sec 4.2)
+#define IDEMIP_ICMP6_OFF_RA_RETRANS 12u  ///< 32-bit Retrans Timer, milliseconds (sec 4.2)
+#define IDEMIP_ICMP6_RA_HDR_LEN 16u      ///< through it; options follow
+
+/** @brief sec 4.2: "1-bit 'Managed address configuration' flag." */
+#define IDEMIP_ICMP6_RA_FLAG_M 0x80u
+/** @brief sec 4.2: "1-bit 'Other configuration' flag." */
+#define IDEMIP_ICMP6_RA_FLAG_O 0x40u
+
+#define IDEMIP_ICMP6_OFF_NS_RESERVED 4u ///< 32-bit Reserved (sec 4.3)
+#define IDEMIP_ICMP6_OFF_NS_TARGET 8u   ///< 128-bit Target Address (sec 4.3)
+#define IDEMIP_ICMP6_NS_HDR_LEN 24u     ///< through it; options follow
+
+#define IDEMIP_ICMP6_OFF_NA_FLAGS 4u  ///< R, S, O, and a 29-bit Reserved (sec 4.4)
+#define IDEMIP_ICMP6_OFF_NA_TARGET 8u ///< 128-bit Target Address (sec 4.4)
+#define IDEMIP_ICMP6_NA_HDR_LEN 24u   ///< through it; options follow
+
+/** @brief sec 4.4: "When set, the R-bit indicates that the sender is a router." */
+#define IDEMIP_ICMP6_NA_FLAG_R 0x80u
+/** @brief sec 4.4: "the S-bit indicates that the advertisement was sent in response to a Neighbor
+ *  Solicitation from the Destination address". */
+#define IDEMIP_ICMP6_NA_FLAG_S 0x40u
+/** @brief sec 4.4: "the O-bit indicates that the advertisement should override an existing cache
+ *  entry and update the cached link-layer address". */
+#define IDEMIP_ICMP6_NA_FLAG_O 0x20u
+
+#define IDEMIP_ICMP6_OFF_RD_RESERVED 4u ///< 32-bit Reserved (sec 4.5)
+#define IDEMIP_ICMP6_OFF_RD_TARGET 8u   ///< 128-bit Target Address (sec 4.5)
+#define IDEMIP_ICMP6_OFF_RD_DEST 24u    ///< 128-bit Destination Address (sec 4.5)
+#define IDEMIP_ICMP6_RD_HDR_LEN 40u     ///< through it; options follow
+
+// ---------------------------------------------------------------------------
+// Neighbor Discovery option format (RFC 4861 sec 4.6)
+// ---------------------------------------------------------------------------
+// sec 4.6: "Length: 8-bit unsigned integer. The length of the option (including the type and
+// length fields) in units of 8 octets", so an option's octet count is its Length shifted up three.
+
+#define IDEMIP_ICMP6_ND_OPT_OFF_TYPE 0u  ///< 8-bit Type
+#define IDEMIP_ICMP6_ND_OPT_OFF_LEN 1u   ///< 8-bit Length, in units of 8 octets
+#define IDEMIP_ICMP6_ND_OPT_OFF_VALUE 2u ///< the rest, its shape fixed by the type
+#define IDEMIP_ICMP6_ND_OPT_HDR_LEN 2u   ///< the part every option shares
+#define IDEMIP_ICMP6_ND_OPT_UNIT_SHIFT 3u ///< Length counts eight-octet units
+
+/** @brief The option types RFC 4861 sec 4.6 assigns. */
+#define IDEMIP_ICMP6_ND_OPT_SLLA 1u   ///< sec 4.6.1, Source Link-Layer Address
+#define IDEMIP_ICMP6_ND_OPT_TLLA 2u   ///< sec 4.6.1, Target Link-Layer Address
+#define IDEMIP_ICMP6_ND_OPT_PREFIX 3u ///< sec 4.6.2, Prefix Information
+#define IDEMIP_ICMP6_ND_OPT_RD_HDR 4u ///< sec 4.6.3, Redirected Header
+#define IDEMIP_ICMP6_ND_OPT_MTU 5u    ///< sec 4.6.4, MTU
+
+#define IDEMIP_ICMP6_ND_OPT_OFF_LLADDR 2u ///< the Link-Layer Address (sec 4.6.1)
+
+#define IDEMIP_ICMP6_ND_OPT_OFF_PREFIX_LEN 2u   ///< 8-bit Prefix Length (sec 4.6.2)
+#define IDEMIP_ICMP6_ND_OPT_OFF_PREFIX_FLAGS 3u ///< L, A, and a 6-bit Reserved1 (sec 4.6.2)
+#define IDEMIP_ICMP6_ND_OPT_OFF_VALID 4u        ///< 32-bit Valid Lifetime, seconds (sec 4.6.2)
+#define IDEMIP_ICMP6_ND_OPT_OFF_PREFERRED 8u    ///< 32-bit Preferred Lifetime, seconds (sec 4.6.2)
+#define IDEMIP_ICMP6_ND_OPT_OFF_RESERVED2 12u   ///< 32-bit Reserved2 (sec 4.6.2)
+#define IDEMIP_ICMP6_ND_OPT_OFF_PREFIX 16u      ///< 128-bit Prefix (sec 4.6.2)
+#define IDEMIP_ICMP6_ND_OPT_PREFIX_LEN 4u       ///< its Length field, so 32 octets
+
+/** @brief sec 4.6.2: the "on-link" flag, "when set, indicates that this prefix can be used for
+ *  on-link determination". */
+#define IDEMIP_ICMP6_ND_PREFIX_FLAG_L 0x80u
+/** @brief sec 4.6.2: the "autonomous address-configuration" flag. */
+#define IDEMIP_ICMP6_ND_PREFIX_FLAG_A 0x40u
+
+#define IDEMIP_ICMP6_ND_OPT_OFF_MTU 4u ///< 32-bit MTU (sec 4.6.4)
+#define IDEMIP_ICMP6_ND_OPT_MTU_LEN 1u ///< its Length field, so 8 octets
+
+#define IDEMIP_ICMP6_ND_OPT_OFF_RD_DATA 8u ///< the "IP header + data" a Redirected Header carries
 
 /**
  * @brief How much of the invoking packet an error message may carry.
@@ -157,6 +261,155 @@ IDEMIP_INLINE uint32_t idemip_icmp6_mtu(const uint8_t *m)
 IDEMIP_INLINE uint32_t idemip_icmp6_pointer(const uint8_t *m)
 {
     return idemip_rd32(m + IDEMIP_ICMP6_OFF_POINTER);
+}
+
+/** @brief Maximum Response Delay, milliseconds (RFC 2710 sec 3.4). */
+IDEMIP_INLINE uint16_t idemip_icmp6_mld_max_resp(const uint8_t *m)
+{
+    return idemip_rd16(m + IDEMIP_ICMP6_OFF_MLD_MAX_RESP);
+}
+
+/** @brief The Multicast Address, where it lies (RFC 2710 sec 3.6). */
+IDEMIP_INLINE const uint8_t *idemip_icmp6_mld_group(const uint8_t *m)
+{
+    return m + IDEMIP_ICMP6_OFF_MLD_GROUP;
+}
+
+/**
+ * @brief The octets a message of this type carries before its options, and zero for a type that has
+ * none.
+ *
+ * RFC 4861 sec 4.1 through sec 4.5 fix one length per type, which is also the shortest such a
+ * message can be: sec 6.1.1 refuses a Router Solicitation under "8 or more octets" and sec 6.1.2 a
+ * Router Advertisement under "16 or more octets".
+ */
+IDEMIP_INLINE size_t idemip_icmp6_nd_hdr_len(uint8_t type)
+{
+    switch (type)
+    {
+    case IDEMIP_ICMP6_ROUTER_SOLICIT:
+        return IDEMIP_ICMP6_RS_HDR_LEN;
+    case IDEMIP_ICMP6_ROUTER_ADVERT:
+        return IDEMIP_ICMP6_RA_HDR_LEN;
+    case IDEMIP_ICMP6_NEIGHBOR_SOLICIT:
+        return IDEMIP_ICMP6_NS_HDR_LEN;
+    case IDEMIP_ICMP6_NEIGHBOR_ADVERT:
+        return IDEMIP_ICMP6_NA_HDR_LEN;
+    case IDEMIP_ICMP6_REDIRECT:
+        return IDEMIP_ICMP6_RD_HDR_LEN;
+    default:
+        return 0u;
+    }
+}
+
+/** @brief True for the five types RFC 4861 sec 4 defines. */
+IDEMIP_INLINE idemip_bool idemip_icmp6_is_nd(uint8_t type)
+{
+    return (type >= (uint8_t)IDEMIP_ICMP6_ROUTER_SOLICIT && type <= (uint8_t)IDEMIP_ICMP6_REDIRECT) ? IDEMIP_TRUE
+                                                                                                    : IDEMIP_FALSE;
+}
+
+/** @brief True for the three types RFC 2710 sec 3.1 defines. */
+IDEMIP_INLINE idemip_bool idemip_icmp6_is_mld(uint8_t type)
+{
+    return (type >= (uint8_t)IDEMIP_ICMP6_MLD_QUERY && type <= (uint8_t)IDEMIP_ICMP6_MLD_DONE) ? IDEMIP_TRUE
+                                                                                               : IDEMIP_FALSE;
+}
+
+/**
+ * @brief The Target Address of a Neighbor Solicitation, Neighbor Advertisement or Redirect, where it
+ * lies.
+ *
+ * RFC 4861 sec 4.3, sec 4.4 and sec 4.5 all put it at the same offset.
+ */
+IDEMIP_INLINE const uint8_t *idemip_icmp6_nd_target(const uint8_t *m)
+{
+    return m + IDEMIP_ICMP6_OFF_NS_TARGET;
+}
+
+/** @brief The Destination Address a Redirect names (RFC 4861 sec 4.5). */
+IDEMIP_INLINE const uint8_t *idemip_icmp6_rd_dest(const uint8_t *m)
+{
+    return m + IDEMIP_ICMP6_OFF_RD_DEST;
+}
+
+/** @brief The R, S and O bits of a Neighbor Advertisement (RFC 4861 sec 4.4). */
+IDEMIP_INLINE uint8_t idemip_icmp6_na_flags(const uint8_t *m)
+{
+    return m[IDEMIP_ICMP6_OFF_NA_FLAGS];
+}
+
+/** @brief Cur Hop Limit (RFC 4861 sec 4.2). */
+IDEMIP_INLINE uint8_t idemip_icmp6_ra_cur_hop(const uint8_t *m)
+{
+    return m[IDEMIP_ICMP6_OFF_RA_CUR_HOP];
+}
+
+/** @brief The M and O bits of a Router Advertisement (RFC 4861 sec 4.2). */
+IDEMIP_INLINE uint8_t idemip_icmp6_ra_flags(const uint8_t *m)
+{
+    return m[IDEMIP_ICMP6_OFF_RA_FLAGS];
+}
+
+/** @brief Router Lifetime, seconds (RFC 4861 sec 4.2). */
+IDEMIP_INLINE uint16_t idemip_icmp6_ra_lifetime(const uint8_t *m)
+{
+    return idemip_rd16(m + IDEMIP_ICMP6_OFF_RA_LIFETIME);
+}
+
+/** @brief Reachable Time, milliseconds (RFC 4861 sec 4.2). */
+IDEMIP_INLINE uint32_t idemip_icmp6_ra_reachable(const uint8_t *m)
+{
+    return idemip_rd32(m + IDEMIP_ICMP6_OFF_RA_REACHABLE);
+}
+
+/** @brief Retrans Timer, milliseconds (RFC 4861 sec 4.2). */
+IDEMIP_INLINE uint32_t idemip_icmp6_ra_retrans(const uint8_t *m)
+{
+    return idemip_rd32(m + IDEMIP_ICMP6_OFF_RA_RETRANS);
+}
+
+/** @brief An option's Type (RFC 4861 sec 4.6). */
+IDEMIP_INLINE uint8_t idemip_icmp6_nd_opt_type(const uint8_t *o)
+{
+    return o[IDEMIP_ICMP6_ND_OPT_OFF_TYPE];
+}
+
+/**
+ * @brief An option's length in octets, its Length field shifted up three.
+ *
+ * RFC 4861 sec 4.6: "The length of the option (including the type and length fields) in units of 8
+ * octets." Zero for a Length of zero, which sec 4.6 makes the whole packet's fault.
+ */
+IDEMIP_INLINE size_t idemip_icmp6_nd_opt_len(const uint8_t *o)
+{
+    return (size_t)o[IDEMIP_ICMP6_ND_OPT_OFF_LEN] << IDEMIP_ICMP6_ND_OPT_UNIT_SHIFT;
+}
+
+/**
+ * @brief Every option in @p len octets at @p opts closes inside them and none has Length zero.
+ *
+ * RFC 4861 sec 4.6: "Nodes MUST silently discard an ND packet that contains an option with length
+ * zero." An option whose Length runs past the message end is the same refusal, since the octets it
+ * names are not there to read.
+ */
+IDEMIP_INLINE idemip_bool idemip_icmp6_nd_opts_ok(const uint8_t *opts, size_t len)
+{
+    size_t at = 0u;
+    while (at != len)
+    {
+        if (len - at < (size_t)IDEMIP_ICMP6_ND_OPT_HDR_LEN)
+        {
+            return IDEMIP_FALSE;
+        }
+        size_t step = idemip_icmp6_nd_opt_len(opts + at);
+        if (step == 0u || step > len - at)
+        {
+            return IDEMIP_FALSE;
+        }
+        at += step;
+    }
+    return IDEMIP_TRUE;
 }
 
 /**
@@ -305,6 +558,32 @@ static_assert(IDEMIP_ICMP6_PARAMETER_PROBLEM < IDEMIP_ICMP6_INFORMATIONAL,
               "RFC 4443 sec 2.1 puts the error types below 128");
 static_assert(IDEMIP_ICMP6_MLD_QUERY >= IDEMIP_ICMP6_INFORMATIONAL,
               "the RFC 2710 sec 3.1 types sit in the RFC 4443 sec 2.1 informational range");
+static_assert(IDEMIP_ICMP6_ROUTER_SOLICIT >= IDEMIP_ICMP6_INFORMATIONAL,
+              "the RFC 4861 sec 4 types sit in the RFC 4443 sec 2.1 informational range");
+static_assert(IDEMIP_ICMP6_REDIRECT - IDEMIP_ICMP6_ROUTER_SOLICIT == 4,
+              "RFC 4861 sec 4.1 through sec 4.5 assign five consecutive types");
+static_assert(IDEMIP_ICMP6_OFF_MLD_GROUP + IDEMIP_IP6_ADDR_LEN == IDEMIP_ICMP6_MLD_MSG_LEN,
+              "the RFC 2710 sec 3 Multicast Address must end the MLD message");
+static_assert(IDEMIP_ICMP6_OFF_RS_RESERVED + 4u == IDEMIP_ICMP6_RS_HDR_LEN,
+              "RFC 4861 sec 4.1 puts the options where the 32-bit Reserved ends");
+static_assert(IDEMIP_ICMP6_OFF_RA_RETRANS + 4u == IDEMIP_ICMP6_RA_HDR_LEN,
+              "RFC 4861 sec 4.2 puts the options where Retrans Timer ends");
+static_assert(IDEMIP_ICMP6_OFF_NS_TARGET + IDEMIP_IP6_ADDR_LEN == IDEMIP_ICMP6_NS_HDR_LEN,
+              "RFC 4861 sec 4.3 puts the options where the Target Address ends");
+static_assert(IDEMIP_ICMP6_OFF_NA_TARGET + IDEMIP_IP6_ADDR_LEN == IDEMIP_ICMP6_NA_HDR_LEN,
+              "RFC 4861 sec 4.4 puts the options where the Target Address ends");
+static_assert(IDEMIP_ICMP6_OFF_RD_DEST + IDEMIP_IP6_ADDR_LEN == IDEMIP_ICMP6_RD_HDR_LEN,
+              "RFC 4861 sec 4.5 puts the options where the Destination Address ends");
+static_assert(IDEMIP_ICMP6_OFF_NS_TARGET == IDEMIP_ICMP6_OFF_NA_TARGET &&
+                  IDEMIP_ICMP6_OFF_NS_TARGET == IDEMIP_ICMP6_OFF_RD_TARGET,
+              "one Target Address accessor serves sec 4.3, sec 4.4 and sec 4.5 only while they agree");
+static_assert(IDEMIP_ICMP6_ND_OPT_OFF_VALUE == IDEMIP_ICMP6_ND_OPT_HDR_LEN,
+              "an RFC 4861 sec 4.6 option's value starts where its Type and Length end");
+static_assert(IDEMIP_ICMP6_ND_OPT_OFF_PREFIX + IDEMIP_IP6_ADDR_LEN ==
+                  (IDEMIP_ICMP6_ND_OPT_PREFIX_LEN << IDEMIP_ICMP6_ND_OPT_UNIT_SHIFT),
+              "RFC 4861 sec 4.6.2 gives Prefix Information a Length of 4, which is 32 octets");
+static_assert(IDEMIP_ICMP6_ND_OPT_OFF_MTU + 4u == (IDEMIP_ICMP6_ND_OPT_MTU_LEN << IDEMIP_ICMP6_ND_OPT_UNIT_SHIFT),
+              "RFC 4861 sec 4.6.4 gives MTU a Length of 1, which is 8 octets");
 
 IDEMIP_END_DECLS
 

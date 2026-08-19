@@ -938,6 +938,27 @@ void test_an_igmp_query_with_a_bad_checksum_is_discarded(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop);
 }
 
+// RFC 1112 sec 7.2: "every level 2 host must join the 'all-hosts' group (address 224.0.0.1) on each
+// network interface at initialization time and must remain a member for as long as the host is
+// active", and Appendix I: "The host starts in Idle Member state for that group on every interface".
+// RFC 2236 sec 9 addresses a General Query to it, so a node that does not recognize it as its own
+// receives no General Query at all, whatever else the IGMP path checks.
+void test_the_all_hosts_group_is_this_node_s_whether_or_not_it_joined_one(void)
+{
+    join_group(0xE0000102u);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, IDEMIP_IGMP_ALL_SYSTEMS, IDEMIP_IGMP_MSG_LEN,
+                    0u);
+    size_t end = build_igmp(g_frame, off, (uint8_t)IDEMIP_IGMP_TYPE_QUERY, 100u, 0u); // group zero: General
+
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a General Query is addressed to the group sec 7.2 makes every host a member of");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_GROUP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+}
+
 // A Report suppresses this node's own pending Report (sec 3), so a forged one is worth the same
 // check as a forged Query.
 void test_an_igmp_report_with_a_bad_checksum_is_discarded(void)
@@ -1560,6 +1581,254 @@ void test_the_solicited_node_address_of_our_own_is_local(void)
     seal_udp6(g_frame, off, g_remote_ip6, solicited);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u);
+}
+
+// --- RFC 4861 Neighbor Discovery and RFC 2710 MLD ----------------------------
+// These are ICMPv6 types this library implements, so RFC 4443 sec 2.4 (b)'s silent discard of an
+// informational message "of unknown type" is not theirs. icmp6_in answers Echo and nothing else, so
+// dispatch names the message and the module that owns it and the caller drives that module, which
+// is what it already does for an RFC 826 packet and acd.
+
+// The ICMPv6 header of a message with a zeroed body, at the offset the body starts.
+static size_t build_icmp6_msg(uint8_t *f, size_t off, uint8_t type, const uint8_t *src, const uint8_t *dst,
+                              size_t msg_len)
+{
+    off = build_ip6(f, off, IDEMIP_IP6_NH_ICMPV6, src, dst, msg_len);
+    memset(f + off, 0, msg_len);
+    f[off + IDEMIP_ICMP6_OFF_TYPE] = type;
+    f[off + IDEMIP_ICMP6_OFF_CODE] = 0u;
+    return off;
+}
+
+static void seal_icmp6(uint8_t *f, size_t off, size_t msg_len, const uint8_t *src, const uint8_t *dst)
+{
+    idemip_wr16(f + off + IDEMIP_ICMP6_OFF_CKSUM, 0u);
+    idemip_wr16(f + off + IDEMIP_ICMP6_OFF_CKSUM, idemip_icmp6_cksum_compute(f + off, msg_len, src, dst));
+}
+
+// RFC 4861 sec 7.2.4 answers a Neighbor Solicitation for one of this node's addresses with a
+// Neighbor Advertisement, which nothing can do if the solicitation never leaves the receive path.
+void test_a_neighbor_solicitation_reaches_the_neighbor_discovery_module(void)
+{
+    uint8_t solicited[IDEMIP_IP6_ADDR_LEN];
+    idemip_ip6_addr_solicited(solicited, g_local_ip6);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, g_remote_ip6, solicited,
+                                 IDEMIP_ICMP6_NS_HDR_LEN);
+    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_NS_HDR_LEN, g_remote_ip6, solicited);
+    input(work_a, msg + IDEMIP_ICMP6_NS_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a Neighbor Solicitation is not an informational message of unknown type");
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u,
+                             "the solicitation must reach the module that answers it");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_ND, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    // where the caller reads the Target Address from
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(g_local_ip6,
+                                  idemip_icmp6_nd_target(g_frame + IDEMIP_DISPATCH_IO(work_a)->payload_off),
+                                  IDEMIP_IP6_ADDR_LEN);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_MSGS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS),
+                                     "a type this library implements is not an ICMP-specific error");
+}
+
+// RFC 4861 sec 4.4, the reply to the above, which sec 7.2.5 feeds to the Neighbor Cache.
+void test_a_neighbor_advertisement_reaches_the_neighbor_discovery_module(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_ADVERT, g_remote_ip6, g_local_ip6,
+                                 IDEMIP_ICMP6_NA_HDR_LEN);
+    g_frame[msg + IDEMIP_ICMP6_OFF_NA_FLAGS] = IDEMIP_ICMP6_NA_FLAG_S | IDEMIP_ICMP6_NA_FLAG_O;
+    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NA_TARGET, g_remote_ip6, IDEMIP_IP6_ADDR_LEN);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_NA_HDR_LEN, g_remote_ip6, g_local_ip6);
+    input(work_a, msg + IDEMIP_ICMP6_NA_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_ND, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP6_NA_FLAG_S | IDEMIP_ICMP6_NA_FLAG_O,
+                            idemip_icmp6_na_flags(g_frame + IDEMIP_DISPATCH_IO(work_a)->payload_off));
+}
+
+// RFC 4861 sec 4.2, which slaac, rdnss and nd6 each read a part of. Its options are what carry the
+// Prefix Information sec 4.6.2 defines, so the message is built with one.
+void test_a_router_advertisement_carrying_a_prefix_option_reaches_the_module(void)
+{
+    size_t opt = (size_t)IDEMIP_ICMP6_ND_OPT_PREFIX_LEN << IDEMIP_ICMP6_ND_OPT_UNIT_SHIFT;
+    size_t len = (size_t)IDEMIP_ICMP6_RA_HDR_LEN + opt;
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg =
+        build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_ROUTER_ADVERT, g_remote_ip6, g_local_ip6, len);
+    g_frame[msg + IDEMIP_ICMP6_OFF_RA_CUR_HOP] = 64u;
+    idemip_wr16(g_frame + msg + IDEMIP_ICMP6_OFF_RA_LIFETIME, 1800u);
+    uint8_t *o = g_frame + msg + IDEMIP_ICMP6_RA_HDR_LEN;
+    o[IDEMIP_ICMP6_ND_OPT_OFF_TYPE] = IDEMIP_ICMP6_ND_OPT_PREFIX;
+    o[IDEMIP_ICMP6_ND_OPT_OFF_LEN] = IDEMIP_ICMP6_ND_OPT_PREFIX_LEN;
+    o[IDEMIP_ICMP6_ND_OPT_OFF_PREFIX_LEN] = 64u;
+    o[IDEMIP_ICMP6_ND_OPT_OFF_PREFIX_FLAGS] = IDEMIP_ICMP6_ND_PREFIX_FLAG_L | IDEMIP_ICMP6_ND_PREFIX_FLAG_A;
+    memcpy(o + IDEMIP_ICMP6_ND_OPT_OFF_PREFIX, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    seal_icmp6(g_frame, msg, len, g_remote_ip6, g_local_ip6);
+    input(work_a, msg + len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_ND, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_EQUAL_UINT16(1800u, idemip_icmp6_ra_lifetime(g_frame + IDEMIP_DISPATCH_IO(work_a)->payload_off));
+}
+
+// RFC 2710 sec 3, the IPv6 counterpart of the RFC 2236 Query d_igmp has always handled. sec 3.4
+// puts the Maximum Response Delay in milliseconds, and sec 3.6 makes a zero Multicast Address a
+// General Query.
+void test_an_mld_query_reaches_the_group_module(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_MLD_QUERY, g_remote_ip6, g_local_ip6,
+                                 IDEMIP_ICMP6_MLD_MSG_LEN);
+    idemip_wr16(g_frame + msg + IDEMIP_ICMP6_OFF_MLD_MAX_RESP, 10000u);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_MLD_MSG_LEN, g_remote_ip6, g_local_ip6);
+    input(work_a, msg + IDEMIP_ICMP6_MLD_MSG_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_GROUP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "an MLD message belongs to the group table, as an IGMP one does");
+    TEST_ASSERT_EQUAL_UINT16(10000u,
+                             idemip_icmp6_mld_max_resp(g_frame + IDEMIP_DISPATCH_IO(work_a)->payload_off));
+}
+
+// RFC 4443 sec 2.3: the checksum "MUST be verified" before the message is processed. icmp6_in keeps
+// this for the types it answers, and these do not go through it.
+void test_a_neighbor_solicitation_with_a_bad_checksum_is_discarded(void)
+{
+    uint8_t solicited[IDEMIP_IP6_ADDR_LEN];
+    idemip_ip6_addr_solicited(solicited, g_local_ip6);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, g_remote_ip6, solicited,
+                                 IDEMIP_ICMP6_NS_HDR_LEN);
+    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_NS_HDR_LEN, g_remote_ip6, solicited);
+    g_frame[msg + IDEMIP_ICMP6_OFF_CKSUM] = (uint8_t)(g_frame[msg + IDEMIP_ICMP6_OFF_CKSUM] ^ 0xFFu);
+    input(work_a, msg + IDEMIP_ICMP6_NS_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS));
+}
+
+// RFC 4861 sec 4.3 ends a Neighbor Solicitation's fixed part at its Target Address, and sec 7.1.1
+// refuses one shorter than that. A message cut before the field the caller reads must not be handed
+// on as though the field were there.
+void test_a_neighbor_solicitation_without_its_target_address_is_discarded(void)
+{
+    size_t len = (size_t)IDEMIP_ICMP6_OFF_NS_TARGET;
+    uint8_t solicited[IDEMIP_IP6_ADDR_LEN];
+    idemip_ip6_addr_solicited(solicited, g_local_ip6);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg =
+        build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, g_remote_ip6, solicited, len);
+    seal_icmp6(g_frame, msg, len, g_remote_ip6, solicited);
+    input(work_a, msg + len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+}
+
+// RFC 4861 sec 4.6: "Nodes MUST silently discard an ND packet that contains an option with length
+// zero." A zero Length also never advances an option walk, so this is what stops one.
+void test_an_nd_option_of_length_zero_discards_the_packet(void)
+{
+    size_t len = (size_t)IDEMIP_ICMP6_NS_HDR_LEN + 8u;
+    uint8_t solicited[IDEMIP_IP6_ADDR_LEN];
+    idemip_ip6_addr_solicited(solicited, g_local_ip6);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg =
+        build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, g_remote_ip6, solicited, len);
+    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    uint8_t *o = g_frame + msg + IDEMIP_ICMP6_NS_HDR_LEN;
+    o[IDEMIP_ICMP6_ND_OPT_OFF_TYPE] = IDEMIP_ICMP6_ND_OPT_SLLA;
+    o[IDEMIP_ICMP6_ND_OPT_OFF_LEN] = 0u;
+    seal_icmp6(g_frame, msg, len, g_remote_ip6, solicited);
+    input(work_a, msg + len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+}
+
+// RFC 4291 sec 2.8: "A host is required to recognize the following addresses as identifying itself:
+// ... The All-Nodes multicast addresses defined in Section 2.7.1." sec 2.7.1 defines two,
+// FF01:0:0:0:0:0:0:1 and FF02:0:0:0:0:0:0:1. A Router Advertisement is addressed to the link-scope
+// one, so a node that does not recognize it never sees a router.
+void test_the_all_nodes_address_identifies_this_host(void)
+{
+    static const uint8_t all_nodes[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg =
+        build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_ROUTER_ADVERT, g_remote_ip6, all_nodes,
+                        IDEMIP_ICMP6_RA_HDR_LEN);
+    idemip_wr16(g_frame + msg + IDEMIP_ICMP6_OFF_RA_LIFETIME, 1800u);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_RA_HDR_LEN, g_remote_ip6, all_nodes);
+    input(work_a, msg + IDEMIP_ICMP6_RA_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u,
+                             "an address sec 2.8 requires this host to recognize is not someone else's");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_ND, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+}
+
+// The interface-local one sec 2.7.1 defines beside it, which sec 2.8 names in the same line.
+void test_the_interface_local_all_nodes_address_identifies_this_host(void)
+{
+    static const uint8_t all_nodes[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_MLD_QUERY, g_remote_ip6, all_nodes,
+                                 IDEMIP_ICMP6_MLD_MSG_LEN);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_MLD_MSG_LEN, g_remote_ip6, all_nodes);
+    input(work_a, msg + IDEMIP_ICMP6_MLD_MSG_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+}
+
+// A multicast address the node did not join and sec 2.8 does not require is still not this host's.
+void test_a_multicast_group_this_node_never_joined_is_not_local(void)
+{
+    static const uint8_t other[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x09};
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_MLD_QUERY, g_remote_ip6, other,
+                                 IDEMIP_ICMP6_MLD_MSG_LEN);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_MLD_MSG_LEN, g_remote_ip6, other);
+    input(work_a, msg + IDEMIP_ICMP6_MLD_MSG_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) != 0u);
+}
+
+// The same walk, over an option whose Length reaches past the octets the message carries.
+void test_an_nd_option_running_past_the_message_discards_the_packet(void)
+{
+    size_t len = (size_t)IDEMIP_ICMP6_NS_HDR_LEN + 8u;
+    uint8_t solicited[IDEMIP_IP6_ADDR_LEN];
+    idemip_ip6_addr_solicited(solicited, g_local_ip6);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg =
+        build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, g_remote_ip6, solicited, len);
+    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    uint8_t *o = g_frame + msg + IDEMIP_ICMP6_NS_HDR_LEN;
+    o[IDEMIP_ICMP6_ND_OPT_OFF_TYPE] = IDEMIP_ICMP6_ND_OPT_SLLA;
+    o[IDEMIP_ICMP6_ND_OPT_OFF_LEN] = 2u; // 16 octets, and 8 arrived
+    seal_icmp6(g_frame, msg, len, g_remote_ip6, solicited);
+    input(work_a, msg + len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
 }
 
 #endif // IDEMIP_ENABLE_IPV6

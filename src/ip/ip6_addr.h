@@ -291,6 +291,31 @@ IDEMIP_INLINE void idemip_ip6_addr_solicited(uint8_t *out, const uint8_t *addr)
     out[15] = addr[15];
 }
 
+/**
+ * @brief True for either address RFC 4291 sec 2.7.1 lists under "All Nodes Addresses".
+ *
+ * sec 2.7.1: "FF01:0:0:0:0:0:0:1 FF02:0:0:0:0:0:0:1. The above multicast addresses identify the
+ * group of all IPv6 nodes, within scope 1 (interface-local) or 2 (link-local)." sec 2.8 puts both
+ * on the list "a host is required to recognize ... as identifying itself", so neither needs a group
+ * table entry to be this host's, the way a solicited-node address does not.
+ */
+IDEMIP_INLINE idemip_bool idemip_ip6_addr_is_all_nodes(const uint8_t *addr)
+{
+    if (addr[0] != IDEMIP_IP6_MULTICAST_TAG || idemip_ip6_addr_mcast_flags(addr) != 0u)
+    {
+        return IDEMIP_FALSE;
+    }
+    uint8_t scope = addr[1] & IDEMIP_IP6_MCAST_SCOP_MASK;
+    if (scope != IDEMIP_IP6_SCOPE_INTERFACE_LOCAL && scope != IDEMIP_IP6_SCOPE_LINK_LOCAL)
+    {
+        return IDEMIP_FALSE;
+    }
+    return (idemip_ip6_addr_leading_zero(addr + 2u, IDEMIP_IP6_ADDR_LEN - 3u) &&
+            addr[IDEMIP_IP6_ADDR_LEN - 1u] == 0x01u)
+               ? IDEMIP_TRUE
+               : IDEMIP_FALSE;
+}
+
 // ---------------------------------------------------------------------------
 // Operands
 // ---------------------------------------------------------------------------

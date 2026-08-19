@@ -812,6 +812,15 @@ static DispatchDest d_ip4_dest(uint8_t *restrict work, uint32_t dst)
     }
     if (idemip_ip4_addr_is_mcast(dst))
     {
+        // RFC 1112 sec 7.2: "every level 2 host must join the 'all-hosts' group (address 224.0.0.1)
+        // on each network interface at initialization time and must remain a member for as long as
+        // the host is active", and Appendix I starts it "in Idle Member state for that group on
+        // every interface". It holds no table entry, the way igmp.c already keeps it out of every
+        // Report, so the membership is read here.
+        if (dst == IDEMIP_IGMP_ALL_SYSTEMS)
+        {
+            return D_DEST_LOCAL;
+        }
         if (ctx->igmp == NULL)
         {
             return D_DEST_DROP;
@@ -1288,6 +1297,13 @@ static idemip_bool d_ip6_local(uint8_t *restrict work, const uint8_t *dst)
     {
         return IDEMIP_FALSE;
     }
+    // RFC 4291 sec 2.8: "A host is required to recognize the following addresses as identifying
+    // itself: ... The All-Nodes multicast addresses defined in Section 2.7.1." Both of them, and
+    // without a group table entry, which is how the solicited-node addresses below are recognized.
+    if (idemip_ip6_addr_is_all_nodes(dst))
+    {
+        return IDEMIP_TRUE;
+    }
     if (ctx->mld6 != NULL)
     {
         IDEMIP_MLD6_IO(ctx->mld6)->group_args.group = dst;
@@ -1325,6 +1341,50 @@ static idemip_bool d_ip6_local(uint8_t *restrict work, const uint8_t *dst)
 }
 
 // RFC 4443, over the caller's transmit buffer.
+// The RFC 4861 sec 4 and RFC 2710 sec 3 message types, which are ICMPv6 types this library
+// implements, so RFC 4443 sec 2.4 (b), "If an ICMPv6 informational message of unknown type is
+// received, it MUST be silently discarded", is not theirs. The message reaches its module the way
+// an RFC 826 one does: this names where it lies and which module owns it, and the caller drives
+// nd6, dad, slaac, rdnss or mld6 with it. The sec 6.1, sec 7.1 and sec 8.1 receive validation is
+// that module's, as ARP's is arp_table's.
+static void d_icmp6_nd(uint8_t *restrict work, const uint8_t *ip6, const uint8_t *msg, size_t msg_len, uint8_t type)
+{
+    DispatchIo *io = D_IO(work);
+    const DispatchInputArgs *a = &io->input_args;
+
+    io->pcb_kind =
+        idemip_icmp6_is_mld(type) ? IDEMIP_DISPATCH_PCB_GROUP : IDEMIP_DISPATCH_PCB_ND;
+
+    // RFC 4443 sec 2.3: "an ICMPv6 message ... the checksum ... MUST be verified". icmp6_in keeps
+    // this for the types it answers; these do not go through it.
+    if (idemip_icmp6_cksum_compute(msg, msg_len, idemip_ip6_src(ip6), idemip_ip6_dst(ip6)) != 0u)
+    {
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_ERRORS);
+        d_drop(work, IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_STAT_IF_IN_ERRORS);
+        d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
+        return;
+    }
+    // RFC 2710 sec 3 ends an MLD message at its Multicast Address and gives it no options. RFC 4861
+    // sec 4.1 through sec 4.5 fix one length per type, and sec 4.6 puts the options after it:
+    // "Nodes MUST silently discard an ND packet that contains an option with length zero."
+    size_t hdr_len = idemip_icmp6_is_mld(type) ? (size_t)IDEMIP_ICMP6_MLD_MSG_LEN : idemip_icmp6_nd_hdr_len(type);
+    if (msg_len < hdr_len)
+    {
+        d_drop(work, IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_STAT_IF_IN_ERRORS);
+        d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
+        return;
+    }
+    if (!idemip_icmp6_is_mld(type) && !idemip_icmp6_nd_opts_ok(msg + hdr_len, msg_len - hdr_len))
+    {
+        d_drop(work, IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_STAT_IF_IN_ERRORS);
+        d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
+        return;
+    }
+    io->act |= IDEMIP_DISPATCH_ACT_DELIVER;
+    d_bump(work, IDEMIP_STAT_IP6_IN_DELIVERS);
+    d_delivered(work, a->frame);
+}
+
 static void d_icmp6(uint8_t *restrict work, const uint8_t *ip6, size_t total_len)
 {
     DispatchCtx *ctx = D_CTX(work);
@@ -1333,6 +1393,16 @@ static void d_icmp6(uint8_t *restrict work, const uint8_t *ip6, size_t total_len
 
     io->pcb_kind = IDEMIP_DISPATCH_PCB_ICMP;
     d_bump(work, IDEMIP_STAT_ICMP6_IN_MSGS);
+    const uint8_t *msg = ip6 + io->payload_off - io->ip_off;
+    if (io->payload_len >= (size_t)IDEMIP_ICMP6_HDR_LEN)
+    {
+        uint8_t type = idemip_icmp6_type(msg);
+        if (idemip_icmp6_is_nd(type) || idemip_icmp6_is_mld(type))
+        {
+            d_icmp6_nd(work, ip6, msg, io->payload_len, type);
+            return;
+        }
+    }
     if (ctx->icmp6_in == NULL)
     {
         d_drop(work, IDEMIP_DISPATCH_DROP_UNBOUND, IDEMIP_STAT_IF_COUNT);
