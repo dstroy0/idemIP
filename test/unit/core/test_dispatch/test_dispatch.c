@@ -1180,6 +1180,24 @@ void test_an_unclaimed_ip_protocol_counts_unknown_protos(void)
     TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS));
 }
 
+#if IDEMIP_ENABLE_IPV6
+// The IPv6 twin, on RFC 2465 ipv6IfStatsInUnknownProtos: "The number of locally-addressed datagrams
+// received successfully but discarded because of an unknown or unsupported protocol." One site
+// answers for both families, and only the IPv4 half was ever named, so nothing said which it reached.
+void test_an_unclaimed_ipv6_next_header_counts_unknown_protos(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, 253u, g_remote_ip6, g_local_ip6, 8u); // RFC 3692 leaves 253 to testing
+    memset(g_frame + off, 0, 8u);
+    input(work_a, off + 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_PROTO, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_UNKNOWN_PROTOS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_IP4_IN_UNKNOWN_PROTOS),
+                                     "an IPv6 packet was counted against the IPv4 counter");
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS));
+}
+#endif
+
 // RFC 1122 sec 3.2: a raw binding takes the protocol number itself, so a protocol no built-in module
 // claims still reaches a pcb.
 void test_a_raw_binding_takes_an_unclaimed_protocol(void)
@@ -1385,6 +1403,34 @@ void test_a_fragment_the_reassembler_kept_pins_its_descriptor(void)
     Ip4Reass.next(ip4_reass_mem);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, re->status, "a row with a hole left hands on no datagram");
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_REASS_HOLDING, re->state);
+}
+
+// RFC 791 sec 3.2 step (10) fixes TDL from the last fragment, so a later fragment claiming to end
+// past it contradicts one already held and the reassembler refuses it. RFC 1213 ipInDiscards: "Note
+// that this counter does not include any datagrams discarded while awaiting re-assembly", and
+// ipReasmFails is "The number of failures detected by the IP re-assembly algorithm (for whatever
+// reason: timed out, errors, etc)". A refusal is that failure, and is not an ipInDiscards.
+void test_a_fragment_the_reassembler_refuses_counts_a_reassembly_failure(void)
+{
+    // The last fragment first, one unit in, which fixes the datagram's end at 16.
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, 8u, 1u);
+    input(work_a, off + 8u, 0u, IP4_FRAG_DESC);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+
+    // A fragment ending at 24, past the 16 the one above fixed.
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, 8u, 2u | IDEMIP_IP4_FLAG_MF);
+    input(work_a, off + 8u, 0u, IP4_FRAG_DESC + 1u);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_REASS, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) == 0u,
+                             "a fragment the reassembler refused must not leave its descriptor pinned");
+    TEST_ASSERT_EQUAL_UINT32(2u, ctr(IDEMIP_STAT_IP4_REASM_REQDS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_IP4_REASM_FAILS),
+                                     "a refusal is a failure the re-assembly algorithm detected");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_IP4_IN_DISCARDS),
+                                     "ipInDiscards excludes datagrams discarded while awaiting re-assembly");
 }
 
 // RFC 815 sec 3 step 8: the fragment carrying MF clear fixes where the datagram ends, and with the
@@ -1630,6 +1676,10 @@ void test_an_icmpv6_message_of_unknown_type_is_discarded(void)
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_DISPATCH_IO(work_a)->drop,
                                   "a message whose checksum holds is not a checksum error");
     TEST_ASSERT_FALSE_MESSAGE(ic->bad_len, "an unknown type is not a bad length");
+    // RFC 2465 ipv6IfStatsInDiscards, the IPv6 half of a pair where only the IPv4 one was named.
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_DISCARDS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_IP4_IN_DISCARDS),
+                                     "an IPv6 packet was counted against the IPv4 counter");
 }
 
 // RFC 8200 sec 8.1: "IPv6 receivers must discard UDP packets containing a zero checksum". The
@@ -1897,6 +1947,7 @@ void test_a_neighbor_solicitation_without_its_target_address_is_discarded(void)
     // length either way.
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_MSGS));
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_DISCARDS));
 }
 
 // The same rule on the path that does reach icmp6_in: an Echo Request stopping before its Sequence
@@ -2170,6 +2221,35 @@ void test_an_ipv6_fragment_with_no_descriptor_is_discarded(void)
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) == 0u);
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_REASM_REQDS));
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_REASM_FAILS));
+    // RFC 2465 ipv6IfStatsInDiscards: "Note that this counter does not include any datagrams
+    // discarded while awaiting re-assembly." This one was, so ipv6IfStatsReasmFails holds it alone.
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_IP6_IN_DISCARDS),
+                                     "ipv6IfStatsInDiscards excludes datagrams discarded awaiting re-assembly");
+}
+
+// The IPv6 twin of test_a_fragment_the_reassembler_refuses_counts_a_reassembly_failure. RFC 8200
+// sec 4.5 ends a datagram at the fragment carrying M clear, so one reaching past that end is the
+// same contradiction, and RFC 2465 puts the refusal in ipv6IfStatsReasmFails, not InDiscards.
+void test_an_ipv6_fragment_the_reassembler_refuses_counts_a_reassembly_failure(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 8u, IDEMIP_FALSE,
+                                    FRAG_IDENT, 8u);
+    input(work_a, end, 0u, FRAG_DESC);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 16u, IDEMIP_TRUE,
+                             FRAG_IDENT, 8u);
+    input(work_a, end, 0u, FRAG_DESC + 1u);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_REASS, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) == 0u);
+    TEST_ASSERT_EQUAL_UINT32(2u, ctr(IDEMIP_STAT_IP6_REASM_REQDS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_IP6_REASM_FAILS),
+                                     "a refusal is a failure the re-assembly algorithm detected");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_IP6_IN_DISCARDS),
+                                     "ipv6IfStatsInDiscards excludes datagrams discarded awaiting re-assembly");
 }
 
 #endif // IDEMIP_ENABLE_IPV6
@@ -2596,3 +2676,156 @@ void test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded(void)
 }
 
 #endif // IDEMIP_ENABLE_UDP
+
+// --- the borrows a build did not bind ----------------------------------------
+
+// dispatch.h: a path "that would have needed it reports IDEMIP_DISPATCH_DROP_UNBOUND rather than
+// calling through a null pointer". Every unit is optional, a build selecting what it carries, so
+// each of these branches is what a frame meets in a build that left one out. The contract was
+// written down and raised at ten sites, and no case named it, so nothing distinguished a reported
+// refusal from a null dereference that happened not to fault on the host.
+
+// Everything bound but one, which is the shape of a build that does not carry that unit.
+#define BIND_WITHOUT(w, field)                                                                                         \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        bind_all(w);                                                                                                   \
+        IDEMIP_DISPATCH_IO(w)->bind_args.field = NULL;                                                                 \
+        Dispatch.bind(w);                                                                                              \
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DISPATCH_IO(w)->status);                                               \
+    } while (0)
+
+#define ASSERT_UNBOUND(w, who)                                                                                         \
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_UNBOUND, IDEMIP_DISPATCH_IO(w)->drop,                           \
+                                  "a frame reached " who " and it was never bound")
+
+// The tag is read before anything else, so an unbound vlan stops every frame there.
+void test_a_frame_with_no_vlan_borrow_is_refused(void)
+{
+    BIND_WITHOUT(work_a, vlan);
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, 8u, 0u);
+    input(work_a, off + 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    ASSERT_UNBOUND(work_a, "vlan");
+}
+
+#if IDEMIP_ENABLE_IPV4
+
+void test_an_ipv4_frame_with_an_unbound_unit_is_refused(void)
+{
+    // RFC 826, which arp_table answers.
+    BIND_WITHOUT(work_a, arp);
+    if_untagged(work_a, 0u);
+    size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_ARP);
+    size_t end = build_arp(g_frame, off, IDEMIP_ARP_OP_REQUEST, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    ASSERT_UNBOUND(work_a, "arp");
+
+    // RFC 792, which icmp_in answers.
+    BIND_WITHOUT(work_a, icmp_in);
+    if_untagged(work_a, 0u);
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, LOCAL_IP4, IDEMIP_ICMP_ECHO_HDR_LEN + 8u, 0u);
+    end = build_icmp_echo(g_frame, off, 8u);
+    idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(end - ip));
+    idemip_ip4_recksum(g_frame + ip);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    ASSERT_UNBOUND(work_a, "icmp_in");
+
+    // RFC 2236, addressed to the all-hosts group, which needs no table entry to be this host's.
+    BIND_WITHOUT(work_a, igmp);
+    if_untagged(work_a, 0u);
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, IDEMIP_IGMP_ALL_SYSTEMS, IDEMIP_IGMP_MSG_LEN, 0u);
+    end = build_igmp(g_frame, off, (uint8_t)IDEMIP_IGMP_TYPE_QUERY, 100u, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    ASSERT_UNBOUND(work_a, "igmp");
+
+    // RFC 791 sec 3.2, which ip4_reass holds. A fragment reaches it before its descriptor matters.
+    BIND_WITHOUT(work_a, ip4_reass);
+    if_untagged(work_a, 0u);
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, 8u, IDEMIP_IP4_FLAG_MF);
+    input(work_a, off + 8u, 0u, IP4_FRAG_DESC);
+    ASSERT_UNBOUND(work_a, "ip4_reass");
+}
+
+#endif // IDEMIP_ENABLE_IPV4
+
+#if IDEMIP_ENABLE_IPV6
+
+void test_an_ipv6_frame_with_an_unbound_unit_is_refused(void)
+{
+    // RFC 4443, which icmp6_in answers.
+    BIND_WITHOUT(work_a, icmp6_in);
+    if_untagged(work_a, 0u);
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_ECHO_REQUEST, g_remote_ip6, g_local_ip6,
+                                 IDEMIP_ICMP6_ECHO_HDR_LEN);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_ECHO_HDR_LEN, g_remote_ip6, g_local_ip6);
+    input(work_a, msg + IDEMIP_ICMP6_ECHO_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    ASSERT_UNBOUND(work_a, "icmp6_in");
+
+    // RFC 8200 sec 4.5, which ip6_reass holds.
+    BIND_WITHOUT(work_a, ip6_reass);
+    if_untagged(work_a, 0u);
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 0u, IDEMIP_TRUE,
+                                    FRAG_IDENT, 8u);
+    input(work_a, end, 0u, FRAG_DESC);
+    ASSERT_UNBOUND(work_a, "ip6_reass");
+}
+
+#endif // IDEMIP_ENABLE_IPV6
+
+#if IDEMIP_ENABLE_UDP
+
+void test_a_udp_datagram_with_an_unbound_unit_is_refused(void)
+{
+    // RFC 768, which udp_pcb holds the bindings for.
+    BIND_WITHOUT(work_a, udp_pcb);
+    if_untagged(work_a, 0u);
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 4u);
+    seal_udp4(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(end - ip));
+    idemip_ip4_recksum(g_frame + ip);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    ASSERT_UNBOUND(work_a, "udp_pcb");
+
+    // RFC 3828, which udplite reads the Checksum Coverage for.
+    BIND_WITHOUT(work_a, udplite);
+    if_untagged(work_a, 0u);
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, (uint8_t)IDEMIP_UDPLITE_PROTO, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
+    idemip_udp_build(g_frame + off, 4000u, 4001u, 0u); // coverage 0, the whole datagram
+    memset(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
+    input(work_a, off + IDEMIP_UDP_HDR_LEN + 4u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    ASSERT_UNBOUND(work_a, "udplite");
+}
+
+#endif // IDEMIP_ENABLE_UDP
+
+#if IDEMIP_ENABLE_TCP
+
+// RFC 9293. Both borrows are one branch, a segment needing the table and the parser together.
+void test_a_tcp_segment_with_an_unbound_unit_is_refused(void)
+{
+    BIND_WITHOUT(work_a, tcp_in);
+    if_untagged(work_a, 0u);
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    ASSERT_UNBOUND(work_a, "tcp_in");
+
+    BIND_WITHOUT(work_a, tcp_pcb);
+    if_untagged(work_a, 0u);
+    end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    ASSERT_UNBOUND(work_a, "tcp_pcb");
+}
+
+#endif // IDEMIP_ENABLE_TCP
+

@@ -1085,9 +1085,12 @@ static void d_ip4_frag(uint8_t *restrict work, const uint8_t *ip4, size_t total_
     Ip4Reass.hold(ctx->ip4_reass);
     if (re->status != IDEMIP_OK)
     {
+        // RFC 1213 ipReasmFails, "The number of failures detected by the IP re-assembly algorithm
+        // (for whatever reason: timed out, errors, etc)", which a refusal is. Not ipInDiscards:
+        // "this counter does not include any datagrams discarded while awaiting re-assembly".
         d_unpin(work, io->netif, a->desc);
         d_drop(work, IDEMIP_DISPATCH_DROP_REASS, IDEMIP_STAT_IF_IN_DISCARDS);
-        d_bump(work, IDEMIP_STAT_IP4_IN_DISCARDS);
+        d_bump(work, IDEMIP_STAT_IP4_REASM_FAILS);
         return;
     }
     io->act |= IDEMIP_DISPATCH_ACT_PINNED;
@@ -1531,9 +1534,12 @@ static void d_ip6_frag(uint8_t *restrict work, const uint8_t *ip6, size_t total_
     Ip6Reass.input(ctx->ip6_reass);
     if (re->status != IDEMIP_OK)
     {
+        // RFC 2465 ipv6IfStatsReasmFails, "The number of failures detected by the IPv6 re-assembly
+        // algorithm (for whatever reason: timed out, errors, etc.)". Not ipv6IfStatsInDiscards:
+        // "this counter does not include any datagrams discarded while awaiting re-assembly".
         d_unpin(work, io->netif, a->desc);
         d_drop(work, IDEMIP_DISPATCH_DROP_REASS, IDEMIP_STAT_IF_IN_DISCARDS);
-        d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
+        d_bump(work, IDEMIP_STAT_IP6_REASM_FAILS);
         return;
     }
     io->act |= IDEMIP_DISPATCH_ACT_PINNED;

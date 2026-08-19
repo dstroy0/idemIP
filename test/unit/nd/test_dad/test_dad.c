@@ -497,12 +497,75 @@ void test_solicitations_are_spaced_by_retrans_timer(void)
     start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 700u, 0u);
     for (uint8_t i = 1; i <= 3u; i++)
     {
+        // A millisecond before the deadline nothing is due, so the spacing is a floor and not just
+        // the value the deadline was armed with.
+        if (i > 1u)
+        {
+            tick_at(work_a, (uint32_t)(i - 1u) * 700u - 1u);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status,
+                                          "a solicitation went out before RetransTimer had passed");
+            TEST_ASSERT_FALSE(IO(work_a)->send_ns);
+        }
         tick_at(work_a, (uint32_t)(i - 1u) * 700u);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
         TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->send_ns, "a solicitation was not due when RetransTimer had passed");
         TEST_ASSERT_EQUAL_UINT8(i, IO(work_a)->sent);
         TEST_ASSERT_EQUAL_UINT32((uint32_t)i * 700u, IO(work_a)->deadline_ms);
+
+        // sec 5.4.2: "Before sending a Neighbor Solicitation, an interface MUST join the all-nodes
+        // multicast address and the solicited-node multicast address of the tentative address." The
+        // join is the first solicitation's, the delay above having held it back, and a later one
+        // joins nothing it is not already in.
+        if (i == 1u)
+        {
+            TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->join, "the first solicitation did not join the groups");
+        }
+        else
+        {
+            TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->join, "a group was joined again mid-procedure");
+        }
+
+        // The state each solicitation leaves. Without this the suite cannot tell PROBING from WAIT,
+        // and a procedure that ended one RetransTimer early would read the same.
+        if (i < 3u)
+        {
+            TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DAD_STATE_PROBING, IO(work_a)->state,
+                                          "solicitations remain, so the procedure is still probing");
+        }
+        else
+        {
+            TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DAD_STATE_WAIT, IO(work_a)->state,
+                                          "the last solicitation begins sec 5.1's wait, not another probe");
+        }
+        TEST_ASSERT_FALSE(IO(work_a)->unique);
+
+        // sec 5.4: the address stays tentative for the whole procedure, which is what makes
+        // sec 5.4.3's "MUST NOT respond to a Neighbor Solicitation for a tentative address" hold
+        // through every one of the three. tick does not report it, find does.
+        IO(work_a)->addr_args.addr = g_global;
+        Dad.find(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->tentative, "the address is tentative until the procedure ends");
     }
+
+    // sec 5.4: unique when nothing fires "within RetransTimer milliseconds after having sent
+    // DupAddrDetectTransmits Neighbor Solicitations". Three were sent, so that is one RetransTimer
+    // past the third and no sooner, and no fourth solicitation goes out.
+    tick_at(work_a, 2100u - 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+    TEST_ASSERT_FALSE(IO(work_a)->unique);
+
+    tick_at(work_a, 2100u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->unique, "the procedure did not end one RetransTimer after the last NS");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DAD_STATE_UNIQUE, IO(work_a)->state);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->send_ns, "a fourth solicitation went out past DupAddrDetectTransmits");
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(3u, IO(work_a)->sent, "the count must stop at DupAddrDetectTransmits");
+
+    IO(work_a)->addr_args.addr = g_global;
+    Dad.find(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->tentative, "an address the procedure passed is no longer tentative");
 }
 
 // sec 5.4: the address is unique when no test fires "within RetransTimer milliseconds after having
