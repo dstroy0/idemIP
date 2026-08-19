@@ -1,1 +1,11 @@
 .vscode/
+
+# The coverage report is a measurement of one build of one commit. Its line numbers are that
+# commit's, so a copy kept in the tree drifts the moment a line moves and reports coverage for
+# lines that are no longer there. It is generated in the run that uploads it and never committed.
+coverage.xml
+
+# gcov's per-object notes and counts, written beside the objects a coverage build produces.
+*.gcda
+*.gcno
+*.gcov

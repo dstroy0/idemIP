@@ -12,6 +12,20 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(FeatureTree)
 
+# Instruments every translation unit for gcov. A coverage build measures which lines the suites
+# reach, so it takes no optimizer: -O0 keeps one line to one branch, and the Release -Os and the LTO
+# below would fold the namespace indirection the measurement is meant to see through.
+option(IDEMIP_COVERAGE "Build instrumented for gcov, which reports which lines the suites reach" OFF)
+
+if(IDEMIP_COVERAGE)
+    if(NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        message(FATAL_ERROR "IDEMIP_COVERAGE needs GCC or Clang: --coverage is theirs")
+    endif()
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)
+    add_compile_options(--coverage -O0)
+    add_link_options(--coverage)
+endif()
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
@@ -19,6 +33,10 @@ endif()
 # The namespace shape costs nothing once the compiler can see through a const function pointer,
 # which it can at -Os, -O2 and with LTO. Release builds take all three.
 option(IDEMIP_LTO "Link-time optimization, which is what folds the namespace indirection" ON)
+
+if(IDEMIP_COVERAGE)
+    set(IDEMIP_LTO OFF)
+endif()
 
 # --- capabilities ------------------------------------------------------------
 # One option per capability, and the edges between them. CMake is the one source for the values: it

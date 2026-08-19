@@ -149,20 +149,20 @@ int main(void)
   run_test(test_a_frame_written_comes_back_on_the_next_claim, "test_a_frame_written_comes_back_on_the_next_claim", 530);
   run_test(test_the_frame_comes_back_inside_the_borrow, "test_the_frame_comes_back_inside_the_borrow", 548);
   run_test(test_the_looped_frame_does_not_follow_the_callers_buffer, "test_the_looped_frame_does_not_follow_the_callers_buffer", 567);
-  run_test(test_frames_come_back_in_the_order_they_were_written, "test_frames_come_back_in_the_order_they_were_written", 584);
-  run_test(test_every_region_full_is_busy_and_a_release_frees_one, "test_every_region_full_is_busy_and_a_release_frees_one", 606);
-  run_test(test_nothing_waiting_is_busy_and_the_retry_succeeds, "test_nothing_waiting_is_busy_and_the_retry_succeeds", 634);
-  run_test(test_a_second_claim_before_release_is_refused, "test_a_second_claim_before_release_is_refused", 652);
-  run_test(test_release_without_a_claim_is_refused, "test_release_without_a_claim_is_refused", 669);
-  run_test(test_the_queue_wraps, "test_the_queue_wraps", 689);
-  run_test(test_output_writes_no_octet_past_the_frame, "test_output_writes_no_octet_past_the_frame", 709);
-  run_test(test_the_longest_frame_round_trips, "test_the_longest_frame_round_trips", 725);
-  run_test(test_two_borrows_queue_independently, "test_two_borrows_queue_independently", 739);
-  run_test(test_clear_empties_the_queue, "test_clear_empties_the_queue", 763);
-  run_test(test_held_counts_the_frames_waiting, "test_held_counts_the_frames_waiting", 780);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 802);
-  run_test(test_the_published_loopback_network_is_127, "test_the_published_loopback_network_is_127", 835);
-  run_test(test_every_entry_is_present, "test_every_entry_is_present", 844);
+  run_test(test_frames_come_back_in_the_order_they_were_written, "test_frames_come_back_in_the_order_they_were_written", 592);
+  run_test(test_every_region_full_is_busy_and_a_release_frees_one, "test_every_region_full_is_busy_and_a_release_frees_one", 614);
+  run_test(test_nothing_waiting_is_busy_and_the_retry_succeeds, "test_nothing_waiting_is_busy_and_the_retry_succeeds", 642);
+  run_test(test_a_second_claim_before_release_is_refused, "test_a_second_claim_before_release_is_refused", 660);
+  run_test(test_release_without_a_claim_is_refused, "test_release_without_a_claim_is_refused", 677);
+  run_test(test_the_queue_wraps, "test_the_queue_wraps", 697);
+  run_test(test_output_writes_no_octet_past_the_frame, "test_output_writes_no_octet_past_the_frame", 717);
+  run_test(test_the_longest_frame_round_trips, "test_the_longest_frame_round_trips", 733);
+  run_test(test_two_borrows_queue_independently, "test_two_borrows_queue_independently", 747);
+  run_test(test_clear_empties_the_queue, "test_clear_empties_the_queue", 771);
+  run_test(test_held_counts_the_frames_waiting, "test_held_counts_the_frames_waiting", 788);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 810);
+  run_test(test_the_published_loopback_network_is_127, "test_the_published_loopback_network_is_127", 843);
+  run_test(test_every_entry_is_present, "test_every_entry_is_present", 852);
 
   return UNITY_END();
 }

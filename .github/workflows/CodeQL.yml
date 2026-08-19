@@ -1,0 +1,56 @@
+name: CodeQL
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    # A weekly run, because a query pack that learns a new pattern finds it in code nobody touched.
+    - cron: '27 4 * * 1'
+
+jobs:
+  analyze:
+    name: Analyze C
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # what uploading the SARIF result needs
+      packages: read
+      actions: read
+      contents: read
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@f3712979fa5f215279b101dd0a2e3bdfb4353324 # v3
+        with:
+          languages: c-cpp
+          # security-extended adds the queries that are precise but not in the default set. The
+          # receive path parses attacker-controlled octets in every unit, so the buffer and integer
+          # queries are the point of running this at all.
+          queries: security-extended
+
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      # Built rather than autobuilt, so every capability is on and CodeQL sees all 76 translation
+      # units. Autobuild would take the default configuration, and a capability that is off reaches
+      # the compiler as no file at all, which is a file CodeQL then never analyses.
+      - name: Build
+        run: |
+          cmake -S . -B "$RUNNER_TEMP/build-codeql" -G Ninja \
+            -DIDEMIP_ENABLE_ETHERNET=ON \
+            -DIDEMIP_ENABLE_IPV4=ON \
+            -DIDEMIP_ENABLE_IPV6=ON \
+            -DIDEMIP_ENABLE_TCP=ON \
+            -DIDEMIP_ENABLE_UDP=ON
+          cmake --build "$RUNNER_TEMP/build-codeql"
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@f3712979fa5f215279b101dd0a2e3bdfb4353324 # v3
+        with:
+          category: "/language:c-cpp"

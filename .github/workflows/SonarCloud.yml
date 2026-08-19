@@ -9,11 +9,49 @@ jobs:
   build:
     name: Analyze
     runs-on: ubuntu-latest
+    env:
+      # Out of the tree, the way every other build here is configured, and an absolute path so the
+      # scanner resolves the compilation database from whatever directory it runs in.
+      BUILD_DIR: ${{ runner.temp }}/build-cov
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+
+      - name: Install Ninja and gcovr
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          pip install gcovr
+
+      # IDEMIP_COVERAGE instruments every translation unit and forces the build type to Debug, so
+      # the Release -Os and the LTO that folds the namespace indirection are both off: one source
+      # line stays one branch, which is what makes the count mean anything. CMAKE_EXPORT_COMPILE_
+      # COMMANDS is already ON in CMakeLists.txt, so this writes the compilation database the C
+      # analyser needs in the same step.
+      - name: Configure
+        run: cmake -S . -B "$BUILD_DIR" -G Ninja -DIDEMIP_COVERAGE=ON
+
+      - name: Build
+        run: cmake --build "$BUILD_DIR"
+
+      # The gcda counts do not exist until the instrumented binaries have run, so the analysis
+      # measures what the suites actually reached. A failing suite fails the job before any report
+      # is uploaded, which keeps a green coverage number from standing on a red run.
+      - name: Test
+        run: ctest --test-dir "$BUILD_DIR" --output-on-failure --timeout 120
+
+      # gcovr's --sonarqube writes the generic format sonar.coverageReportPaths reads. --root is the
+      # repository, so every path in the report is the one the analyser resolves against, and
+      # --filter keeps it to the library: test/ is the measuring instrument, not the measured thing.
+      - name: Collect coverage
+        run: gcovr --root . --filter 'src/' --sonarqube coverage.xml --print-summary "$BUILD_DIR"
+
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            --define sonar.cfamily.compile-commands=${{ env.BUILD_DIR }}/compile_commands.json
+            --define sonar.coverageReportPaths=coverage.xml

@@ -575,6 +575,14 @@ void test_the_looped_frame_does_not_follow_the_callers_buffer(void)
     output_ok(work_a, sent, sizeof sent);
     memset(sent, 0xEE, sizeof sent);
 
+    // Nothing reads sent after the overwrite, so a compiler may drop the memset as a dead store, and
+    // a dropped one leaves sent holding what it was written with: the case would then pass whether
+    // output copied the frame or kept a pointer into it, which is the one thing it exists to tell
+    // apart. Reading the overwrite back is what makes it observable, and what makes the case mean
+    // anything.
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0xEEu, sent[0], "the caller's buffer was not overwritten");
+    TEST_ASSERT_EQUAL_UINT8(0xEEu, sent[sizeof sent - 1u]);
+
     Loopif.claim(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(expect, IDEMIP_LOOPIF_IO(work_a)->frame, sizeof expect);
