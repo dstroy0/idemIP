@@ -1038,6 +1038,14 @@ static void nd6_router_set(uint8_t *restrict work)
     {
         return;
     }
+    // sec 6.1.2's first validity check: "IP Source Address is a link-local address. Routers must use
+    // their link-local address as the source for Router Advertisement and Redirect messages so that
+    // hosts can uniquely identify routers." A message failing it is not the "valid advertisement"
+    // sec 6.3.4 speaks of, so it names no router.
+    if (!nd6_is_link_local(io->router_args.addr))
+    {
+        return;
+    }
     // RFC 4861 sec 6.3.4, on the source address of a valid Router Advertisement: a router that is not
     // listed and advertises a non-zero Router Lifetime creates an entry whose invalidation timer
     // starts at that lifetime; a router already listed has its timer reset; a router already listed

@@ -83,6 +83,8 @@ extern void test_the_advertised_retrans_timer_governs_the_solicitation_interval(
 extern void test_a_sweep_with_nothing_due_is_busy(void);
 extern void test_a_sweep_reports_the_soonest_deadline(void);
 extern void test_the_machine_on_one_borrow_reaches_no_byte_of_another(void);
+extern void test_a_router_advertised_from_a_global_address_names_no_router(void);
+extern void test_a_router_advertised_from_a_link_local_address_names_one(void);
 
 
 /*=======Mock Management=====*/
@@ -219,6 +221,8 @@ int main(void)
   run_test(test_a_sweep_with_nothing_due_is_busy, "test_a_sweep_with_nothing_due_is_busy", 1504);
   run_test(test_a_sweep_reports_the_soonest_deadline, "test_a_sweep_reports_the_soonest_deadline", 1516);
   run_test(test_the_machine_on_one_borrow_reaches_no_byte_of_another, "test_the_machine_on_one_borrow_reaches_no_byte_of_another", 1530);
+  run_test(test_a_router_advertised_from_a_global_address_names_no_router, "test_a_router_advertised_from_a_global_address_names_no_router", 1552);
+  run_test(test_a_router_advertised_from_a_link_local_address_names_one, "test_a_router_advertised_from_a_link_local_address_names_one", 1567);
 
   return UNITY_END();
 }

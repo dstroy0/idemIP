@@ -1542,3 +1542,36 @@ void test_the_machine_on_one_borrow_reaches_no_byte_of_another(void)
     Nd6.router_select(work_b);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_ND6_IO(work_b)->status);
 }
+
+// RFC 4861 sec 6.1.2 opens a MUST-silently-discard list for Router Advertisements, and its first
+// entry is "IP Source Address is a link-local address. Routers must use their link-local address as
+// the source for Router Advertisement and Redirect messages so that hosts can uniquely identify
+// routers." A message failing it is not a "valid advertisement", which is the term sec 6.3.4 uses
+// for what reaches the Default Router List, so an address outside FE80::/10 names no router. Every
+// other case here offers one that is link-local, so nothing asked.
+void test_a_router_advertised_from_a_global_address_names_no_router(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    rtr_set(work_a, g_pfx64, 1800u); // 2001:DB8:0:1::, a global address and no router's source
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status,
+                                  "a Router Advertisement from a global source is not a valid one");
+    Nd6.router_select(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status,
+                                  "an invalid advertisement installed a default router");
+}
+
+// The same source on the entry that would otherwise be identical, so the pair says which half of the
+// rule refused it.
+void test_a_router_advertised_from_a_link_local_address_names_one(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    rtr_set(work_a, g_addr_a, 1800u);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    Nd6.router_select(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+}
+
