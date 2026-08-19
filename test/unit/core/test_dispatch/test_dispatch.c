@@ -1831,6 +1831,79 @@ void test_an_nd_option_running_past_the_message_discards_the_packet(void)
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
 }
 
+// --- RFC 8200 sec 4.5 reassembly ---------------------------------------------
+// test_dispatch bound the ip6_reass borrow and no case ever fed it a fragment, which is the shape
+// that hid the missing IGMP checksum. Retention is a pin, so what these check is the descriptor
+// contract as much as the reassembly: a fragment the reassembler keeps must leave ACT_PINNED set,
+// and one it refuses must leave it clear or the caller returns a buffer that is still being read.
+
+// One fragment: an IPv6 header whose Next Header is 44, the eight-octet Fragment header, then this
+// fragment's part of the Fragmentable Part.
+static size_t build_ip6_fragment(uint8_t *f, size_t off, const uint8_t *src, const uint8_t *dst, uint8_t next_hdr,
+                                 uint16_t frag_off, idemip_bool more, uint32_t ident, size_t data_len)
+{
+    off = build_ip6(f, off, IDEMIP_IP6_NH_FRAGMENT, src, dst, (size_t)IDEMIP_IP6_FRAG_HDR_LEN + data_len);
+    idemip_ip6_frag_build(f + off, next_hdr, frag_off, more, ident);
+    memset(f + off + IDEMIP_IP6_FRAG_HDR_LEN, 0x5C, data_len);
+    return off + IDEMIP_IP6_FRAG_HDR_LEN + data_len;
+}
+
+#define FRAG_DESC 3u
+#define FRAG_IDENT 0xA5A50001u
+
+// A fragment the reassembler kept is a frame the caller must not hand back to the ring.
+void test_an_ipv6_fragment_the_reassembler_kept_pins_its_descriptor(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 0u, IDEMIP_TRUE,
+                                    FRAG_IDENT, 8u);
+    input(work_a, end, 0u, FRAG_DESC);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) != 0u,
+                             "a retained fragment must report the pin, or its buffer is recycled under it");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_REASSEMBLED) == 0u);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_REASM_REQDS));
+}
+
+// "0 = last fragment": the one that fixes where the datagram ends completes it.
+void test_the_last_ipv6_fragment_completes_the_datagram(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 0u, IDEMIP_TRUE,
+                                    FRAG_IDENT, 8u);
+    input(work_a, end, 0u, FRAG_DESC);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_REASSEMBLED) == 0u);
+
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 8u, IDEMIP_FALSE,
+                             FRAG_IDENT, 8u);
+    input(work_a, end, 0u, FRAG_DESC + 1u);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_REASSEMBLED) != 0u,
+                             "the fragment carrying M clear at the end of the hole completes the datagram");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) != 0u);
+    TEST_ASSERT_EQUAL_UINT32(2u, ctr(IDEMIP_STAT_IP6_REASM_REQDS));
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_REASM_OKS));
+}
+
+// The IPv6 twin of test_a_fragment_with_no_descriptor_is_discarded. A frame lying in no descriptor
+// cannot be retained, so the fragment goes rather than a pointer into a recycled buffer being kept.
+void test_an_ipv6_fragment_with_no_descriptor_is_discarded(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 0u, IDEMIP_TRUE,
+                                    FRAG_IDENT, 8u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NO_DESC, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) == 0u);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_REASM_REQDS));
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_REASM_FAILS));
+}
+
 #endif // IDEMIP_ENABLE_IPV6
 
 // --- TCP, the three joins ----------------------------------------------------

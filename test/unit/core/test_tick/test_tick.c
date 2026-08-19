@@ -18,6 +18,9 @@
 
 #include "src/arp/arp.h"
 #include "src/ip/ipv4.h"
+#if IDEMIP_ENABLE_IPV6
+#include "src/ip/ipv6.h"
+#endif
 
 #include <string.h>
 #include <unity.h>
@@ -214,6 +217,9 @@ static void wire_units(void)
     di->bind_args.ip4_addr = ip4_addr_mem;
     di->bind_args.ip4_reass = ip4_reass_mem;
     di->bind_args.igmp = igmp_mem;
+#if IDEMIP_ENABLE_IPV6
+    di->bind_args.ip6_reass = ip6_reass_mem;
+#endif
     Dispatch.bind(dispatch_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, di->status);
     di->if_args.index = 0u;
@@ -250,6 +256,22 @@ static void bind_tick(uint8_t *w)
     io->if_args.out_cap = sizeof out_buf;
     Tick.if_bind(w);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+}
+
+// Runs one phase to exhaustion, capped. False when it kept reporting steps past any real count,
+// which is a phase whose cursor never advances.
+#define TICK_PHASE_STEP_MAX 64
+static idemip_bool run_phase(uint8_t *w, void (*const phase)(uint8_t *restrict work))
+{
+    for (int i = 0; i < TICK_PHASE_STEP_MAX; i++)
+    {
+        phase(w);
+        if (IDEMIP_TICK_IO(w)->status != IDEMIP_OK)
+        {
+            return IDEMIP_TRUE;
+        }
+    }
+    return IDEMIP_FALSE;
 }
 
 static void open_tick(uint8_t *w, uint32_t now_ms)
@@ -609,6 +631,109 @@ void test_a_retained_frame_keeps_its_descriptor_out_of_the_ring(void)
     TEST_ASSERT_EQUAL_UINT16(1u, IDEMIP_DMA_IO(dma_mem)->pinned);
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, g_released, "a pinned descriptor was handed back to the engine");
 }
+
+#if IDEMIP_ENABLE_IPV6
+
+// RFC 8200 sec 4.5: "If insufficient fragments are received to complete reassembly of a packet
+// within 60 seconds of the reception of the first-arriving fragment of that packet, reassembly of
+// that packet must be abandoned and all the fragments that have been received for that packet must
+// be discarded." Every one of those fragments pinned a receive descriptor, so that discard is the
+// only thing that returns them to the ring. This suite bound the ip6_reass borrow to the tick and
+// never sent an IPv6 packet, so the loop that walks the fragments and unpins each had never run.
+
+// RFC 3849: 2001:DB8::/32 is "for use in documentation".
+static const uint8_t g_tick_ip6[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
+static const uint8_t g_tick_ip6_far[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0,    0,
+                                                            0,    0,    0,    0,    0, 0, 0x09, 0x09};
+
+static void give_the_interface_an_ipv6_address(void)
+{
+    NetifIo *ni = IDEMIP_NETIF_IO(netif_mem);
+    ni->addr6_args.index = 0u;
+    ni->addr6_args.slot = 0u;
+    ni->addr6_args.addr = g_tick_ip6;
+    ni->addr6_args.state = IDEMIP_NETIF_ADDR6_PREFERRED;
+    ni->addr6_args.preferred_s = 3600u;
+    ni->addr6_args.valid_s = 7200u;
+    Netif.add_addr6(netif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ni->status);
+}
+
+// One IPv6 fragment into receive buffer @p slot. TICK_TEST_DATA is eight octets, so a fragment
+// carrying M is the multiple of 8 sec 4.5 requires of one.
+static uint16_t fill_ip6_fragment(unsigned slot, uint16_t frag_off, idemip_bool more)
+{
+    uint8_t *f = rx_buf_at(slot);
+    memset(f, 0, IDEMIP_DMA_BUF_STRIDE);
+    idemip_eth_build(f, g_local_mac, g_remote_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+
+    uint8_t *ip = f + IDEMIP_ETH_OFF_PAYLOAD;
+    IdemIpIp6BuildArgs a;
+    memset(&a, 0, sizeof a);
+    a.src = g_tick_ip6_far;
+    a.dst = g_tick_ip6;
+    a.payload_len = (uint16_t)(IDEMIP_IP6_FRAG_HDR_LEN + TICK_TEST_DATA);
+    a.next_hdr = IDEMIP_IP6_NH_FRAGMENT;
+    a.hop_limit = 64u;
+    idemip_ip6_build(ip, &a);
+
+    uint8_t *fh = ip + IDEMIP_IPV6_HDR_LEN;
+    idemip_ip6_frag_build(fh, TICK_TEST_PROTO, frag_off, more, 0x4242u);
+    memset(fh + IDEMIP_IP6_FRAG_HDR_LEN, 0x5A, TICK_TEST_DATA);
+    return (uint16_t)(IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_IPV6_HDR_LEN + IDEMIP_IP6_FRAG_HDR_LEN + TICK_TEST_DATA);
+}
+
+void test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned(void)
+{
+    give_the_interface_an_ipv6_address();
+
+    uint16_t len = fill_ip6_fragment(0u, 0u, IDEMIP_TRUE);
+    engine_queue(0u, len);
+    open_tick(work_a, 1000u);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(dispatch_mem)->drop,
+                                  "the fragment did not reach the reassembler");
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(dispatch_mem)->act & IDEMIP_DISPATCH_ACT_PINNED) != 0u,
+                             "a held IPv6 fragment was not reported as pinned");
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16(1u, IDEMIP_DMA_IO(dma_mem)->pinned);
+
+    // 60 seconds on, with the second fragment never arriving. The three phases run in order. Each
+    // loop is capped: a phase that reports a step it did not take would otherwise never end, and a
+    // test that hangs says less than one that fails.
+    open_tick(work_a, 1000u + IDEMIP_IP6_REASS_MAXAGE_MS);
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.drain));
+    TEST_ASSERT_TRUE_MESSAGE(run_phase(work_a, Tick.service),
+                             "the service phase never stopped reporting steps for the expired datagram");
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.flush));
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(dma_mem)->pinned,
+                                     "an abandoned datagram kept the descriptors its fragments pinned");
+}
+
+// The same datagram, completed instead of abandoned: the descriptors stay pinned, because the
+// caller has not yet read the reassembled packet out of them.
+void test_a_completed_ipv6_datagram_still_holds_its_descriptors(void)
+{
+    give_the_interface_an_ipv6_address();
+
+    uint16_t len = fill_ip6_fragment(0u, 0u, IDEMIP_TRUE);
+    engine_queue(0u, len);
+    len = fill_ip6_fragment(1u, TICK_TEST_DATA, IDEMIP_FALSE);
+    engine_queue(1u, len);
+
+    open_tick(work_a, 1000u);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(dispatch_mem)->act & IDEMIP_DISPATCH_ACT_REASSEMBLED) != 0u,
+                             "the last fragment did not complete the datagram");
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16(2u, IDEMIP_DMA_IO(dma_mem)->pinned);
+}
+
+#endif // IDEMIP_ENABLE_IPV6
 
 // Every ring is drained before the phase moves on, so two frames are two steps.
 void test_the_drain_takes_every_waiting_frame(void)

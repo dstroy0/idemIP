@@ -5,6 +5,7 @@
 #include "src/core/tick.h"
 #include "src/arp/arp.h"
 #include "src/ip/ipv4.h"
+#include "src/ip/ipv6.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -28,6 +29,8 @@ extern void test_a_deadline_across_the_wrap_is_still_ahead(void);
 extern void test_an_empty_ring_drains_busy(void);
 extern void test_a_frame_is_dispatched_and_its_descriptor_returned(void);
 extern void test_a_retained_frame_keeps_its_descriptor_out_of_the_ring(void);
+extern void test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned(void);
+extern void test_a_completed_ipv6_datagram_still_holds_its_descriptors(void);
 extern void test_the_drain_takes_every_waiting_frame(void);
 extern void test_a_resolved_hold_is_reported_and_unpinned_one_step_later(void);
 extern void test_the_flush_phase_reports_its_units_in_order(void);
@@ -96,31 +99,33 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/core/test_tick\\test_tick.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 313);
-  run_test(test_every_entry_refuses_an_uncleared_borrow, "test_every_entry_refuses_an_uncleared_borrow", 325);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 344);
-  run_test(test_the_published_offsets_are_ordered_and_fit, "test_the_published_offsets_are_ordered_and_fit", 360);
-  run_test(test_if_bind_refuses_an_index_past_the_table, "test_if_bind_refuses_an_index_past_the_table", 369);
-  run_test(test_a_phase_entry_before_its_turn_is_refused, "test_a_phase_entry_before_its_turn_is_refused", 380);
-  run_test(test_a_phase_entry_after_its_turn_is_refused, "test_a_phase_entry_after_its_turn_is_refused", 391);
-  run_test(test_no_phase_runs_before_the_tick_is_opened, "test_no_phase_runs_before_the_tick_is_opened", 403);
-  run_test(test_the_three_phases_run_in_order_to_done, "test_the_three_phases_run_in_order_to_done", 415);
-  run_test(test_opening_again_starts_the_order_over, "test_opening_again_starts_the_order_over", 434);
-  run_test(test_the_service_phase_reports_its_units_in_dependency_order, "test_the_service_phase_reports_its_units_in_dependency_order", 454);
-  run_test(test_an_empty_deadline_list_reports_forever, "test_an_empty_deadline_list_reports_forever", 489);
-  run_test(test_a_deadline_ahead_is_reported_as_the_wait, "test_a_deadline_ahead_is_reported_as_the_wait", 496);
-  run_test(test_an_expired_deadline_is_reported_with_its_unit, "test_an_expired_deadline_is_reported_with_its_unit", 513);
-  run_test(test_a_deadline_across_the_wrap_is_still_ahead, "test_a_deadline_across_the_wrap_is_still_ahead", 543);
-  run_test(test_an_empty_ring_drains_busy, "test_an_empty_ring_drains_busy", 561);
-  run_test(test_a_frame_is_dispatched_and_its_descriptor_returned, "test_a_frame_is_dispatched_and_its_descriptor_returned", 571);
-  run_test(test_a_retained_frame_keeps_its_descriptor_out_of_the_ring, "test_a_retained_frame_keeps_its_descriptor_out_of_the_ring", 598);
-  run_test(test_the_drain_takes_every_waiting_frame, "test_the_drain_takes_every_waiting_frame", 614);
-  run_test(test_a_resolved_hold_is_reported_and_unpinned_one_step_later, "test_a_resolved_hold_is_reported_and_unpinned_one_step_later", 635);
-  run_test(test_the_flush_phase_reports_its_units_in_order, "test_the_flush_phase_reports_its_units_in_order", 691);
-  run_test(test_an_interface_with_no_ring_is_stepped_over, "test_an_interface_with_no_ring_is_stepped_over", 717);
-  run_test(test_a_descriptor_from_the_second_interface_goes_back_to_it, "test_a_descriptor_from_the_second_interface_goes_back_to_it", 745);
-  run_test(test_a_descriptor_handle_round_trips, "test_a_descriptor_handle_round_trips", 827);
-  run_test(test_an_unbound_service_is_skipped, "test_an_unbound_service_is_skipped", 844);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 335);
+  run_test(test_every_entry_refuses_an_uncleared_borrow, "test_every_entry_refuses_an_uncleared_borrow", 347);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 366);
+  run_test(test_the_published_offsets_are_ordered_and_fit, "test_the_published_offsets_are_ordered_and_fit", 382);
+  run_test(test_if_bind_refuses_an_index_past_the_table, "test_if_bind_refuses_an_index_past_the_table", 391);
+  run_test(test_a_phase_entry_before_its_turn_is_refused, "test_a_phase_entry_before_its_turn_is_refused", 402);
+  run_test(test_a_phase_entry_after_its_turn_is_refused, "test_a_phase_entry_after_its_turn_is_refused", 413);
+  run_test(test_no_phase_runs_before_the_tick_is_opened, "test_no_phase_runs_before_the_tick_is_opened", 425);
+  run_test(test_the_three_phases_run_in_order_to_done, "test_the_three_phases_run_in_order_to_done", 437);
+  run_test(test_opening_again_starts_the_order_over, "test_opening_again_starts_the_order_over", 456);
+  run_test(test_the_service_phase_reports_its_units_in_dependency_order, "test_the_service_phase_reports_its_units_in_dependency_order", 476);
+  run_test(test_an_empty_deadline_list_reports_forever, "test_an_empty_deadline_list_reports_forever", 511);
+  run_test(test_a_deadline_ahead_is_reported_as_the_wait, "test_a_deadline_ahead_is_reported_as_the_wait", 518);
+  run_test(test_an_expired_deadline_is_reported_with_its_unit, "test_an_expired_deadline_is_reported_with_its_unit", 535);
+  run_test(test_a_deadline_across_the_wrap_is_still_ahead, "test_a_deadline_across_the_wrap_is_still_ahead", 565);
+  run_test(test_an_empty_ring_drains_busy, "test_an_empty_ring_drains_busy", 583);
+  run_test(test_a_frame_is_dispatched_and_its_descriptor_returned, "test_a_frame_is_dispatched_and_its_descriptor_returned", 593);
+  run_test(test_a_retained_frame_keeps_its_descriptor_out_of_the_ring, "test_a_retained_frame_keeps_its_descriptor_out_of_the_ring", 620);
+  run_test(test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned, "test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned", 686);
+  run_test(test_a_completed_ipv6_datagram_still_holds_its_descriptors, "test_a_completed_ipv6_datagram_still_holds_its_descriptors", 717);
+  run_test(test_the_drain_takes_every_waiting_frame, "test_the_drain_takes_every_waiting_frame", 739);
+  run_test(test_a_resolved_hold_is_reported_and_unpinned_one_step_later, "test_a_resolved_hold_is_reported_and_unpinned_one_step_later", 760);
+  run_test(test_the_flush_phase_reports_its_units_in_order, "test_the_flush_phase_reports_its_units_in_order", 816);
+  run_test(test_an_interface_with_no_ring_is_stepped_over, "test_an_interface_with_no_ring_is_stepped_over", 842);
+  run_test(test_a_descriptor_from_the_second_interface_goes_back_to_it, "test_a_descriptor_from_the_second_interface_goes_back_to_it", 870);
+  run_test(test_a_descriptor_handle_round_trips, "test_a_descriptor_handle_round_trips", 952);
+  run_test(test_an_unbound_service_is_skipped, "test_an_unbound_service_is_skipped", 969);
 
   return UNITY_END();
 }

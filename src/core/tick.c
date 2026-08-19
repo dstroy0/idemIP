@@ -273,6 +273,10 @@ static idemip_bool t_service_nd6(uint8_t *restrict work, uint8_t netif)
     return IDEMIP_TRUE;
 }
 
+// Ages the datagrams, and reports no step. Ip6Reass.tick counts the rows that ARE expired or
+// abandoned, not the ones this sweep moved, so it answers the same non-zero count until something
+// frees them. Freeing them is t_flush_ip6_reass's, which runs a phase later and calls this same
+// tick itself. A step reported here is one the cursor never advances past.
 static idemip_bool t_service_ip6_reass(uint8_t *restrict work)
 {
     TickCtx *ctx = T_CTX(work);
@@ -282,8 +286,7 @@ static idemip_bool t_service_ip6_reass(uint8_t *restrict work)
     }
     IDEMIP_IP6_REASS_IO(ctx->ip6_reass)->tick_args.now_ms = ctx->now_ms;
     Ip6Reass.tick(ctx->ip6_reass);
-    return (idemip_bool)(IDEMIP_IP6_REASS_IO(ctx->ip6_reass)->status == IDEMIP_OK &&
-                         IDEMIP_IP6_REASS_IO(ctx->ip6_reass)->expired != 0u);
+    return IDEMIP_FALSE;
 }
 
 static idemip_bool t_service_mld6(uint8_t *restrict work)
