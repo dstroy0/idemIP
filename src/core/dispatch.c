@@ -787,15 +787,16 @@ static void d_tcp(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t
 // IPv4
 // ===========================================================================
 
-#if IDEMIP_ENABLE_IPV4
-
-// Where a Destination Address put the datagram.
+// Where a Destination Address put the datagram. Both families report it, so it stands outside either
+// one's guard.
 typedef enum
 {
     D_DEST_LOCAL = 0, // RFC 1122 sec 3.1 (2), "destined to the local host"
     D_DEST_FORWARD,   // somewhere else, and the caller routes it
     D_DEST_DROP,      // an address this node makes nothing of
 } DispatchDest;
+
+#if IDEMIP_ENABLE_IPV4
 
 // RFC 1122 sec 3.1 (2), over the forms sec 3.2.1.3 lists: case (c) "{ -1, -1 }" limited broadcast, a
 // class D group this node joined (RFC 1112 sec 4), case (g) "{ 127, <any> }" loopback, any
@@ -1270,7 +1271,14 @@ static void d_arp(uint8_t *restrict work, const uint8_t *packet, size_t avail)
 
 // RFC 1122 sec 3.1 (2) over the RFC 4291 forms: one of the interface's own addresses, a group MLD
 // joined, the sec 2.7.1 solicited-node address of one of the interface's own, or sec 2.5.3 ::1.
-static idemip_bool d_ip6_local(uint8_t *restrict work, const uint8_t *dst)
+//
+// The three outcomes d_ip4_dest reports, for the same reason. RFC 2465 ipv6IfStatsInAddrErrors: "The
+// number of input datagrams discarded because the IPv6 address in their IPv6 header's destination
+// field was not a valid address to be received at this entity ... For entities which are not IPv6
+// routers and therefore do not forward datagrams, this counter includes datagrams discarded because
+// the destination address was not a local address." A multicast group this node does not hold is
+// that address; a unicast address of some other node is a valid address elsewhere and forwards.
+static DispatchDest d_ip6_dest(uint8_t *restrict work, const uint8_t *dst)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
@@ -1281,7 +1289,7 @@ static idemip_bool d_ip6_local(uint8_t *restrict work, const uint8_t *dst)
         Netif.find_addr6(ctx->netif);
         if (IDEMIP_NETIF_IO(ctx->netif)->status == IDEMIP_OK)
         {
-            return IDEMIP_TRUE;
+            return D_DEST_LOCAL;
         }
     }
     if (ctx->loopif != NULL)
@@ -1290,19 +1298,19 @@ static idemip_bool d_ip6_local(uint8_t *restrict work, const uint8_t *dst)
         Loopif.owns6(ctx->loopif);
         if (IDEMIP_LOOPIF_IO(ctx->loopif)->status == IDEMIP_OK && IDEMIP_LOOPIF_IO(ctx->loopif)->owned)
         {
-            return IDEMIP_TRUE;
+            return D_DEST_LOCAL;
         }
     }
     if (idemip_ip6_addr_type(dst) != IDEMIP_IP6_TYPE_MULTICAST)
     {
-        return IDEMIP_FALSE;
+        return D_DEST_FORWARD;
     }
     // RFC 4291 sec 2.8: "A host is required to recognize the following addresses as identifying
     // itself: ... The All-Nodes multicast addresses defined in Section 2.7.1." Both of them, and
     // without a group table entry, which is how the solicited-node addresses below are recognized.
     if (idemip_ip6_addr_is_all_nodes(dst))
     {
-        return IDEMIP_TRUE;
+        return D_DEST_LOCAL;
     }
     if (ctx->mld6 != NULL)
     {
@@ -1311,14 +1319,14 @@ static idemip_bool d_ip6_local(uint8_t *restrict work, const uint8_t *dst)
         Mld6.find(ctx->mld6);
         if (IDEMIP_MLD6_IO(ctx->mld6)->status == IDEMIP_OK)
         {
-            return IDEMIP_TRUE;
+            return D_DEST_LOCAL;
         }
     }
     // RFC 4291 sec 2.7.1: "A node is required to compute and join the associated Solicited-Node
     // multicast addresses for all unicast and anycast addresses that have been configured."
     if (ctx->ip6_addr == NULL || ctx->netif == NULL)
     {
-        return IDEMIP_FALSE;
+        return D_DEST_DROP;
     }
     for (uint8_t slot = 0u; slot < (uint8_t)IDEMIP_IP6_ADDRESSES; slot++)
     {
@@ -1334,10 +1342,10 @@ static idemip_bool d_ip6_local(uint8_t *restrict work, const uint8_t *dst)
         Ip6Addr.solicited(ctx->ip6_addr);
         if (i6->status == IDEMIP_OK && memcmp(i6->solicited, dst, IDEMIP_IP6_ADDR_LEN) == 0)
         {
-            return IDEMIP_TRUE;
+            return D_DEST_LOCAL;
         }
     }
-    return IDEMIP_FALSE;
+    return D_DEST_DROP;
 }
 
 // RFC 4443, over the caller's transmit buffer.
@@ -1546,9 +1554,16 @@ static void d_ip6(uint8_t *restrict work, const uint8_t *ip6, size_t avail)
         d_bump(work, IDEMIP_STAT_IP6_IN_HDR_ERRORS);
         return;
     }
-    if (!d_ip6_local(work, idemip_ip6_dst(ip6)))
+    DispatchDest dest = d_ip6_dest(work, idemip_ip6_dst(ip6));
+    if (dest == D_DEST_FORWARD)
     {
         io->act |= IDEMIP_DISPATCH_ACT_FORWARD;
+        return;
+    }
+    if (dest == D_DEST_DROP)
+    {
+        d_drop(work, IDEMIP_DISPATCH_DROP_IP_ADDRESS, IDEMIP_STAT_IF_IN_DISCARDS);
+        d_bump(work, IDEMIP_STAT_IP6_IN_ADDR_ERRORS);
         return;
     }
     // RFC 8200 sec 4.4: "If, while processing a received packet, a node encounters a Routing header

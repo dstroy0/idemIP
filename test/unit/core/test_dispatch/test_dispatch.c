@@ -1935,7 +1935,35 @@ void test_a_multicast_group_this_node_never_joined_is_not_local(void)
     seal_icmp6(g_frame, msg, IDEMIP_ICMP6_MLD_MSG_LEN, g_remote_ip6, other);
     input(work_a, msg + IDEMIP_ICMP6_MLD_MSG_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
 
+    // RFC 2465 ipv6IfStatsInAddrErrors: "The number of input datagrams discarded because the IPv6
+    // address in their IPv6 header's destination field was not a valid address to be received at
+    // this entity ... For entities which are not IPv6 routers and therefore do not forward
+    // datagrams, this counter includes datagrams discarded because the destination address was not
+    // a local address." A group the node never joined is that, and the IPv4 twin,
+    // test_a_group_we_never_joined_is_an_address_error, already reads this way.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_ADDRESS, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_ADDR_ERRORS));
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u,
+                             "a multicast group this node never joined is not a forwarding candidate");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+}
+
+// A non-local UNICAST destination is the other outcome and stays what it was: RFC 2465's sentence is
+// about an address "not a valid address to be received at this entity", and a unicast address of
+// some other node is a valid address, elsewhere. The IPv4 twin forwards it the same way.
+void test_a_unicast_address_that_is_not_ours_is_still_forwarded(void)
+{
+    static const uint8_t elsewhere[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0,    0,
+                                                            0,    0,    0,    0,    0, 0, 0x77, 0x77};
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_ECHO_REQUEST, g_remote_ip6, elsewhere,
+                                 IDEMIP_ICMP6_ECHO_HDR_LEN);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_ECHO_HDR_LEN, g_remote_ip6, elsewhere);
+    input(work_a, msg + IDEMIP_ICMP6_ECHO_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) != 0u);
+    TEST_ASSERT_EQUAL_UINT32(0u, ctr(IDEMIP_STAT_IP6_IN_ADDR_ERRORS));
 }
 
 // The positive twin, and the only thing that makes the negative one mean anything: RFC 4291 sec 2.8
@@ -1976,8 +2004,11 @@ void test_a_multicast_group_this_node_joined_is_local(void)
     Mld6.find(mld6_mem);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, ml->status, "a left group is still on the list");
 
+    // The same frame, now addressed to a group the node no longer belongs to.
     input(work_a, msg + IDEMIP_ICMP6_MLD_MSG_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
-    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) != 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_ADDRESS, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_ADDR_ERRORS));
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
 }
 
 // The same walk, over an option whose Length reaches past the octets the message carries.
