@@ -55,9 +55,16 @@ typedef struct
     uint32_t t2_s;
     uint32_t preferred_s;
     uint32_t valid_s;
-    uint8_t addr[IDEMIP_IP6_ADDR_LEN];   ///< the sec 21.6 IPv6-address the lease assigned
-    uint8_t server[IDEMIP_IP6_ADDR_LEN]; ///< where the assigning server answered from
+    uint8_t addr[IDEMIP_IP6_ADDR_LEN]; ///< the sec 21.6 IPv6-address the lease assigned
 } Dhcp6Ctx;
+
+// No record of where the server answered from, which this held for three writes and no read. A
+// client identifies its server by the sec 11.1 DUID, which server_duid_len and the DUID region hold
+// and which every Request, Renew and Release puts back in a sec 21.3 Server Identifier option. It
+// does not identify it by address: sec 16 has it "MUST NOT send messages using unicast unless it
+// received the Server Unicast option", and this client neither asks for nor parses sec 21.12's
+// option, so every message it sends goes to All_DHCP_Relay_Agents_and_Servers whatever the last
+// reply's Source Address was.
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
 // holds it. common.h's IDEMIP_ASSERT_REGION states both.
@@ -535,7 +542,6 @@ static void dhcp6_forget_lease(uint8_t *restrict work)
 {
     Dhcp6Ctx *ctx = DHCP6_CTX(work);
     memset(ctx->addr, 0, IDEMIP_IP6_ADDR_LEN);
-    memset(ctx->server, 0, IDEMIP_IP6_ADDR_LEN);
     memset(DHCP6_SERVER_DUID(work), 0, IDEMIP_DHCP6_DUID_MAX);
     ctx->server_duid_len = 0u;
     ctx->preferred_s = 0u;
@@ -833,7 +839,6 @@ static idemip_bool dhcp6_take_advertise(uint8_t *restrict work, const uint8_t *o
     }
     memcpy(DHCP6_SERVER_DUID(work), sid, slen);
     ctx->server_duid_len = slen;
-    memcpy(ctx->server, DHCP6_IO(work)->input_args.src, IDEMIP_IP6_ADDR_LEN);
     ctx->pref = pref;
     ctx->have_adv = IDEMIP_TRUE;
     return IDEMIP_TRUE;
@@ -1093,7 +1098,6 @@ void idemip_dhcp6_input(uint8_t *restrict work)
             dhcp6_publish(work);
             return;
         }
-        memcpy(ctx->server, io->input_args.src, IDEMIP_IP6_ADDR_LEN);
         dhcp6_enter_bound(work);
         break;
 
@@ -1131,7 +1135,6 @@ void idemip_dhcp6_input(uint8_t *restrict work)
             dhcp6_publish(work);
             return;
         }
-        memcpy(ctx->server, io->input_args.src, IDEMIP_IP6_ADDR_LEN);
         dhcp6_enter_bound(work);
         break;
 

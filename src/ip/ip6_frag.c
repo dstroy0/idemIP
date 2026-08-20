@@ -30,7 +30,6 @@ typedef struct
     uint32_t ready;
     const uint8_t *pkt;
     uint32_t ident;
-    uint16_t pkt_len;
     uint16_t data_len;
     uint16_t cursor;
     uint16_t chunk;
@@ -171,7 +170,6 @@ static void ip6_frag_take(uint8_t *restrict work)
 
     ctx->pkt = pkt;
     ctx->ident = io->begin_args.ident;
-    ctx->pkt_len = (uint16_t)pkt_len;
     ctx->unfrag_len = IDEMIP_IPV6_HDR_LEN;
     ctx->nh_off = IDEMIP_IP6_OFF_NEXT_HDR;
     ctx->next_hdr = idemip_ip6_next_hdr(pkt);

@@ -58,9 +58,8 @@ typedef struct
     uint16_t len;
     uint8_t hdr_len;
     uint8_t next;
-    uint8_t datagram;
     uint8_t state;
-    uint8_t reserved[6];
+    uint8_t reserved[7];
 } Ip4ReassFrag;
 
 // One hole, RFC 815 sec 4: "To store hole.first and hole.last will presumably require two octets
@@ -71,17 +70,17 @@ typedef struct
     uint16_t first;
     uint16_t last;
     uint8_t next;
-    uint8_t datagram;
     uint8_t state;
-    uint8_t reserved[1];
+    uint8_t reserved[2];
 } Ip4ReassHole;
 
-// The context: the mark, the millisecond of the last timeout sweep, and how many descriptors are
-// pinned across the fragment table.
+// The context: the mark, and how many descriptors are pinned across the fragment table. No sweep
+// clock: every row carries its own RFC 1122 sec 3.3.2 deadline and the sweep compares against that,
+// so there is nothing a last-sweep millisecond would decide. ip4_route keeps one because its PMTU
+// sweep ages every route on a period and has no per-row deadline to compare.
 typedef struct
 {
     uint32_t ready;
-    uint32_t tick_ms;
     uint8_t held;
     uint8_t reserved[3];
 } Ip4ReassCtx;
@@ -204,7 +203,7 @@ static uint8_t ip4_reass_frag_alloc(uint8_t *restrict work)
     return IP4_REASS_NONE;
 }
 
-static uint8_t ip4_reass_hole_alloc(uint8_t *restrict work, uint8_t row, uint32_t first, uint32_t last)
+static uint8_t ip4_reass_hole_alloc(uint8_t *restrict work, uint32_t first, uint32_t last)
 {
     for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_HOLES; i++)
     {
@@ -214,7 +213,6 @@ static uint8_t ip4_reass_hole_alloc(uint8_t *restrict work, uint8_t row, uint32_
             hole->first = (uint16_t)first;
             hole->last = (uint16_t)last;
             hole->next = IP4_REASS_NONE;
-            hole->datagram = row;
             hole->state = (uint8_t)IDEMIP_IP4_REASS_HOLDING;
             return (uint8_t)i;
         }
@@ -325,7 +323,7 @@ static uint8_t ip4_reass_holes(uint8_t *restrict work, uint8_t index, uint32_t f
         uint8_t tail = prev;
         if (first > hole_first) // step 5
         {
-            const uint8_t piece = ip4_reass_hole_alloc(work, index, hole_first, first - 1u);
+            const uint8_t piece = ip4_reass_hole_alloc(work, hole_first, first - 1u);
             if (piece == IP4_REASS_NONE)
             {
                 ip4_reass_hole_thread(work, index, prev, next); // the rest of the list stays reachable
@@ -337,7 +335,7 @@ static uint8_t ip4_reass_holes(uint8_t *restrict work, uint8_t index, uint32_t f
         }
         if (last < hole_last && mf) // step 6
         {
-            const uint8_t piece = ip4_reass_hole_alloc(work, index, last + 1u, hole_last);
+            const uint8_t piece = ip4_reass_hole_alloc(work, last + 1u, hole_last);
             if (piece == IP4_REASS_NONE)
             {
                 if (tail == prev)
@@ -461,7 +459,7 @@ static void ip4_reass_take(uint8_t *restrict work)
         // RFC 815 sec 3: the first entry "describes the datagram as being completely missing. In this
         // case, hole.first equals zero, and hole.last equals infinity".
         Ip4ReassDatagram *fresh = IP4_REASS_DGRAM_AT(work, index);
-        fresh->hole_head = ip4_reass_hole_alloc(work, index, 0u, IDEMIP_IP4_REASS_INFINITY);
+        fresh->hole_head = ip4_reass_hole_alloc(work, 0u, IDEMIP_IP4_REASS_INFINITY);
         if (fresh->hole_head == IP4_REASS_NONE)
         {
             fresh->state = (uint8_t)IDEMIP_IP4_REASS_FREE;
@@ -532,7 +530,6 @@ static void ip4_reass_take(uint8_t *restrict work)
     held->off = (uint16_t)off;
     held->len = (uint16_t)data_len;
     held->hdr_len = hdr_len;
-    held->datagram = index;
     ip4_reass_frag_link(work, index, frag);
     ctx->held++;
 
@@ -666,8 +663,6 @@ static void ip4_reass_unpin(uint8_t *restrict work)
 static void ip4_reass_expire(uint8_t *restrict work)
 {
     Ip4ReassIo *io = IP4_REASS_IO(work);
-    Ip4ReassCtx *ctx = IP4_REASS_CTX(work);
-    ctx->tick_ms = io->now_ms;
     for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
     {
         Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, i);

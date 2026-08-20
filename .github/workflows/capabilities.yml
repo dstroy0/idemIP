@@ -87,3 +87,10 @@ jobs:
       # MIB's shape and which have to be written, so one going dead is a failure and not a silence.
       - name: Check which MIB counters the library reaches
         run: python3 tools/dev_env/counters.py
+
+      # A field the caller was asked for, that was validated and stored and then decided nothing.
+      # loopif's MTU and tcp_pcb's listen backlog were both that, and neither was a warning, a
+      # failing case or a broken capability set: the code compiles and the field reads back whatever
+      # was written to it. Only the absence of a reader says so.
+      - name: Check for state a unit writes and never reads
+        run: python3 tools/dev_env/deadstate.py

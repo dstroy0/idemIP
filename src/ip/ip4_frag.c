@@ -30,7 +30,6 @@ typedef struct
 {
     uint32_t ready;
     const uint8_t *dgram;
-    uint16_t total_len;
     uint16_t data_len;
     uint16_t cursor;
     uint16_t chunk0;
@@ -162,7 +161,6 @@ static void ip4_frag_take(uint8_t *restrict work)
     }
 
     ctx->dgram = dgram;
-    ctx->total_len = total_len;
     ctx->hdr_len = hdr_len;
     ctx->hdr2_len = hdr_len;
     ctx->data_len = (uint16_t)(total_len - hdr_len);

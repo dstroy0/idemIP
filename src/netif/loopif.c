@@ -23,20 +23,22 @@ IDEMIP_BEGIN_DECLS
 
 // The one definition, private to this TU. head is the region claim reads next, tail the one output
 // writes next, and both wrap on IDEMIP_LOOPIF_FRAMES. len holds the octets in each region.
+//
+// Neither address bind takes is kept. bind is where they are TESTED - an address off network 127 or
+// an IPv6 address that is not ::1 is refused there - and no entry needs them afterwards: owns4
+// answers for RFC 1122 sec 3.2.1.3 case (g)'s whole "{ 127, <any> }" network rather than for the one
+// address bound, which test_owns4_is_not_narrowed_by_the_bound_address states, and RFC 4291
+// sec 2.5.3 leaves owns6 exactly one address to answer for, which is the only one bind accepts. The
+// interface index is the same: it is bounds-checked at bind and this unit reads no netif table.
 typedef struct
 {
     uint32_t ready;                     // LOOPIF_READY once clear has run
-    uint32_t addr4;                     // RFC 1122 sec 3.2.1.3 case (g), "{ 127, <any> }"
     uint16_t len[IDEMIP_LOOPIF_FRAMES]; // octets waiting in each region
-    uint16_t mtu;
-    uint8_t index;   // the netif record this interface occupies
-    uint8_t head;    // the region claim reads next
-    uint8_t tail;    // the region output writes next
-    uint8_t held;    // regions holding a frame
-    uint8_t claimed; // whether a region is out on claim
-#if IDEMIP_ENABLE_IPV6
-    uint8_t addr6[IDEMIP_IP6_ADDR_LEN]; // RFC 4291 sec 2.5.3, "0:0:0:0:0:0:0:1"
-#endif
+    uint16_t mtu;                       // payload octets one looped frame may carry
+    uint8_t head;                       // the region claim reads next
+    uint8_t tail;                       // the region output writes next
+    uint8_t held;                       // regions holding a frame
+    uint8_t claimed;                    // whether a region is out on claim
 } LoopifCtx;
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
@@ -183,13 +185,9 @@ void idemip_loopif_bind(uint8_t *restrict work)
         return;
     }
 #endif
-    LoopifCtx *ctx = LOOPIF_CTX(work);
-    ctx->addr4 = io->bind_args.addr4;
-    ctx->mtu = io->bind_args.mtu;
-    ctx->index = io->bind_args.index;
-#if IDEMIP_ENABLE_IPV6
-    memcpy(ctx->addr6, io->bind_args.addr6, IDEMIP_IP6_ADDR_LEN);
-#endif
+    // The MTU is the one thing bind keeps: output measures against it. The addresses and the index
+    // were tested above, which is all this unit ever needed them for.
+    LOOPIF_CTX(work)->mtu = io->bind_args.mtu;
     io->status = IDEMIP_OK;
 }
 
