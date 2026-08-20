@@ -3,22 +3,38 @@
 
 /**
  * @file stats.h
- * @brief The per-protocol counters, RFC 1213.
+ * @brief The per-protocol counters, one MIB object each.
  *
- * One counter per RFC 1213 object, at the object's own name: the 17 of the IP group (sec 6.6), the
- * 26 of the ICMP group (sec 6.7), the 10 of the TCP group (sec 6.8), the 4 of the UDP group
- * (sec 6.9), and the 13 counters and gauges of the sec 6.4 ifEntry, one set per interface. The IP
- * and ICMP groups are carried once for IPv4 and once for IPv6.
+ * One counter per object, at the object's own name. Four documents name them, one per protocol
+ * version, because IPv6 was given its own MIBs rather than a second index on IPv4's:
  *
- * RFC 1213 imports Counter and Gauge from RFC 1155. A Counter is "a non-negative integer which
- * monotonically increases until it reaches a maximum value, when it wraps around and starts
- * increasing again from zero", 2^32-1 (sec 3.2.3.3), which is what @ref StatsNs::bump does. A Gauge
- * "may increase or decrease, but ... latches at a maximum value" (sec 3.2.3.4), which is what
- * @ref StatsNs::set does. ifSpeed, ifOutQLen and tcpCurrEstab are the three gauges.
+ *   RFC 1213 sec 6.6   the IP group, 17 counters, IPv4
+ *   RFC 1213 sec 6.7   the ICMP group, 26 counters, ICMPv4
+ *   RFC 2465 sec 4     ipv6IfStatsEntry, 20 counters, IPv6
+ *   RFC 2466 sec 4     ipv6IfIcmpEntry, 34 counters, ICMPv6
+ *   RFC 1213 sec 6.8   the TCP group, 10 counters, both versions
+ *   RFC 1213 sec 6.9   the UDP group, 4 counters, both versions
  *
- * RFC 1213 defines the IP and ICMP groups for IP version 4. The IPv6 copy carries the same field
- * set: RFC 4443 defines no Source Quench, Timestamp or Address Mask message, so those three pairs
- * stay zero on the v6 side.
+ * and the 13 counters and gauges of RFC 1213 sec 6.4's ifEntry, one set per interface.
+ *
+ * The two IPv6 sets are not the IPv4 sets renamed. RFC 2465 drops ipRoutingDiscards and adds
+ * ipv6IfStatsInTooBigErrors, InTruncatedPkts, InMcastPkts and OutMcastPkts; it counts a route
+ * failure on the way in (ipv6IfStatsInNoRoutes) where RFC 1213 counts it on the way out
+ * (ipOutNoRoutes). RFC 2466 drops the four Source Quench, Timestamp and Address Mask pairs RFC 4443
+ * defines no message for, and adds a pair each for Packet Too Big, the four RFC 4861 Neighbor
+ * Discovery types, the three RFC 2710 Multicast Listener types, and Destination Unreachable Code 1.
+ *
+ * RFC 1213 imports Counter and Gauge from RFC 1155; RFC 2465 and RFC 2466 use RFC 2578's Counter32,
+ * "which increases monotonically until it reaches a maximum value of 2^32-1, when it wraps around
+ * and starts increasing again from zero" (sec 7.1.6) - the same object under a later name. A
+ * Counter is what @ref StatsNs::bump does. A Gauge "may increase or decrease, but ... latches at a
+ * maximum value" (RFC 1155 sec 3.2.3.4), which is what @ref StatsNs::set does. ifSpeed, ifOutQLen
+ * and tcpCurrEstab are the three gauges.
+ *
+ * A counter with no event to reach it is still carried, so the id block is the MIB's shape and not
+ * this library's. Those are icmpInAddrMasks and icmpInAddrMaskReps and their two out twins, RFC 1122
+ * sec 3.2.2.9 leaving the Address Mask pair optional and this library not carrying it; and, on the
+ * IPv6 side, the out counters of both groups, which belong to a send path this module does not own.
  */
 
 #ifndef IDEMIP_STATS_H
@@ -34,8 +50,14 @@ IDEMIP_BEGIN_DECLS
  * @brief Which counter a call names. The id IS the index into the counter block.
  *
  * Grouped in layout order: the IPv4 IP group, the ICMPv4 group, the IPv6 IP group, the ICMPv6
- * group, the TCP group, the UDP group. Each name is its RFC 1213 object: IDEMIP_STAT_IP4_IN_RECEIVES
- * is ipInReceives, IDEMIP_STAT_ICMP4_IN_DEST_UNREACHS is icmpInDestUnreachs, and so on.
+ * group, the TCP group, the UDP group. Each name is its own MIB's object, with the prefix the MIB
+ * itself uses dropped: IDEMIP_STAT_IP4_IN_RECEIVES is RFC 1213's ipInReceives,
+ * IDEMIP_STAT_IP6_IN_RECEIVES is RFC 2465's ipv6IfStatsInReceives, and
+ * IDEMIP_STAT_ICMP6_IN_PKT_TOO_BIGS is RFC 2466's ipv6IfIcmpInPktTooBigs.
+ *
+ * So a name is not a v4 name with the version swapped, and the two sides differ where the MIBs do:
+ * ICMP4_IN_PARM_PROBS is icmpInParmProbs and ICMP6_IN_PARM_PROBLEMS is ipv6IfIcmpInParmProblems;
+ * ICMP4_IN_ECHO_REPS is icmpInEchoReps and ICMP6_IN_ECHO_REPLIES is ipv6IfIcmpInEchoReplies.
  */
 typedef enum IDEMIP_ENUM_PACKED
 {
@@ -86,52 +108,63 @@ typedef enum IDEMIP_ENUM_PACKED
     IDEMIP_STAT_ICMP4_OUT_ADDR_MASKS,
     IDEMIP_STAT_ICMP4_OUT_ADDR_MASK_REPS,
 
-    // RFC 1213 sec 6.6, the same field set for IPv6.
+    // RFC 2465 sec 4, ipv6IfStatsEntry, in its own order: entry 1 through entry 20.
     IDEMIP_STAT_IP6_IN_RECEIVES,
     IDEMIP_STAT_IP6_IN_HDR_ERRORS,
+    IDEMIP_STAT_IP6_IN_TOO_BIG_ERRORS,
+    IDEMIP_STAT_IP6_IN_NO_ROUTES,
     IDEMIP_STAT_IP6_IN_ADDR_ERRORS,
-    IDEMIP_STAT_IP6_FORW_DATAGRAMS,
     IDEMIP_STAT_IP6_IN_UNKNOWN_PROTOS,
+    IDEMIP_STAT_IP6_IN_TRUNCATED_PKTS,
     IDEMIP_STAT_IP6_IN_DISCARDS,
     IDEMIP_STAT_IP6_IN_DELIVERS,
+    IDEMIP_STAT_IP6_OUT_FORW_DATAGRAMS,
     IDEMIP_STAT_IP6_OUT_REQUESTS,
     IDEMIP_STAT_IP6_OUT_DISCARDS,
-    IDEMIP_STAT_IP6_OUT_NO_ROUTES,
+    IDEMIP_STAT_IP6_OUT_FRAG_OKS,
+    IDEMIP_STAT_IP6_OUT_FRAG_FAILS,
+    IDEMIP_STAT_IP6_OUT_FRAG_CREATES,
     IDEMIP_STAT_IP6_REASM_REQDS,
     IDEMIP_STAT_IP6_REASM_OKS,
     IDEMIP_STAT_IP6_REASM_FAILS,
-    IDEMIP_STAT_IP6_FRAG_OKS,
-    IDEMIP_STAT_IP6_FRAG_FAILS,
-    IDEMIP_STAT_IP6_FRAG_CREATES,
-    IDEMIP_STAT_IP6_ROUTING_DISCARDS,
+    IDEMIP_STAT_IP6_IN_MCAST_PKTS,
+    IDEMIP_STAT_IP6_OUT_MCAST_PKTS,
 
-    // RFC 1213 sec 6.7, the same field set for ICMPv6.
+    // RFC 2466 sec 4, ipv6IfIcmpEntry, in its own order: entry 1 through entry 34.
     IDEMIP_STAT_ICMP6_IN_MSGS,
     IDEMIP_STAT_ICMP6_IN_ERRORS,
     IDEMIP_STAT_ICMP6_IN_DEST_UNREACHS,
+    IDEMIP_STAT_ICMP6_IN_ADMIN_PROHIBS,
     IDEMIP_STAT_ICMP6_IN_TIME_EXCDS,
-    IDEMIP_STAT_ICMP6_IN_PARM_PROBS,
-    IDEMIP_STAT_ICMP6_IN_SRC_QUENCHS,
-    IDEMIP_STAT_ICMP6_IN_REDIRECTS,
+    IDEMIP_STAT_ICMP6_IN_PARM_PROBLEMS,
+    IDEMIP_STAT_ICMP6_IN_PKT_TOO_BIGS,
     IDEMIP_STAT_ICMP6_IN_ECHOS,
-    IDEMIP_STAT_ICMP6_IN_ECHO_REPS,
-    IDEMIP_STAT_ICMP6_IN_TIMESTAMPS,
-    IDEMIP_STAT_ICMP6_IN_TIMESTAMP_REPS,
-    IDEMIP_STAT_ICMP6_IN_ADDR_MASKS,
-    IDEMIP_STAT_ICMP6_IN_ADDR_MASK_REPS,
+    IDEMIP_STAT_ICMP6_IN_ECHO_REPLIES,
+    IDEMIP_STAT_ICMP6_IN_ROUTER_SOLICITS,
+    IDEMIP_STAT_ICMP6_IN_ROUTER_ADVERTISEMENTS,
+    IDEMIP_STAT_ICMP6_IN_NEIGHBOR_SOLICITS,
+    IDEMIP_STAT_ICMP6_IN_NEIGHBOR_ADVERTISEMENTS,
+    IDEMIP_STAT_ICMP6_IN_REDIRECTS,
+    IDEMIP_STAT_ICMP6_IN_GROUP_MEMB_QUERIES,
+    IDEMIP_STAT_ICMP6_IN_GROUP_MEMB_RESPONSES,
+    IDEMIP_STAT_ICMP6_IN_GROUP_MEMB_REDUCTIONS,
     IDEMIP_STAT_ICMP6_OUT_MSGS,
     IDEMIP_STAT_ICMP6_OUT_ERRORS,
     IDEMIP_STAT_ICMP6_OUT_DEST_UNREACHS,
+    IDEMIP_STAT_ICMP6_OUT_ADMIN_PROHIBS,
     IDEMIP_STAT_ICMP6_OUT_TIME_EXCDS,
-    IDEMIP_STAT_ICMP6_OUT_PARM_PROBS,
-    IDEMIP_STAT_ICMP6_OUT_SRC_QUENCHS,
-    IDEMIP_STAT_ICMP6_OUT_REDIRECTS,
+    IDEMIP_STAT_ICMP6_OUT_PARM_PROBLEMS,
+    IDEMIP_STAT_ICMP6_OUT_PKT_TOO_BIGS,
     IDEMIP_STAT_ICMP6_OUT_ECHOS,
-    IDEMIP_STAT_ICMP6_OUT_ECHO_REPS,
-    IDEMIP_STAT_ICMP6_OUT_TIMESTAMPS,
-    IDEMIP_STAT_ICMP6_OUT_TIMESTAMP_REPS,
-    IDEMIP_STAT_ICMP6_OUT_ADDR_MASKS,
-    IDEMIP_STAT_ICMP6_OUT_ADDR_MASK_REPS,
+    IDEMIP_STAT_ICMP6_OUT_ECHO_REPLIES,
+    IDEMIP_STAT_ICMP6_OUT_ROUTER_SOLICITS,
+    IDEMIP_STAT_ICMP6_OUT_ROUTER_ADVERTISEMENTS,
+    IDEMIP_STAT_ICMP6_OUT_NEIGHBOR_SOLICITS,
+    IDEMIP_STAT_ICMP6_OUT_NEIGHBOR_ADVERTISEMENTS,
+    IDEMIP_STAT_ICMP6_OUT_REDIRECTS,
+    IDEMIP_STAT_ICMP6_OUT_GROUP_MEMB_QUERIES,
+    IDEMIP_STAT_ICMP6_OUT_GROUP_MEMB_RESPONSES,
+    IDEMIP_STAT_ICMP6_OUT_GROUP_MEMB_REDUCTIONS,
 
     // RFC 1213 sec 6.8, the TCP group. tcpCurrEstab is a Gauge.
     IDEMIP_STAT_TCP_ACTIVE_OPENS,
@@ -222,12 +255,20 @@ typedef struct
 // counters of four octets; the interface table sits at the end of the context region, whose width
 // IDEMIP_STATS_CTX_BYTES fixes.
 
-/** @brief Octets one counter spans, as a shift. RFC 1155 sec 3.2.3.3 fixes the maximum at 2^32-1. */
+/**
+ * @brief Octets one counter spans, as a shift.
+ *
+ * RFC 1155 sec 3.2.3.3 fixes a Counter's maximum at 2^32-1, and RFC 2578 sec 7.1.6 fixes Counter32's
+ * at the same value.
+ */
 #define IDEMIP_STATS_CTR_SHIFT 2u
 
 #define IDEMIP_STATS_OFF_IO 0u ///< the operand and result block
 #define IDEMIP_STATS_OFF_CTR IDEMIP_ROUND_UP(IDEMIP_STATS_OFF_IO + sizeof(StatsIo), IDEMIP_ALIGN)
-#define IDEMIP_STATS_OFF_CTX (IDEMIP_STATS_OFF_CTR + ((size_t)IDEMIP_STAT_COUNT << IDEMIP_STATS_CTR_SHIFT))
+// The counter block is a count of four-octet counters, so it lands on IDEMIP_ALIGN only when that
+// count is even. Rounded, because what follows it is a context an entry addresses as a struct.
+#define IDEMIP_STATS_OFF_CTX                                                                                           \
+    IDEMIP_ROUND_UP(IDEMIP_STATS_OFF_CTR + ((size_t)IDEMIP_STAT_COUNT << IDEMIP_STATS_CTR_SHIFT), IDEMIP_ALIGN)
 #define IDEMIP_STATS_OFF_IF IDEMIP_STATS_CTX_BYTES ///< IDEMIP_NETIF_COUNT entries, 1 << IDEMIP_STATS_IF_ENTRY_SHIFT each
 
 /** @brief The operand block, at its offset in the caller's borrow. */

@@ -107,7 +107,8 @@ windows, the transmission control blocks and queues, and RFC 6528 initial sequen
 (RFC 1035).
 
 **Core.** The receive path from one frame to the pcb that owns it, the scheduler, the deadline
-list, and the RFC 1213 counters.
+list, and the management counters — RFC 1213 for IPv4, ICMPv4, TCP, UDP and the interface, RFC 2465
+and RFC 2466 for IPv6 and ICMPv6.
 
 ## Footprint
 

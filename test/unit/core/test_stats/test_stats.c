@@ -154,27 +154,94 @@ void test_the_published_offsets_are_ordered_and_do_not_overlap(void)
     TEST_ASSERT_EQUAL_size_t(0u, (1u << IDEMIP_STATS_IF_ENTRY_SHIFT) & ((1u << IDEMIP_STATS_IF_ENTRY_SHIFT) - 1u));
 }
 
-// --- the RFC 1213 field sets -------------------------------------------------
+// --- the MIB field sets ------------------------------------------------------
 
-// RFC 1213 sec 6.6 has 17 counters in the IP group and sec 6.7 has 26 in the ICMP group, one set for
-// IPv4 and one for IPv6; sec 6.8 has 10 in the TCP group and sec 6.9 has 4 in the UDP group. The id
-// is the index into the counter block, so the group boundaries are those counts summed.
-void test_the_counter_ids_are_the_rfc_1213_group_field_sets(void)
+// Six field sets, each from the MIB that defines it. RFC 1213 sec 6.6 has 17 counters in the IP
+// group and sec 6.7 has 26 in the ICMP group, both IPv4; RFC 2465 sec 4 has 20 in ipv6IfStatsEntry
+// and RFC 2466 sec 4 has 34 in ipv6IfIcmpEntry; RFC 1213 sec 6.8 has 10 in the TCP group and sec 6.9
+// has 4 in the UDP group, which both versions share. The id is the index into the counter block, so
+// the group boundaries are those counts summed - and the sum is what proves the IPv6 sets are their
+// own and not the IPv4 sets carried twice, which would make this 100 rather than 111.
+void test_the_counter_ids_are_the_mib_group_field_sets(void)
 {
     TEST_ASSERT_EQUAL_INT(0, IDEMIP_STAT_IP4_IN_RECEIVES);
     TEST_ASSERT_EQUAL_INT(17, IDEMIP_STAT_ICMP4_IN_MSGS);
     TEST_ASSERT_EQUAL_INT(17 + 26, IDEMIP_STAT_IP6_IN_RECEIVES);
-    TEST_ASSERT_EQUAL_INT(17 + 26 + 17, IDEMIP_STAT_ICMP6_IN_MSGS);
-    TEST_ASSERT_EQUAL_INT(17 + 26 + 17 + 26, IDEMIP_STAT_TCP_ACTIVE_OPENS);
-    TEST_ASSERT_EQUAL_INT(17 + 26 + 17 + 26 + 10, IDEMIP_STAT_UDP_IN_DATAGRAMS);
-    TEST_ASSERT_EQUAL_INT(17 + 26 + 17 + 26 + 10 + 4, IDEMIP_STAT_COUNT);
+    TEST_ASSERT_EQUAL_INT(17 + 26 + 20, IDEMIP_STAT_ICMP6_IN_MSGS);
+    TEST_ASSERT_EQUAL_INT(17 + 26 + 20 + 34, IDEMIP_STAT_TCP_ACTIVE_OPENS);
+    TEST_ASSERT_EQUAL_INT(17 + 26 + 20 + 34 + 10, IDEMIP_STAT_UDP_IN_DATAGRAMS);
+    TEST_ASSERT_EQUAL_INT(17 + 26 + 20 + 34 + 10 + 4, IDEMIP_STAT_COUNT);
     // RFC 1213 sec 6.4's ifEntry: 13 counters and gauges, the rest of the row not being counted.
     TEST_ASSERT_EQUAL_INT(13, IDEMIP_STAT_IF_COUNT);
-    // The counter block is what those counts cost: 100 counters of four octets.
-    TEST_ASSERT_EQUAL_size_t(400u, CTR_BYTES);
+    // The counter block is what those counts cost: 111 counters of four octets.
+    TEST_ASSERT_EQUAL_size_t(444u, CTR_BYTES);
     TEST_ASSERT_TRUE_MESSAGE(((size_t)IDEMIP_STAT_IF_COUNT << IDEMIP_STATS_CTR_SHIFT) <=
                                  (size_t)(1u << IDEMIP_STATS_IF_ENTRY_SHIFT),
                              "an interface entry is narrower than the ifEntry counters");
+}
+
+// RFC 2465 sec 4 numbers ipv6IfStatsEntry 1 through 20, and the ids are laid out in that order, so
+// each one's distance from ipv6IfStatsInReceives is its entry number less one. Four of these have no
+// RFC 1213 counterpart at all - InTooBigErrors, InTruncatedPkts, InMcastPkts and OutMcastPkts - and
+// InNoRoutes counts on the way in where RFC 1213's ipOutNoRoutes counts on the way out.
+void test_the_ipv6_ip_ids_are_the_rfc_2465_entry_numbers(void)
+{
+#define IP6_ENTRY(ID) ((int)(ID) - (int)IDEMIP_STAT_IP6_IN_RECEIVES + 1)
+    TEST_ASSERT_EQUAL_INT(1, IP6_ENTRY(IDEMIP_STAT_IP6_IN_RECEIVES));
+    TEST_ASSERT_EQUAL_INT(2, IP6_ENTRY(IDEMIP_STAT_IP6_IN_HDR_ERRORS));
+    TEST_ASSERT_EQUAL_INT(3, IP6_ENTRY(IDEMIP_STAT_IP6_IN_TOO_BIG_ERRORS));
+    TEST_ASSERT_EQUAL_INT(4, IP6_ENTRY(IDEMIP_STAT_IP6_IN_NO_ROUTES));
+    TEST_ASSERT_EQUAL_INT(5, IP6_ENTRY(IDEMIP_STAT_IP6_IN_ADDR_ERRORS));
+    TEST_ASSERT_EQUAL_INT(6, IP6_ENTRY(IDEMIP_STAT_IP6_IN_UNKNOWN_PROTOS));
+    TEST_ASSERT_EQUAL_INT(7, IP6_ENTRY(IDEMIP_STAT_IP6_IN_TRUNCATED_PKTS));
+    TEST_ASSERT_EQUAL_INT(8, IP6_ENTRY(IDEMIP_STAT_IP6_IN_DISCARDS));
+    TEST_ASSERT_EQUAL_INT(9, IP6_ENTRY(IDEMIP_STAT_IP6_IN_DELIVERS));
+    TEST_ASSERT_EQUAL_INT(10, IP6_ENTRY(IDEMIP_STAT_IP6_OUT_FORW_DATAGRAMS));
+    TEST_ASSERT_EQUAL_INT(11, IP6_ENTRY(IDEMIP_STAT_IP6_OUT_REQUESTS));
+    TEST_ASSERT_EQUAL_INT(12, IP6_ENTRY(IDEMIP_STAT_IP6_OUT_DISCARDS));
+    TEST_ASSERT_EQUAL_INT(13, IP6_ENTRY(IDEMIP_STAT_IP6_OUT_FRAG_OKS));
+    TEST_ASSERT_EQUAL_INT(14, IP6_ENTRY(IDEMIP_STAT_IP6_OUT_FRAG_FAILS));
+    TEST_ASSERT_EQUAL_INT(15, IP6_ENTRY(IDEMIP_STAT_IP6_OUT_FRAG_CREATES));
+    TEST_ASSERT_EQUAL_INT(16, IP6_ENTRY(IDEMIP_STAT_IP6_REASM_REQDS));
+    TEST_ASSERT_EQUAL_INT(17, IP6_ENTRY(IDEMIP_STAT_IP6_REASM_OKS));
+    TEST_ASSERT_EQUAL_INT(18, IP6_ENTRY(IDEMIP_STAT_IP6_REASM_FAILS));
+    TEST_ASSERT_EQUAL_INT(19, IP6_ENTRY(IDEMIP_STAT_IP6_IN_MCAST_PKTS));
+    TEST_ASSERT_EQUAL_INT(20, IP6_ENTRY(IDEMIP_STAT_IP6_OUT_MCAST_PKTS));
+#undef IP6_ENTRY
+}
+
+// RFC 2466 sec 4 numbers ipv6IfIcmpEntry 1 through 34, the same way. The eight types RFC 4443 and
+// RFC 4861 and RFC 2710 define that ICMPv4 has no equivalent for each have a counter here, and the
+// Source Quench, Timestamp and Address Mask counters of RFC 1213 sec 6.7 are absent, ICMPv6 defining
+// no such message.
+void test_the_icmpv6_ids_are_the_rfc_2466_entry_numbers(void)
+{
+#define ICMP6_ENTRY(ID) ((int)(ID) - (int)IDEMIP_STAT_ICMP6_IN_MSGS + 1)
+    TEST_ASSERT_EQUAL_INT(1, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_MSGS));
+    TEST_ASSERT_EQUAL_INT(2, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_ERRORS));
+    TEST_ASSERT_EQUAL_INT(3, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_DEST_UNREACHS));
+    TEST_ASSERT_EQUAL_INT(4, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_ADMIN_PROHIBS));
+    TEST_ASSERT_EQUAL_INT(5, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_TIME_EXCDS));
+    TEST_ASSERT_EQUAL_INT(6, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_PARM_PROBLEMS));
+    TEST_ASSERT_EQUAL_INT(7, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_PKT_TOO_BIGS));
+    TEST_ASSERT_EQUAL_INT(8, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_ECHOS));
+    TEST_ASSERT_EQUAL_INT(9, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_ECHO_REPLIES));
+    TEST_ASSERT_EQUAL_INT(10, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_ROUTER_SOLICITS));
+    TEST_ASSERT_EQUAL_INT(11, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_ROUTER_ADVERTISEMENTS));
+    TEST_ASSERT_EQUAL_INT(12, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_NEIGHBOR_SOLICITS));
+    TEST_ASSERT_EQUAL_INT(13, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_NEIGHBOR_ADVERTISEMENTS));
+    TEST_ASSERT_EQUAL_INT(14, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_REDIRECTS));
+    TEST_ASSERT_EQUAL_INT(15, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_GROUP_MEMB_QUERIES));
+    TEST_ASSERT_EQUAL_INT(16, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_GROUP_MEMB_RESPONSES));
+    TEST_ASSERT_EQUAL_INT(17, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_IN_GROUP_MEMB_REDUCTIONS));
+    // The out half repeats the in half in the same order, so entry 18 + n mirrors entry 1 + n.
+    TEST_ASSERT_EQUAL_INT(18, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_OUT_MSGS));
+    TEST_ASSERT_EQUAL_INT(24, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_OUT_PKT_TOO_BIGS));
+    TEST_ASSERT_EQUAL_INT(34, ICMP6_ENTRY(IDEMIP_STAT_ICMP6_OUT_GROUP_MEMB_REDUCTIONS));
+    TEST_ASSERT_EQUAL_INT(17, (int)IDEMIP_STAT_ICMP6_OUT_MSGS - (int)IDEMIP_STAT_ICMP6_IN_MSGS);
+    TEST_ASSERT_EQUAL_INT(17, (int)IDEMIP_STAT_ICMP6_OUT_ADMIN_PROHIBS - (int)IDEMIP_STAT_ICMP6_IN_ADMIN_PROHIBS);
+    TEST_ASSERT_EQUAL_INT(17, (int)IDEMIP_STAT_ICMP6_OUT_REDIRECTS - (int)IDEMIP_STAT_ICMP6_IN_REDIRECTS);
+#undef ICMP6_ENTRY
 }
 
 // --- clear -------------------------------------------------------------------

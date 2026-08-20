@@ -1970,8 +1970,13 @@ void test_an_ipv6_packet_for_somewhere_else_is_reported_for_forwarding(void)
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) != 0u);
 }
 
-// RFC 8200 sec 3: a Payload Length reaching past the octets that arrived is a header error.
-void test_an_ipv6_payload_length_past_the_frame_is_a_header_error(void)
+// RFC 8200 sec 3's Payload Length reaching past the octets that arrived is RFC 2465's
+// ipv6IfStatsInTruncatedPkts, "discarded because datagram frame didn't carry enough data", and not
+// ipv6IfStatsInHdrErrors, whose list is "version number mismatch, other format errors, hop count
+// exceeded, errors discovered in processing their IPv6 options". The header here is well formed and
+// says so; what is missing is the payload it names. RFC 1213 has no such counter, which is why the
+// IPv4 twin of this case reads ipInHdrErrors and this one does not.
+void test_an_ipv6_payload_length_past_the_frame_is_a_truncated_packet(void)
 {
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     size_t ip = off;
@@ -1981,7 +1986,69 @@ void test_an_ipv6_payload_length_past_the_frame_is_a_header_error(void)
     idemip_ip6_set_payload_len(g_frame + ip, 4000u);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_HEADER, IDEMIP_DISPATCH_IO(work_a)->drop);
-    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_HDR_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_IP6_IN_TRUNCATED_PKTS),
+                                     "ipv6IfStatsInTruncatedPkts counted nothing");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_IP6_IN_HDR_ERRORS),
+                                     "a truncated frame was counted as a header error");
+}
+
+// The other half of the same split. A Version that is not 6 is the first entry on
+// ipv6IfStatsInHdrErrors' own list, and the frame carrying it is long enough to hold the header it
+// misstates, so nothing here was truncated.
+void test_an_ipv6_version_that_is_not_six_is_a_header_error(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t ip = off;
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_local_ip6, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, g_local_ip6);
+    g_frame[ip] = (uint8_t)((g_frame[ip] & 0x0Fu) | 0x40u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_HEADER, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_IP6_IN_HDR_ERRORS),
+                                     "ipv6IfStatsInHdrErrors counted nothing");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_IP6_IN_TRUNCATED_PKTS),
+                                     "a malformed header was counted as a truncated frame");
+}
+
+// A frame with no room for the 40-octet fixed header carried too little to read, so there is no
+// Version to disagree with and nothing but the length to report.
+void test_a_frame_too_short_for_the_ipv6_header_is_a_truncated_packet(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    (void)build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_local_ip6, 0u);
+    input(work_a, off + (size_t)IDEMIP_IPV6_HDR_LEN - 1u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_HEADER, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_IP6_IN_TRUNCATED_PKTS),
+                                     "ipv6IfStatsInTruncatedPkts counted nothing");
+    TEST_ASSERT_EQUAL_UINT32(0u, ctr(IDEMIP_STAT_IP6_IN_HDR_ERRORS));
+}
+
+// RFC 2465's ipv6IfStatsInMcastPkts, "the number of multicast packets received by the interface",
+// which RFC 1213 has no counter for on either side. What it counts is arrival and not acceptance: a
+// packet to a group this node never joined is still one the interface received, and it is counted
+// before the destination decides anything. A unicast packet is not counted by it at all.
+void test_a_multicast_destination_counts_an_ipv6_multicast_arrival(void)
+{
+    static const uint8_t unjoined[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x42};
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, unjoined, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, unjoined);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_IP6_IN_MCAST_PKTS),
+                                     "ipv6IfStatsInMcastPkts counted nothing for a group not joined");
+
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_local_ip6, IDEMIP_UDP_HDR_LEN);
+    end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, g_local_ip6);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_IP6_IN_MCAST_PKTS),
+                                     "a unicast destination was counted as a multicast arrival");
+    // Both arrived, so ipv6IfStatsInReceives took both either way.
+    TEST_ASSERT_EQUAL_UINT32(2u, ctr(IDEMIP_STAT_IP6_IN_RECEIVES));
 }
 
 // RFC 4291 sec 2.7.1: a node joins the Solicited-Node address of every unicast address it holds, so
@@ -2167,6 +2234,135 @@ void test_an_mld_query_reaches_the_group_module(void)
                                   "an MLD message belongs to the group table, as an IGMP one does");
     TEST_ASSERT_EQUAL_UINT16(10000u,
                              idemip_icmp6_mld_max_resp(g_frame + IDEMIP_DISPATCH_IO(work_a)->payload_off));
+}
+
+// RFC 2466 sec 4 gives every ICMPv6 type this library carries a counter of its own. Seven of them
+// leave dispatch by the Neighbor Discovery door rather than through icmp6_in, so their counters are
+// taken there, and none of the seven has an RFC 1213 sec 6.7 equivalent to have been counted under
+// before: ipv6IfIcmpInRouterSolicits, InRouterAdvertisements, InNeighborSolicits,
+// InNeighborAdvertisements, InRedirects, InGroupMembQueries, InGroupMembResponses and
+// InGroupMembReductions. Each is driven through and read back on its own counter.
+void test_every_neighbor_discovery_and_listener_type_takes_its_own_rfc_2466_counter(void)
+{
+    uint8_t solicited[IDEMIP_IP6_ADDR_LEN];
+    idemip_ip6_addr_solicited(solicited, g_local_ip6);
+
+    static const struct
+    {
+        uint8_t type;
+        size_t len;
+        IdemIpStatsCounter id;
+    } table[] = {
+        {(uint8_t)IDEMIP_ICMP6_ROUTER_SOLICIT, (size_t)IDEMIP_ICMP6_RS_HDR_LEN,
+         IDEMIP_STAT_ICMP6_IN_ROUTER_SOLICITS},
+        {(uint8_t)IDEMIP_ICMP6_ROUTER_ADVERT, (size_t)IDEMIP_ICMP6_RA_HDR_LEN,
+         IDEMIP_STAT_ICMP6_IN_ROUTER_ADVERTISEMENTS},
+        {(uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, (size_t)IDEMIP_ICMP6_NS_HDR_LEN,
+         IDEMIP_STAT_ICMP6_IN_NEIGHBOR_SOLICITS},
+        {(uint8_t)IDEMIP_ICMP6_NEIGHBOR_ADVERT, (size_t)IDEMIP_ICMP6_NA_HDR_LEN,
+         IDEMIP_STAT_ICMP6_IN_NEIGHBOR_ADVERTISEMENTS},
+        {(uint8_t)IDEMIP_ICMP6_REDIRECT, (size_t)IDEMIP_ICMP6_RD_HDR_LEN, IDEMIP_STAT_ICMP6_IN_REDIRECTS},
+        {(uint8_t)IDEMIP_ICMP6_MLD_QUERY, (size_t)IDEMIP_ICMP6_MLD_MSG_LEN,
+         IDEMIP_STAT_ICMP6_IN_GROUP_MEMB_QUERIES},
+        {(uint8_t)IDEMIP_ICMP6_MLD_REPORT, (size_t)IDEMIP_ICMP6_MLD_MSG_LEN,
+         IDEMIP_STAT_ICMP6_IN_GROUP_MEMB_RESPONSES},
+        {(uint8_t)IDEMIP_ICMP6_MLD_DONE, (size_t)IDEMIP_ICMP6_MLD_MSG_LEN,
+         IDEMIP_STAT_ICMP6_IN_GROUP_MEMB_REDUCTIONS},
+    };
+
+    for (size_t i = 0u; i < sizeof table / sizeof table[0]; i++)
+    {
+        const uint8_t *dst = (table[i].type == (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT) ? solicited : g_local_ip6;
+        size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+        size_t msg = build_icmp6_msg(g_frame, off, table[i].type, g_remote_ip6, dst, table[i].len);
+        if (table[i].type == (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT)
+        {
+            memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+        }
+        seal_icmp6(g_frame, msg, table[i].len, g_remote_ip6, dst);
+        input(work_a, msg + table[i].len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                      "a type this library carries was dropped before it could be counted");
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(table[i].id), "the type's own RFC 2466 counter took nothing");
+    }
+    // ipv6IfIcmpInMsgs is "the total number of ICMP messages received by the interface", so the
+    // per-type counters above sum to it and none of the eight double-counted.
+    TEST_ASSERT_EQUAL_UINT32(8u, ctr(IDEMIP_STAT_ICMP6_IN_MSGS));
+    TEST_ASSERT_EQUAL_UINT32(0u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS));
+}
+
+// The one RFC 2466 counter with no RFC 1213 twin that this library could already have taken and did
+// not: ipv6IfIcmpInPktTooBigs. RFC 4443 sec 3.2's Packet Too Big is what RFC 8201 Path MTU Discovery
+// runs on, and until now an IPv6 stack that implements pmtu6 could not report having received one.
+void test_a_packet_too_big_takes_the_rfc_2466_counter_of_its_own(void)
+{
+    const size_t quoted = (size_t)IDEMIP_IPV6_HDR_LEN + (size_t)IDEMIP_UDP_HDR_LEN;
+    const size_t msg_len = (size_t)IDEMIP_ICMP6_ERR_HDR_LEN + quoted;
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_PACKET_TOO_BIG, g_remote_ip6, g_local_ip6,
+                                 msg_len);
+    // sec 3.2's MTU field, and the invoking packet the error quotes: a datagram this node sent.
+    idemip_wr32(g_frame + msg + IDEMIP_ICMP6_OFF_MTU, 1280u);
+    size_t q = build_ip6(g_frame, msg + IDEMIP_ICMP6_ERR_HDR_LEN, IDEMIP_IP6_NH_UDP, g_local_ip6, g_remote_ip6,
+                         IDEMIP_UDP_HDR_LEN);
+    (void)build_udp(g_frame, q, 4000u, 4001u, 0u);
+    seal_icmp6(g_frame, msg, msg_len, g_remote_ip6, g_local_ip6);
+    input(work_a, msg + msg_len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP6_IN_PKT_TOO_BIGS),
+                                     "ipv6IfIcmpInPktTooBigs counted nothing");
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_MSGS));
+    TEST_ASSERT_EQUAL_UINT32(0u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS));
+}
+
+// RFC 2466 counts one Code as well as its Type. ipv6IfIcmpInAdminProhibs is "the number of ICMP
+// destination unreachable/communication administratively prohibited messages received", RFC 4443
+// sec 3.1's Code 1 - and such a message is a Destination Unreachable, so it is counted in both.
+void test_a_prohibited_destination_unreachable_counts_under_both_its_counters(void)
+{
+    const size_t quoted = (size_t)IDEMIP_IPV6_HDR_LEN + (size_t)IDEMIP_UDP_HDR_LEN;
+    const size_t msg_len = (size_t)IDEMIP_ICMP6_ERR_HDR_LEN + quoted;
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, g_remote_ip6, g_local_ip6,
+                                 msg_len);
+    g_frame[msg + IDEMIP_ICMP6_OFF_CODE] = IDEMIP_ICMP6_DU_PROHIBITED;
+    size_t q = build_ip6(g_frame, msg + IDEMIP_ICMP6_ERR_HDR_LEN, IDEMIP_IP6_NH_UDP, g_local_ip6, g_remote_ip6,
+                         IDEMIP_UDP_HDR_LEN);
+    (void)build_udp(g_frame, q, 4000u, 4001u, 0u);
+    seal_icmp6(g_frame, msg, msg_len, g_remote_ip6, g_local_ip6);
+    input(work_a, msg + msg_len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP6_IN_DEST_UNREACHS),
+                                     "a Code 1 is still a Destination Unreachable");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP6_IN_ADMIN_PROHIBS),
+                                     "ipv6IfIcmpInAdminProhibs counted nothing");
+}
+
+// The same message at Code 0 is a Destination Unreachable and nothing more, so the Code is read and
+// not assumed.
+void test_a_destination_unreachable_at_another_code_is_not_an_admin_prohibition(void)
+{
+    const size_t quoted = (size_t)IDEMIP_IPV6_HDR_LEN + (size_t)IDEMIP_UDP_HDR_LEN;
+    const size_t msg_len = (size_t)IDEMIP_ICMP6_ERR_HDR_LEN + quoted;
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, g_remote_ip6, g_local_ip6,
+                                 msg_len);
+    g_frame[msg + IDEMIP_ICMP6_OFF_CODE] = IDEMIP_ICMP6_DU_NO_ROUTE;
+    size_t q = build_ip6(g_frame, msg + IDEMIP_ICMP6_ERR_HDR_LEN, IDEMIP_IP6_NH_UDP, g_local_ip6, g_remote_ip6,
+                         IDEMIP_UDP_HDR_LEN);
+    (void)build_udp(g_frame, q, 4000u, 4001u, 0u);
+    seal_icmp6(g_frame, msg, msg_len, g_remote_ip6, g_local_ip6);
+    input(work_a, msg + msg_len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_DEST_UNREACHS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP6_IN_ADMIN_PROHIBS),
+                                     "a Code 0 is not an administrative prohibition");
 }
 
 // RFC 4443 sec 2.3: the checksum "MUST be verified" before the message is processed. icmp6_in keeps

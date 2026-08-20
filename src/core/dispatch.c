@@ -213,27 +213,66 @@ static void d_icmp4_type_bump(uint8_t *restrict work, uint8_t type)
 #endif
 
 #if IDEMIP_ENABLE_IPV6
-// The same table over RFC 4443's Types. It defines no Source Quench, Timestamp or Address Mask, so
-// those counters have no ICMPv6 Type to reach them, and Packet Too Big and the RFC 4861 Neighbor
-// Discovery messages have no counter of their own and are counted only in icmpInMsgs.
-static void d_icmp6_type_bump(uint8_t *restrict work, uint8_t type)
+// The same table, over RFC 2466's counters and RFC 4443's Types. Its field set is not RFC 2011's:
+// every Type this library carries has a counter of its own, Packet Too Big and the RFC 4861 Neighbor
+// Discovery four and the RFC 2710 Multicast Listener three included, and there is no counter for a
+// message ICMPv6 does not define. So the default arm is reached only by a Type this library does not
+// carry, which is counted in ipv6IfIcmpInMsgs alone.
+//
+// The Code is read as well as the Type, because RFC 2466 gives one Code a counter of its own:
+// ipv6IfIcmpInAdminProhibs is "the number of ICMP destination unreachable/communication
+// administratively prohibited messages received", RFC 4443 sec 3.1's Code 1. Such a message is a
+// Destination Unreachable, so it is counted in both, the way ipv6IfIcmpInMsgs "includes all those
+// counted by ipv6IfIcmpInErrors".
+static void d_icmp6_type_bump(uint8_t *restrict work, const uint8_t *msg)
 {
-    switch (type)
+    switch (idemip_icmp6_type(msg))
     {
     case IDEMIP_ICMP6_DEST_UNREACHABLE:
         d_bump(work, IDEMIP_STAT_ICMP6_IN_DEST_UNREACHS);
+        if (idemip_icmp6_code(msg) == IDEMIP_ICMP6_DU_PROHIBITED)
+        {
+            d_bump(work, IDEMIP_STAT_ICMP6_IN_ADMIN_PROHIBS);
+        }
+        return;
+    case IDEMIP_ICMP6_PACKET_TOO_BIG:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_PKT_TOO_BIGS);
         return;
     case IDEMIP_ICMP6_TIME_EXCEEDED:
         d_bump(work, IDEMIP_STAT_ICMP6_IN_TIME_EXCDS);
         return;
     case IDEMIP_ICMP6_PARAMETER_PROBLEM:
-        d_bump(work, IDEMIP_STAT_ICMP6_IN_PARM_PROBS);
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_PARM_PROBLEMS);
         return;
     case IDEMIP_ICMP6_ECHO_REQUEST:
         d_bump(work, IDEMIP_STAT_ICMP6_IN_ECHOS);
         return;
     case IDEMIP_ICMP6_ECHO_REPLY:
-        d_bump(work, IDEMIP_STAT_ICMP6_IN_ECHO_REPS);
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_ECHO_REPLIES);
+        return;
+    case IDEMIP_ICMP6_MLD_QUERY:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_GROUP_MEMB_QUERIES);
+        return;
+    case IDEMIP_ICMP6_MLD_REPORT:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_GROUP_MEMB_RESPONSES);
+        return;
+    case IDEMIP_ICMP6_MLD_DONE:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_GROUP_MEMB_REDUCTIONS);
+        return;
+    case IDEMIP_ICMP6_ROUTER_SOLICIT:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_ROUTER_SOLICITS);
+        return;
+    case IDEMIP_ICMP6_ROUTER_ADVERT:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_ROUTER_ADVERTISEMENTS);
+        return;
+    case IDEMIP_ICMP6_NEIGHBOR_SOLICIT:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_NEIGHBOR_SOLICITS);
+        return;
+    case IDEMIP_ICMP6_NEIGHBOR_ADVERT:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_NEIGHBOR_ADVERTISEMENTS);
+        return;
+    case IDEMIP_ICMP6_REDIRECT:
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_REDIRECTS);
         return;
     default:
         return;
@@ -1547,6 +1586,9 @@ static void d_icmp6_nd(uint8_t *restrict work, const uint8_t *ip6, const uint8_t
         d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
         return;
     }
+    // These eight types leave by this door and not d_icmp6's, so their RFC 2466 counters are taken
+    // here. The v4 twin counts a message that passed its checks, and so does this.
+    d_icmp6_type_bump(work, msg);
     io->act |= IDEMIP_DISPATCH_ACT_DELIVER;
     d_bump(work, IDEMIP_STAT_IP6_IN_DELIVERS);
     d_delivered(work, a->frame);
@@ -1635,7 +1677,7 @@ static void d_icmp6(uint8_t *restrict work, const uint8_t *ip6, size_t total_len
         d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
         return;
     }
-    d_icmp6_type_bump(work, idemip_icmp6_type(ip6 + io->payload_off - io->ip_off));
+    d_icmp6_type_bump(work, ip6 + io->payload_off - io->ip_off);
     if ((ic->act & IDEMIP_ICMP6_IN_ACT_REPLY) != 0u)
     {
         io->out_len = ic->out_len;
@@ -1703,17 +1745,39 @@ static void d_ip6(uint8_t *restrict work, const uint8_t *ip6, size_t avail)
     io->ip_version = IDEMIP_IP6_VERSION;
     d_bump(work, IDEMIP_STAT_IP6_IN_RECEIVES);
 
-    if (avail < IDEMIP_IPV6_HDR_LEN || idemip_ip6_version(ip6) != IDEMIP_IP6_VERSION)
+    // RFC 2465 counts a short frame apart from a malformed header, which RFC 1213 does not:
+    // ipv6IfStatsInTruncatedPkts is "the number of input datagrams discarded because datagram frame
+    // didn't carry enough data", and ipv6IfStatsInHdrErrors is "version number mismatch, other format
+    // errors, hop count exceeded, errors discovered in processing their IPv6 options". A frame with
+    // no room for the 40-octet fixed header carried too little; a header that is there to read and
+    // says 4 is malformed. So the two tests are taken apart and counted apart.
+    if (avail < IDEMIP_IPV6_HDR_LEN)
+    {
+        d_drop(work, IDEMIP_DISPATCH_DROP_IP_HEADER, IDEMIP_STAT_IF_IN_ERRORS);
+        d_bump(work, IDEMIP_STAT_IP6_IN_TRUNCATED_PKTS);
+        return;
+    }
+    if (idemip_ip6_version(ip6) != IDEMIP_IP6_VERSION)
     {
         d_drop(work, IDEMIP_DISPATCH_DROP_IP_HEADER, IDEMIP_STAT_IF_IN_ERRORS);
         d_bump(work, IDEMIP_STAT_IP6_IN_HDR_ERRORS);
         return;
     }
+    // ipv6IfStatsInMcastPkts is "the number of multicast packets received by the interface" - what
+    // arrived, not what was kept. So it is taken as soon as the header is known to be there to read,
+    // and before any decision about where the packet goes: a group this node never joined is still a
+    // multicast packet the interface received.
+    if (idemip_ip6_addr_type(idemip_ip6_dst(ip6)) == IDEMIP_IP6_TYPE_MULTICAST)
+    {
+        d_bump(work, IDEMIP_STAT_IP6_IN_MCAST_PKTS);
+    }
     size_t total_len = (size_t)IDEMIP_IPV6_HDR_LEN + (size_t)idemip_ip6_payload_len(ip6);
+    // A Payload Length that names more octets than the frame delivered is the same truncation: the
+    // frame "didn't carry enough data" for the datagram its own header describes.
     if (total_len > avail)
     {
         d_drop(work, IDEMIP_DISPATCH_DROP_IP_HEADER, IDEMIP_STAT_IF_IN_ERRORS);
-        d_bump(work, IDEMIP_STAT_IP6_IN_HDR_ERRORS);
+        d_bump(work, IDEMIP_STAT_IP6_IN_TRUNCATED_PKTS);
         return;
     }
     IdemIpIp6Chain chain = idemip_ip6_walk(ip6, total_len);

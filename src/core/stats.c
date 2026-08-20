@@ -55,10 +55,13 @@ static_assert(sizeof(StatsIfEntry) == (1u << IDEMIP_STATS_IF_ENTRY_SHIFT),
               "StatsIfEntry is not 1 << IDEMIP_STATS_IF_ENTRY_SHIFT wide - pad it, or raise the shift in "
               "idemip_config.h");
 
-// RFC 1213: 17 counters in the IP group (sec 6.6) and 26 in the ICMP group (sec 6.7), one set for
-// IPv4 and one for IPv6, then 10 in the TCP group (sec 6.8) and 4 in the UDP group (sec 6.9).
-static_assert((size_t)IDEMIP_STAT_COUNT == ((17u + 26u) * 2u) + 10u + 4u,
-              "the counter ids are not the RFC 1213 group field sets");
+// The six field sets, each from the MIB that defines it: 17 in RFC 1213's IP group (sec 6.6) and 26
+// in its ICMP group (sec 6.7), both IPv4; 20 in RFC 2465's ipv6IfStatsEntry and 34 in RFC 2466's
+// ipv6IfIcmpEntry; then 10 in RFC 1213's TCP group (sec 6.8) and 4 in its UDP group (sec 6.9), which
+// both versions share. The two IPv6 sets are not the IPv4 sets over again, so this is a sum and not
+// a product.
+static_assert((size_t)IDEMIP_STAT_COUNT == 17u + 26u + 20u + 34u + 10u + 4u,
+              "the counter ids are not the RFC 1213, RFC 2465 and RFC 2466 group field sets");
 static_assert((size_t)IDEMIP_STAT_IF_COUNT == 13u, "the interface ids are not the RFC 1213 sec 6.4 ifEntry counters");
 
 // The caller's borrow, split: the operand block, the counters, the context, then the interface
