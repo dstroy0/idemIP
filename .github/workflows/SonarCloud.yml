@@ -15,6 +15,9 @@ jobs:
       # job's env is evaluated, and naming it there is what makes the whole file fail to parse.
       # sonar.sources is src,test, so a build directory inside the workspace is not analysed.
       BUILD_DIR: ${{ github.workspace }}/build-cov
+      # At the job, not on the scan step, because the scan step has to be able to ASK whether it is
+      # set. The secrets context is not readable from an `if:`; the env context is.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -49,11 +52,26 @@ jobs:
       - name: Collect coverage
         run: gcovr --root . --filter 'src/' --sonarqube coverage.xml --print-summary "$BUILD_DIR"
 
+      # Only when there is a token to scan with. GitHub does not hand repository Actions secrets to a
+      # workflow a Dependabot pull request triggered - Dependabot has its own secret store, under
+      # Settings -> Secrets and variables -> Dependabot - so secrets.SONAR_TOKEN resolves to the
+      # empty string there and the scanner answers "Not authorized or project not found", exit 3.
+      # That is a red run saying the analysis broke, when what happened is that there was nothing to
+      # analyse with. The same is true of a pull request from a fork.
+      #
+      # Everything above this step still runs on those pull requests, which is the part that has
+      # something to say about them: the coverage build is the one configuration no other workflow
+      # builds, and the suites run against it.
       - name: SonarQube Scan
+        if: env.SONAR_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
             --define sonar.cfamily.compile-commands=${{ env.BUILD_DIR }}/compile_commands.json
             --define sonar.coverageReportPaths=coverage.xml
+
+      # A skipped step is invisible in the run summary, and a green SonarQube job that analysed
+      # nothing reads exactly like one that did. This says which happened.
+      - name: Report the scan as not run
+        if: env.SONAR_TOKEN == ''
+        run: echo "::notice title=SonarQube analysis skipped::SONAR_TOKEN is empty, so nothing was analysed. A Dependabot or fork pull request does not receive repository Actions secrets; the build and the suites above did run. To analyse Dependabot's own pull requests, add SONAR_TOKEN under Settings, Secrets and variables, Dependabot."
