@@ -1,6 +1,6 @@
 {
   "name": "idemIP",
-  "version": "v0.0.0",
+  "version": "0.1.0",
   "description": "Zero-heap, asynchronous TCP/IP stack with a fully deterministic memory footprint. Thread safe design. Designed for embedded targets (bare metal or with OS). Provides an intuitive API. Ideal for resource-constrained environments where memory management is critical.",
   "keywords": [
     "async",
@@ -22,13 +22,16 @@
     "url": "https://github.com/dstroy0/idemIP.git"
   },
   "license": "AGPL-3.0-or-later",
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32"],
-  "headers": ["protocore.h"],
+  "frameworks": "*",
+  "platforms": "*",
+  "headers": ["idemip.h"],
   "export": {
     "exclude": [
       ".github",
       ".gitignore",
+      ".vscode",
+      "docs/learn",
+      "test"
     ]
   },
   "build": {
