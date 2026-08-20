@@ -273,7 +273,6 @@ typedef struct
     void (*const split)(uint8_t *restrict work);
 } VlanNs;
 
-/** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
