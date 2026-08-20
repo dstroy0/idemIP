@@ -83,6 +83,51 @@ def tokenize(text, first_line=1):
     return out
 
 
+def mask_comments(text):
+    """Replace every comment byte with a space, leaving literals and every newline where they are.
+
+    readclean's `rewrite` deletes comment lines outright, which is right for reading and wrong for
+    reporting: a hit at token line 137 of the stripped text is not line 137 of the file, and the two
+    drift further apart the more prose a file carries. Blanking in place keeps every offset, so a
+    line number is the line number. Literals survive, so "http://x" is still one token and not a
+    comment, which is the same reason readclean does not use a regex.
+    """
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"' or c == "'":
+            q = c
+            out.append(c)
+            i += 1
+            while i < n:
+                if text[i] == "\\":
+                    out.append(text[i : i + 2])
+                    i += 2
+                    continue
+                out.append(text[i])
+                if text[i] == q:
+                    i += 1
+                    break
+                i += 1
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            while i < n and text[i] != "\n":
+                out.append(" ")
+                i += 1
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "*":
+            while i < n and not (text[i] == "*" and i + 1 < n and text[i + 1] == "/"):
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            out.append("  ")
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def split_pp(text):
     """Separate the preprocessor directives from the code, keeping each directive whole.
 
@@ -260,7 +305,7 @@ def load(p):
     This is readclean's `code` view, taken as tokens rather than as lines.
     """
     text = io.open(p, encoding="utf-8", errors="replace").read()
-    code, directives = split_pp(rewrite(text, False))
+    code, directives = split_pp(mask_comments(text))
     return tokenize(code), [(ln, tokenize(d, ln)) for ln, d in directives]
 
 
