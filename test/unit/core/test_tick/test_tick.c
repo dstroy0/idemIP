@@ -274,9 +274,14 @@ static idemip_bool run_phase(uint8_t *w, void (*const phase)(uint8_t *restrict w
     return IDEMIP_FALSE;
 }
 
+// The random word a tick opens with. Deliberately not derivable from the now_ms beside it, so a
+// path that reached for the clock instead reads a different value here.
+static uint32_t g_open_rand = 0xA5A5A5A5u;
+
 static void open_tick(uint8_t *w, uint32_t now_ms)
 {
     IDEMIP_TICK_IO(w)->open_args.now_ms = now_ms;
+    IDEMIP_TICK_IO(w)->open_args.rand = g_open_rand;
     Tick.open(w);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(w)->status);
 }
@@ -621,6 +626,27 @@ void test_a_frame_is_dispatched_and_its_descriptor_returned(void)
 
     Tick.drain(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_TICK_IO(work_a)->status);
+}
+
+// A tick opens with two words and hands both to every frame it drains. The clock is the one every
+// deadline is measured from; the random word is the one a drawn deadline comes out of, and
+// dispatch.h names the draw that needs it - RFC 2236 sec 3's Report timer, "a different random
+// value ... selected from the range (0, Max Response Time]". They are not interchangeable, so a
+// tick that carried only the clock would leave the receive path drawing from a monotonic counter.
+void test_a_tick_hands_the_random_word_it_opened_with_to_every_frame_it_drains(void)
+{
+    uint16_t len = fill_ip4(0u, LOCAL_IP4, 0u);
+    engine_queue(0u, len);
+
+    g_open_rand = 0x3C69A17Bu;
+    open_tick(work_a, 1000u);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(0x3C69A17Bu, IDEMIP_DISPATCH_IO(dispatch_mem)->input_args.rand,
+                                    "the word the tick opened with did not reach the frame");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1000u, IDEMIP_DISPATCH_IO(dispatch_mem)->input_args.now_ms,
+                                     "the clock beside it is still the clock");
+    g_open_rand = 0xA5A5A5A5u;
 }
 
 // A fragment is held by the reassembler, which pins the buffer the engine wrote it to. The

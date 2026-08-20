@@ -407,6 +407,12 @@ static size_t build_ip6(uint8_t *f, size_t off, uint8_t next_hdr, const uint8_t 
 }
 #endif
 
+// The random word every input in this file is handed. Deliberately unequal to the now_ms below it,
+// and deliberately large in its high half, since that is the half a draw scales by: a path that
+// reached for the clock instead would come out at the bottom of its range rather than here.
+#define DISPATCH_TEST_RAND 0x5A5A0000u
+static uint32_t g_rand = DISPATCH_TEST_RAND;
+
 static void input(uint8_t *w, size_t len, uint8_t netif, uint16_t desc)
 {
     DispatchIo *io = IDEMIP_DISPATCH_IO(w);
@@ -415,6 +421,7 @@ static void input(uint8_t *w, size_t len, uint8_t netif, uint16_t desc)
     io->input_args.out = g_out;
     io->input_args.out_cap = sizeof g_out;
     io->input_args.now_ms = 1000u;
+    io->input_args.rand = g_rand;
     io->input_args.desc = desc;
     io->input_args.netif = netif;
     Dispatch.input(w);
@@ -422,6 +429,7 @@ static void input(uint8_t *w, size_t len, uint8_t netif, uint16_t desc)
 
 void setUp(void)
 {
+    g_rand = DISPATCH_TEST_RAND;
     arm(work_a, sizeof work_a);
     arm(work_b, sizeof work_b);
     memset(g_frame, 0, sizeof g_frame);
@@ -942,6 +950,77 @@ void test_an_igmp_query_with_a_good_checksum_is_processed(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
 }
 
+
+// The report delay a Query arms, and where it comes from. RFC 2236 sec 3: "When a host receives a
+// General Query, it sets delay timers for each group ... of which it is a member on the interface
+// from which it received the query. ... Timers are set to a different random value, using the
+// highest clock granularity available on the host, selected from the range (0, Max Response Time]",
+// and the sentence before it says what the randomness is for: "In order to avoid an 'implosion' of
+// concurrent reports". A delay every member of the group draws independently is what lets the first
+// Report suppress the rest, which is the whole of sec 3's suppression rule.
+//
+// The word that value comes out of is DispatchInputArgs::rand, and this path took now_ms instead.
+// A monotonic count is not a random value: it is the same on every host that has been up as long,
+// it never decreases, and igmp_draw scales by its HIGH half - the half that moves once every 65.536
+// seconds - so a ten-second Max Response Time came out as 1 ms for the first seven minutes of
+// uptime, 202 ms after a day, and reached ten seconds only after 49.7 days of it.
+static uint32_t igmp_deadline(uint32_t group)
+{
+    IgmpIo *ig = IDEMIP_IGMP_IO(igmp_mem);
+    ig->group_args.group = group;
+    ig->group_args.netif = 0u;
+    Igmp.find(igmp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ig->status);
+    return ig->deadline_ms;
+}
+
+// Another host's Report puts the membership in sec 6's Idle Member state, so the next Query arms a
+// fresh timer rather than deciding whether to shorten a running one.
+static void quiet_group(uint32_t group)
+{
+    IgmpIo *ig = IDEMIP_IGMP_IO(igmp_mem);
+    ig->report_args.group = group;
+    ig->report_args.netif = 0u;
+    Igmp.report_in(igmp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ig->status);
+}
+
+void test_the_igmp_report_delay_is_drawn_from_the_random_word_and_not_the_clock(void)
+{
+    const uint32_t group = 0xE0000102u;
+    const uint32_t max_resp_ms = 100u * IDEMIP_IGMP_MAX_RESP_UNIT_MS; // sec 2.2, in units of 1/10 s
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, group, IDEMIP_IGMP_MSG_LEN, 0u);
+    const size_t end = build_igmp(g_frame, off, (uint8_t)IDEMIP_IGMP_TYPE_QUERY, 100u, group);
+
+    join_group(group);
+
+    // Two Queries, one clock, two words. input() holds now_ms at 1000 for every case in this file,
+    // so anything the clock decided would be equal across the pair.
+    quiet_group(group);
+    g_rand = 0x20000000u;
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    const uint32_t low = igmp_deadline(group);
+
+    quiet_group(group);
+    g_rand = 0xC0000000u;
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    const uint32_t high = igmp_deadline(group);
+
+    TEST_ASSERT_TRUE_MESSAGE(low != high,
+                             "one clock and two random words drew the same delay: the draw is not "
+                             "reading the word");
+
+    // Both inside sec 3's range, and the second past its middle. The clock the caller supplies is
+    // 1000 ms, whose high half is zero, so a path drawing from it lands one millisecond out however
+    // large the Max Response Time is.
+    TEST_ASSERT_TRUE_MESSAGE(low > 1000u && low <= 1000u + max_resp_ms, "outside (0, Max Response Time]");
+    TEST_ASSERT_TRUE_MESSAGE(high > 1000u && high <= 1000u + max_resp_ms, "outside (0, Max Response Time]");
+    TEST_ASSERT_TRUE_MESSAGE(high - 1000u > (max_resp_ms >> 1),
+                             "a word in the top quarter drew a delay in the bottom half: the range is "
+                             "not being spread, and every member answers at once");
+}
 
 // RFC 2236 sec 2.5: "As long as the Type is one that is recognized, an IGMPv2 implementation MUST
 // ignore anything past the first 8 octets while processing the packet. However, the IGMP checksum is

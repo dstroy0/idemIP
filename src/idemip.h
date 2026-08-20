@@ -148,6 +148,7 @@
  *   void net_tick(uint32_t now_ms)
  *   {
  *       IDEMIP_TICK_IO(tick_w)->open_args.now_ms = now_ms;
+ *       IDEMIP_TICK_IO(tick_w)->open_args.rand = my_random_word;
  *       Tick.open(tick_w);
  *       while (Tick.drain(tick_w), IDEMIP_TICK_IO(tick_w)->status == IDEMIP_OK)
  *       {

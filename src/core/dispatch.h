@@ -304,6 +304,15 @@ typedef struct
  * @var DispatchInputArgs::out_cap octets available at @c out
  * @var DispatchInputArgs::now_ms the caller's monotonic millisecond count, which every deadline the
  *                                path stamps is measured from
+ * @var DispatchInputArgs::rand   a random word, and the only operand here that is not a fact about
+ *                                the frame. One arriving message is answered on a delay this library
+ *                                draws rather than at once: RFC 2236 sec 3 sets an IGMP Report timer
+ *                                "to a different random value, using the highest clock granularity
+ *                                available on the host", so that every member of a queried group on
+ *                                a link does not answer in the same instant. @c now_ms cannot stand
+ *                                in for it - a monotonic count is the one word on this operand block
+ *                                that every host and every tick can predict. A fresh word per tick
+ *                                is enough; the draw steps it between memberships itself.
  * @var DispatchInputArgs::desc   the receive descriptor the frame lies in, or
  *                                IDEMIP_DISPATCH_DESC_NONE
  * @var DispatchInputArgs::netif  the interface it arrived on
@@ -315,6 +324,7 @@ typedef struct
     uint8_t *out;
     size_t out_cap;
     uint32_t now_ms;
+    uint32_t rand;
     uint16_t desc;
     uint8_t netif;
 } DispatchInputArgs;
@@ -444,6 +454,7 @@ typedef struct
  *   IDEMIP_DISPATCH_IO(work)->if_args.tagged = IDEMIP_TRUE;
  *   Dispatch.if_bind(work);
  *   IDEMIP_DISPATCH_IO(work)->input_args.frame = frame;
+ *   IDEMIP_DISPATCH_IO(work)->input_args.rand = my_random_word;
  *   Dispatch.input(work);
  *   if (IDEMIP_DISPATCH_IO(work)->act & IDEMIP_DISPATCH_ACT_DELIVER) { ... }
  *

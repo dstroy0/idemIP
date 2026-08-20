@@ -36,6 +36,10 @@ typedef struct
 #endif
     uint8_t *netif;
     uint32_t now_ms;
+    // Held for the same reason now_ms is: one tick is one instant, and every frame it drains is
+    // dispatched against the same pair. The clock decides when a deadline falls; this decides how a
+    // deadline the path has to draw comes out, and dispatch.h says which draw needs it.
+    uint32_t rand;
     uint32_t ready;
     uint16_t hold_desc;
     uint8_t hold_netif;
@@ -182,6 +186,7 @@ static idemip_bool t_drain_one(uint8_t *restrict work, uint8_t netif)
     di->input_args.out = row->f.out;
     di->input_args.out_cap = row->f.out_cap;
     di->input_args.now_ms = ctx->now_ms;
+    di->input_args.rand = ctx->rand;
     di->input_args.desc = desc;
     di->input_args.netif = netif;
     Dispatch.input(ctx->dispatch);
@@ -612,6 +617,7 @@ void idemip_tick_open(uint8_t *restrict work)
     }
     TickCtx *ctx = T_CTX(work);
     ctx->now_ms = io->open_args.now_ms;
+    ctx->rand = io->open_args.rand;
     ctx->phase = (uint8_t)IDEMIP_TICK_PHASE_DRAIN;
     ctx->cursor = (uint8_t)IDEMIP_TICK_UNIT_ARP;
     ctx->if_cursor = 0u;

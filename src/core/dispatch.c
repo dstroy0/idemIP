@@ -1160,7 +1160,17 @@ static void d_igmp(uint8_t *restrict work, const uint8_t *msg)
     {
         ig->query_args.group = group;
         ig->query_args.max_resp_ms = (uint32_t)max_resp * IDEMIP_IGMP_MAX_RESP_UNIT_MS;
-        ig->query_args.rand = a->now_ms;
+        // The caller's random word, not the clock beside it. sec 3 arms the Report timer with "a
+        // different random value, using the highest clock granularity available on the host,
+        // selected from the range (0, Max Response Time]", and the paragraph above it says what for:
+        // a delay the members of a group draw independently is what lets the first Report suppress
+        // the rest instead of every host answering the same Query in the same instant.
+        //
+        // now_ms is not that word. It is monotonic, so the draw would be a function of uptime and
+        // never of chance, and igmp_draw scales by the HIGH half of it - the half that moves once
+        // every 65.536 seconds - so a ten-second Max Response Time comes out as 1 ms for the first
+        // seven minutes of uptime, 202 ms after a day, and reaches ten seconds only after 49.7 days.
+        ig->query_args.rand = a->rand;
         ig->query_args.now_ms = a->now_ms;
         ig->query_args.netif = io->netif;
         ig->query_args.general = (idemip_bool)(group == 0u);

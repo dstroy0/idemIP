@@ -91,7 +91,9 @@ typedef enum IDEMIP_ENUM_PACKED
  * resolver or a group table still ticks everything else.
  *
  * @var TickBindArgs::dispatch  the receive path, which the drain phase hands each frame to
- * @var TickBindArgs::timeouts  the deadline list every service registers into
+ * @var TickBindArgs::timeouts  the deadline list, which the caller arms and this drives: open advances
+ *                              it and the service phase reports each expiry. Nothing under src/ arms
+ *                              one - timeouts.h says so.
  * @var TickBindArgs::stats     the RFC 1213 counters, for the drops the drain phase accounts
  * @var TickBindArgs::arp       the RFC 826 table, whose tick ages rows and whose dequeue releases
  *                              the frames held for resolution
@@ -140,10 +142,18 @@ typedef struct
     uint8_t index;
 } TickIfArgs;
 
-/** @brief What opening a tick takes. */
+/**
+ * @brief What opening a tick takes.
+ *
+ * Two words, and they are not interchangeable. The clock says when this tick is; the random word
+ * says how a delay this tick has to draw comes out. @ref DispatchInputArgs::rand is where it goes
+ * and says what needs it - one word per tick is enough, and a caller with no entropy source at all
+ * still has to pick something other than the clock it just read.
+ */
 typedef struct
 {
     uint32_t now_ms; ///< the caller's monotonic millisecond count
+    uint32_t rand;   ///< a random word, handed to every frame this tick drains
 } TickOpenArgs;
 
 /**
@@ -154,7 +164,7 @@ typedef struct
  *
  * @var TickIo::bind_args  the borrows the scheduler drives
  * @var TickIo::if_args    one interface's rings, neighbor machine and transmit buffer
- * @var TickIo::open_args  the millisecond a tick is opened at
+ * @var TickIo::open_args  the millisecond a tick is opened at, and the random word it draws with
  * @var TickIo::status     what the call reports: OK, BUSY, or ERR
  * @var TickIo::phase      the phase the fixed order has reached
  * @var TickIo::unit       which unit the step just run belongs to
@@ -232,6 +242,7 @@ typedef struct
  *   IDEMIP_TICK_IO(work)->bind_args.dispatch = dispatch_mem;
  *   Tick.bind(work);
  *   IDEMIP_TICK_IO(work)->open_args.now_ms = now;
+ *   IDEMIP_TICK_IO(work)->open_args.rand = my_random_word;
  *   Tick.open(work);
  *   while (Tick.drain(work), IDEMIP_TICK_IO(work)->status == IDEMIP_OK) { ... read the dispatch io }
  *   while (Tick.service(work), IDEMIP_TICK_IO(work)->status == IDEMIP_OK) { }
