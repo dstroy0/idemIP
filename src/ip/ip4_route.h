@@ -150,7 +150,12 @@ typedef struct
  * @var Ip4RouteIo::pmtu          the RFC 1191 path MTU cached on the matched row, 0 when none is
  * @var Ip4RouteIo::index         the row the call touched, or IDEMIP_IP4_ROUTE_INDEX_NONE
  * @var Ip4RouteIo::netif         the interface that row routes through
- * @var Ip4RouteIo::direct        the destination is on a connected network, sec 3.3.1.1 (b)
+ * @var Ip4RouteIo::direct        the destination is on a connected network, sec 3.3.1.1 (b). On the
+ *                               BUSY path it says the same of the rows that matched but carried no
+ *                               usable TOS, which RFC 1812 sec 4.3.3.1 reads to pick Code 12 over 11.
+ * @var Ip4RouteIo::tos_blocked  a lookup found rows for the destination but none whose route.tos is
+ *                               the packet's or the default, which RFC 1812 sec 4.3.3.1 answers with
+ *                               Destination Unreachable Code 11 or 12 rather than Code 0
  */
 typedef struct
 {
@@ -168,6 +173,7 @@ typedef struct
     uint8_t index;
     uint8_t netif;
     idemip_bool direct;
+    idemip_bool tos_blocked;
 } Ip4RouteIo;
 
 // ---------------------------------------------------------------------------

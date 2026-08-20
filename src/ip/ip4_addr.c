@@ -97,13 +97,16 @@ static void ip4_addr_match(uint8_t *restrict work)
     uint32_t addr = io->match_args.addr;
     uint32_t mask = io->match_args.mask;
     io->network = io->match_args.net & mask;
-    io->broadcast = io->network | (uint32_t)(~mask);
+    // RFC 3021 sec 2.2.1: on a 31-bit prefix a directed broadcast "is not possible", sec 2.1 making
+    // both of the link's addresses host addresses. A 32-bit prefix names one host and no subnet.
+    idemip_bool has_bcast = (mask != 0xFFFFFFFFu && mask != 0xFFFFFFFEu) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    io->broadcast = has_bcast ? (io->network | (uint32_t)(~mask)) : 0u;
     io->host = addr & (uint32_t)(~mask);
     io->prefix_len = idemip_ip4_addr_mask_ones(mask);
     io->contiguous = idemip_ip4_addr_mask_contiguous(mask);
     io->on_subnet = (((addr ^ io->match_args.net) & mask) == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
     io->is_broadcast =
-        (addr == IDEMIP_IP4_BROADCAST || (mask != 0xFFFFFFFFu && io->on_subnet && addr == io->broadcast))
+        (addr == IDEMIP_IP4_BROADCAST || (has_bcast && io->on_subnet && addr == io->broadcast))
             ? IDEMIP_TRUE
             : IDEMIP_FALSE;
     io->status = IDEMIP_OK;

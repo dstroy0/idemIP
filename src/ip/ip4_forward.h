@@ -18,9 +18,19 @@
  *
  * The address rules are RFC 1812 sec 5.3.7 Martian Address Filtering over the special addresses of
  * sec 4.2.2.11 and sec 4.2.3.1, sec 5.3.4 for a frame that arrived as a link-layer broadcast, and
- * sec 5.3.5 for a broadcast destination. Which ICMP may be sent at all is sec 4.3.2.7, whose list
- * "TAKE[S] PRECEDENCE OVER ANY REQUIREMENT ELSEWHERE IN THIS DOCUMENT FOR SENDING ICMP ERROR
- * MESSAGES".
+ * sec 5.3.5 for a broadcast destination. RFC 3927 sec 7's "A router MUST NOT forward a packet with an
+ * IPv4 Link-Local source or destination address" runs ahead of the sec 5.3.7 switch, that sentence
+ * ending "irrespective of the router's default route configuration". Which ICMP may be sent at all is
+ * sec 4.3.2.7, whose list "TAKE[S] PRECEDENCE OVER ANY REQUIREMENT ELSEWHERE IN THIS DOCUMENT FOR
+ * SENDING ICMP ERROR MESSAGES".
+ *
+ * sec 5.2.3's Local Delivery Decision is the caller's, not this unit's. Its multicast rule reads "The
+ * packet's destination is an IP multicast address which is never forwarded (such as 224.0.0.1 or
+ * 224.0.0.2) and (at least) one of the logical interfaces associated with the physical interface on
+ * which the packet arrived is a member of the destination multicast group", and a group membership is
+ * not among the operands a decision takes. A caller that hands a never-forwarded group to decide gets
+ * an ordinary forwarding answer for it. src/core/dispatch.c makes that decision before raising
+ * IDEMIP_DISPATCH_ACT_FORWARD, so no multicast destination reaches this unit through it.
  */
 
 #ifndef IDEMIP_IP4_FORWARD_H
@@ -71,6 +81,16 @@ typedef enum IDEMIP_ENUM_PACKED
  *                                       packet MUST be discarded"
  * @var IDEMIP_IP4_FORWARD_R_DF          the datagram exceeds the outgoing MTU with RFC 791 sec 3.1's
  *                                       Don't Fragment flag set
+ * @var IDEMIP_IP4_FORWARD_R_NO_ROUTE_TOS sec 4.3.3.1: "the router does have routes to the destination
+ *                                       network specified in the packet but the TOS specified for the
+ *                                       routes is neither the default TOS (0000) nor the TOS of the
+ *                                       packet"
+ * @var IDEMIP_IP4_FORWARD_R_LINK_LOCAL  RFC 3927 sec 7: "A router MUST NOT forward a packet with an
+ *                                       IPv4 Link-Local source or destination address, irrespective
+ *                                       of the router's default route configuration or routes
+ *                                       obtained from dynamic routing protocols"
+ * @var IDEMIP_IP4_FORWARD_R_SRC_BCAST   RFC 1812 sec 4.2.2.11 (d), of { <Network-prefix>, -1 }: "It
+ *                                       MUST NOT be used as a source address"
  */
 typedef enum IDEMIP_ENUM_PACKED
 {
@@ -85,6 +105,9 @@ typedef enum IDEMIP_ENUM_PACKED
     IDEMIP_IP4_FORWARD_R_NO_ROUTE,
     IDEMIP_IP4_FORWARD_R_TTL,
     IDEMIP_IP4_FORWARD_R_DF,
+    IDEMIP_IP4_FORWARD_R_NO_ROUTE_TOS,
+    IDEMIP_IP4_FORWARD_R_LINK_LOCAL,
+    IDEMIP_IP4_FORWARD_R_SRC_BCAST,
 } IdemIpIp4ForwardReason;
 
 /**
@@ -131,6 +154,10 @@ typedef enum IDEMIP_ENUM_PACKED
  * @var Ip4ForwardArgs::out_netif    the interface the route chose
  * @var Ip4ForwardArgs::routed       the lookup found a row, so @ref Ip4ForwardArgs::next_hop holds one
  * @var Ip4ForwardArgs::direct       the route transmits directly, RFC 1122 sec 3.3.1.1 (b)
+ * @var Ip4ForwardArgs::tos_blocked  the lookup found rows for the destination but none whose
+ *                                   route.tos is the packet's or the default, which RFC 1812 sec
+ *                                   4.3.3.1 answers with Destination Unreachable Code 11 or 12
+ *                                   rather than Code 0. @ref Ip4RouteIo::tos_blocked reports it.
  * @var Ip4ForwardArgs::ll_broadcast the frame arrived addressed to the link-layer broadcast address
  * @var Ip4ForwardArgs::ll_multicast the frame arrived addressed to a link-layer multicast address
  */
@@ -148,6 +175,7 @@ typedef struct
     uint8_t out_netif;
     idemip_bool routed;
     idemip_bool direct;
+    idemip_bool tos_blocked;
     idemip_bool ll_broadcast;
     idemip_bool ll_multicast;
 } Ip4ForwardArgs;

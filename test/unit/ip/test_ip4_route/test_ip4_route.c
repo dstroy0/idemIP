@@ -174,13 +174,33 @@ void test_an_uncleared_borrow_is_refused(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP4_ROUTE_IO(work_a)->status);
 }
 
-// A lookup that routed nothing says so with the published terminator, not with row zero.
-void test_a_refused_lookup_reports_no_row(void)
+// RFC 1812 sec 5.2.4.3: "If the set ever becomes empty, the packet is discarded because the
+// destination is unreachable." A lookup that routed nothing says so with the published terminator,
+// not with row zero, and reports BUSY because an added route makes the same lookup succeed.
+void test_a_lookup_that_routed_nothing_reports_no_row(void)
 {
+    Ip4Route.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP4_ROUTE_IO(work_a)->status);
+    IDEMIP_IP4_ROUTE_IO(work_a)->lookup_args.dst = 0x08080808u;
+    IDEMIP_IP4_ROUTE_IO(work_a)->lookup_args.tos = 0u;
     Ip4Route.lookup(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_IP4_ROUTE_IO(work_a)->status,
+                                  "an empty table routes nothing, which a later add changes");
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP4_ROUTE_INDEX_NONE, IDEMIP_IP4_ROUTE_IO(work_a)->index);
     TEST_ASSERT_EQUAL_HEX32(0u, IDEMIP_IP4_ROUTE_IO(work_a)->next_hop);
     TEST_ASSERT_FALSE(IDEMIP_IP4_ROUTE_IO(work_a)->direct);
+    // RFC 1812 sec 4.3.3.1's Code 0 case: "no routes at all (including no default route)".
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP4_ROUTE_IO(work_a)->tos_blocked,
+                              "no row matched at all, so the TOS is not what blocked it");
+}
+
+// A borrow no clear has run on carries no table, so a lookup refuses it outright.
+void test_a_lookup_on_an_uncleared_borrow_is_refused(void)
+{
+    IDEMIP_IP4_ROUTE_IO(work_a)->lookup_args.dst = 0x08080808u;
+    Ip4Route.lookup(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP4_ROUTE_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP4_ROUTE_INDEX_NONE, IDEMIP_IP4_ROUTE_IO(work_a)->index);
 }
 
 // --- the published map -------------------------------------------------------
@@ -686,6 +706,44 @@ void test_weak_tos_never_falls_back_to_another_type_of_service(void)
     look(work_a, IP_10_144_2_5, 0x10u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP4_ROUTE_IO(work_a)->status);
     TEST_ASSERT_EQUAL_HEX32(GW_192_168_1_1, IDEMIP_IP4_ROUTE_IO(work_a)->next_hop);
+}
+
+// RFC 1812 sec 4.3.3.1 wants two different ICMP codes here: Code 0 when the router "has no routes at
+// all (including no default route) to the destination specified in the packet", and Code 11 when "the
+// router does have routes to the destination network specified in the packet but the TOS specified
+// for the routes is neither the default TOS (0000) nor the TOS of the packet". Both are BUSY, so the
+// lookup has to say which.
+void test_a_lookup_blocked_only_by_the_type_of_service_says_so(void)
+{
+    Ip4Route.clear(work_a);
+    add_row(work_a, NET_10_144_2_24, M24, GW_192_168_1_1, IDEMIP_IP4_ROUTE_F_GATEWAY, 2u, 0x10u, 0u);
+
+    look(work_a, IP_10_144_2_5, 0x08u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_IP4_ROUTE_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP4_ROUTE_IO(work_a)->tos_blocked,
+                             "a row matched the destination, so only the TOS blocked it");
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP4_ROUTE_IO(work_a)->direct,
+                              "the matching row goes through a gateway, so sec 4.3.3.1 wants Code 11");
+
+    // A destination no row holds at all is the Code 0 case.
+    look(work_a, GW_192_168_1_1, 0x08u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_IP4_ROUTE_IO(work_a)->status);
+    TEST_ASSERT_FALSE(IDEMIP_IP4_ROUTE_IO(work_a)->tos_blocked);
+
+    // A directly connected row that matched is sec 4.3.3.1's Code 12 case, "a host that is on a
+    // network that is directly connected to the router".
+    Ip4Route.clear(work_a);
+    add_row(work_a, NET_10_144_2_24, M24, 0u, 0u, 2u, 0x10u, 0u);
+    look(work_a, IP_10_144_2_5, 0x08u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_IP4_ROUTE_IO(work_a)->status);
+    TEST_ASSERT_TRUE(IDEMIP_IP4_ROUTE_IO(work_a)->tos_blocked);
+    TEST_ASSERT_TRUE(IDEMIP_IP4_ROUTE_IO(work_a)->direct);
+
+    // And a row carrying the default TOS is what rule 3 falls back to, so nothing is blocked.
+    add_row(work_a, NET_10_144_2_24, M24, GW_10_0_0_1, IDEMIP_IP4_ROUTE_F_GATEWAY, 1u, 0u, 0u);
+    look(work_a, IP_10_144_2_5, 0x08u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP4_ROUTE_IO(work_a)->status);
+    TEST_ASSERT_FALSE(IDEMIP_IP4_ROUTE_IO(work_a)->tos_blocked);
 }
 
 // RFC 1812 sec 5.2.4.3 rule 4: "if route.metric is strictly inferior for one when compared with the

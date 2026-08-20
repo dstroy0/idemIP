@@ -29,6 +29,14 @@ IDEMIP_BEGIN_DECLS
 // RFC 1812 sec 4.2.2.11 (c): "{ -1, -1 } Limited broadcast."
 #define IP4_FORWARD_LIMITED_BCAST 0xFFFFFFFFu
 
+// RFC 3021 sec 2.1, a 31-bit subnet mask, where "the two addresses above MUST be interpreted as host
+// addresses" and sec 2.2.1 makes a directed broadcast to the link impossible.
+#define IP4_FORWARD_MASK_31 0xFFFFFFFEu
+
+// RFC 3927 sec 2.1's "169.254/16 prefix", the IPv4 Link-Local block.
+#define IP4_FORWARD_LINK_LOCAL_MASK 0xFFFF0000u
+#define IP4_FORWARD_LINK_LOCAL_TAG 0xA9FE0000u
+
 // The high octet, which sec 5.3.7 reads as the network of the two addresses it filters on: "a source
 // address on network 0" and "a source address on network 127".
 #define IP4_FORWARD_NET_SHIFT 24u
@@ -124,18 +132,66 @@ static idemip_bool ip4_forward_dst_invalid(uint32_t a)
 }
 
 // RFC 1812 sec 5.3.5: "A network-prefix-directed broadcast is composed of the network prefix of the
-// IP address with a local part of all-ones or { <Network-prefix>, -1 }." sec 5.3.5.2 puts the
-// classification on "the router's understanding (if any) of the subnet structure of the destination
-// network", which is the outgoing interface's mask, and only on the last hop, which is a route that
-// transmits directly.
-static idemip_bool ip4_forward_is_directed_bcast(const Ip4ForwardArgs *a, uint32_t dst)
+// IP address with a local part of all-ones or { <Network-prefix>, -1 }", and the same section on the
+// obsolete form: "{ <Network-prefix>, 0 } is an obsolete form of a network-prefix-directed broadcast
+// address ... packets addressed to any of these addresses SHOULD be silently discarded, but if they
+// are not, they MUST be treated according to the same rules that apply to packets addressed to the
+// non-obsolete forms". sec 5.3.5.2 puts the classification on "the router's understanding (if any) of
+// the subnet structure of the destination network", which is the outgoing interface's mask, and only
+// on the last hop, which is a route that transmits directly. RFC 3021 sec 2.2.1 says a directed
+// broadcast to a 31-bit prefix "is not possible", both of its addresses being host addresses.
+static idemip_bool ip4_forward_dst_is_bcast(const Ip4ForwardArgs *a, uint32_t dst)
 {
-    if (!a->routed || !a->direct || a->out_mask == 0u || a->out_mask == IP4_FORWARD_LIMITED_BCAST)
+    if (a->out_mask == 0u || a->out_mask == IP4_FORWARD_LIMITED_BCAST || a->out_mask == IP4_FORWARD_MASK_31)
     {
         return IDEMIP_FALSE;
     }
-    return (idemip_bool)((dst & a->out_mask) == (a->out_addr & a->out_mask) &&
-                         (dst | a->out_mask) == IP4_FORWARD_LIMITED_BCAST);
+    if ((dst & a->out_mask) != (a->out_addr & a->out_mask))
+    {
+        return IDEMIP_FALSE;
+    }
+    return (idemip_bool)((dst | a->out_mask) == IP4_FORWARD_LIMITED_BCAST || (dst & ~a->out_mask) == 0u);
+}
+
+// The same classification under sec 5.3.5.2's own condition: the switch it requires applies "only in
+// the last hop router", which is a route that transmits directly. sec 4.2.3.1 (1)'s "MUST treat as IP
+// broadcasts" carries no such condition, so sec 4.3.2.7's ICMP suppression reads the helper above.
+static idemip_bool ip4_forward_is_directed_bcast(const Ip4ForwardArgs *a, uint32_t dst)
+{
+    if (!a->routed || !a->direct)
+    {
+        return IDEMIP_FALSE;
+    }
+    return ip4_forward_dst_is_bcast(a, dst);
+}
+
+// RFC 3927 sec 7: "A router MUST NOT forward a packet with an IPv4 Link-Local source or destination
+// address, irrespective of the router's default route configuration or routes obtained from dynamic
+// routing protocols", and sec 2.7 repeats it "regardless of the TTL in the IPv4 header". RFC 6890
+// Table 5 records 169.254.0.0/16 as "Forwardable | False". "Irrespective of ... configuration" puts
+// this outside the sec 5.3.7 martian switch, which a set_policy can lower.
+static idemip_bool ip4_forward_is_link_local(uint32_t a)
+{
+    return (idemip_bool)((a & IP4_FORWARD_LINK_LOCAL_MASK) == IP4_FORWARD_LINK_LOCAL_TAG);
+}
+
+// RFC 1812 sec 4.2.2.11 (d), of { <Network-prefix>, -1 }: "It MUST NOT be used as a source address",
+// and sec 4.2.2.11 closes "A router MUST silently discard any received datagram containing an IP
+// source address that is invalid by the rules of this section". The prefix the receiving interface
+// holds is the one the router understands, the same way sec 5.3.5.2 reads the outgoing one. RFC 3021
+// sec 3.1 rewrites RFC 1122 sec 3.2.1.3 (e) to permit the all-ones host part as a source "when the
+// originator is one of the endpoints of a point-to-point link with a 31-bit mask".
+static idemip_bool ip4_forward_src_is_bcast(const Ip4ForwardArgs *a, uint32_t src)
+{
+    if (a->in_mask == 0u || a->in_mask == IP4_FORWARD_LIMITED_BCAST || a->in_mask == IP4_FORWARD_MASK_31)
+    {
+        return IDEMIP_FALSE;
+    }
+    if ((src & a->in_mask) != (a->in_addr & a->in_mask))
+    {
+        return IDEMIP_FALSE;
+    }
+    return (idemip_bool)((src | a->in_mask) == IP4_FORWARD_LIMITED_BCAST || (src & ~a->in_mask) == 0u);
 }
 
 // --- the options -----------------------------------------------------------
@@ -214,7 +270,7 @@ static idemip_bool ip4_forward_carries_icmp_error(const uint8_t *h)
 // RFC 1812 sec 4.3.2.7, the whole list, whose note reads "THESE RESTRICTIONS TAKE PRECEDENCE OVER ANY
 // REQUIREMENT ELSEWHERE IN THIS DOCUMENT FOR SENDING ICMP ERROR MESSAGES". The header validation
 // bullet is answered by the caller of this helper, which only runs on a header sec 5.2.2 passed.
-static idemip_bool ip4_forward_icmp_allowed(const uint8_t *h, const Ip4ForwardArgs *a, idemip_bool directed)
+static idemip_bool ip4_forward_icmp_allowed(const uint8_t *h, const Ip4ForwardArgs *a)
 {
     uint32_t src = idemip_ip4_src(h);
     uint32_t dst = idemip_ip4_dst(h);
@@ -222,11 +278,14 @@ static idemip_bool ip4_forward_icmp_allowed(const uint8_t *h, const Ip4ForwardAr
     {
         return IDEMIP_FALSE; // "A packet sent as a Link Layer broadcast or multicast"
     }
-    if (dst == IP4_FORWARD_LIMITED_BCAST || directed || ip4_forward_is_multicast(dst))
+    // sec 4.2.3.1 (1): a router "MUST treat as IP broadcasts packets addressed to 255.255.255.255 or
+    // { <Network-prefix>, -1 }", which the router understands whenever it holds the prefix, whether or
+    // not this is the last hop.
+    if (dst == IP4_FORWARD_LIMITED_BCAST || ip4_forward_dst_is_bcast(a, dst) || ip4_forward_is_multicast(dst))
     {
         return IDEMIP_FALSE; // "A packet destined to an IP broadcast or IP multicast address"
     }
-    if (ip4_forward_src_invalid(src))
+    if (ip4_forward_src_invalid(src) || ip4_forward_src_is_bcast(a, src))
     {
         return IDEMIP_FALSE; // "a network prefix of zero or is an invalid source address"
     }
@@ -368,7 +427,7 @@ static void ip4_forward_decide(uint8_t *restrict work)
     uint32_t src = idemip_ip4_src(h);
     uint32_t dst = idemip_ip4_dst(h);
     idemip_bool directed = ip4_forward_is_directed_bcast(a, dst);
-    idemip_bool icmp_ok = ip4_forward_icmp_allowed(h, a, directed);
+    idemip_bool icmp_ok = ip4_forward_icmp_allowed(h, a);
     uint8_t policy = io->policy;
 
     // sec 5.3.4: "A router MUST NOT forward any packet that the router received as a Link Layer
@@ -377,6 +436,25 @@ static void ip4_forward_decide(uint8_t *restrict work)
     if ((a->ll_broadcast || a->ll_multicast) && !ip4_forward_is_multicast(dst))
     {
         ip4_forward_drop(io, IDEMIP_IP4_FORWARD_R_LINK_BCAST);
+        return;
+    }
+
+    // RFC 3927 sec 7: "A router MUST NOT forward a packet with an IPv4 Link-Local source or
+    // destination address, irrespective of the router's default route configuration or routes
+    // obtained from dynamic routing protocols." "Irrespective of" puts it ahead of the sec 5.3.7
+    // switch, which a set_policy can lower.
+    if (ip4_forward_is_link_local(src) || ip4_forward_is_link_local(dst))
+    {
+        ip4_forward_drop(io, IDEMIP_IP4_FORWARD_R_LINK_LOCAL);
+        return;
+    }
+
+    // sec 4.2.2.11: "A router MUST silently discard any received datagram containing an IP source
+    // address that is invalid by the rules of this section", (d) naming { <Network-prefix>, -1 }.
+    // sec 4.3.2.7's precedence note already suppressed the ICMP error for it.
+    if (ip4_forward_src_is_bcast(a, src))
+    {
+        ip4_forward_drop(io, IDEMIP_IP4_FORWARD_R_SRC_BCAST);
         return;
     }
 
@@ -432,8 +510,19 @@ static void ip4_forward_decide(uint8_t *restrict work)
     // destination host", which is the resolution layer's finding rather than the table's.
     if (!a->routed)
     {
-        ip4_forward_drop_icmp(io, IDEMIP_IP4_FORWARD_R_NO_ROUTE, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE,
-                              (uint8_t)IDEMIP_ICMP_DU_NET, icmp_ok);
+        // "If the router does have routes to the destination network specified in the packet but the
+        // TOS specified for the routes is neither the default TOS (0000) nor the TOS of the packet
+        // that the router is attempting to route, then the router MUST generate a Destination
+        // Unreachable, Code 11 (Network Unreachable for TOS) ICMP message", and Code 12 when the
+        // destination is "on a network that is directly connected to the router".
+        uint8_t code = (uint8_t)IDEMIP_ICMP_DU_NET;
+        IdemIpIp4ForwardReason why = IDEMIP_IP4_FORWARD_R_NO_ROUTE;
+        if (a->tos_blocked)
+        {
+            code = a->direct ? (uint8_t)IDEMIP_ICMP_DU_HOST_TOS : (uint8_t)IDEMIP_ICMP_DU_NET_TOS;
+            why = IDEMIP_IP4_FORWARD_R_NO_ROUTE_TOS;
+        }
+        ip4_forward_drop_icmp(io, why, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, code, icmp_ok);
         return;
     }
 

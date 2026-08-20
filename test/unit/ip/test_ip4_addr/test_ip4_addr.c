@@ -330,6 +330,31 @@ void test_a_slash_32_has_no_directed_broadcast(void)
     TEST_ASSERT_EQUAL_UINT8(32u, IDEMIP_IP4_ADDR_IO(work_a)->prefix_len);
 }
 
+// RFC 3021 sec 2.1: "In a point-to-point link with a 31-bit subnet mask, the two addresses above
+// MUST be interpreted as host addresses", and sec 2.2.1: a directed broadcast to such a link "is not
+// possible". Both endpoints are hosts, so neither is the subnet's broadcast.
+void test_a_slash_31_has_two_host_addresses_and_no_directed_broadcast(void)
+{
+    Ip4Addr.clear(work_a);
+    match(work_a, IP4(10, 0, 0, 1), IP4(10, 0, 0, 0), IP4(255, 255, 255, 254));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_ADDR_IO(work_a)->on_subnet);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP4_ADDR_IO(work_a)->is_broadcast,
+                              "the odd endpoint of a 31-bit prefix is a host address");
+    TEST_ASSERT_EQUAL_UINT8(31u, IDEMIP_IP4_ADDR_IO(work_a)->prefix_len);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(0u, IDEMIP_IP4_ADDR_IO(work_a)->broadcast,
+                                    "a 31-bit prefix has no directed broadcast to report");
+
+    match(work_a, IP4(10, 0, 0, 0), IP4(10, 0, 0, 0), IP4(255, 255, 255, 254));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_ADDR_IO(work_a)->on_subnet);
+    TEST_ASSERT_FALSE(IDEMIP_IP4_ADDR_IO(work_a)->is_broadcast);
+    TEST_ASSERT_EQUAL_UINT8(31u, IDEMIP_IP4_ADDR_IO(work_a)->prefix_len);
+
+    // A /30 on the same prefix does have one, so the exemption is the mask's and not the address's.
+    match(work_a, IP4(10, 0, 0, 3), IP4(10, 0, 0, 0), IP4(255, 255, 255, 252));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_ADDR_IO(work_a)->is_broadcast);
+    TEST_ASSERT_EQUAL_HEX32(IP4(10, 0, 0, 3), IDEMIP_IP4_ADDR_IO(work_a)->broadcast);
+}
+
 // A mask of all zeros puts every address on the subnet, and its directed broadcast is the limited
 // one.
 void test_a_slash_0_covers_everything(void)

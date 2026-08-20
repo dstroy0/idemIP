@@ -28,6 +28,7 @@ extern void test_limited_broadcast_is_a_broadcast_under_every_mask(void);
 extern void test_match_reports_network_host_and_prefix_len(void);
 extern void test_match_reports_an_address_off_the_subnet(void);
 extern void test_a_slash_32_has_no_directed_broadcast(void);
+extern void test_a_slash_31_has_two_host_addresses_and_no_directed_broadcast(void);
 extern void test_a_slash_0_covers_everything(void);
 extern void test_a_non_contiguous_mask_is_reported_not_refused(void);
 extern void test_rfc1112_map_places_the_low_23_bits_under_01_00_5e(void);
@@ -116,13 +117,14 @@ int main(void)
   run_test(test_match_reports_network_host_and_prefix_len, "test_match_reports_network_host_and_prefix_len", 301);
   run_test(test_match_reports_an_address_off_the_subnet, "test_match_reports_an_address_off_the_subnet", 314);
   run_test(test_a_slash_32_has_no_directed_broadcast, "test_a_slash_32_has_no_directed_broadcast", 324);
-  run_test(test_a_slash_0_covers_everything, "test_a_slash_0_covers_everything", 335);
-  run_test(test_a_non_contiguous_mask_is_reported_not_refused, "test_a_non_contiguous_mask_is_reported_not_refused", 347);
-  run_test(test_rfc1112_map_places_the_low_23_bits_under_01_00_5e, "test_rfc1112_map_places_the_low_23_bits_under_01_00_5e", 362);
-  run_test(test_rfc1112_map_keeps_the_24th_bit_clear, "test_rfc1112_map_keeps_the_24th_bit_clear", 372);
-  run_test(test_rfc1112_map_aliases_groups_that_differ_above_23_bits, "test_rfc1112_map_aliases_groups_that_differ_above_23_bits", 386);
-  run_test(test_map_refuses_an_address_outside_class_d, "test_map_refuses_an_address_outside_class_d", 406);
-  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 425);
+  run_test(test_a_slash_31_has_two_host_addresses_and_no_directed_broadcast, "test_a_slash_31_has_two_host_addresses_and_no_directed_broadcast", 336);
+  run_test(test_a_slash_0_covers_everything, "test_a_slash_0_covers_everything", 360);
+  run_test(test_a_non_contiguous_mask_is_reported_not_refused, "test_a_non_contiguous_mask_is_reported_not_refused", 372);
+  run_test(test_rfc1112_map_places_the_low_23_bits_under_01_00_5e, "test_rfc1112_map_places_the_low_23_bits_under_01_00_5e", 387);
+  run_test(test_rfc1112_map_keeps_the_24th_bit_clear, "test_rfc1112_map_keeps_the_24th_bit_clear", 397);
+  run_test(test_rfc1112_map_aliases_groups_that_differ_above_23_bits, "test_rfc1112_map_aliases_groups_that_differ_above_23_bits", 411);
+  run_test(test_map_refuses_an_address_outside_class_d, "test_map_refuses_an_address_outside_class_d", 431);
+  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 450);
 
   return UNITY_END();
 }

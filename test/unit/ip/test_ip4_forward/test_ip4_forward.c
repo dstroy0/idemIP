@@ -310,7 +310,8 @@ void test_a_ttl_of_zero_is_never_forwarded(void)
 void test_a_multicast_destination_gets_no_time_exceeded(void)
 {
     clear_ok(work_a);
-    size_t len = build_plain(TEST_NET_1_HOST, IP4(224, 0, 0, 1), 1u);
+    // A group outside RFC 1812 sec 5.2.3's never-forwarded set, which the caller holds back.
+    size_t len = build_plain(TEST_NET_1_HOST, IP4(239, 1, 2, 3), 1u);
     args_default(work_a, len);
     Ip4Forward.decide(work_a);
 
@@ -457,7 +458,7 @@ void test_a_link_layer_broadcast_is_not_forwarded(void)
 void test_a_link_layer_broadcast_to_a_multicast_destination_passes_the_check(void)
 {
     clear_ok(work_a);
-    size_t len = build_plain(TEST_NET_1_HOST, IP4(224, 0, 0, 1), TTL_COMMON);
+    size_t len = build_plain(TEST_NET_1_HOST, IP4(239, 1, 2, 3), TTL_COMMON);
     args_default(work_a, len);
     IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.ll_broadcast = IDEMIP_TRUE;
     Ip4Forward.decide(work_a);
@@ -630,9 +631,13 @@ void test_the_directed_broadcast_switch_stops_it(void)
     TEST_ASSERT_FALSE(io->icmp);
 }
 
-// sec 5.3.5.2: the classification "is by definition only possible in the last hop router", so a route
-// through a gateway leaves the same address an ordinary unicast.
-void test_a_broadcast_form_through_a_gateway_is_an_ordinary_unicast(void)
+// sec 5.3.5.2: the forwarding decision "is by definition only possible in the last hop router", so a
+// route through a gateway does not put the same address under that section's switch. sec 4.2.3.1 (1)
+// carries no such condition though: a router "MUST treat as IP broadcasts packets addressed to
+// 255.255.255.255 or { <Network-prefix>, -1 }" whenever it holds the prefix, so sec 4.3.2.7 still
+// forbids "An ICMP error message ... as the result of receiving ... A packet destined to an IP
+// broadcast or IP multicast address".
+void test_a_broadcast_form_through_a_gateway_is_forwarded_but_draws_no_icmp_error(void)
 {
     clear_ok(work_a);
     size_t len = build_plain(TEST_NET_2_HOST, TEST_NET_1_BCAST, 1u);
@@ -642,10 +647,38 @@ void test_a_broadcast_form_through_a_gateway_is_an_ordinary_unicast(void)
     a->out_addr = TEST_NET_1_GW;
     a->out_mask = MASK24;
     Ip4Forward.decide(work_a);
-
-    // Not classified as a broadcast, so sec 4.3.2.7 does not suppress the Time Exceeded.
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_TTL, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
-    TEST_ASSERT_TRUE(IDEMIP_IP4_FORWARD_IO(work_a)->icmp);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP4_FORWARD_IO(work_a)->icmp,
+                              "sec 4.2.3.1 (1) is unconditional, so sec 4.3.2.7 suppresses the error");
+
+    // sec 5.3.5.2's switch, lowered, does not hold the packet, because the router is not the last hop.
+    clear_ok(work_a);
+    IDEMIP_IP4_FORWARD_IO(work_a)->policy_args.set = 0u;
+    IDEMIP_IP4_FORWARD_IO(work_a)->policy_args.clear = (uint8_t)IDEMIP_IP4_FORWARD_P_DIRECTED;
+    Ip4Forward.set_policy(work_a);
+    len = build_plain(TEST_NET_2_HOST, TEST_NET_1_BCAST, 64u);
+    args_default(work_a, len);
+    a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
+    a->direct = IDEMIP_FALSE;
+    a->out_addr = TEST_NET_1_GW;
+    a->out_mask = MASK24;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action);
+
+    // A destination on a prefix the router has no interface on is an ordinary unicast, and the sec
+    // 4.2.3.1 DISCUSSION says the router "cannot recognize addresses of the form { <Network-prefix>,
+    // 0 } if the router has no interface to that network prefix".
+    clear_ok(work_a);
+    len = build_plain(TEST_NET_2_HOST, TEST_NET_1_BCAST, 1u);
+    args_default(work_a, len);
+    a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
+    a->direct = IDEMIP_FALSE;
+    a->out_addr = 0u;
+    a->out_mask = 0u;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_TTL, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP4_FORWARD_IO(work_a)->icmp,
+                             "the router understands no prefix here, so the address is an ordinary unicast");
 }
 
 // sec 4.3.2.7 forbids an ICMP error to "A packet destined to an IP broadcast or IP multicast
@@ -663,6 +696,198 @@ void test_a_directed_broadcast_gets_no_icmp_error(void)
     Ip4Forward.decide(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_TTL, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
     TEST_ASSERT_FALSE(IDEMIP_IP4_FORWARD_IO(work_a)->icmp);
+}
+
+// RFC 3927 sec 7: "A router MUST NOT forward a packet with an IPv4 Link-Local source or destination
+// address, irrespective of the router's default route configuration or routes obtained from dynamic
+// routing protocols", and sec 2.7 repeats it "regardless of the TTL in the IPv4 header". RFC 6890
+// Table 5 records 169.254.0.0/16 as "Forwardable | False".
+void test_a_link_local_source_or_destination_is_never_forwarded(void)
+{
+    clear_ok(work_a);
+    size_t len = build_plain(IP4(169, 254, 1, 2), TEST_NET_2_HOST, 64u);
+    args_default(work_a, len);
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, IDEMIP_IP4_FORWARD_IO(work_a)->action);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_LINK_LOCAL, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
+
+    clear_ok(work_a);
+    len = build_plain(TEST_NET_2_HOST, IP4(169, 254, 200, 30), 64u);
+    args_default(work_a, len);
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, IDEMIP_IP4_FORWARD_IO(work_a)->action);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_LINK_LOCAL, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
+
+    // "Irrespective of the router's ... configuration", so lowering the sec 5.3.7 martian switch
+    // does not let it through.
+    clear_ok(work_a);
+    IDEMIP_IP4_FORWARD_IO(work_a)->policy_args.set = 0u;
+    IDEMIP_IP4_FORWARD_IO(work_a)->policy_args.clear = (uint8_t)IDEMIP_IP4_FORWARD_P_MARTIAN;
+    Ip4Forward.set_policy(work_a);
+    len = build_plain(IP4(169, 254, 1, 2), TEST_NET_2_HOST, 64u);
+    args_default(work_a, len);
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_LINK_LOCAL, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
+
+    // The address one octet outside 169.254/16 is an ordinary unicast.
+    clear_ok(work_a);
+    len = build_plain(IP4(169, 253, 1, 2), TEST_NET_2_HOST, 64u);
+    args_default(work_a, len);
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action);
+}
+
+// RFC 1812 sec 4.2.2.11 (d), of { <Network-prefix>, -1 }: "It MUST NOT be used as a source address",
+// and the section closes "A router MUST silently discard any received datagram containing an IP
+// source address that is invalid by the rules of this section". sec 4.3.2.7's note, "THESE
+// RESTRICTIONS TAKE PRECEDENCE OVER ANY REQUIREMENT ELSEWHERE IN THIS DOCUMENT FOR SENDING ICMP ERROR
+// MESSAGES", forbids answering it.
+void test_a_directed_broadcast_source_is_discarded_and_draws_no_icmp_error(void)
+{
+    clear_ok(work_a);
+    size_t len = build_plain(TEST_NET_1_BCAST, TEST_NET_3_HOST, 1u);
+    args_default(work_a, len);
+    Ip4ForwardArgs *a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
+    a->in_addr = TEST_NET_1_GW;
+    a->in_mask = MASK24;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, IDEMIP_IP4_FORWARD_IO(work_a)->action);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP4_FORWARD_IO(work_a)->icmp,
+                              "sec 4.3.2.7 forbids an error to an invalid source address");
+
+    // The obsolete { <Network-prefix>, 0 } form of the same, sec 4.2.2.11 (b).
+    clear_ok(work_a);
+    len = build_plain(IP4(192, 0, 2, 0), TEST_NET_3_HOST, 64u);
+    args_default(work_a, len);
+    a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
+    a->in_addr = TEST_NET_1_GW;
+    a->in_mask = MASK24;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_SRC_BCAST, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
+
+    // RFC 3021 sec 3.1 rewrites RFC 1122 sec 3.2.1.3 (e) to permit the all-ones host part as a source
+    // "when the originator is one of the endpoints of a point-to-point link with a 31-bit mask".
+    clear_ok(work_a);
+    len = build_plain(IP4(10, 0, 0, 1), TEST_NET_3_HOST, 64u);
+    args_default(work_a, len);
+    a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
+    a->in_addr = IP4(10, 0, 0, 0);
+    a->in_mask = IP4(255, 255, 255, 254);
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action,
+                                  "a 31-bit prefix endpoint is a host address, not a broadcast");
+
+    // A host address on the receiving prefix is an ordinary source.
+    clear_ok(work_a);
+    len = build_plain(TEST_NET_1_HOST, TEST_NET_3_HOST, 64u);
+    args_default(work_a, len);
+    a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
+    a->in_addr = TEST_NET_1_GW;
+    a->in_mask = MASK24;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action);
+}
+
+// RFC 1812 sec 5.3.5, of the obsolete form: "{ <Network-prefix>, 0 } is an obsolete form of a
+// network-prefix-directed broadcast address ... packets addressed to any of these addresses SHOULD be
+// silently discarded, but if they are not, they MUST be treated according to the same rules that
+// apply to packets addressed to the non-obsolete forms."
+void test_the_obsolete_broadcast_destination_is_treated_as_a_broadcast(void)
+{
+    clear_ok(work_a);
+    IDEMIP_IP4_FORWARD_IO(work_a)->policy_args.set = 0u;
+    IDEMIP_IP4_FORWARD_IO(work_a)->policy_args.clear = (uint8_t)IDEMIP_IP4_FORWARD_P_DIRECTED;
+    Ip4Forward.set_policy(work_a);
+    size_t len = build_plain(TEST_NET_3_HOST, IP4(192, 0, 2, 0), 64u);
+    args_default(work_a, len);
+    Ip4ForwardArgs *a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
+    a->direct = IDEMIP_TRUE;
+    a->out_addr = TEST_NET_1_GW;
+    a->out_mask = MASK24;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_FORWARD_R_DIRECTED, IDEMIP_IP4_FORWARD_IO(work_a)->reason,
+                                  "the obsolete form is held by the same sec 5.3.5.2 switch");
+
+    // sec 4.3.2.7 suppresses the error for it the same way.
+    clear_ok(work_a);
+    len = build_plain(TEST_NET_3_HOST, IP4(192, 0, 2, 0), 1u);
+    args_default(work_a, len);
+    a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
+    a->direct = IDEMIP_TRUE;
+    a->out_addr = TEST_NET_1_GW;
+    a->out_mask = MASK24;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_TTL, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
+    TEST_ASSERT_FALSE(IDEMIP_IP4_FORWARD_IO(work_a)->icmp);
+}
+
+// RFC 3021 sec 2.2.1: a directed broadcast to a 31-bit prefix "is not possible", sec 3.3 adding that
+// { <Network-prefix>, -1 } on such a link "MUST be treated as directed to the router on which the
+// address is applied". The far endpoint is an ordinary unicast destination.
+void test_a_31_bit_prefix_endpoint_is_not_a_directed_broadcast(void)
+{
+    clear_ok(work_a);
+    IDEMIP_IP4_FORWARD_IO(work_a)->policy_args.set = 0u;
+    IDEMIP_IP4_FORWARD_IO(work_a)->policy_args.clear = (uint8_t)IDEMIP_IP4_FORWARD_P_DIRECTED;
+    Ip4Forward.set_policy(work_a);
+    size_t len = build_plain(TEST_NET_2_HOST, IP4(10, 0, 0, 1), 64u);
+    args_default(work_a, len);
+    Ip4ForwardArgs *a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
+    a->direct = IDEMIP_TRUE;
+    a->next_hop = IP4(10, 0, 0, 1);
+    a->out_addr = IP4(10, 0, 0, 0);
+    a->out_mask = IP4(255, 255, 255, 254);
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action,
+                                  "the odd endpoint of a 31-bit prefix is a host, not a broadcast");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_OK, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
+
+    // And an ICMP error to it is not suppressed, because it is not a broadcast destination.
+    clear_ok(work_a);
+    len = build_plain(TEST_NET_2_HOST, IP4(10, 0, 0, 1), 1u);
+    args_default(work_a, len);
+    a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
+    a->direct = IDEMIP_TRUE;
+    a->out_addr = IP4(10, 0, 0, 0);
+    a->out_mask = IP4(255, 255, 255, 254);
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_TRUE(IDEMIP_IP4_FORWARD_IO(work_a)->icmp);
+}
+
+// RFC 1812 sec 4.3.3.1: Code 0 when the router "has no routes at all (including no default route) to
+// the destination", Code 11 when "the router does have routes to the destination network specified in
+// the packet but the TOS specified for the routes is neither the default TOS (0000) nor the TOS of the
+// packet", and Code 12 for the same on "a network that is directly connected to the router".
+void test_an_unusable_type_of_service_draws_the_unreachable_for_tos_codes(void)
+{
+    clear_ok(work_a);
+    size_t len = build_plain(TEST_NET_2_HOST, TEST_NET_3_HOST, 64u);
+    args_default(work_a, len);
+    Ip4ForwardArgs *a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
+    a->routed = IDEMIP_FALSE;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_NO_ROUTE, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_IP4_FORWARD_IO(work_a)->icmp_type);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_ICMP_DU_NET, IDEMIP_IP4_FORWARD_IO(work_a)->icmp_code);
+
+    clear_ok(work_a);
+    args_default(work_a, len);
+    a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
+    a->routed = IDEMIP_FALSE;
+    a->tos_blocked = IDEMIP_TRUE;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_NO_ROUTE_TOS, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE((uint8_t)IDEMIP_ICMP_DU_NET_TOS, IDEMIP_IP4_FORWARD_IO(work_a)->icmp_code,
+                                    "routes exist but none carries a usable TOS");
+
+    clear_ok(work_a);
+    args_default(work_a, len);
+    a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
+    a->routed = IDEMIP_FALSE;
+    a->tos_blocked = IDEMIP_TRUE;
+    a->direct = IDEMIP_TRUE;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_ICMP_DU_HOST_TOS, IDEMIP_IP4_FORWARD_IO(work_a)->icmp_code);
 }
 
 // --- source route options, sec 5.2.2 ------------------------------------------

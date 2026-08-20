@@ -150,11 +150,19 @@ static idemip_bool ip4_route_basic_match(const Ip4RouteEntry *e, uint32_t dst)
     return (idemip_bool)(e->state == IDEMIP_IP4_ROUTE_USED && (dst & e->mask) == e->dst);
 }
 
+// What rule 2 left, for RFC 1812 sec 4.3.3.1's split between Code 0 and Codes 11 and 12: whether any
+// row basic-matched the destination at all, and whether any of those transmits directly.
+typedef struct
+{
+    idemip_bool matched;
+    idemip_bool direct;
+} Ip4RouteBest;
+
 // The four pruning rules of RFC 1812 sec 5.2.4.3, in the order the section prints them, over the
 // whole table: rule 1 Basic Match and rule 2 Longest Match fix the prefix length, rule 3 Weak TOS
 // picks the type of service inside that length, rule 4 Best Metric picks among what is left. Rule 5
 // Vendor Policy is the lowest surviving row.
-static uint8_t ip4_route_best(uint8_t *restrict work, uint32_t dst, uint8_t tos)
+static uint8_t ip4_route_best(uint8_t *restrict work, uint32_t dst, uint8_t tos, Ip4RouteBest *out)
 {
     // Rules 1 and 2: the largest route.length among the rows that basic-match.
     uint8_t best_len = 0;
@@ -172,6 +180,11 @@ static uint8_t ip4_route_best(uint8_t *restrict work, uint32_t dst, uint8_t tos)
             best_len = len;
             matched = IDEMIP_TRUE;
         }
+    }
+    if (out)
+    {
+        out->matched = matched;
+        out->direct = IDEMIP_FALSE;
     }
     if (!matched)
     {
@@ -207,6 +220,20 @@ static uint8_t ip4_route_best(uint8_t *restrict work, uint32_t dst, uint8_t tos)
         {
             best = i;
             best_metric = e->metric;
+        }
+    }
+    // sec 4.3.3.1 splits the two unreachable codes on whether the destination is "on a network that
+    // is directly connected to the router", which the rows rule 2 left are what says.
+    if (out)
+    {
+        for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP4_ROUTES; i++)
+        {
+            Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
+            if (ip4_route_basic_match(e, dst) && ip4_route_prefix_len(e->mask) == best_len &&
+                (e->flags & (uint8_t)IDEMIP_IP4_ROUTE_F_GATEWAY) == 0u)
+            {
+                out->direct = IDEMIP_TRUE;
+            }
         }
     }
     return best;
@@ -360,14 +387,21 @@ static void ip4_route_lookup(uint8_t *restrict work)
     io->pmtu = 0;
     io->netif = 0;
     io->direct = IDEMIP_FALSE;
+    io->tos_blocked = IDEMIP_FALSE;
     io->index = (uint8_t)IDEMIP_IP4_ROUTE_INDEX_NONE;
     if (!ip4_route_ready(work))
     {
         return;
     }
-    uint8_t i = ip4_route_best(work, io->lookup_args.dst, io->lookup_args.tos);
+    Ip4RouteBest best = {IDEMIP_FALSE, IDEMIP_FALSE};
+    uint8_t i = ip4_route_best(work, io->lookup_args.dst, io->lookup_args.tos, &best);
     if (i == (uint8_t)IDEMIP_IP4_ROUTE_INDEX_NONE)
     {
+        // RFC 1812 sec 4.3.3.1 separates "no routes at all (including no default route)" from "the
+        // router does have routes to the destination network specified in the packet but the TOS
+        // specified for the routes is neither the default TOS (0000) nor the TOS of the packet".
+        io->tos_blocked = best.matched;
+        io->direct = best.direct;
         io->status = IDEMIP_BUSY;
         return;
     }
@@ -411,7 +445,7 @@ static void ip4_route_redirect(uint8_t *restrict work)
     {
         return;
     }
-    uint8_t g = ip4_route_best(work, gw, (uint8_t)IP4_ROUTE_TOS_DEFAULT);
+    uint8_t g = ip4_route_best(work, gw, (uint8_t)IP4_ROUTE_TOS_DEFAULT, NULL);
     if (g == (uint8_t)IDEMIP_IP4_ROUTE_INDEX_NONE ||
         (IP4_ROUTE_AT(work, g)->flags & (uint8_t)IDEMIP_IP4_ROUTE_F_GATEWAY) != 0u)
     {
@@ -419,7 +453,7 @@ static void ip4_route_redirect(uint8_t *restrict work)
     }
 
     uint32_t dst = io->redirect_args.dst;
-    uint8_t cur = ip4_route_best(work, dst, (uint8_t)IP4_ROUTE_TOS_DEFAULT);
+    uint8_t cur = ip4_route_best(work, dst, (uint8_t)IP4_ROUTE_TOS_DEFAULT, NULL);
     if (cur == (uint8_t)IDEMIP_IP4_ROUTE_INDEX_NONE)
     {
         io->status = IDEMIP_BUSY; // nothing routes the destination yet, and an added route does
@@ -485,7 +519,7 @@ static void ip4_route_set_pmtu(uint8_t *restrict work)
     }
 
     uint32_t dst = io->pmtu_args.dst;
-    uint8_t cur = ip4_route_best(work, dst, (uint8_t)IP4_ROUTE_TOS_DEFAULT);
+    uint8_t cur = ip4_route_best(work, dst, (uint8_t)IP4_ROUTE_TOS_DEFAULT, NULL);
     if (cur == (uint8_t)IDEMIP_IP4_ROUTE_INDEX_NONE)
     {
         io->status = IDEMIP_BUSY; // no first hop to copy, and an added route supplies one
