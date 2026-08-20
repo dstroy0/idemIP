@@ -91,14 +91,7 @@ static idemip_bool ip6_forward_is_link_local(const uint8_t *a)
 // RFC 4291 sec 2.5.2: "The address 0:0:0:0:0:0:0:0 is called the unspecified address."
 static idemip_bool ip6_forward_is_unspecified(const uint8_t *a)
 {
-    for (size_t i = 0; i < IDEMIP_IP6_ADDR_LEN; i++)
-    {
-        if (a[i] != 0u)
-        {
-            return IDEMIP_FALSE;
-        }
-    }
-    return IDEMIP_TRUE;
+    return idemip_bytes_zero(a, IDEMIP_IP6_ADDR_LEN);
 }
 
 // RFC 4291 sec 2.5.3: fifteen zero octets and a low octet of one.

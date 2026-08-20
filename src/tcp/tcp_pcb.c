@@ -209,14 +209,7 @@ static idemip_bool tcp_pcb_addr_eq(const uint8_t *a, const uint8_t *b, uint8_t n
 // left unspecified.
 static idemip_bool tcp_pcb_addr_unspecified(const uint8_t *a, uint8_t n)
 {
-    for (uint8_t i = 0u; i < n; i++)
-    {
-        if (a[i] != 0u)
-        {
-            return IDEMIP_FALSE;
-        }
-    }
-    return IDEMIP_TRUE;
+    return idemip_bytes_zero(a, (size_t)n);
 }
 
 // The address operand is IDEMIP_TCP_PCB_ADDR_BYTES wide in the caller's storage and the entry holds

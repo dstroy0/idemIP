@@ -154,12 +154,7 @@ typedef enum IDEMIP_ENUM_PACKED
 /** @brief True when the leading @p n octets are zero, which sec 2.5.2, 2.5.3 and 2.5.5 all key on. */
 IDEMIP_INLINE idemip_bool idemip_ip6_addr_leading_zero(const uint8_t *addr, size_t n)
 {
-    uint8_t any = 0u;
-    for (size_t i = 0u; i < n; i++)
-    {
-        any = (uint8_t)(any | addr[i]);
-    }
-    return (any == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return idemip_bytes_zero(addr, n);
 }
 
 /**
@@ -264,7 +259,7 @@ IDEMIP_INLINE idemip_bool idemip_ip6_addr_prefix_eq(const uint8_t *a, const uint
 {
     size_t whole = (size_t)(len >> 3);
     uint8_t bits = (uint8_t)(len & 7u);
-    if (whole != 0u && memcmp(a, b, whole) != 0)
+    if (whole != 0u && !idemip_bytes_eq(a, b, whole))
     {
         return IDEMIP_FALSE;
     }

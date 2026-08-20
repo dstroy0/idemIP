@@ -122,12 +122,7 @@ static idemip_bool udp_pcb_addr_eq(const uint8_t *a, const uint8_t *b, uint8_t n
 // leave unspecified.
 static idemip_bool udp_pcb_addr_any(const uint8_t *a, uint8_t n)
 {
-    uint8_t acc = 0u;
-    for (uint8_t i = 0u; i < n; i++)
-    {
-        acc |= a[i];
-    }
-    return (acc == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return idemip_bytes_zero(a, (size_t)n);
 }
 
 // Stores @p n octets and zeroes the rest of the field, so a version-4 address leaves behind no octet

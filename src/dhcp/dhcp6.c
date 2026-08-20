@@ -413,14 +413,7 @@ static size_t dhcp6_put_ia_na(uint8_t *restrict work, uint8_t *out, size_t cap, 
 // A lease is held once the sec 21.6 IPv6-address is not the unspecified address.
 static idemip_bool dhcp6_has_addr(const Dhcp6Ctx *ctx)
 {
-    for (uint8_t i = 0u; i < IDEMIP_IP6_ADDR_LEN; i++)
-    {
-        if (ctx->addr[i] != 0u)
-        {
-            return IDEMIP_TRUE;
-        }
-    }
-    return IDEMIP_FALSE;
+    return (idemip_bool)!idemip_bytes_zero(ctx->addr, IDEMIP_IP6_ADDR_LEN);
 }
 
 // --- building ------------------------------------------------------------

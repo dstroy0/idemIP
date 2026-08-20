@@ -118,14 +118,7 @@ static size_t raw_pcb_addr_len(uint8_t ip_version)
 // octets. A binding holding one names no address, and a find matches it against any.
 static idemip_bool raw_pcb_is_any(const uint8_t *addr, size_t len)
 {
-    for (size_t i = 0; i < len; i++)
-    {
-        if (addr[i] != 0u)
-        {
-            return IDEMIP_FALSE;
-        }
-    }
-    return IDEMIP_TRUE;
+    return idemip_bytes_zero(addr, len);
 }
 
 // RFC 1122 sec 3.2.1.3: "the IP source address MUST be one of its own IP addresses (but not a

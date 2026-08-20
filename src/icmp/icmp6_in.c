@@ -53,14 +53,7 @@ static idemip_bool icmp6_in_is_multicast(const uint8_t *addr)
 // RFC 4291 sec 2.5.2: "The address 0:0:0:0:0:0:0:0 is called the unspecified address."
 static idemip_bool icmp6_in_is_unspecified(const uint8_t *addr)
 {
-    for (size_t i = 0; i < IDEMIP_IP6_ADDR_LEN; i++)
-    {
-        if (addr[i] != 0u)
-        {
-            return IDEMIP_FALSE;
-        }
-    }
-    return IDEMIP_TRUE;
+    return idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN);
 }
 
 // --- the checksum ----------------------------------------------------------

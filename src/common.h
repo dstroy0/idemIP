@@ -98,6 +98,74 @@ typedef uint16_t IdemIpWord;
 static_assert((IDEMIP_WORD_BITS & (IDEMIP_WORD_BITS - 1u)) == 0u, "IDEMIP_WORD_BITS must be a power of two");
 static_assert(sizeof(IdemIpWord) * 8u == IDEMIP_WORD_BITS, "IdemIpWord must be IDEMIP_WORD_BITS wide");
 
+// ---------------------------------------------------------------------------
+// Spans of octets
+// ---------------------------------------------------------------------------
+// One test each, over the machine's word. An address is sixteen octets and a link-layer one is six,
+// so the run a word covers is most of what either of them is, and the tail is what a word does not
+// reach. The word is taken by copy and not through a cast, which is what lets it be taken from
+// wherever a span begins: endian.h's rule is that "a cast to a wider type at an odd address is a
+// fault on the parts in the target list that require natural alignment", and a copy of a constant
+// width is defined at every address.
+//
+// Neither test needs to know the host's byte order. Both reduce the span to one accumulator and read
+// only whether it is zero, and a word is zero exactly when the octets in it are, whichever lane each
+// octet landed in.
+
+/**
+ * @brief True when the @p n octets at @p p are all zero.
+ *
+ * RFC 4291 sec 2.5.2's unspecified address is this over sixteen octets, "The address 0:0:0:0:0:0:0:0
+ * is called the unspecified address", and RFC 1122 sec 3.2.1.3 (a)'s "{ 0, 0 } This host on this
+ * network" is this over four. Every octet is read, so the answer takes the same work whatever the
+ * span holds.
+ */
+IDEMIP_INLINE idemip_bool idemip_bytes_zero(const uint8_t *p, size_t n)
+{
+    IdemIpWord any = 0u;
+    size_t i = 0u;
+    while (i + sizeof(IdemIpWord) <= n)
+    {
+        IdemIpWord w;
+        memcpy(&w, p + i, sizeof w);
+        any |= w;
+        i += sizeof w;
+    }
+    uint8_t tail = 0u;
+    for (; i < n; i++)
+    {
+        tail = (uint8_t)(tail | p[i]);
+    }
+    return (idemip_bool)((any == 0u) && (tail == 0u));
+}
+
+/**
+ * @brief True when the @p n octets at @p a and @p b are the same.
+ *
+ * The difference of the two spans is accumulated and read once, so the answer takes the same work
+ * whether they differ in the first octet or the last.
+ */
+IDEMIP_INLINE idemip_bool idemip_bytes_eq(const uint8_t *a, const uint8_t *b, size_t n)
+{
+    IdemIpWord diff = 0u;
+    size_t i = 0u;
+    while (i + sizeof(IdemIpWord) <= n)
+    {
+        IdemIpWord u;
+        IdemIpWord v;
+        memcpy(&u, a + i, sizeof u);
+        memcpy(&v, b + i, sizeof v);
+        diff |= (IdemIpWord)(u ^ v);
+        i += sizeof u;
+    }
+    uint8_t tail = 0u;
+    for (; i < n; i++)
+    {
+        tail = (uint8_t)(tail | (uint8_t)(a[i] ^ b[i]));
+    }
+    return (idemip_bool)((diff == 0u) && (tail == 0u));
+}
+
 /**
  * @brief The clock everything is timed against: milliseconds, sixty-four bits.
  *

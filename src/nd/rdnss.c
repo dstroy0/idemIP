@@ -95,12 +95,7 @@ static idemip_bool rdnss_is_unicast(const uint8_t *addr)
     {
         return IDEMIP_FALSE;
     }
-    uint8_t any = 0u;
-    for (size_t i = 0; i < IDEMIP_IP6_ADDR_LEN; i++)
-    {
-        any = (uint8_t)(any | addr[i]);
-    }
-    return (idemip_bool)(any != 0u);
+    return (idemip_bool)!idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN);
 }
 
 // --- the clock -------------------------------------------------------------

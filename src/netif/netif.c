@@ -187,14 +187,7 @@ static idemip_bool netif_addr4_barred(uint32_t addr, uint32_t mask, uint16_t fla
 // RFC 4291 sec 2.5.2, the unspecified address "must never be assigned to any node".
 static idemip_bool netif_ip6_unspecified(const uint8_t *addr)
 {
-    for (uint8_t i = 0u; i < IDEMIP_IP6_ADDR_LEN; i++)
-    {
-        if (addr[i] != 0u)
-        {
-            return IDEMIP_FALSE;
-        }
-    }
-    return IDEMIP_TRUE;
+    return idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN);
 }
 
 // RFC 4291 sec 2.5.3, the loopback address 0:0:0:0:0:0:0:1 "must not be assigned to any physical

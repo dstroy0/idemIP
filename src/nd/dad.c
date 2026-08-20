@@ -112,12 +112,7 @@ static idemip_bool dad_is_multicast(const uint8_t *addr)
 // RFC 4291 sec 2.5.2: "The address 0:0:0:0:0:0:0:0 is called the unspecified address."
 static idemip_bool dad_is_unspecified(const uint8_t *addr)
 {
-    uint8_t any = 0u;
-    for (size_t i = 0; i < IDEMIP_IP6_ADDR_LEN; i++)
-    {
-        any = (uint8_t)(any | addr[i]);
-    }
-    return (idemip_bool)(any == 0u);
+    return idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN);
 }
 
 // RFC 4291 sec 2.5.6: the first ten bits of a link-local address are 1111111010.

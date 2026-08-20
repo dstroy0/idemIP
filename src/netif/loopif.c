@@ -79,12 +79,10 @@ static idemip_bool loopif_is_lo4(uint32_t addr)
 // address, so the leading IDEMIP_IP6_ADDR_LEN - 1 octets are zero and the last is one.
 static idemip_bool loopif_is_lo6(const uint8_t *addr)
 {
-    uint8_t bits = 0u;
-    for (uint8_t i = 0u; i < (uint8_t)(IDEMIP_IP6_ADDR_LEN - 1u); i++)
-    {
-        bits |= addr[i];
-    }
-    return (bits == 0u && addr[IDEMIP_IP6_ADDR_LEN - 1u] == 0x01u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN - 1u) &&
+            addr[IDEMIP_IP6_ADDR_LEN - 1u] == 0x01u)
+               ? IDEMIP_TRUE
+               : IDEMIP_FALSE;
 }
 
 #endif // IDEMIP_ENABLE_IPV6
