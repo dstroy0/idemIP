@@ -184,6 +184,14 @@ typedef struct
  * @var NetifAddr6Args::state       the RFC 4862 sec 2 state add assigns
  * @var NetifAddr6Args::index       which interface
  * @var NetifAddr6Args::slot        which of that interface's IDEMIP_IP6_ADDRESSES, read by get_addr6
+ * @var NetifAddr6Args::tentative   find_addr6 only: match a tentative address as well. RFC 4862 sec
+ *                                  5.4 says a tentative address "is not considered 'assigned to an
+ *                                  interface' in the traditional sense" and that packets addressed
+ *                                  to it "should be silently discarded", so an ordinary input lookup
+ *                                  leaves this false. The sec 5.4.3 Target Address match of a
+ *                                  Neighbor Solicitation or Advertisement is the case that sets it.
+ *                                  A duplicate address is never matched either way, sec 5.4.5
+ *                                  barring it from being assigned at all
  */
 typedef struct
 {
@@ -193,6 +201,7 @@ typedef struct
     IdemIpNetifAddr6State state;
     uint8_t index;
     uint8_t slot;
+    idemip_bool tentative;
 } NetifAddr6Args;
 
 #endif // IDEMIP_ENABLE_IPV6

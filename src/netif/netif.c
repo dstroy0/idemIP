@@ -52,18 +52,21 @@ static_assert(sizeof(NetifEntry) == (1u << IDEMIP_NETIF_ENTRY_SHIFT),
 #if IDEMIP_ENABLE_IPV6
 
 // One IPv6 address on one interface. state holds an IdemIpNetifAddr6State, INVALID being the free
-// slot. The two lifetimes are the RFC 4861 sec 4.6.2 fields in seconds, and set is the millisecond of
-// the interface clock they were taken at, which is what RFC 4862 sec 5.5.4 ages them from. The clock
-// is milliseconds in sixty-four bits, so the whole 32-bit range the fields can name is reachable and
-// nothing is rounded to a second on the way.
+// slot. The two lifetimes are the RFC 4861 sec 4.6.2 fields in seconds as they arrived, kept for the
+// caller to read back, and the two _at are the millisecond of the interface clock each runs out at.
+// Turning a lifetime into a deadline is done once, where it is taken; the sweep that reads them
+// compares two clock values and scales nothing. The clock is milliseconds in sixty-four bits, so the
+// whole 32-bit range the fields can name is reachable and nothing is rounded to a second.
 typedef struct
 {
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     uint32_t preferred_s;
     uint32_t valid_s;
-    IdemIpMs set;
+    IdemIpMs valid_at;
+    IdemIpMs preferred_at;
     uint8_t state;
-    uint8_t pad[(1u << IDEMIP_NETIF_ADDR6_ENTRY_SHIFT) - (IDEMIP_IP6_ADDR_LEN + (2u * 4u) + sizeof(IdemIpMs) + 1u)];
+    uint8_t pad[(1u << IDEMIP_NETIF_ADDR6_ENTRY_SHIFT) -
+                (IDEMIP_IP6_ADDR_LEN + (2u * 4u) + (2u * sizeof(IdemIpMs)) + 1u)];
 } NetifAddr6Entry;
 
 static_assert(sizeof(NetifAddr6Entry) == (1u << IDEMIP_NETIF_ADDR6_ENTRY_SHIFT),
@@ -237,14 +240,26 @@ static idemip_bool netif_addr6_barred(const uint8_t *addr, uint16_t flags)
 
 // RFC 4861 sec 4.6.2 states both lifetimes in seconds, and "A value of all one bits (0xffffffff)
 // represents infinity", which never expires. Every other value the field can hold is a finite number
-// of seconds, and the comparison is on the millisecond clock, which reaches all of them.
-static idemip_bool netif_lifetime_expired(uint32_t lifetime_s, IdemIpMs elapsed)
+// of seconds, which the millisecond clock reaches all of. The deadline is taken once, here, so the
+// sweep that reads it scales nothing.
+#define NETIF_DEADLINE_NEVER UINT64_MAX
+
+static IdemIpMs netif_deadline(IdemIpMs now, uint32_t lifetime_s)
 {
-    if (lifetime_s == IDEMIP_NETIF_LIFETIME_INFINITE)
+    return (lifetime_s == IDEMIP_NETIF_LIFETIME_INFINITE) ? (IdemIpMs)NETIF_DEADLINE_NEVER
+                                                          : (now + idemip_ms_from_s(lifetime_s));
+}
+
+// RFC 4862 sec 5.4.5: a duplicate address "MUST NOT be assigned to an interface". sec 5.4: a
+// tentative one "is not considered 'assigned to an interface' in the traditional sense", and only
+// the sec 5.4.3 Target Address match may see it.
+static idemip_bool netif_addr6_assigned(uint8_t state, idemip_bool tentative)
+{
+    if (state == (uint8_t)IDEMIP_NETIF_ADDR6_PREFERRED || state == (uint8_t)IDEMIP_NETIF_ADDR6_DEPRECATED)
     {
-        return IDEMIP_FALSE;
+        return IDEMIP_TRUE;
     }
-    return (elapsed >= idemip_ms_from_s(lifetime_s)) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (tentative && state == (uint8_t)IDEMIP_NETIF_ADDR6_TENTATIVE) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
 // Zeroes one interface's run of the address table, which leaves every slot holding
@@ -356,9 +371,8 @@ static void netif_report_addr6(uint8_t *restrict work, uint8_t index, uint8_t sl
 static uint8_t netif_age_addr6(uint8_t *restrict work, uint32_t now_ms)
 {
     NetifCtx *ctx = NETIF_CTX(work);
-    // The caller's 32-bit reading, extended across its wrap into the one clock every stamp is taken
-    // on. The difference between it and a slot's own stamp is the whole time since the address was
-    // configured, to the millisecond, however often the caller sweeps.
+    // The caller's 32-bit reading, extended across its wrap into the one clock every deadline sits
+    // on. Reaching a deadline is one comparison of two clock values: nothing is scaled here.
     IdemIpMs now = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, now_ms);
 
     uint8_t moved = 0u;
@@ -371,15 +385,13 @@ static uint8_t netif_age_addr6(uint8_t *restrict work, uint32_t now_ms)
             {
                 continue;
             }
-            IdemIpMs elapsed = now - addr6->set;
-            if (netif_lifetime_expired(addr6->valid_s, elapsed))
+            if (now >= addr6->valid_at)
             {
                 memset(addr6, 0, sizeof(*addr6));
                 moved = (uint8_t)(moved + 1u);
                 continue;
             }
-            if (addr6->state == (uint8_t)IDEMIP_NETIF_ADDR6_PREFERRED &&
-                netif_lifetime_expired(addr6->preferred_s, elapsed))
+            if (addr6->state == (uint8_t)IDEMIP_NETIF_ADDR6_PREFERRED && now >= addr6->preferred_at)
             {
                 addr6->state = (uint8_t)IDEMIP_NETIF_ADDR6_DEPRECATED;
                 moved = (uint8_t)(moved + 1u);
@@ -681,7 +693,9 @@ static void netif_add_addr6(uint8_t *restrict work)
     memcpy(addr6->addr, io->addr6_args.addr, IDEMIP_IP6_ADDR_LEN);
     addr6->preferred_s = io->addr6_args.preferred_s;
     addr6->valid_s = io->addr6_args.valid_s;
-    addr6->set = ((IdemIpMs)NETIF_CTX(work)->tick_hi << 32) | (IdemIpMs)NETIF_CTX(work)->tick_ms;
+    const IdemIpMs now = idemip_ms_join(NETIF_CTX(work)->tick_hi, NETIF_CTX(work)->tick_ms);
+    addr6->valid_at = netif_deadline(now, io->addr6_args.valid_s);
+    addr6->preferred_at = netif_deadline(now, io->addr6_args.preferred_s);
     addr6->state = (uint8_t)io->addr6_args.state;
     netif_report_addr6(work, io->addr6_args.index, slot);
     io->status = IDEMIP_OK;
@@ -719,6 +733,11 @@ static void netif_remove_addr6(uint8_t *restrict work)
 
 // RFC 4862 sec 5.4.3 matches a Target Address against the interface's own addresses. Walks every
 // interface's slots. A miss is ERR for the same reason find4's is.
+//
+// A duplicate address is not one of them: sec 5.4.5 says one "MUST NOT be assigned to an interface".
+// Nor is a tentative one, which sec 5.4 says "is not considered 'assigned to an interface' in the
+// traditional sense" and whose other packets "should be silently discarded"; the Target Address match
+// sec 5.4.3 does want it, so that arrives through @ref NetifAddr6Args::tentative.
 static void netif_find_addr6(uint8_t *restrict work)
 {
     if (!work)
@@ -741,7 +760,11 @@ static void netif_find_addr6(uint8_t *restrict work)
         for (uint8_t s = 0u; s < IDEMIP_IP6_ADDRESSES; s++)
         {
             const NetifAddr6Entry *addr6 = NETIF_ADDR6_AT(work, i, s);
-            if (addr6->state != (uint8_t)IDEMIP_NETIF_ADDR6_INVALID && netif_ip6_same(addr6->addr, io->addr6_args.addr))
+            if (!netif_addr6_assigned(addr6->state, io->addr6_args.tentative))
+            {
+                continue;
+            }
+            if (netif_ip6_same(addr6->addr, io->addr6_args.addr))
             {
                 netif_report_addr6(work, i, s);
                 io->status = IDEMIP_OK;

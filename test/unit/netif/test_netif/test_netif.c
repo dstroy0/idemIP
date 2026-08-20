@@ -576,6 +576,51 @@ static uint8_t state_at(uint8_t *w, uint8_t index, uint8_t slot)
     return (uint8_t)IDEMIP_NETIF_IO(w)->addr6_state;
 }
 
+// RFC 4862 sec 5.4.5: a duplicate address "MUST NOT be assigned to an interface", and sec 5.4 says a
+// tentative one "is not considered 'assigned to an interface' in the traditional sense" with packets
+// addressed to it "silently discarded". Neither answers an ordinary lookup; the sec 5.4.3 Target
+// Address match asks for the tentative one and gets it.
+void test_find_addr6_reports_neither_a_duplicate_nor_a_tentative_address(void)
+{
+    Netif.clear(work_a);
+    up(work_a, 0u, phy_a, g_mac_a, 1500u);
+
+    add6(work_a, 0u, g_addr6_a, IDEMIP_NETIF_ADDR6_DUPLICATE, 600u, 600u);
+    IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_a;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = IDEMIP_FALSE;
+    Netif.find_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "an address DAD found duplicate answered as the interface's own");
+    // Not even the Target Address match takes a duplicate.
+    IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_a;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = IDEMIP_TRUE;
+    Netif.find_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status);
+
+    Netif.clear(work_a);
+    up(work_a, 0u, phy_a, g_mac_a, 1500u);
+    add6(work_a, 0u, g_addr6_a, IDEMIP_NETIF_ADDR6_TENTATIVE, 600u, 600u);
+    IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_a;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = IDEMIP_FALSE;
+    Netif.find_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "a tentative address answered an ordinary lookup");
+    IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_a;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = IDEMIP_TRUE;
+    Netif.find_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status,
+                                  "the sec 5.4.3 Target Address match cannot see its own tentative address");
+
+    // The positive control: a preferred address answers both.
+    Netif.clear(work_a);
+    up(work_a, 0u, phy_a, g_mac_a, 1500u);
+    add6(work_a, 0u, g_addr6_a, IDEMIP_NETIF_ADDR6_PREFERRED, 600u, 600u);
+    IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_a;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = IDEMIP_FALSE;
+    Netif.find_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status);
+}
+
 // RFC 4862 sec 5.5.4: "An address (and its association with an interface) becomes invalid when its
 // valid lifetime expires." RFC 4861 sec 4.6.2 makes only 0xffffffff infinite, so a lifetime past
 // what a 32-bit millisecond count spans is still finite and must still expire. This one is 194 days,

@@ -1297,6 +1297,11 @@ static DispatchDest d_ip6_dest(uint8_t *restrict work, const uint8_t *dst)
     if (ctx->netif != NULL)
     {
         IDEMIP_NETIF_IO(ctx->netif)->addr6_args.addr = dst;
+        // RFC 4862 sec 5.4: packets addressed to a tentative address "should be silently discarded",
+        // and sec 5.4.5 bars a duplicate one from being assigned at all, so neither is this host's
+        // for delivery. The sec 5.4.3 Target Address match is the one that wants a tentative address,
+        // and it is not this path.
+        IDEMIP_NETIF_IO(ctx->netif)->addr6_args.tentative = IDEMIP_FALSE;
         Netif.find_addr6(ctx->netif);
         if (IDEMIP_NETIF_IO(ctx->netif)->status == IDEMIP_OK)
         {

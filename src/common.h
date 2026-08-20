@@ -101,10 +101,35 @@ IDEMIP_INLINE IdemIpMs idemip_ms_extend(uint32_t *last_ms, uint32_t *hi, uint32_
     return ((IdemIpMs)(*hi) << 32) | (IdemIpMs)now_ms;
 }
 
-/** @brief One RFC lifetime field, seconds, as milliseconds on the clock above. */
+/**
+ * @brief One RFC lifetime field, seconds, as milliseconds on the clock above.
+ *
+ * 1000 is 1024 - 16 - 8, so the scale is three shifts and two subtractions and no multiply. This is
+ * for the moment a lifetime is taken, which turns it into a deadline; the sweep that reads that
+ * deadline compares two clock values and scales nothing.
+ */
 IDEMIP_INLINE IdemIpMs idemip_ms_from_s(uint32_t seconds)
 {
-    return (IdemIpMs)seconds * IDEMIP_MS_PER_S;
+    IdemIpMs s = (IdemIpMs)seconds;
+    return (s << 10) - (s << 4) - (s << 3);
+}
+
+/** @brief The high half of a clock value, for a target that carries it in two words. */
+IDEMIP_INLINE uint32_t idemip_ms_hi(IdemIpMs t)
+{
+    return (uint32_t)(t >> 32);
+}
+
+/** @brief Its low half. */
+IDEMIP_INLINE uint32_t idemip_ms_lo(IdemIpMs t)
+{
+    return (uint32_t)(t & 0xFFFFFFFFu);
+}
+
+/** @brief The two halves back into one clock value. */
+IDEMIP_INLINE IdemIpMs idemip_ms_join(uint32_t hi, uint32_t lo)
+{
+    return ((IdemIpMs)hi << 32) | (IdemIpMs)lo;
 }
 
 /**
