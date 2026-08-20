@@ -49,7 +49,6 @@ typedef struct
 {
     uint32_t ready;
     uint32_t v1_deadline_ms[IDEMIP_NETIF_COUNT];
-    uint8_t groups;
     idemip_bool v1_present[IDEMIP_NETIF_COUNT];
 } IgmpCtx;
 
@@ -233,7 +232,6 @@ static void igmp_do_join(uint8_t *restrict work)
     entry->last_reporter = IDEMIP_TRUE;
     entry->deadline_ms =
         io->group_args.now_ms + igmp_draw(io->group_args.rand, IDEMIP_IGMP_UNSOLICITED_REPORT_MS);
-    ctx->groups = (uint8_t)(ctx->groups + 1u);
     igmp_report_entry(io, entry, index);
     io->send_report = IDEMIP_TRUE;
     io->report_v1 = ctx->v1_present[netif];
@@ -266,7 +264,6 @@ static void igmp_do_leave(uint8_t *restrict work)
     io->send_leave = (idemip_bool)(entry->last_reporter && !ctx->v1_present[entry->netif]);
     igmp_report_entry(io, entry, index);
     memset(entry, 0, sizeof *entry);
-    ctx->groups = (uint8_t)(ctx->groups - 1u);
     io->state = IDEMIP_IGMP_NON_MEMBER;
     io->deadline_ms = 0u;
     io->status = IDEMIP_OK;

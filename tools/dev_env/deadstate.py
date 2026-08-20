@@ -66,16 +66,56 @@ def borrow_tags(text):
     return tags
 
 
+def base_of(text, arrow):
+    """The identifier immediately left of the `->` at @p arrow, or None if it is not one.
+
+    A macro expansion - IGMP_CTX(work)->groups - ends in a parenthesis rather than a name, and two
+    of those are not known to be the same object, so None never matches None.
+    """
+    m = re.search(r"(\w+)\s*$", text[max(0, arrow - 64) : arrow])
+    return m.group(1) if m else None
+
+
 def uses(text, field):
-    """(writes, reads) over every `->field` in the file."""
+    """(writes, reads) over every `->field` in the file.
+
+    A read on the right of an assignment to the same field OF THE SAME OBJECT is not a read.
+    `ctx->groups = (uint8_t)(ctx->groups + 1u)` names the field twice and consults it exactly as
+    much as `ctx->groups = 0u` does: the value goes back where it came from and nothing downstream
+    asks. A counter kept that way is the same dead state as a field written once, and it hides
+    behind its own increment - which is how igmp's membership count sat here unreported.
+
+    Of the same object, because a field name is not unique to a struct and this searches one file
+    for `->field` rather than resolving what the pointer points at. arp_table.c writes
+    `io->netif = e->netif`, where the right side is a genuine read of the table row and only the
+    NAME is shared with the operand block on the left. Same base identifier or it does not count.
+    """
     writes = 0
     reads = 0
+    # Every position that is a write, and every position that is only the right-hand side of one.
+    write_at = set()
+    self_read = set()
     for m in re.finditer(r"->" + re.escape(field) + r"\b", text):
         # Enough lookahead that "==" is still two characters after the spaces are gone: a two-wide
         # window strips " =" out of " == " and reads a comparison as an assignment.
         tail = text[m.end() : m.end() + 8].lstrip()
         if tail.startswith("=") and not tail.startswith("=="):
+            write_at.add(m.start())
+            lhs = base_of(text, m.start())
+            if lhs is None:
+                continue
+            end = text.find(";", m.end())
+            if end < 0:
+                end = len(text)
+            for r in re.finditer(r"->" + re.escape(field) + r"\b", text[m.end() : end]):
+                at = m.end() + r.start()
+                if base_of(text, at) == lhs:
+                    self_read.add(at)
+    for m in re.finditer(r"->" + re.escape(field) + r"\b", text):
+        if m.start() in write_at:
             writes += 1
+            continue
+        if m.start() in self_read:
             continue
         # memcpy(x->field, ...) and memset(x->field, ...) write it through their FIRST argument. No
         # comma in between, or the source of a memcpy reads as a write - which is what the RFC 6528
