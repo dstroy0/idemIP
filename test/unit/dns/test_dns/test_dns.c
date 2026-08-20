@@ -45,8 +45,15 @@ static void check_canary(const uint8_t *w, size_t cap)
     }
 }
 
+// The millisecond every entry that stamps or tests a deadline is handed. A tick moves it and it
+// stays there for the calls between two ticks, which is exactly what the context clock used to do on
+// its own. The difference is that a caller can set it WITHOUT ticking, so a resolver that resolves
+// before its first tick no longer stamps everything against zero.
+static uint32_t g_now_ms;
+
 void setUp(void)
 {
+    g_now_ms = 0u;
     arm(work_a, sizeof work_a);
     arm(work_b, sizeof work_b);
 }
@@ -545,6 +552,7 @@ static void deliver_to(uint8_t *w, size_t len, const uint8_t *src, uint16_t spor
     IDEMIP_DNS_IO(w)->input_args.src_port = sport;
     IDEMIP_DNS_IO(w)->input_args.dst_port = dport;
     IDEMIP_DNS_IO(w)->input_args.ipv6 = IDEMIP_FALSE;
+    IDEMIP_DNS_IO(w)->now_ms = g_now_ms;
     Dns.input(w);
 }
 
@@ -592,6 +600,7 @@ static void put_on_the_wire_from(uint8_t *w, uint8_t slot, const uint8_t *src)
     IDEMIP_DNS_IO(w)->build_args.cap = sizeof g_out;
     IDEMIP_DNS_IO(w)->build_args.query = slot;
     IDEMIP_DNS_IO(w)->build_args.src = src;
+    IDEMIP_DNS_IO(w)->now_ms = g_now_ms;
     Dns.build(w);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(w)->status);
 }
@@ -603,7 +612,8 @@ static void put_on_the_wire(uint8_t *w, uint8_t slot)
 
 static void run_tick(uint8_t *w, uint32_t now_ms)
 {
-    IDEMIP_DNS_IO(w)->tick_args.now_ms = now_ms;
+    g_now_ms = now_ms;
+    IDEMIP_DNS_IO(w)->now_ms = now_ms;
     Dns.tick(w);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(w)->status);
 }
@@ -612,6 +622,7 @@ static void look(uint8_t *w, const char *name, uint16_t type)
 {
     IDEMIP_DNS_IO(w)->lookup_args.name = name;
     IDEMIP_DNS_IO(w)->lookup_args.type = type;
+    IDEMIP_DNS_IO(w)->now_ms = g_now_ms;
     Dns.lookup(w);
 }
 
@@ -1767,6 +1778,62 @@ void test_a_response_with_no_record_of_the_type_retires_the_question(void)
 }
 
 // --- the retry sweep ---------------------------------------------------------
+
+// The clock a deadline is stamped from is the caller's, handed to the entry that does the stamping.
+// It used to be whatever the last tick had left in the context, and before the first tick that is
+// zero - so a resolver that resolves at startup, which is when a resolver is most needed, stamped
+// RFC 1035 sec 4.2.1's two-second retry interval at absolute millisecond 2000 and every RFC 1035
+// sec 4.1.3 TTL as if the host had booted at that instant. The first tick at any real uptime then
+// found both already past: the question was retried before a reply could have crossed the link, and
+// the answer was thrown away before it was a second old.
+//
+// An hour of uptime and no tick yet, which is exactly the caller who drives Dns.tick from a timer
+// that has not fired.
+#define DNS_TEST_BOOT_MS 3600000u
+
+void test_a_question_sent_before_the_first_tick_is_not_already_overdue(void)
+{
+    g_now_ms = DNS_TEST_BOOT_MS;
+    uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+
+    // A hundred milliseconds later, well inside the retry interval. Nothing is due.
+    run_tick(work_a, DNS_TEST_BOOT_MS + 100u);
+
+    // build is ERR unless the slot is IDEMIP_DNS_QUERY_NEW, so a question still on the wire refuses
+    // it and one the sweep retried takes it.
+    IDEMIP_DNS_IO(work_a)->build_args.out = g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.cap = sizeof g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.query = slot;
+    IDEMIP_DNS_IO(work_a)->build_args.src = NULL;
+    IDEMIP_DNS_IO(work_a)->now_ms = g_now_ms;
+    Dns.build(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status,
+                                  "the first tick retried a question sent 100 ms earlier: the retry "
+                                  "deadline was stamped against a clock at zero");
+}
+
+void test_an_answer_cached_before_the_first_tick_keeps_its_ttl(void)
+{
+    const uint8_t a[4] = {203u, 0u, 113u, 7u};
+
+    g_now_ms = DNS_TEST_BOOT_MS;
+    uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+
+    // An hour to live, which is one second longer than the host has been up.
+    size_t len = good_response(NAME, IDEMIP_DNS_TYPE_A, 3600u, a, sizeof a);
+    deliver_ok(work_a, len);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+
+    run_tick(work_a, DNS_TEST_BOOT_MS + 100u);
+
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status,
+                                  "an answer with an hour to live was swept 100 ms after it arrived: "
+                                  "the TTL was stamped against a clock at zero");
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(a, IDEMIP_DNS_IO(work_a)->addr, sizeof a);
+}
 
 // RFC 1035 sec 4.2.1: "The client should try other servers and server addresses before repeating a
 // query to a specific address of a server."

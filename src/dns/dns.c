@@ -81,7 +81,6 @@ typedef struct
 typedef struct
 {
     const IdemIpDnsCfg *cfg;
-    uint32_t now_ms;
     uint8_t next_server; ///< the server the next question goes to first (RFC 1035 sec 4.2.1)
 } DnsCtx;
 
@@ -762,7 +761,6 @@ void idemip_dns_query(uint8_t *restrict work)
 static void dns_lookup_cached(uint8_t *restrict work)
 {
     DnsIo *io = DNS_IO(work);
-    DnsCtx *ctx = DNS_CTX(work);
     const DnsLookupArgs *a = &io->lookup_args;
 
     memset(io->addr, 0, sizeof io->addr);
@@ -796,7 +794,7 @@ static void dns_lookup_cached(uint8_t *restrict work)
         }
     }
 
-    uint8_t j = dns_cache_find(work, a->name, a->type, ctx->now_ms);
+    uint8_t j = dns_cache_find(work, a->name, a->type, io->now_ms);
     if (j >= IDEMIP_DNS_ENTRIES)
     {
         io->status = IDEMIP_BUSY;
@@ -844,7 +842,6 @@ void idemip_dns_lookup(uint8_t *restrict work)
 static void dns_build_query(uint8_t *restrict work)
 {
     DnsIo *io = DNS_IO(work);
-    DnsCtx *ctx = DNS_CTX(work);
     const DnsBuildArgs *a = &io->build_args;
 
     if (a->out == NULL || a->query >= IDEMIP_DNS_QUERIES)
@@ -954,7 +951,7 @@ static void dns_build_query(uint8_t *restrict work)
     {
         wait = (uint32_t)IDEMIP_DNS_RETRY_MAX_MS;
     }
-    q->deadline_ms = ctx->now_ms + wait;
+    q->deadline_ms = io->now_ms + wait;
     io->status = IDEMIP_OK;
 }
 
@@ -1111,7 +1108,6 @@ static idemip_bool dns_answers_read(const uint8_t *msg, size_t len, size_t at, u
 static void dns_take(uint8_t *restrict work)
 {
     DnsIo *io = DNS_IO(work);
-    DnsCtx *ctx = DNS_CTX(work);
     const DnsInputArgs *a = &io->input_args;
     const uint8_t *msg = a->msg;
     size_t len = a->len;
@@ -1178,7 +1174,7 @@ static void dns_take(uint8_t *restrict work)
         if (rcode == (uint8_t)IDEMIP_DNS_RCODE_NAME_ERR)
         {
             q->state = IDEMIP_DNS_QUERY_FAILED;
-            dns_cache_negative(work, i, q->type, rcode, ctx->now_ms);
+            dns_cache_negative(work, i, q->type, rcode, io->now_ms);
         }
         else
         {
@@ -1219,7 +1215,7 @@ static void dns_take(uint8_t *restrict work)
     if (ttl != 0u)
     {
         const char *name = DNS_NAME_AT(work, i);
-        uint8_t j = dns_cache_slot(work, name, q->type, ctx->now_ms);
+        uint8_t j = dns_cache_slot(work, name, q->type, io->now_ms);
         DnsEntry *e = DNS_ENTRY_AT(work, j);
         size_t text = 0;
         while ((text < (DNS_NAME_BYTES - 1u)) && (name[text] != '\0'))
@@ -1228,7 +1224,7 @@ static void dns_take(uint8_t *restrict work)
         }
         memset(e, 0, sizeof *e);
         memcpy(e->addr, io->addr, sizeof e->addr);
-        e->expire_ms = ctx->now_ms + (ttl * IDEMIP_DNS_MS_PER_S);
+        e->expire_ms = io->now_ms + (ttl * IDEMIP_DNS_MS_PER_S);
         e->ttl_s = ttl;
         e->type = q->type;
         e->name = (uint8_t)DNS_ENTRY_NAME_IDX(j);
@@ -1260,9 +1256,7 @@ void idemip_dns_input(uint8_t *restrict work)
 static void dns_sweep(uint8_t *work)
 {
     DnsIo *io = DNS_IO(work);
-    DnsCtx *ctx = DNS_CTX(work);
-    uint32_t now = io->tick_args.now_ms;
-    ctx->now_ms = now;
+    const uint32_t now = io->now_ms;
 
     for (uint8_t i = 0; i < IDEMIP_DNS_QUERIES; i++)
     {

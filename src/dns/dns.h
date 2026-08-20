@@ -328,11 +328,11 @@ typedef struct
     uint8_t query; ///< the query slot to drop, below IDEMIP_DNS_QUERIES
 } DnsCancelArgs;
 
-/** @brief What tick takes. */
-typedef struct
-{
-    uint32_t now_ms; ///< the millisecond clock retry and TTL deadlines are measured against
-} DnsTickArgs;
+// The clock is not a tick operand. It was, and every other entry read the one the last tick left
+// behind: build stamped a retry deadline with it, input stamped a cached answer's TTL with it, and
+// lookup tested the cache against it. Before the first tick that clock is zero, so a question sent
+// and an answer cached at boot were both stamped against zero and the first real tick retired them.
+// See DnsIo::now_ms.
 
 /**
  * @brief The operands and results of a call, in the caller's borrow.
@@ -347,7 +347,10 @@ typedef struct
  * @var DnsIo::build_args  the buffer a question is written into
  * @var DnsIo::input_args  one received message and its addressing
  * @var DnsIo::cancel_args the query to drop
- * @var DnsIo::tick_args   the clock
+ * @var DnsIo::now_ms      the millisecond clock the caller read before the call. Every deadline this
+ *                         unit stamps and every one it tests comes from it, so no entry reads a clock
+ *                         of its own and none reads the one another entry left. Set it on lookup,
+ *                         build, input and tick; the rest do not read it
  * @var DnsIo::status      what the call reports: OK, BUSY, or ERR
  * @var DnsIo::addr        the answer, IDEMIP_DNS_ADDR_LEN octets, 4 of them used by an A record
  * @var DnsIo::ipv6        the family of @ref DnsIo::addr, and on build the family of @ref DnsIo::dst
@@ -379,8 +382,8 @@ typedef struct
     DnsBuildArgs build_args;
     DnsInputArgs input_args;
     DnsCancelArgs cancel_args;
-    DnsTickArgs tick_args;
 
+    uint32_t now_ms;
     IdemIpStatus status;
     uint8_t addr[IDEMIP_DNS_ADDR_LEN];
     idemip_bool ipv6;
@@ -457,8 +460,13 @@ typedef struct
  * The send loop is a walk over the query table, because a question needing the wire is one in the
  * IDEMIP_DNS_QUERY_NEW state and build is what puts it there:
  *
+ *   IDEMIP_DNS_IO(work)->now_ms = now_ms;
  *   Dns.tick(work);
  *   for (i = 0; i < IDEMIP_DNS_QUERIES; i++) { build_args.query = i; Dns.build(work); if OK send }
+ *
+ * The clock is set once and read by every entry that stamps or tests a deadline, so a build, an
+ * input or a lookup between two ticks measures against the millisecond the caller last read rather
+ * than the one the last tick happened to leave behind.
  *
  * @var DnsNs::clear      zero every byte of the borrow, so it runs before the operands are set
  * @var DnsNs::bind       take the configuration, after checking every member is present
@@ -473,7 +481,8 @@ typedef struct
  * @var DnsNs::input      take one response, matched on every attribute RFC 5452 sec 9.1 lists. ERR
  *                        leaves every question exactly as it was, which is what sec 9.1's "A
  *                        mismatch and the response MUST be considered invalid" requires of a forgery.
- * @var DnsNs::tick       run the retry deadlines and expire answers past their TTL
+ * @var DnsNs::tick       run the retry deadlines and expire answers past their TTL, both against
+ *                        @ref DnsIo::now_ms
  * @var DnsNs::cancel     drop one outstanding question
  * @var DnsNs::flush      empty the answer cache, leaving the servers and the questions alone
  */
