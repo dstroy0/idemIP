@@ -40,6 +40,8 @@ extern void test_a_new_address_is_inserted_at_the_head(void);
 extern void test_a_full_list_evicts_the_entry_that_expires_first(void);
 extern void test_eviction_prefers_a_finite_entry_over_an_infinite_one(void);
 extern void test_an_expired_entry_is_deleted(void);
+extern void test_an_entry_stamped_before_the_clock_wraps_still_expires(void);
+extern void test_a_lifetime_past_the_thirty_two_bit_millisecond_range_still_expires(void);
 extern void test_a_tick_reports_one_expiry_per_call(void);
 extern void test_a_tick_with_nothing_expired_is_busy(void);
 extern void test_an_expiry_closes_the_gap(void);
@@ -140,13 +142,15 @@ int main(void)
   run_test(test_a_full_list_evicts_the_entry_that_expires_first, "test_a_full_list_evicts_the_entry_that_expires_first", 500);
   run_test(test_eviction_prefers_a_finite_entry_over_an_infinite_one, "test_eviction_prefers_a_finite_entry_over_an_infinite_one", 524);
   run_test(test_an_expired_entry_is_deleted, "test_an_expired_entry_is_deleted", 542);
-  run_test(test_a_tick_reports_one_expiry_per_call, "test_a_tick_reports_one_expiry_per_call", 566);
-  run_test(test_a_tick_with_nothing_expired_is_busy, "test_a_tick_with_nothing_expired_is_busy", 583);
-  run_test(test_an_expiry_closes_the_gap, "test_an_expiry_closes_the_gap", 593);
-  run_test(test_get_refuses_a_slot_that_holds_nothing, "test_get_refuses_a_slot_that_holds_nothing", 617);
-  run_test(test_find_refuses_an_address_that_is_not_held, "test_find_refuses_an_address_that_is_not_held", 626);
-  run_test(test_remove_deletes_one_entry, "test_remove_deletes_one_entry", 636);
-  run_test(test_remove_refuses_an_address_that_is_not_held, "test_remove_refuses_an_address_that_is_not_held", 649);
+  run_test(test_an_entry_stamped_before_the_clock_wraps_still_expires, "test_an_entry_stamped_before_the_clock_wraps_still_expires", 569);
+  run_test(test_a_lifetime_past_the_thirty_two_bit_millisecond_range_still_expires, "test_a_lifetime_past_the_thirty_two_bit_millisecond_range_still_expires", 594);
+  run_test(test_a_tick_reports_one_expiry_per_call, "test_a_tick_reports_one_expiry_per_call", 614);
+  run_test(test_a_tick_with_nothing_expired_is_busy, "test_a_tick_with_nothing_expired_is_busy", 631);
+  run_test(test_an_expiry_closes_the_gap, "test_an_expiry_closes_the_gap", 641);
+  run_test(test_get_refuses_a_slot_that_holds_nothing, "test_get_refuses_a_slot_that_holds_nothing", 665);
+  run_test(test_find_refuses_an_address_that_is_not_held, "test_find_refuses_an_address_that_is_not_held", 674);
+  run_test(test_remove_deletes_one_entry, "test_remove_deletes_one_entry", 684);
+  run_test(test_remove_refuses_an_address_that_is_not_held, "test_remove_refuses_an_address_that_is_not_held", 697);
 
   return UNITY_END();
 }

@@ -562,6 +562,54 @@ void test_an_expired_entry_is_deleted(void)
     TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->servers);
 }
 
+// The caller's reading is 32 bits and its wrap is not an event sec 6.1 knows about: "When the
+// current time becomes larger than Expiration-time, this entry is regarded as expired" is one
+// comparison on one clock, and the clock the entry was stamped on has to be the clock the sweep
+// reads. A ten-second lifetime taken 4096 ms before the wrap expires 5904 ms after it.
+void test_an_entry_stamped_before_the_clock_wraps_still_expires(void)
+{
+    static const uint8_t *const one[1] = {g_a};
+    Rdnss.clear(work_a);
+    feed(work_a, 10u, 0xFFFFF000u, one, 1u);
+
+    // Still before the wrap, and still inside the lifetime.
+    tick_at(work_a, 0xFFFFF001u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+
+    // Past it. 0xFFFFF000 + 10000 is 5904 once the reading has turned over.
+    tick_at(work_a, 5904u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status,
+                                  "an entry expired at Expiration-time rather than past it");
+    tick_at(work_a, 5905u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
+                                  "the clock wrapping under an entry left it unable to expire");
+    TEST_ASSERT_TRUE(IO(work_a)->expired);
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->servers);
+}
+
+// sec 5.1 makes Lifetime "32-bit unsigned integer" in seconds and reserves only "all one bits
+// (0xffffffff)" for infinity, so 5,000,000 seconds is a finite lifetime that has to expire. Its
+// deadline is 5e9 milliseconds, which is past what 32 bits of milliseconds can count, so a sweep
+// reading the caller's 32-bit clock can never reach it.
+void test_a_lifetime_past_the_thirty_two_bit_millisecond_range_still_expires(void)
+{
+    static const uint8_t *const one[1] = {g_a};
+    Rdnss.clear(work_a);
+    feed(work_a, 5000000u, 0u, one, 1u);
+    TEST_ASSERT_EQUAL_UINT8(1u, IO(work_a)->servers);
+
+    tick_at(work_a, 0x80000000u); // 2.1e9 ms, inside the lifetime
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+    tick_at(work_a, 1u); // the reading turns over: 4.3e9 ms, still inside it
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+
+    tick_at(work_a, 0x80000000u); // 6.4e9 ms, past it
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
+                                  "a finite lifetime past the 32-bit millisecond range never expired");
+    TEST_ASSERT_TRUE(IO(work_a)->expired);
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->servers);
+}
+
 // One expiry per call, so two entries due at once take two ticks and neither is lost.
 void test_a_tick_reports_one_expiry_per_call(void)
 {
