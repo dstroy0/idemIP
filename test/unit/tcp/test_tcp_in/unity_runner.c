@@ -92,6 +92,8 @@ extern void test_the_normal_close_of_figure_12_from_the_closing_side(void);
 extern void test_the_simultaneous_close_of_figure_13_reaches_time_wait_through_closing(void);
 extern void test_last_ack_deletes_the_tcb_when_its_fin_is_acknowledged(void);
 extern void test_an_acceptable_segment_in_time_wait_restarts_the_2msl(void);
+extern void test_entering_time_wait_stamps_the_2msl_deadline(void);
+extern void test_the_maximum_segment_lifetime_is_two_minutes(void);
 extern void test_a_retransmitted_fin_in_time_wait_is_out_of_window_and_drawn_an_acknowledgment(void);
 extern void test_a_fin_behind_missing_octets_is_not_processed(void);
 extern void test_segment_refuses_the_three_states_the_other_sections_hold(void);
@@ -243,12 +245,14 @@ int main(void)
   run_test(test_the_simultaneous_close_of_figure_13_reaches_time_wait_through_closing, "test_the_simultaneous_close_of_figure_13_reaches_time_wait_through_closing", 1595);
   run_test(test_last_ack_deletes_the_tcb_when_its_fin_is_acknowledged, "test_last_ack_deletes_the_tcb_when_its_fin_is_acknowledged", 1615);
   run_test(test_an_acceptable_segment_in_time_wait_restarts_the_2msl, "test_an_acceptable_segment_in_time_wait_restarts_the_2msl", 1632);
-  run_test(test_a_retransmitted_fin_in_time_wait_is_out_of_window_and_drawn_an_acknowledgment, "test_a_retransmitted_fin_in_time_wait_is_out_of_window_and_drawn_an_acknowledgment", 1648);
-  run_test(test_a_fin_behind_missing_octets_is_not_processed, "test_a_fin_behind_missing_octets_is_not_processed", 1663);
-  run_test(test_segment_refuses_the_three_states_the_other_sections_hold, "test_segment_refuses_the_three_states_the_other_sections_hold", 1678);
-  run_test(test_listen_and_syn_sent_each_hold_one_state, "test_listen_and_syn_sent_each_hold_one_state", 1699);
-  run_test(test_parse_refuses_a_version_that_names_no_pseudo_header, "test_parse_refuses_a_version_that_names_no_pseudo_header", 1719);
-  run_test(test_the_same_segment_on_the_same_variables_decides_the_same_way, "test_the_same_segment_on_the_same_variables_decides_the_same_way", 1737);
+  run_test(test_entering_time_wait_stamps_the_2msl_deadline, "test_entering_time_wait_stamps_the_2msl_deadline", 1648);
+  run_test(test_the_maximum_segment_lifetime_is_two_minutes, "test_the_maximum_segment_lifetime_is_two_minutes", 1669);
+  run_test(test_a_retransmitted_fin_in_time_wait_is_out_of_window_and_drawn_an_acknowledgment, "test_a_retransmitted_fin_in_time_wait_is_out_of_window_and_drawn_an_acknowledgment", 1677);
+  run_test(test_a_fin_behind_missing_octets_is_not_processed, "test_a_fin_behind_missing_octets_is_not_processed", 1692);
+  run_test(test_segment_refuses_the_three_states_the_other_sections_hold, "test_segment_refuses_the_three_states_the_other_sections_hold", 1707);
+  run_test(test_listen_and_syn_sent_each_hold_one_state, "test_listen_and_syn_sent_each_hold_one_state", 1728);
+  run_test(test_parse_refuses_a_version_that_names_no_pseudo_header, "test_parse_refuses_a_version_that_names_no_pseudo_header", 1748);
+  run_test(test_the_same_segment_on_the_same_variables_decides_the_same_way, "test_the_same_segment_on_the_same_variables_decides_the_same_way", 1766);
 
   return UNITY_END();
 }

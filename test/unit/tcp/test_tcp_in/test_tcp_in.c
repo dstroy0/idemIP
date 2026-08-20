@@ -1642,6 +1642,35 @@ void test_an_acceptable_segment_in_time_wait_restarts_the_2msl(void)
     TEST_ASSERT_EQUAL_UINT32(301u, IO(work_a)->reply.ack);
 }
 
+// RFC 9293 sec 3.6 MUST-13: "When a connection is closed actively, it MUST linger in the TIME-WAIT
+// state for a time 2xMSL (Maximum Segment Lifetime)", and sec 3.4.2 puts the MSL at 2 minutes. The
+// instant that linger ends at is the TCB's, and Figure 5's "Timeout=2MSL" leaves TIME-WAIT there.
+void test_entering_time_wait_stamps_the_2msl_deadline(void)
+{
+    // FIN-WAIT-2 takes the peer's FIN into TIME-WAIT, which is where the linger starts.
+    conn(work_a, IDEMIP_TCP_STATE_FIN_WAIT_2, 101u, 101u, 300u, 4096u);
+    IO(work_a)->now_ms = 50000u;
+    seg(work_a, 300u, 101u, 1u, 0u, (uint8_t)(IDEMIP_TCP_FIN | IDEMIP_TCP_ACK));
+    TcpIn.segment(work_a);
+    TEST_ASSERT_EQUAL_INT((int)IDEMIP_TCP_STATE_TIME_WAIT, (int)IO(work_a)->state);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_2MSL);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(50000u + (2u * (uint32_t)IDEMIP_TCP_MSL_MS), IO(work_a)->ctl.time_wait_deadline,
+                                     "the linger runs 2xMSL from the instant TIME-WAIT was entered");
+
+    // A later acceptable segment restarts it from that instant instead.
+    IO(work_a)->now_ms = 90000u;
+    seg(work_a, 301u, 101u, 0u, 0u, (uint8_t)IDEMIP_TCP_ACK);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_2MSL);
+    TEST_ASSERT_EQUAL_UINT32(90000u + (2u * (uint32_t)IDEMIP_TCP_MSL_MS), IO(work_a)->ctl.time_wait_deadline);
+}
+
+// sec 3.4.2: "For this specification the MSL is taken to be 2 minutes."
+void test_the_maximum_segment_lifetime_is_two_minutes(void)
+{
+    TEST_ASSERT_EQUAL_UINT32(2u * 60u * 1000u, (uint32_t)IDEMIP_TCP_MSL_MS);
+}
+
 // The peer's own retransmission of its FIN carries the FIN's sequence number, which RCV.NXT has
 // already passed, so the sec 3.4 Table 6 test makes it unacceptable and the first check answers it:
 // "<SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK>". That acknowledgment is what brings the peer out of LAST-ACK.

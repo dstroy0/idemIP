@@ -46,25 +46,33 @@ IDEMIP_BEGIN_DECLS
 #define IDEMIP_TCP_PCB_PORT_ANY 0u
 
 /**
- * @brief RFC 6335 sec 6: "the Dynamic Ports, also known as the Private or Ephemeral Ports, from
- * 49152-65535 (never assigned)". The first of them, which a bind of IDEMIP_TCP_PCB_PORT_ANY draws
- * from.
+ * @brief The first port a bind of IDEMIP_TCP_PCB_PORT_ANY draws from.
+ *
+ * RFC 6056 sec 3.2: "the dynamic ports consist of the range 49152-65535. However, ephemeral port
+ * selection algorithms should use the whole range 1024-65535", and "Ephemeral port selection
+ * algorithms SHOULD use the largest possible port range, since this reduces the chances of an
+ * off-path attacker of guessing the selected port numbers." The pool wraps with a mask so no divide
+ * runs, which makes it a power of two, and 32768-65535 is the largest such window inside 1024-65535:
+ * 32768 ports against the 16384 of RFC 6335 sec 6's Dynamic Ports alone. RFC 6056 sec 3.1's
+ * exclusion of the ports a listener holds is what keeps the wider pool off the host's own services.
  */
-#define IDEMIP_TCP_PCB_PORT_DYN_FIRST 49152u
+#define IDEMIP_TCP_PCB_PORT_EPH_FIRST 32768u
 
-/** @brief The last Dynamic Port of RFC 6335 sec 6. */
-#define IDEMIP_TCP_PCB_PORT_DYN_LAST 65535u
+/** @brief The last ephemeral port, the last port there is. */
+#define IDEMIP_TCP_PCB_PORT_EPH_LAST 65535u
 
-/** @brief The Dynamic Ports, 16384 of them, a power of two so the walk wraps with a mask. */
-#define IDEMIP_TCP_PCB_PORT_DYN_COUNT (IDEMIP_TCP_PCB_PORT_DYN_LAST - IDEMIP_TCP_PCB_PORT_DYN_FIRST + 1u)
+/** @brief The ephemeral ports, 32768 of them, a power of two so the walk wraps with a mask. */
+#define IDEMIP_TCP_PCB_PORT_EPH_COUNT (IDEMIP_TCP_PCB_PORT_EPH_LAST - IDEMIP_TCP_PCB_PORT_EPH_FIRST + 1u)
 
-/** @brief The mask that wraps a Dynamic Port walk, IDEMIP_TCP_PCB_PORT_DYN_COUNT - 1. */
-#define IDEMIP_TCP_PCB_PORT_DYN_MASK (IDEMIP_TCP_PCB_PORT_DYN_COUNT - 1u)
+/** @brief The mask that wraps an ephemeral port walk, IDEMIP_TCP_PCB_PORT_EPH_COUNT - 1. */
+#define IDEMIP_TCP_PCB_PORT_EPH_MASK (IDEMIP_TCP_PCB_PORT_EPH_COUNT - 1u)
 
-static_assert((IDEMIP_TCP_PCB_PORT_DYN_COUNT & IDEMIP_TCP_PCB_PORT_DYN_MASK) == 0u,
-              "RFC 6335 sec 6's Dynamic Ports must number a power of two so the walk wraps with a mask");
-static_assert((IDEMIP_TCP_PCB_PORT_DYN_FIRST & IDEMIP_TCP_PCB_PORT_DYN_MASK) == 0u,
-              "the first Dynamic Port must be a multiple of their count so an OR rebuilds the port");
+static_assert((IDEMIP_TCP_PCB_PORT_EPH_COUNT & IDEMIP_TCP_PCB_PORT_EPH_MASK) == 0u,
+              "the ephemeral ports must number a power of two so the walk wraps with a mask");
+static_assert((IDEMIP_TCP_PCB_PORT_EPH_FIRST & IDEMIP_TCP_PCB_PORT_EPH_MASK) == 0u,
+              "the first ephemeral port must be a multiple of their count so an OR rebuilds the port");
+static_assert(IDEMIP_TCP_PCB_PORT_EPH_FIRST >= 1024u,
+              "RFC 6056 sec 3.2 bounds an ephemeral pool below at 1024, the first non-System Port");
 
 /**
  * @brief The eleven states of RFC 9293 sec 3.3.2.
@@ -192,8 +200,18 @@ typedef struct
  * @var TcpPcbCtl::flags         the connection's option bits
  * @var TcpPcbCtl::snd_scale     RFC 7323 sec 2.2 Snd.Wind.Shift, applied to an incoming Window field
  * @var TcpPcbCtl::rcv_scale     RFC 7323 sec 2.2 Rcv.Wind.Shift, applied to an outgoing one
- * @var TcpPcbCtl::nrtx          retransmissions of the oldest unacknowledged segment, bounded by
- *                               IDEMIP_TCP_MAXRTX and IDEMIP_TCP_SYNMAXRTX
+ * @var TcpPcbCtl::time_wait_deadline the millisecond RFC 9293 sec 3.6 MUST-13's linger expires at,
+ *                               "a time 2xMSL (Maximum Segment Lifetime)"
+ * @var TcpPcbCtl::nrtx          retransmissions of the oldest unacknowledged segment, compared
+ *                               against r2 and r2_syn
+ * @var TcpPcbCtl::r2            RFC 1122 sec 4.2.3.5 and RFC 9293 sec 3.8.3 R2, counted as
+ *                               retransmissions, which clause (a) allows: "R1 and R2 might be
+ *                               measured in time units or as a count of retransmissions". Reaching
+ *                               it closes the connection, clause (c). Zero is the "infinity"
+ *                               clause (d) names.
+ * @var TcpPcbCtl::r2_syn        the same threshold while the SYN is unacknowledged, which sec 3.8.3
+ *                               MUST-23 bounds below: "R2 for a SYN segment MUST be set large enough
+ *                               to provide retransmission of the segment for at least 3 minutes"
  * @var TcpPcbCtl::backoff       RFC 6298 sec 5.5 doublings of RTO, "the value of RTO SHOULD be
  *                               doubled"
  * @var TcpPcbCtl::dupacks       duplicate acknowledgments counted toward RFC 5681 sec 3.2's
@@ -218,6 +236,7 @@ typedef struct
     uint32_t last_send_ms;
     uint32_t keep_idle_ms;
     uint32_t keep_intvl_ms;
+    uint32_t time_wait_deadline;
     uint32_t sack_left[IDEMIP_TCP_SACK_BLOCKS_MAX];
     uint32_t sack_right[IDEMIP_TCP_SACK_BLOCKS_MAX];
     uint32_t rcv_ann_wnd;
@@ -227,6 +246,8 @@ typedef struct
     uint8_t snd_scale;
     uint8_t rcv_scale;
     uint8_t nrtx;
+    uint8_t r2;
+    uint8_t r2_syn;
     uint8_t backoff;
     uint8_t dupacks;
     uint8_t keep_cnt_sent;
@@ -242,6 +263,31 @@ typedef struct
 {
     uint8_t ip_version;
 } TcpPcbOpenArgs;
+
+/**
+ * @brief What an opt takes: the per-connection parameters RFC 9293 sec 3.10.1's OPEN names, which
+ * says to "Fill in local socket identifier, remote socket, Diffserv field, security/compartment, and
+ * user timeout information".
+ *
+ * @var TcpPcbOptArgs::index  the entry an open reported
+ * @var TcpPcbOptArgs::tos    RFC 9293 sec 3.9.1.9 MUST-48: "The application layer MUST be able to
+ *                            specify the Differentiated Services field for segments that are sent on
+ *                            a connection". The RFC 791 sec 3.1 Type of Service octet, the RFC 8200
+ *                            sec 3 Traffic Class over IPv6.
+ * @var TcpPcbOptArgs::ttl    RFC 791 sec 3.1 Time to Live, the RFC 8200 sec 3 Hop Limit over IPv6
+ * @var TcpPcbOptArgs::r2     RFC 9293 sec 3.8.3 MUST-21: "An application MUST be able to set the
+ *                            value for R2 for a particular connection." Zero is clause (d)'s
+ *                            "infinity".
+ * @var TcpPcbOptArgs::r2_syn the same threshold while the SYN is unacknowledged
+ */
+typedef struct
+{
+    uint16_t index;
+    uint8_t tos;
+    uint8_t ttl;
+    uint8_t r2;
+    uint8_t r2_syn;
+} TcpPcbOptArgs;
 
 /**
  * @brief What a bind and a connect take: one end of the RFC 9293 sec 3.3.1 address and port pair.
@@ -496,6 +542,7 @@ typedef struct
  * @var TcpPcbIo::accept_args   the connection an accept records a listener on
  * @var TcpPcbIo::listen_args   the passive OPEN a listen takes
  * @var TcpPcbIo::find_args     the arriving segment a find and a find_listener match
+ * @var TcpPcbIo::opt_args      the per-connection parameters an opt writes
  * @var TcpPcbIo::seg_args      the send-queue segment a seg_alloc writes, and the one a seg_load or
  *                              a seg_free names
  * @var TcpPcbIo::oos_args      the held segment an oos_alloc writes, and the one an oos_load or an
@@ -516,6 +563,7 @@ typedef struct
 typedef struct
 {
     TcpPcbOpenArgs open_args;
+    TcpPcbOptArgs opt_args;
     TcpPcbAddrArgs bind_args;
     TcpPcbAddrArgs connect_args;
     TcpPcbPcbArgs pcb_args;
@@ -586,6 +634,9 @@ typedef struct
  * @var TcpPcbNs::clear         zero the context and the four tables, and mark the borrow usable
  * @var TcpPcbNs::open          take a free TCB, reporting it in @ref TcpPcbIo::index. BUSY when every
  *                              TCB is open.
+ * @var TcpPcbNs::opt           set the per-connection parameters RFC 9293 sec 3.10.1's OPEN names:
+ *                              the sec 3.9.1.9 Diffserv field, the Time to Live, and the sec 3.8.3 R2
+ *                              thresholds. ERR when the index names no open TCB.
  * @var TcpPcbNs::close         release the TCB @ref TcpPcbPcbArgs::index names, with every segment on
  *                              its two send queues. BUSY while its out-of-order queue still holds a
  *                              segment, since each names a pinned receive descriptor that only an
@@ -641,6 +692,7 @@ typedef struct
 {
     void (*const clear)(uint8_t *restrict work);
     void (*const open)(uint8_t *restrict work);
+    void (*const opt)(uint8_t *restrict work);
     void (*const close)(uint8_t *restrict work);
     void (*const bind)(uint8_t *restrict work);
     void (*const connect)(uint8_t *restrict work);

@@ -765,6 +765,66 @@ void test_the_timeout_doubles_the_rto_and_restarts_from_the_doubled_value(void)
     TEST_ASSERT_EQUAL_UINT8(2u, IO(work_a)->ctl.backoff);
 }
 
+// RFC 9293 sec 3.8.3 (c): "When the number of transmissions of the same segment reaches a threshold
+// R2 greater than R1, close the connection." Clause (a) lets R2 be "a count of retransmissions".
+void test_the_retransmission_count_reaching_r2_asks_the_caller_to_close(void)
+{
+    conn(work_a, 0u, 0u, 0u);
+    IO(work_a)->ctl.rto = 1000u;
+    IO(work_a)->ctl.ssthresh = 65535u;
+    IO(work_a)->ctl.r2 = 3u;
+    IO(work_a)->ctl.r2_syn = 8u;
+    IO(work_a)->timer_args.smss = 536u;
+    for (uint8_t n = 1u; n < 3u; n++)
+    {
+        TcpOut.rtx_expire(work_a);
+        TEST_ASSERT_EQUAL_UINT8(n, IO(work_a)->ctl.nrtx);
+        TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.r2, "R2 is not reached yet");
+    }
+    TcpOut.rtx_expire(work_a);
+    TEST_ASSERT_EQUAL_UINT8(3u, IO(work_a)->ctl.nrtx);
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->res.r2, "reaching R2 closes the connection");
+}
+
+// "the values of R1 and R2 may be different for SYN and data segments", so an unacknowledged SYN is
+// counted against r2_syn instead.
+void test_an_unacknowledged_syn_is_counted_against_the_syn_threshold(void)
+{
+    conn(work_a, 0u, 0u, 0u);
+    IO(work_a)->state = IDEMIP_TCP_STATE_SYN_SENT;
+    IO(work_a)->ctl.rto = 1000u;
+    IO(work_a)->ctl.ssthresh = 65535u;
+    IO(work_a)->ctl.r2 = 3u;
+    IO(work_a)->ctl.r2_syn = 5u;
+    IO(work_a)->timer_args.smss = 536u;
+    for (uint8_t n = 1u; n < 5u; n++)
+    {
+        TcpOut.rtx_expire(work_a);
+        TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.r2, "the data threshold must not bound a SYN");
+    }
+    TcpOut.rtx_expire(work_a);
+    TEST_ASSERT_TRUE(IO(work_a)->res.r2);
+}
+
+// Clause (d): "For example, an interactive application might set R2 to 'infinity', giving the user
+// control over when to disconnect." A threshold of zero never fires, and nrtx saturates rather than
+// wrapping past it.
+void test_an_r2_of_infinity_never_closes_the_connection(void)
+{
+    conn(work_a, 0u, 0u, 0u);
+    IO(work_a)->ctl.rto = 1000u;
+    IO(work_a)->ctl.ssthresh = 65535u;
+    IO(work_a)->ctl.r2 = 0u;
+    IO(work_a)->ctl.r2_syn = 0u;
+    IO(work_a)->timer_args.smss = 536u;
+    for (uint16_t n = 0u; n < 300u; n++)
+    {
+        TcpOut.rtx_expire(work_a);
+        TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.r2, "an R2 of infinity must never fire");
+    }
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0xFFu, IO(work_a)->ctl.nrtx, "the count saturates rather than wrapping");
+}
+
 // "The maximum value discussed in (2.5) above may be used to provide an upper bound to this doubling
 // operation."
 void test_the_doubling_is_bounded_by_the_maximum_rto(void)

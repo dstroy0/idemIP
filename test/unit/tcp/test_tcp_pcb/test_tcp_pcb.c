@@ -213,27 +213,60 @@ void test_clear_leaves_the_operands_alone(void)
     TEST_ASSERT_EQUAL_HEX32(0xDEADBEEFu, IDEMIP_TCP_PCB_IO(work_a)->seg_args.seq);
 }
 
+#define IO(w) IDEMIP_TCP_PCB_IO(w)
+
+static uint16_t open4(uint8_t *w)
+{
+    IO(w)->open_args.ip_version = 4u;
+    TcpPcb.open(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(w)->status);
+    TEST_ASSERT_NOT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(w)->index);
+    return IO(w)->index;
+}
+
 // --- two borrows -------------------------------------------------------------
 
 // The borrow IS the connection table, and the operand block is in it, so two tables share no byte at
-// all. This is the property the whole storage model rests on.
+// all. This is the property the whole storage model rests on: a call on one borrow reaches no byte
+// of the other, and each holds its own RFC 9293 sec 3.3.1 TCBs.
 void test_two_borrows_share_no_byte(void)
 {
+    TcpPcb.clear(work_a);
+    TcpPcb.clear(work_b);
+
+    // The same index in each borrow is a different TCB, so both can hold the same four-tuple.
+    uint16_t a = open4(work_a);
+    uint16_t b = open4(work_b);
+    TEST_ASSERT_EQUAL_UINT16(a, b);
+
+    IDEMIP_TCP_PCB_IO(work_a)->pcb_args.index = a;
+    TcpPcb.load(work_a);
     IDEMIP_TCP_PCB_IO(work_a)->vars.snd_nxt = 1000u;
     IDEMIP_TCP_PCB_IO(work_a)->state = IDEMIP_TCP_STATE_SYN_SENT;
-    IDEMIP_TCP_PCB_IO(work_b)->vars.snd_nxt = 2000u;
-    IDEMIP_TCP_PCB_IO(work_b)->state = IDEMIP_TCP_STATE_LISTEN;
-
-    // Setting b's operands did not disturb a's.
-    TEST_ASSERT_EQUAL_UINT32(1000u, IDEMIP_TCP_PCB_IO(work_a)->vars.snd_nxt);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_SYN_SENT, IDEMIP_TCP_PCB_IO(work_a)->state);
-    TEST_ASSERT_EQUAL_UINT32(2000u, IDEMIP_TCP_PCB_IO(work_b)->vars.snd_nxt);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_LISTEN, IDEMIP_TCP_PCB_IO(work_b)->state);
-
-    TcpPcb.clear(work_a);
+    IDEMIP_TCP_PCB_IO(work_a)->pcb_args.index = a;
+    TcpPcb.store(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_PCB_IO(work_a)->status);
 
-    // And b's operands are still b's after a's call.
+    IDEMIP_TCP_PCB_IO(work_b)->pcb_args.index = b;
+    TcpPcb.load(work_b);
+    IDEMIP_TCP_PCB_IO(work_b)->vars.snd_nxt = 2000u;
+    IDEMIP_TCP_PCB_IO(work_b)->state = IDEMIP_TCP_STATE_LISTEN;
+    IDEMIP_TCP_PCB_IO(work_b)->pcb_args.index = b;
+    TcpPcb.store(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_PCB_IO(work_b)->status);
+
+    // b's store did not reach a's TCB.
+    IDEMIP_TCP_PCB_IO(work_a)->pcb_args.index = a;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_UINT32(1000u, IDEMIP_TCP_PCB_IO(work_a)->vars.snd_nxt);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_SYN_SENT, IDEMIP_TCP_PCB_IO(work_a)->state);
+
+    // And a whole clear on a leaves b's TCB where b put it.
+    TcpPcb.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_PCB_IO(work_a)->status);
+    IDEMIP_TCP_PCB_IO(work_b)->pcb_args.index = b;
+    TcpPcb.load(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_PCB_IO(work_b)->status);
     TEST_ASSERT_EQUAL_UINT32(2000u, IDEMIP_TCP_PCB_IO(work_b)->vars.snd_nxt);
     TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_LISTEN, IDEMIP_TCP_PCB_IO(work_b)->state);
 }
@@ -415,9 +448,38 @@ void test_a_refused_queue_read_reports_no_segment(void)
 // holds exactly that many.
 void test_the_out_of_order_table_holds_what_the_pin_bound_counts(void)
 {
-    TEST_ASSERT_EQUAL_size_t((size_t)IDEMIP_TCP_PCBS * IDEMIP_TCP_OOSEQ_SEGS, OOSEQ_ENTRIES);
     TEST_ASSERT_TRUE_MESSAGE(OOSEQ_ENTRIES <= IDEMIP_MAX_PINNED_FRAMES,
                              "the held-segment table outgrew the pin bound the receive ring is sized against");
+
+    // What the module hands out, rather than what the macro says: every TCB fills its own hold, and
+    // the next allocation on any of them is BUSY.
+    TcpPcb.clear(work_a);
+    size_t held = 0u;
+    for (uint16_t p = 0u; p < (uint16_t)IDEMIP_TCP_PCBS; p++)
+    {
+        uint16_t idx = open4(work_a);
+        TEST_ASSERT_NOT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, idx);
+        for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_OOSEQ_SEGS; n++)
+        {
+            IDEMIP_TCP_PCB_IO(work_a)->oos_args.pcb = idx;
+            IDEMIP_TCP_PCB_IO(work_a)->oos_args.seq = 1000u + (uint32_t)(n * 100u);
+            IDEMIP_TCP_PCB_IO(work_a)->oos_args.len = 100u;
+            IDEMIP_TCP_PCB_IO(work_a)->oos_args.desc = 0u;
+            IDEMIP_TCP_PCB_IO(work_a)->oos_args.offset = 0u;
+            TcpPcb.oos_alloc(work_a);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_TCP_PCB_IO(work_a)->status,
+                                          "a TCB refused a hold inside its own bound");
+            held++;
+        }
+        // sec 3.10.7.4 SHLD-31 holds a segment for later processing; past the bound there is nowhere
+        // to hold it, which is BUSY rather than ERR because an oos_free frees one.
+        IDEMIP_TCP_PCB_IO(work_a)->oos_args.pcb = idx;
+        IDEMIP_TCP_PCB_IO(work_a)->oos_args.seq = 9000u;
+        TcpPcb.oos_alloc(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_TCP_PCB_IO(work_a)->status,
+                                      "a TCB took a hold past IDEMIP_TCP_OOSEQ_SEGS");
+    }
+    TEST_ASSERT_EQUAL_size_t_MESSAGE(OOSEQ_ENTRIES, held, "the table handed out a different count than it holds");
 }
 
 // =============================================================================
@@ -425,16 +487,6 @@ void test_the_out_of_order_table_holds_what_the_pin_bound_counts(void)
 // tests the RFC 9293 logic, with the vectors the RFC's own figures print.
 // =============================================================================
 
-#define IO(w) IDEMIP_TCP_PCB_IO(w)
-
-static uint16_t open4(uint8_t *w)
-{
-    IO(w)->open_args.ip_version = 4u;
-    TcpPcb.open(w);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(w)->status);
-    TEST_ASSERT_NOT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(w)->index);
-    return IO(w)->index;
-}
 
 // A store carries the whole variable set, so a caller loads, adjusts and stores. That is the shape
 // every behavior case below uses.
@@ -645,9 +697,11 @@ void test_bind_sets_the_local_half_of_the_four_tuple(void)
     }
 }
 
-// RFC 6335 sec 6: "the Dynamic Ports, also known as the Private or Ephemeral Ports, from 49152-65535
-// (never assigned)". A bind of IDEMIP_TCP_PCB_PORT_ANY draws from exactly that range.
-void test_a_bind_of_port_any_draws_from_the_rfc_6335_dynamic_range(void)
+// RFC 6056 sec 3.2: "ephemeral port selection algorithms should use the whole range 1024-65535", and
+// "Ephemeral port selection algorithms SHOULD use the largest possible port range, since this reduces
+// the chances of an off-path attacker of guessing the selected port numbers." A bind of
+// IDEMIP_TCP_PCB_PORT_ANY draws inside the pool and never below 1024.
+void test_a_bind_of_port_any_draws_from_the_ephemeral_pool(void)
 {
     TcpPcb.clear(work_a);
     uint16_t a = open4(work_a);
@@ -669,9 +723,57 @@ void test_a_bind_of_port_any_draws_from_the_rfc_6335_dynamic_range(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     uint16_t p2 = IO(work_a)->port;
 
-    TEST_ASSERT_TRUE_MESSAGE(p1 >= IDEMIP_TCP_PCB_PORT_DYN_FIRST, "a drawn port fell below the Dynamic Ports");
-    TEST_ASSERT_TRUE_MESSAGE(p2 >= IDEMIP_TCP_PCB_PORT_DYN_FIRST, "a drawn port fell below the Dynamic Ports");
+    TEST_ASSERT_TRUE_MESSAGE(p1 >= IDEMIP_TCP_PCB_PORT_EPH_FIRST, "a drawn port fell below the pool");
+    TEST_ASSERT_TRUE_MESSAGE(p2 >= IDEMIP_TCP_PCB_PORT_EPH_FIRST, "a drawn port fell below the pool");
     TEST_ASSERT_TRUE_MESSAGE(p1 != p2, "two draws handed out the same local port");
+    // sec 3.2 bounds the pool below at the first non-System Port, and above at the last port there is.
+    TEST_ASSERT_TRUE_MESSAGE(p1 >= 1024u && p2 >= 1024u, "an ephemeral port must not fall in the System Ports");
+
+    // The pool is wider than RFC 6335 sec 6's Dynamic Ports alone, which sec 3.2 says an ephemeral
+    // algorithm should not confine itself to.
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_TCP_PCB_PORT_EPH_COUNT > (65535u - 49152u + 1u),
+                             "the pool is no larger than the Dynamic Ports");
+}
+
+// RFC 6056 sec 3.1: "Port numbers that are currently in use by a TCP in the LISTEN state should not
+// be allowed for use as ephemeral ports. If this rule is not complied with, an attacker could
+// potentially 'steal' an incoming connection to a local server application in at least two different
+// ways." A word that lands on a listener's port must step past it.
+void test_the_ephemeral_draw_steps_over_a_port_a_listener_holds(void)
+{
+    TcpPcb.clear(work_a);
+    // The port a zero word lands on, so the draw's first candidate is the one the listener holds.
+    uint16_t served = (uint16_t)IDEMIP_TCP_PCB_PORT_EPH_FIRST;
+    IO(work_a)->listen_args.ip = g_local;
+    IO(work_a)->listen_args.port = served;
+    IO(work_a)->listen_args.zone = 0u;
+    IO(work_a)->listen_args.netif = 0u;
+    IO(work_a)->listen_args.backlog = 1u;
+    IO(work_a)->listen_args.ip_version = 4u;
+    TcpPcb.listen(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    uint16_t idx = open4(work_a);
+    IO(work_a)->bind_args.index = idx;
+    IO(work_a)->bind_args.ip = g_local;
+    IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
+    IO(work_a)->bind_args.rand = 0u;
+    TcpPcb.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(served, IO(work_a)->port,
+                                  "the draw handed out a port a listener is serving");
+    TEST_ASSERT_TRUE(IO(work_a)->port >= IDEMIP_TCP_PCB_PORT_EPH_FIRST);
+
+    // RFC 9293 sec 3.9.1.1 MUST-42 is the converse and still holds: a named bind of that same port
+    // stands, because a LISTEN must be possible alongside a connection on the same local port.
+    uint16_t other = open4(work_a);
+    IO(work_a)->bind_args.index = other;
+    IO(work_a)->bind_args.ip = g_local;
+    IO(work_a)->bind_args.port = served;
+    IO(work_a)->bind_args.rand = 0u;
+    TcpPcb.bind(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "MUST-42's named bind must not be refused");
+    TEST_ASSERT_EQUAL_UINT16(served, IO(work_a)->port);
 }
 
 // RFC 6056 sec 3.3: "Ephemeral port selection algorithms SHOULD obfuscate the selection of their
@@ -688,23 +790,35 @@ void test_the_ephemeral_draw_follows_the_callers_random_word(void)
     IO(work_a)->bind_args.index = idx;
     IO(work_a)->bind_args.ip = g_local;
     IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
-    IO(work_a)->bind_args.rand = 0u;
+    IO(work_a)->bind_args.rand = 0x0F0F0F0Fu;
     TcpPcb.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-    TEST_ASSERT_EQUAL_UINT16_MESSAGE((uint16_t)IDEMIP_TCP_PCB_PORT_DYN_FIRST, IO(work_a)->port,
-                                     "a zero word must land on the first Dynamic Port");
+    uint16_t first = IO(work_a)->port;
+    TEST_ASSERT_TRUE(first >= IDEMIP_TCP_PCB_PORT_EPH_FIRST);
 
+    // The same empty table, a different word: a cursor would hand out the same next port either way.
     TcpPcb.clear(work_a);
     idx = open4(work_a);
     IO(work_a)->bind_args.index = idx;
     IO(work_a)->bind_args.ip = g_local;
     IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
-    IO(work_a)->bind_args.rand = IDEMIP_TCP_PCB_PORT_DYN_MASK; // the top of the range
+    IO(work_a)->bind_args.rand = 0xF0F0F0F0u;
     TcpPcb.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-    TEST_ASSERT_EQUAL_UINT16_MESSAGE(
-        (uint16_t)(IDEMIP_TCP_PCB_PORT_DYN_FIRST | IDEMIP_TCP_PCB_PORT_DYN_MASK), IO(work_a)->port,
-        "the draw did not follow the caller's word");
+    uint16_t second = IO(work_a)->port;
+    TEST_ASSERT_TRUE(second >= IDEMIP_TCP_PCB_PORT_EPH_FIRST);
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(first, second, "the draw did not follow the caller's word");
+
+    // And the same word twice on an empty table places it the same way, so the draw is a function of
+    // the word rather than of a cursor the last call moved.
+    TcpPcb.clear(work_a);
+    idx = open4(work_a);
+    IO(work_a)->bind_args.index = idx;
+    IO(work_a)->bind_args.ip = g_local;
+    IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
+    IO(work_a)->bind_args.rand = 0x0F0F0F0Fu;
+    TcpPcb.bind(work_a);
+    TEST_ASSERT_EQUAL_UINT16(first, IO(work_a)->port);
 }
 
 // RFC 9293 sec 3.4.1: "A connection is defined by a pair of sockets." Two peers reaching one local
@@ -841,6 +955,73 @@ void test_connect_refuses_an_unspecified_remote_socket(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
 }
 
+// RFC 9293 sec 3.9.1.1 MUST-46: "A TCP implementation MUST reject as an error a local OPEN call for
+// an invalid remote IP address (e.g., a broadcast or multicast address)". RFC 1122 sec 4.2.3.10
+// carries the same sentence. RFC 1122 sec 3.2.1.3 adds the unspecified address, which "MUST NOT be
+// used as a destination address".
+void test_connect_refuses_an_invalid_remote_ip_address(void)
+{
+    static const uint8_t all_hosts[IDEMIP_TCP_PCB_ADDR_BYTES] = {224u, 0u, 0u, 1u};   // class D
+    static const uint8_t limited[IDEMIP_TCP_PCB_ADDR_BYTES] = {255u, 255u, 255u, 255u}; // sec 3.2.1.3 (c)
+    static const uint8_t unspec4[IDEMIP_TCP_PCB_ADDR_BYTES] = {0u, 0u, 0u, 0u};
+    static const uint8_t *const bad4[3] = {all_hosts, limited, unspec4};
+
+    for (size_t i = 0; i < 3u; i++)
+    {
+        TcpPcb.clear(work_a);
+        uint16_t idx = open4(work_a);
+        IO(work_a)->connect_args.index = idx;
+        IO(work_a)->connect_args.ip = bad4[i];
+        IO(work_a)->connect_args.port = 80u;
+        TcpPcb.connect(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status,
+                                      "MUST-46 rejects an invalid remote IP address");
+    }
+
+    // A unicast remote address at the same port is what MUST-46 leaves alone.
+    TcpPcb.clear(work_a);
+    uint16_t ok = open4(work_a);
+    IO(work_a)->connect_args.index = ok;
+    IO(work_a)->connect_args.ip = g_remote;
+    IO(work_a)->connect_args.port = 80u;
+    TcpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+}
+
+// The same rule over RFC 4291: sec 2.7's FF00::/8 multicast and sec 2.5.2's unspecified address.
+void test_connect_refuses_an_invalid_remote_ipv6_address(void)
+{
+    static const uint8_t all_nodes[IDEMIP_TCP_PCB_ADDR_BYTES] = {0xFFu, 0x02u, 0u, 0u, 0u, 0u, 0u, 0u,
+                                                                 0u,    0u,    0u, 0u, 0u, 0u, 0u, 1u};
+    static const uint8_t unspec6[IDEMIP_TCP_PCB_ADDR_BYTES] = {0u};
+    static const uint8_t global6[IDEMIP_TCP_PCB_ADDR_BYTES] = {0x20u, 0x01u, 0x0Du, 0xB8u, 0u, 0u, 0u, 0u,
+                                                               0u,    0u,    0u,    0u,    0u, 0u, 0u, 1u};
+    static const uint8_t *const bad6[2] = {all_nodes, unspec6};
+
+    for (size_t i = 0; i < 2u; i++)
+    {
+        TcpPcb.clear(work_a);
+        IO(work_a)->open_args.ip_version = 6u;
+        TcpPcb.open(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        IO(work_a)->connect_args.index = IO(work_a)->index;
+        IO(work_a)->connect_args.ip = bad6[i];
+        IO(work_a)->connect_args.port = 80u;
+        TcpPcb.connect(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status,
+                                      "MUST-46 rejects an invalid remote IPv6 address");
+    }
+
+    TcpPcb.clear(work_a);
+    IO(work_a)->open_args.ip_version = 6u;
+    TcpPcb.open(work_a);
+    IO(work_a)->connect_args.index = IO(work_a)->index;
+    IO(work_a)->connect_args.ip = global6;
+    IO(work_a)->connect_args.port = 80u;
+    TcpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+}
+
 // RFC 9293 sec 3.4.1: "A connection is defined by a pair of sockets." Two TCBs holding one pair are
 // two records for one connection, and that is BUSY rather than ERR because closing the first frees
 // the pair.
@@ -943,6 +1124,116 @@ void test_a_store_and_a_load_round_trip_every_variable(void)
     TEST_ASSERT_EQUAL_UINT32(1000u, IO(work_a)->ctl.sack_left[0]);
     TEST_ASSERT_EQUAL_UINT32(1500u, IO(work_a)->ctl.sack_right[0]);
     TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_SYN_SENT, IO(work_a)->state);
+}
+
+// Every octet of TcpPcbCtl, not the handful the test above names. A store and a load are the only
+// way the estimator, congestion, option and keepalive state of a TCB reaches a caller, so a field
+// added to the struct or reordered inside it must still survive the trip.
+void test_a_store_and_a_load_round_trip_every_octet_of_the_control_state(void)
+{
+    TcpPcbCtl want;
+    for (size_t i = 0; i < sizeof want; i++)
+    {
+        ((uint8_t *)&want)[i] = (uint8_t)(0xA5u ^ (uint8_t)i); // distinct per octet, so a swap shows
+    }
+    TcpPcb.clear(work_a);
+    uint16_t idx = open4(work_a);
+    IO(work_a)->pcb_args.index = idx;
+    TcpPcb.load(work_a);
+    IO(work_a)->ctl = want;
+    IO(work_a)->pcb_args.index = idx;
+    TcpPcb.store(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    memset(&IO(work_a)->ctl, 0, sizeof IO(work_a)->ctl);
+    IO(work_a)->pcb_args.index = idx;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(&want, &IO(work_a)->ctl, sizeof want,
+                                     "an octet of the control state did not survive a store and a load");
+}
+
+// RFC 9293 sec 3.8.3 MUST-21: "An application MUST be able to set the value for R2 for a particular
+// connection", and sec 3.9.1.9 MUST-48: "The application layer MUST be able to specify the
+// Differentiated Services field for segments that are sent on a connection." sec 3.10.1's OPEN fills
+// both in.
+void test_opt_sets_the_diffserv_field_and_the_r2_thresholds(void)
+{
+    TcpPcb.clear(work_a);
+    uint16_t idx = open4(work_a);
+
+    // An open leaves R2 at the two bounds sec 3.8.3 asks for, and the Diffserv field at zero.
+    IO(work_a)->pcb_args.index = idx;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_TCP_MAXRTX, IO(work_a)->ctl.r2);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_TCP_SYNMAXRTX, IO(work_a)->ctl.r2_syn);
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->info.tos);
+
+    IO(work_a)->opt_args.index = idx;
+    IO(work_a)->opt_args.tos = 0xB8u; // RFC 2474 sec 4.2.1's EF codepoint in the six high bits
+    IO(work_a)->opt_args.ttl = 32u;
+    IO(work_a)->opt_args.r2 = 20u;
+    IO(work_a)->opt_args.r2_syn = 10u;
+    TcpPcb.opt(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    IO(work_a)->pcb_args.index = idx;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0xB8u, IO(work_a)->info.tos, "MUST-48's Diffserv field is settable");
+    TEST_ASSERT_EQUAL_UINT8(32u, IO(work_a)->info.ttl);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(20u, IO(work_a)->ctl.r2, "MUST-21's R2 is settable per connection");
+    TEST_ASSERT_EQUAL_UINT8(10u, IO(work_a)->ctl.r2_syn);
+
+    // Clause (d): "an interactive application might set R2 to 'infinity'", which is a threshold of
+    // zero here.
+    IO(work_a)->opt_args.index = idx;
+    IO(work_a)->opt_args.r2 = 0u;
+    IO(work_a)->opt_args.r2_syn = 0u;
+    TcpPcb.opt(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    IO(work_a)->pcb_args.index = idx;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->ctl.r2);
+
+    // An index that names no open TCB is ERR.
+    IO(work_a)->opt_args.index = (uint16_t)IDEMIP_TCP_PCBS;
+    TcpPcb.opt(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+// RFC 9293 sec 3.8.3 MUST-23: "R2 for a SYN segment MUST be set large enough to provide
+// retransmission of the segment for at least 3 minutes." RFC 6298 (5.5) doubles RTO on each expiry
+// from IDEMIP_TCP_RTO_INIT_MS under the IDEMIP_TCP_RTO_MAX_MS bound, so the default threshold has to
+// carry the schedule past 180000 milliseconds.
+void test_the_default_syn_r2_carries_three_minutes_of_retransmission(void)
+{
+    uint32_t rto = (uint32_t)IDEMIP_TCP_RTO_INIT_MS;
+    uint32_t at = 0u;
+    for (uint8_t n = 0u; n < (uint8_t)IDEMIP_TCP_SYNMAXRTX; n++)
+    {
+        at += rto;
+        rto <<= 1;
+        if (rto > (uint32_t)IDEMIP_TCP_RTO_MAX_MS)
+        {
+            rto = (uint32_t)IDEMIP_TCP_RTO_MAX_MS;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(at >= 180000u, "MUST-23 wants at least 3 minutes before the SYN is given up on");
+
+    // sec 3.8.3 SHLD-11: "The value of R2 SHOULD correspond to at least 100 seconds."
+    rto = (uint32_t)IDEMIP_TCP_RTO_INIT_MS;
+    at = 0u;
+    for (uint8_t n = 0u; n < (uint8_t)IDEMIP_TCP_MAXRTX; n++)
+    {
+        at += rto;
+        rto <<= 1;
+        if (rto > (uint32_t)IDEMIP_TCP_RTO_MAX_MS)
+        {
+            rto = (uint32_t)IDEMIP_TCP_RTO_MAX_MS;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(at >= 100000u, "SHLD-11 wants R2 to correspond to at least 100 seconds");
 }
 
 // RFC 7323 sec 2.2 shifts the 16-bit Window field left by Snd.Wind.Shift, up to

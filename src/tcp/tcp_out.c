@@ -588,6 +588,7 @@ static void tcp_out_rtx_expire(uint8_t *restrict work)
     }
     TcpOutIo *io = TCP_OUT_IO(work);
     io->status = IDEMIP_ERR;
+    io->res.r2 = IDEMIP_FALSE;
     if (TCP_OUT_CTX(work)->ready != TCP_OUT_READY || io->timer_args.smss == 0u)
     {
         return;
@@ -620,6 +621,17 @@ static void tcp_out_rtx_expire(uint8_t *restrict work)
     if (io->ctl.backoff < 0xFFu)
     {
         io->ctl.backoff++;
+    }
+    // RFC 9293 sec 3.8.3 (c): "When the number of transmissions of the same segment reaches a
+    // threshold R2 greater than R1, close the connection." Clause (a) lets R2 be "a count of
+    // retransmissions", which nrtx is, and clause (d)'s "infinity" is a threshold of zero. sec 3.8.3
+    // separates the two: "the values of R1 and R2 may be different for SYN and data segments".
+    uint8_t r2 = (io->state == IDEMIP_TCP_STATE_SYN_SENT || io->state == IDEMIP_TCP_STATE_SYN_RECEIVED)
+                     ? io->ctl.r2_syn
+                     : io->ctl.r2;
+    if (r2 != 0u && io->ctl.nrtx >= r2)
+    {
+        io->res.r2 = IDEMIP_TRUE;
     }
     io->status = IDEMIP_OK;
 }

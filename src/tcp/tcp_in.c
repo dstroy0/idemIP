@@ -171,6 +171,15 @@ static void tcp_in_put_challenge(uint8_t *restrict work, TcpInIo *io)
     tcp_in_put_ack(io);
 }
 
+// RFC 9293 sec 3.6 MUST-13: "When a connection is closed actively, it MUST linger in the TIME-WAIT
+// state for a time 2xMSL (Maximum Segment Lifetime)", and Figure 5 leaves TIME-WAIT on
+// "Timeout=2MSL". The instant that timeout falls at is the TCB's, so a restart moves it.
+static void tcp_in_put_2msl(TcpInIo *io)
+{
+    io->res.act |= IDEMIP_TCP_IN_ACT_2MSL;
+    io->ctl.time_wait_deadline = io->now_ms + (2u * (uint32_t)IDEMIP_TCP_MSL_MS);
+}
+
 // The operand block's result members, before a call decides anything.
 static void tcp_in_result_clear(TcpInIo *io)
 {
@@ -759,7 +768,7 @@ static idemip_bool tcp_in_check_ack(TcpInIo *io)
         if (fin_acked)
         {
             io->state = IDEMIP_TCP_STATE_TIME_WAIT;
-            io->res.act |= IDEMIP_TCP_IN_ACT_2MSL;
+            tcp_in_put_2msl(io);
         }
         return IDEMIP_TRUE;
     case IDEMIP_TCP_STATE_LAST_ACK:
@@ -775,7 +784,7 @@ static idemip_bool tcp_in_check_ack(TcpInIo *io)
         // "The only thing that can arrive in this state is a retransmission of the remote FIN.
         // Acknowledge it, and restart the 2 MSL timeout."
         tcp_in_put_ack(io);
-        io->res.act |= IDEMIP_TCP_IN_ACT_2MSL;
+        tcp_in_put_2msl(io);
         return IDEMIP_TRUE;
     default:
         return IDEMIP_FALSE;
@@ -909,7 +918,7 @@ static void tcp_in_check_fin(TcpInIo *io)
         if (io->vars.snd_una == io->vars.snd_nxt)
         {
             io->state = IDEMIP_TCP_STATE_TIME_WAIT;
-            io->res.act |= IDEMIP_TCP_IN_ACT_2MSL;
+            tcp_in_put_2msl(io);
         }
         else
         {
@@ -919,11 +928,11 @@ static void tcp_in_check_fin(TcpInIo *io)
     case IDEMIP_TCP_STATE_FIN_WAIT_2:
         // "Enter the TIME-WAIT state. Start the time-wait timer, turn off the other timers."
         io->state = IDEMIP_TCP_STATE_TIME_WAIT;
-        io->res.act |= IDEMIP_TCP_IN_ACT_2MSL;
+        tcp_in_put_2msl(io);
         return;
     case IDEMIP_TCP_STATE_TIME_WAIT:
         // "Remain in the TIME-WAIT state. Restart the 2 MSL time-wait timeout."
-        io->res.act |= IDEMIP_TCP_IN_ACT_2MSL;
+        tcp_in_put_2msl(io);
         return;
     default:
         return; // CLOSE-WAIT, CLOSING and LAST-ACK each "Remain in the" state they are in.

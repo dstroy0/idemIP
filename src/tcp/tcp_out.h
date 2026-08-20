@@ -176,6 +176,10 @@ typedef struct
  *                             5681 congestion window leaves
  * @var TcpOutResult::send_len octets the sec 3.8.6.2.1 rules say to send now
  * @var TcpOutResult::send_now whether any of those rules fired
+ * @var TcpOutResult::r2       RFC 9293 sec 3.8.3 clause (c): "When the number of transmissions of the
+ *                             same segment reaches a threshold R2 greater than R1, close the
+ *                             connection." Set by rtx_expire when @ref TcpPcbCtl::nrtx reached the
+ *                             threshold for the state, so the caller closes the TCB.
  */
 typedef struct
 {
@@ -184,6 +188,7 @@ typedef struct
     uint32_t usable;
     uint32_t send_len;
     idemip_bool send_now;
+    idemip_bool r2;
 } TcpOutResult;
 
 /**

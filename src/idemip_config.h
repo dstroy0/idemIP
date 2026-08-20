@@ -579,14 +579,28 @@ static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
 #define IDEMIP_TCP_WND (4u * IDEMIP_TCP_MSS)
 #endif
 
-/** @brief lwIP TCP_MAXRTX. */
+/**
+ * @brief RFC 9293 sec 3.8.3's R2 for a data segment, counted as retransmissions, which clause (a)
+ * allows: "R1 and R2 might be measured in time units or as a count of retransmissions".
+ *
+ * SHLD-11: "The value of R2 SHOULD correspond to at least 100 seconds." RFC 6298 (5.5) doubles RTO on
+ * each expiry from IDEMIP_TCP_RTO_INIT_MS, bounded by IDEMIP_TCP_RTO_MAX_MS, so the twelfth expiry
+ * falls far past that. lwIP TCP_MAXRTX.
+ */
 #ifndef IDEMIP_TCP_MAXRTX
 #define IDEMIP_TCP_MAXRTX 12u
 #endif
 
-/** @brief lwIP TCP_SYNMAXRTX. */
+/**
+ * @brief The same threshold while the SYN is unacknowledged.
+ *
+ * RFC 9293 sec 3.8.3 MUST-23: "R2 for a SYN segment MUST be set large enough to provide
+ * retransmission of the segment for at least 3 minutes." With RTO starting at
+ * IDEMIP_TCP_RTO_INIT_MS and doubling under the IDEMIP_TCP_RTO_MAX_MS bound, the expiries fall at
+ * 1, 3, 7, 15, 31, 63, 123 and 183 seconds, so the eighth is the first at or past 180.
+ */
 #ifndef IDEMIP_TCP_SYNMAXRTX
-#define IDEMIP_TCP_SYNMAXRTX 6u
+#define IDEMIP_TCP_SYNMAXRTX 8u
 #endif
 
 /** @brief lwIP TCP_TMR_INTERVAL. */
@@ -594,9 +608,14 @@ static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
 #define IDEMIP_TCP_TMR_INTERVAL_MS 250u
 #endif
 
-/** @brief lwIP TCP_MSL. */
+/**
+ * @brief RFC 9293 sec 3.4.2: "For this specification the MSL is taken to be 2 minutes. This is an
+ * engineering choice, and may be changed if experience indicates it is desirable to do so."
+ *
+ * sec 3.6 MUST-13 lingers a TIME-WAIT connection for twice this.
+ */
 #ifndef IDEMIP_TCP_MSL_MS
-#define IDEMIP_TCP_MSL_MS 60000u
+#define IDEMIP_TCP_MSL_MS 120000u
 #endif
 
 /**
@@ -1295,7 +1314,7 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 // The block holds one whole TCB's worth of fields, load and store copying the RFC 9293 sec 3.3.1
 // variables, the sec 3.3.2 state and the estimator and congestion state through it.
 #ifndef IDEMIP_TCP_PCB_CTX_BYTES
-#define IDEMIP_TCP_PCB_CTX_BYTES 424u
+#define IDEMIP_TCP_PCB_CTX_BYTES 432u
 #endif
 #define IDEMIP_TCP_PCB_BORROW                                                                                          \
     (IDEMIP_TCP_PCB_CTX_BYTES + (IDEMIP_TCP_PCBS << IDEMIP_TCP_PCB_ENTRY_SHIFT) +                                      \
@@ -1311,7 +1330,7 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 // 8-octet pointers. The context behind it is the mark clear leaves and RFC 5961 sec 7's challenge-ACK
 // counter with the millisecond its window opened at, 12 more.
 #ifndef IDEMIP_TCP_IN_CTX_BYTES
-#define IDEMIP_TCP_IN_CTX_BYTES 296u
+#define IDEMIP_TCP_IN_CTX_BYTES 304u
 #endif
 #define IDEMIP_TCP_IN_BORROW (IDEMIP_TCP_IN_CTX_BYTES)
 
@@ -1321,7 +1340,7 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 // takes, one whole TCB's worth of sec 3.3.1 variables and control state, and what the call reports:
 // 320 octets on a target with 8-octet pointers. The context behind it is the mark clear leaves.
 #ifndef IDEMIP_TCP_OUT_CTX_BYTES
-#define IDEMIP_TCP_OUT_CTX_BYTES 328u
+#define IDEMIP_TCP_OUT_CTX_BYTES 336u
 #endif
 #define IDEMIP_TCP_OUT_BORROW (IDEMIP_TCP_OUT_CTX_BYTES)
 

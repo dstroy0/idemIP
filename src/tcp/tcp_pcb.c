@@ -13,6 +13,8 @@
 
 #include "src/idemip_config.h" // the entry point: the enable gate below, and the widths
 
+#include "src/ip/ip4_addr.h"
+#include "src/ip/ip6_addr.h"
 #include "src/tcp/tcp_pcb.h"
 
 IDEMIP_BEGIN_DECLS
@@ -407,7 +409,24 @@ static idemip_bool tcp_pcb_port_taken(uint8_t *restrict work, uint16_t port, uin
     return IDEMIP_FALSE;
 }
 
-// RFC 6335 sec 6's Dynamic Ports, drawn by RFC 6056 sec 3.3.1 Algorithm 1:
+// RFC 6056 sec 3.1: "Port numbers that are currently in use by a TCP in the LISTEN state should not
+// be allowed for use as ephemeral ports. If this rule is not complied with, an attacker could
+// potentially 'steal' an incoming connection to a local server application". Only the ephemeral draw
+// walks past a listening port; tcp_pcb_bind's named-port path is what MUST-42 protects.
+static idemip_bool tcp_pcb_port_listening(uint8_t *restrict work, uint16_t port)
+{
+    for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_LISTEN_PCBS; i++)
+    {
+        const TcpPcbListenFields *l = &TCP_PCB_LISTEN_AT(work, i)->f;
+        if (l->in_use && l->local_port == port)
+        {
+            return IDEMIP_TRUE;
+        }
+    }
+    return IDEMIP_FALSE;
+}
+
+// The ephemeral pool, drawn by RFC 6056 sec 3.3.1 Algorithm 1:
 //
 //   next_ephemeral = min_ephemeral + (random() % num_ephemeral);
 //   count = num_ephemeral;
@@ -421,12 +440,12 @@ static idemip_bool tcp_pcb_port_taken(uint8_t *restrict work, uint16_t port, uin
 // last draw left off is guessable from one observed port.
 static uint16_t tcp_pcb_port_draw(uint8_t *restrict work, uint16_t except, uint32_t rand)
 {
-    uint16_t at = (uint16_t)(IDEMIP_TCP_PCB_PORT_DYN_FIRST | (uint16_t)(rand & IDEMIP_TCP_PCB_PORT_DYN_MASK));
-    for (uint32_t n = 0u; n < (uint32_t)IDEMIP_TCP_PCB_PORT_DYN_COUNT; n++)
+    uint16_t at = (uint16_t)(IDEMIP_TCP_PCB_PORT_EPH_FIRST | (uint16_t)(rand & IDEMIP_TCP_PCB_PORT_EPH_MASK));
+    for (uint32_t n = 0u; n < (uint32_t)IDEMIP_TCP_PCB_PORT_EPH_COUNT; n++)
     {
         uint16_t port = at;
-        at = (uint16_t)(IDEMIP_TCP_PCB_PORT_DYN_FIRST | (uint16_t)((port + 1u) & IDEMIP_TCP_PCB_PORT_DYN_MASK));
-        if (!tcp_pcb_port_taken(work, port, except))
+        at = (uint16_t)(IDEMIP_TCP_PCB_PORT_EPH_FIRST | (uint16_t)((port + 1u) & IDEMIP_TCP_PCB_PORT_EPH_MASK));
+        if (!tcp_pcb_port_taken(work, port, except) && !tcp_pcb_port_listening(work, port))
         {
             return port;
         }
@@ -555,6 +574,9 @@ static void tcp_pcb_open(uint8_t *restrict work)
         t->unacked = IDEMIP_TCP_PCB_NONE;
         t->ooseq = IDEMIP_TCP_PCB_NONE;
         t->ttl = (uint8_t)IDEMIP_IP_DEFAULT_TTL;
+        // RFC 9293 sec 3.8.3's R2, which sec 3.10.1's OPEN fills in and TcpPcb.opt resets.
+        t->ctl.r2 = (uint8_t)IDEMIP_TCP_MAXRTX;
+        t->ctl.r2_syn = (uint8_t)IDEMIP_TCP_SYNMAXRTX;
         t->ip_version = io->open_args.ip_version;
         t->state = IDEMIP_TCP_STATE_CLOSED;
         t->in_use = IDEMIP_TRUE;
@@ -563,6 +585,35 @@ static void tcp_pcb_open(uint8_t *restrict work)
         return;
     }
     io->status = IDEMIP_BUSY; // every TCB open, and sec 3.10.4's "Delete TCB" frees one
+}
+
+// RFC 9293 sec 3.10.1's OPEN fills in "local socket identifier, remote socket, Diffserv field,
+// security/compartment, and user timeout information". The sockets are bind and connect; the rest a
+// TCB can hold are here. sec 3.9.1.9 MUST-48: "The application layer MUST be able to specify the
+// Differentiated Services field for segments that are sent on a connection." sec 3.8.3 MUST-21: "An
+// application MUST be able to set the value for R2 for a particular connection."
+static void tcp_pcb_opt(uint8_t *restrict work)
+{
+    if (!work)
+    {
+        return;
+    }
+    TcpPcbIo *io = TCP_PCB_IO(work);
+    io->status = IDEMIP_ERR;
+    if (TCP_PCB_CTX(work)->ready != TCP_PCB_READY || io->opt_args.index >= IDEMIP_TCP_PCBS)
+    {
+        return;
+    }
+    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->opt_args.index)->f;
+    if (!t->in_use)
+    {
+        return;
+    }
+    t->tos = io->opt_args.tos;
+    t->ttl = io->opt_args.ttl;
+    t->ctl.r2 = io->opt_args.r2;
+    t->ctl.r2_syn = io->opt_args.r2_syn;
+    io->status = IDEMIP_OK;
 }
 
 // RFC 9293 sec 3.3.2's "delete TCB", which sec 3.10.4 CLOSE reaches from LISTEN and SYN-SENT, sec
@@ -648,6 +699,27 @@ static void tcp_pcb_bind(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
+// RFC 9293 sec 3.9.1.1 (MUST-46): "A TCP implementation MUST reject as an error a local OPEN call for
+// an invalid remote IP address (e.g., a broadcast or multicast address)". RFC 1122 sec 3.2.1.3 adds
+// the unspecified address, which "MUST NOT be used as a destination address". A directed broadcast is
+// the network's own prefix with a host part of all ones, which is not derivable from the address
+// alone, so it is not among these.
+static idemip_bool tcp_pcb_remote_invalid(uint8_t ip_version, const uint8_t *ip)
+{
+    if (ip_version == 4u)
+    {
+        IdemIpIp4AddrType type = idemip_ip4_addr_type(idemip_rd32(ip));
+        return (type == IDEMIP_IP4_TYPE_MULTICAST || type == IDEMIP_IP4_TYPE_BROADCAST ||
+                type == IDEMIP_IP4_TYPE_UNSPECIFIED)
+                   ? IDEMIP_TRUE
+                   : IDEMIP_FALSE;
+    }
+    // RFC 4291 sec 2.7: "An IPv6 multicast address ... must never be used as source addresses in IPv6
+    // packets or appear in any Routing header", and sec 2.5.2 makes :: unusable as a destination.
+    IdemIpIp6Type type = idemip_ip6_addr_type(ip);
+    return (type == IDEMIP_IP6_TYPE_MULTICAST || type == IDEMIP_IP6_TYPE_UNSPECIFIED) ? IDEMIP_TRUE : IDEMIP_FALSE;
+}
+
 // RFC 9293 sec 3.3.1's "remote IP address and port number" half of the four-tuple. sec 3.10.1: "if
 // active and the remote socket is unspecified, return 'error: remote socket unspecified'", so a
 // remote port of zero is ERR. The pair completed here is what sec 3.4.1 calls a connection, "defined
@@ -674,6 +746,10 @@ static void tcp_pcb_connect(uint8_t *restrict work)
     if (io->connect_args.port == IDEMIP_TCP_PCB_PORT_ANY)
     {
         return;
+    }
+    if (tcp_pcb_remote_invalid(t->ip_version, io->connect_args.ip))
+    {
+        return; // sec 3.9.1.1 MUST-46, "an invalid remote IP address"
     }
     for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_PCBS; i++)
     {
@@ -1258,6 +1334,7 @@ static void tcp_pcb_oos_free(uint8_t *restrict work)
 
 const TcpPcbNs TcpPcb = {.clear = tcp_pcb_clear,
                          .open = tcp_pcb_open,
+                         .opt = tcp_pcb_opt,
                          .close = tcp_pcb_close,
                          .bind = tcp_pcb_bind,
                          .connect = tcp_pcb_connect,
