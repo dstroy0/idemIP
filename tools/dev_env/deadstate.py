@@ -21,7 +21,11 @@ not scoped to a type without knowing what the local was declared as. Restricting
 idiom is what keeps `io->bind_args.mtu` from reading as a use of LoopifCtx::mtu.
 
 A write is an assignment to the field, or the field as the first argument of a memcpy, memset or
-memmove. Anything else that names it is a read. Padding is not state and is skipped by name.
+memmove. So is a statement that only puts the value back where it came from, because such a
+statement asks the field nothing: `x->f = x->f + 1`, `x->f++`, `x->f += n`. A counter kept that way
+hides behind its own arithmetic, which is where three of these were found - igmp's and mld6's
+membership counts and dma's tally of returned receive descriptors. Anything else that names the
+field is a read. Padding is not state and is skipped by name.
 
     python tools/dev_env/deadstate.py
 
@@ -64,6 +68,29 @@ def borrow_tags(text):
         if m.group(2) in tags:
             tags |= {mm.group(1) for mm in MEMBER_TYPE.finditer(m.group(1))}
     return tags
+
+
+# A statement that is nothing but a read-modify-write of one field: `x->f++`, `x->f--`, `x->f += n`.
+# The value is read, changed and put straight back, so the field is no more consulted than a plain
+# assignment consults it. Only when the RMW IS the whole statement: `y = x->f++` reads it, and so
+# does `if (x->f-- > 0)`.
+RMW_OP = re.compile(r"(\+=|-=|\*=|/=|%=|\|=|&=|\^=|<<=|>>=)")
+
+
+def rmw_only(text, pos, field):
+    """True when the statement around @p pos is a read-modify-write of `->field` and nothing else."""
+    start = max(text.rfind(";", 0, pos), text.rfind("{", 0, pos), text.rfind("}", 0, pos))
+    end = text.find(";", pos)
+    stmt = text[start + 1 : len(text) if end < 0 else end].strip()
+    tail = "->" + field
+    if stmt.endswith("++") or stmt.endswith("--"):
+        lhs = stmt[:-2].rstrip()
+        return "=" not in lhs and lhs.endswith(tail)
+    m = RMW_OP.search(stmt)
+    if m is None:
+        return False
+    lhs = stmt[: m.start()].rstrip()
+    return "=" not in lhs and lhs.endswith(tail)
 
 
 def base_of(text, arrow):
@@ -116,6 +143,9 @@ def uses(text, field):
             writes += 1
             continue
         if m.start() in self_read:
+            continue
+        if rmw_only(text, m.start(), field):
+            writes += 1
             continue
         # memcpy(x->field, ...) and memset(x->field, ...) write it through their FIRST argument. No
         # comma in between, or the source of a memcpy reads as a write - which is what the RFC 6528

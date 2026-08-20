@@ -28,7 +28,6 @@ typedef struct
     const IdemIpPhyDriver *drv;
     uint32_t ready;   // DMA_READY once clear has run
     uint32_t rx_head; // one past the receive descriptor last taken
-    uint32_t rx_tail; // receive descriptors handed back to the engine
     uint32_t tx_head; // one past the transmit descriptor last handed out
     uint32_t tx_tail; // transmit descriptors taken back from the engine
     uint16_t pinned;  // receive descriptors pinned, bounded by IDEMIP_MAX_PINNED_FRAMES
@@ -117,7 +116,6 @@ static void dma_rx_give_back(uint8_t *restrict work, DmaDesc *d)
     ctx->drv->rx_release();
     d->len = 0u;
     d->flags = (uint16_t)IDEMIP_DMA_FLAG_OWN;
-    ctx->rx_tail++;
 }
 
 // --- the entries -----------------------------------------------------------
@@ -188,7 +186,6 @@ void idemip_dma_bind(uint8_t *restrict work)
     DmaCtx *ctx = DMA_CTX(work);
     ctx->drv = io->bind_args.drv;
     ctx->rx_head = 0u;
-    ctx->rx_tail = 0u;
     ctx->tx_head = 0u;
     ctx->tx_tail = 0u;
     ctx->pinned = 0u;

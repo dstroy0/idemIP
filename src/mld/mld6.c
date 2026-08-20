@@ -36,9 +36,8 @@ typedef struct
 typedef struct
 {
     uint32_t now_ms;
-    uint8_t groups;
     idemip_bool ready;
-    uint8_t pad[2];
+    uint8_t pad[3];
 } Mld6Ctx;
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
@@ -271,7 +270,6 @@ void idemip_mld6_join(uint8_t *restrict work)
     memcpy(g->group, io->group_args.group, IDEMIP_IP6_ADDR_LEN);
     g->netif = io->group_args.netif;
     g->used = IDEMIP_TRUE;
-    ctx->groups++;
     if (mld6_reportable(g->group))
     {
         // sec 5 start listening: "If this is an unsolicited Report, the timer is set to a delay value
@@ -328,7 +326,6 @@ void idemip_mld6_leave(uint8_t *restrict work)
     io->send_done = io->group_args.done_always ? mld6_reportable(g->group) : g->last_reporter;
     io->last_reporter = g->last_reporter;
     memset(g, 0, sizeof(*g));
-    ctx->groups--;
 
     io->index = index;
     io->group = io->group_args.group;
