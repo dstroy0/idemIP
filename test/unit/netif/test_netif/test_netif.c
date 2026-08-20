@@ -411,6 +411,8 @@ void test_the_infinite_lifetime_is_all_one_bits(void)
     TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFFu, IDEMIP_NETIF_LIFETIME_INFINITE);
 }
 
+// (test_a_lifetime_past_the_millisecond_clocks_range_still_expires lives past the helpers it needs.)
+
 #endif // IDEMIP_ENABLE_IPV6
 
 // --- the shape ---------------------------------------------------------------
@@ -572,6 +574,39 @@ static uint8_t state_at(uint8_t *w, uint8_t index, uint8_t slot)
         return (uint8_t)IDEMIP_NETIF_ADDR6_INVALID;
     }
     return (uint8_t)IDEMIP_NETIF_IO(w)->addr6_state;
+}
+
+// RFC 4862 sec 5.5.4: "An address (and its association with an interface) becomes invalid when its
+// valid lifetime expires." RFC 4861 sec 4.6.2 makes only 0xffffffff infinite, so a lifetime past
+// what a 32-bit millisecond count spans is still finite and must still expire. This one is 194 days,
+// which is about four wraps of the caller's clock.
+void test_a_lifetime_past_the_millisecond_clocks_range_still_expires(void)
+{
+    const uint32_t valid_s = 16777216u; // 0x01000000 s, a legal Prefix Information lifetime
+    const IdemIpMs valid_ms = (IdemIpMs)valid_s * 1000u;
+    const uint32_t step = 0x40000000u; // 12.4 days a tick, so the 32-bit clock wraps four times
+
+    Netif.clear(work_a);
+    up(work_a, 0u, phy_a, g_mac_a, 1500u);
+    add6(work_a, 0u, g_addr6_a, IDEMIP_NETIF_ADDR6_PREFERRED, valid_s, valid_s);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status);
+
+    IdemIpMs elapsed = 0;
+    uint32_t now = 0u;
+    while ((elapsed + step) < valid_ms)
+    {
+        now += step; // wraps in 32 bits, which the interface clock carries across
+        elapsed += step;
+        tick(work_a, now);
+        TEST_ASSERT_EQUAL_UINT8_MESSAGE((uint8_t)IDEMIP_NETIF_ADDR6_PREFERRED, state_at(work_a, 0u, 0u),
+                                        "the address went invalid before its valid lifetime");
+    }
+
+    // The tick that reaches the lifetime retires it.
+    now += (uint32_t)(valid_ms - elapsed);
+    tick(work_a, now);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE((uint8_t)IDEMIP_NETIF_ADDR6_INVALID, state_at(work_a, 0u, 0u),
+                                    "a 194-day lifetime never expired");
 }
 #endif
 

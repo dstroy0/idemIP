@@ -826,8 +826,10 @@ static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
 #ifndef IDEMIP_NETIF_ENTRY_SHIFT
 #define IDEMIP_NETIF_ENTRY_SHIFT 6u
 #endif
+// The slot carries the RFC 4862 sec 5.5.4 stamp on the 64-bit millisecond clock, which is what lets a
+// lifetime the RFC states in 32-bit seconds be aged without rounding to a second.
 #ifndef IDEMIP_NETIF_ADDR6_ENTRY_SHIFT
-#define IDEMIP_NETIF_ADDR6_ENTRY_SHIFT 5u
+#define IDEMIP_NETIF_ADDR6_ENTRY_SHIFT 6u
 #endif
 // The region ahead of the two tables carries the operand block as well as the context, the operands
 // living in the borrow rather than on the namespace: 160 octets of NetifIo, then 32 for NetifCtx.

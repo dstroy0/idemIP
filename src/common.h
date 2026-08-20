@@ -64,6 +64,96 @@ static_assert(IDEMIP_IPV6_MIN_MTU - IDEMIP_IPV6_HDR_LEN - IDEMIP_TCP_HDR_LEN == 
 static_assert(IDEMIP_IPV4_MIN_MTU - IDEMIP_IPV4_HDR_LEN - IDEMIP_TCP_HDR_LEN == IDEMIP_IPV4_DEFAULT_SEND_MSS,
               "RFC 9293 sec 3.7.1 MUST-15's IPv4 default of 536 is EMTU_R less 40");
 
+// ---------------------------------------------------------------------------
+// Elapsed time
+// ---------------------------------------------------------------------------
+
+/** @brief Milliseconds in one second. */
+#define IDEMIP_MS_PER_S 1000u
+
+/**
+ * @brief The clock everything is timed against: milliseconds, sixty-four bits.
+ *
+ * One word on a 64-bit target and two on a 32-bit one. Milliseconds throughout, so nothing is ever
+ * rounded to a second, and a span of 584 million years, so a lifetime the RFCs state in a 32-bit
+ * seconds field converts into it whole. It is one scalar, so an interval is one subtraction and a
+ * correction is one addition.
+ */
+typedef uint64_t IdemIpMs;
+
+/**
+ * @brief Extend a caller's 32-bit millisecond clock across its wrap.
+ *
+ * The caller hands @p now_ms, and a module already keeps the stamp it last saw. When the new reading
+ * is below the old one the clock has wrapped, which raises the high word. That is the two clocks a
+ * module already has, widened, and no third one.
+ *
+ * @param last_ms the last reading this module saw, updated to @p now_ms
+ * @param hi      the high word, raised on each wrap
+ */
+IDEMIP_INLINE IdemIpMs idemip_ms_extend(uint32_t *last_ms, uint32_t *hi, uint32_t now_ms)
+{
+    if (now_ms < *last_ms)
+    {
+        (*hi)++;
+    }
+    *last_ms = now_ms;
+    return ((IdemIpMs)(*hi) << 32) | (IdemIpMs)now_ms;
+}
+
+/** @brief One RFC lifetime field, seconds, as milliseconds on the clock above. */
+IDEMIP_INLINE IdemIpMs idemip_ms_from_s(uint32_t seconds)
+{
+    return (IdemIpMs)seconds * IDEMIP_MS_PER_S;
+}
+
+/**
+ * @brief Whole seconds between @p last_ms and @p now_ms, advancing @p last_ms by exactly those.
+ *
+ * A module already holds the two millisecond clocks an elapsed time needs: the stamp it took last
+ * and the @c now_ms it was handed. This adds no third one. Advancing the stamp by whole seconds
+ * alone leaves the sub-second remainder in the gap between it and @p now_ms, so nothing is lost
+ * across calls.
+ *
+ * What the seconds counter it feeds is for is range, never resolution. A 32-bit millisecond count
+ * spans about 49.7 days; the RFCs state lifetimes in a 32-bit seconds field, which spans about 136
+ * years. Neither unit alone both reaches that range and keeps millisecond resolution, so a timed
+ * object stamps both and @ref idemip_elapsed_reached reads them together.
+ */
+IDEMIP_INLINE uint32_t idemip_elapsed_seconds(uint32_t *last_ms, uint32_t now_ms)
+{
+    uint32_t d_ms = now_ms - *last_ms;
+    if (d_ms < IDEMIP_MS_PER_S)
+    {
+        return 0u;
+    }
+    uint32_t whole = d_ms / IDEMIP_MS_PER_S;
+    *last_ms += whole * IDEMIP_MS_PER_S;
+    return whole;
+}
+
+/**
+ * @brief Has @p lifetime_ms passed since a stamp of (@p set_s, @p set_ms)?
+ *
+ * @p now_s and @p now_ms are the module's seconds counter and the caller's millisecond clock. The
+ * seconds pair carries the range and the millisecond pair carries the resolution: while the two
+ * stamps are inside the span a 32-bit millisecond count can express, the answer is the millisecond
+ * difference exactly, and past that the seconds difference decides. Nothing here is rounded to a
+ * second.
+ */
+IDEMIP_INLINE idemip_bool idemip_elapsed_reached(uint32_t set_s, uint32_t set_ms, uint32_t now_s, uint32_t now_ms,
+                                                 uint32_t lifetime_ms)
+{
+    uint32_t d_s = now_s - set_s;
+    // Past what a millisecond count can express, the millisecond difference has wrapped and only the
+    // seconds difference is still meaningful.
+    if (d_s > (0xFFFFFFFFu / IDEMIP_MS_PER_S))
+    {
+        return IDEMIP_TRUE;
+    }
+    return ((now_ms - set_ms) >= lifetime_ms) ? IDEMIP_TRUE : IDEMIP_FALSE;
+}
+
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_COMMON_H

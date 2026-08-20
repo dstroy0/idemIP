@@ -25,7 +25,8 @@ IDEMIP_BEGIN_DECLS
 typedef struct
 {
     uint32_t ready;   // NETIF_READY once clear has run
-    uint32_t tick_ms; // the millisecond the last lifetime sweep ran at
+    uint32_t tick_ms; // the last reading of the caller's 32-bit millisecond clock
+    uint32_t tick_hi; // its high word, raised each time that reading wraps
 } NetifCtx;
 
 // One interface. RFC 1122 sec 3.3.1.1 routes by addr and mask, sec 3.3.1.2 by gw. hwaddr is the
@@ -51,16 +52,18 @@ static_assert(sizeof(NetifEntry) == (1u << IDEMIP_NETIF_ENTRY_SHIFT),
 #if IDEMIP_ENABLE_IPV6
 
 // One IPv6 address on one interface. state holds an IdemIpNetifAddr6State, INVALID being the free
-// slot. The two lifetimes are the RFC 4861 sec 4.6.2 fields in seconds, and set_ms is the
-// millisecond they were taken at, which is what RFC 4862 sec 5.5.4 ages them from.
+// slot. The two lifetimes are the RFC 4861 sec 4.6.2 fields in seconds, and set is the millisecond of
+// the interface clock they were taken at, which is what RFC 4862 sec 5.5.4 ages them from. The clock
+// is milliseconds in sixty-four bits, so the whole 32-bit range the fields can name is reachable and
+// nothing is rounded to a second on the way.
 typedef struct
 {
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     uint32_t preferred_s;
     uint32_t valid_s;
-    uint32_t set_ms;
+    IdemIpMs set;
     uint8_t state;
-    uint8_t pad[(1u << IDEMIP_NETIF_ADDR6_ENTRY_SHIFT) - (IDEMIP_IP6_ADDR_LEN + (3u * 4u) + 1u)];
+    uint8_t pad[(1u << IDEMIP_NETIF_ADDR6_ENTRY_SHIFT) - (IDEMIP_IP6_ADDR_LEN + (2u * 4u) + sizeof(IdemIpMs) + 1u)];
 } NetifAddr6Entry;
 
 static_assert(sizeof(NetifAddr6Entry) == (1u << IDEMIP_NETIF_ADDR6_ENTRY_SHIFT),
@@ -114,14 +117,6 @@ static_assert(((IDEMIP_NETIF_OFF_TAB | IDEMIP_NETIF_OFF_ADDR6) & (IDEMIP_ALIGN -
 // RFC 4291 sec 2.7: "binary 11111111 at the start of the address identifies the address as being a
 // multicast address."
 #define NETIF_IP6_MULTICAST_OCTET 0xFFu
-
-// The seconds a 32-bit millisecond count spans. A lifetime at or above this cannot be measured
-// against that clock, so the sweep leaves it where it is.
-#define NETIF_LIFETIME_S_MAX 4294967u
-#define NETIF_MS_PER_S 1000u
-
-static_assert(NETIF_LIFETIME_S_MAX * NETIF_MS_PER_S <= 0xFFFFFFFFu,
-              "a lifetime at NETIF_LIFETIME_S_MAX seconds must still scale to milliseconds in 32 bits");
 
 // --- what a value means ----------------------------------------------------
 
@@ -241,15 +236,15 @@ static idemip_bool netif_addr6_barred(const uint8_t *addr, uint16_t flags)
 }
 
 // RFC 4861 sec 4.6.2 states both lifetimes in seconds, and "A value of all one bits (0xffffffff)
-// represents infinity", which never expires. A lifetime the millisecond clock cannot span does not
-// expire either. Everything else expires once the milliseconds since it was taken reach it.
-static idemip_bool netif_lifetime_expired(uint32_t lifetime_s, uint32_t elapsed_ms)
+// represents infinity", which never expires. Every other value the field can hold is a finite number
+// of seconds, and the comparison is on the millisecond clock, which reaches all of them.
+static idemip_bool netif_lifetime_expired(uint32_t lifetime_s, IdemIpMs elapsed)
 {
-    if (lifetime_s == IDEMIP_NETIF_LIFETIME_INFINITE || lifetime_s > NETIF_LIFETIME_S_MAX)
+    if (lifetime_s == IDEMIP_NETIF_LIFETIME_INFINITE)
     {
         return IDEMIP_FALSE;
     }
-    return (elapsed_ms >= (lifetime_s * NETIF_MS_PER_S)) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (elapsed >= idemip_ms_from_s(lifetime_s)) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
 // Zeroes one interface's run of the address table, which leaves every slot holding
@@ -360,6 +355,12 @@ static void netif_report_addr6(uint8_t *restrict work, uint8_t index, uint8_t sl
 // only one the RFC names preferred.
 static uint8_t netif_age_addr6(uint8_t *restrict work, uint32_t now_ms)
 {
+    NetifCtx *ctx = NETIF_CTX(work);
+    // The caller's 32-bit reading, extended across its wrap into the one clock every stamp is taken
+    // on. The difference between it and a slot's own stamp is the whole time since the address was
+    // configured, to the millisecond, however often the caller sweeps.
+    IdemIpMs now = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, now_ms);
+
     uint8_t moved = 0u;
     for (uint8_t i = 0u; i < IDEMIP_NETIF_COUNT; i++)
     {
@@ -370,15 +371,15 @@ static uint8_t netif_age_addr6(uint8_t *restrict work, uint32_t now_ms)
             {
                 continue;
             }
-            uint32_t elapsed_ms = now_ms - addr6->set_ms;
-            if (netif_lifetime_expired(addr6->valid_s, elapsed_ms))
+            IdemIpMs elapsed = now - addr6->set;
+            if (netif_lifetime_expired(addr6->valid_s, elapsed))
             {
                 memset(addr6, 0, sizeof(*addr6));
                 moved = (uint8_t)(moved + 1u);
                 continue;
             }
             if (addr6->state == (uint8_t)IDEMIP_NETIF_ADDR6_PREFERRED &&
-                netif_lifetime_expired(addr6->preferred_s, elapsed_ms))
+                netif_lifetime_expired(addr6->preferred_s, elapsed))
             {
                 addr6->state = (uint8_t)IDEMIP_NETIF_ADDR6_DEPRECATED;
                 moved = (uint8_t)(moved + 1u);
@@ -680,7 +681,7 @@ static void netif_add_addr6(uint8_t *restrict work)
     memcpy(addr6->addr, io->addr6_args.addr, IDEMIP_IP6_ADDR_LEN);
     addr6->preferred_s = io->addr6_args.preferred_s;
     addr6->valid_s = io->addr6_args.valid_s;
-    addr6->set_ms = NETIF_CTX(work)->tick_ms;
+    addr6->set = ((IdemIpMs)NETIF_CTX(work)->tick_hi << 32) | (IdemIpMs)NETIF_CTX(work)->tick_ms;
     addr6->state = (uint8_t)io->addr6_args.state;
     netif_report_addr6(work, io->addr6_args.index, slot);
     io->status = IDEMIP_OK;
@@ -790,8 +791,9 @@ static void netif_tick(uint8_t *restrict work)
     {
         return;
     }
+    // tick_ms is advanced by the sweep itself, by whole seconds only, so the sub-second remainder is
+    // carried to the next call rather than dropped here.
     io->aged = netif_age_addr6(work, io->tick_args.now_ms);
-    NETIF_CTX(work)->tick_ms = io->tick_args.now_ms;
     io->status = IDEMIP_OK;
 }
 
