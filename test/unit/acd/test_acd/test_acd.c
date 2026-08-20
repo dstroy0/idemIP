@@ -92,7 +92,8 @@ void test_every_entry_survives_a_null_borrow(void)
 }
 
 // The borrow IS the interface, and the operand block is in it, so two machines share no byte at all.
-// This is the property the whole storage model rests on.
+// This is the property the whole storage model rests on, so an entry runs on each borrow between the
+// stores and the reads: without one this asserts only that two distinct C objects do not alias.
 void test_two_borrows_share_no_byte(void)
 {
     Acd.clear(work_a);
@@ -102,9 +103,22 @@ void test_two_borrows_share_no_byte(void)
     arm_start(work_b, ADDR_B);
     IDEMIP_ACD_IO(work_b)->start_args.defense = IDEMIP_ACD_DEFEND_ALWAYS;
 
-    TEST_ASSERT_EQUAL_HEX32(ADDR_A, IDEMIP_ACD_IO(work_a)->start_args.ipaddr);
-    TEST_ASSERT_EQUAL_HEX32(ADDR_B, IDEMIP_ACD_IO(work_b)->start_args.ipaddr);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ACD_DEFEND_ONCE, IDEMIP_ACD_IO(work_a)->start_args.defense);
+    Acd.start(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ACD_IO(work_a)->status);
+    Acd.start(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ACD_IO(work_b)->status);
+
+    // Each borrow publishes its own address and its own state, neither reaching the other.
+    TEST_ASSERT_EQUAL_HEX32(ADDR_A, IDEMIP_ACD_IO(work_a)->ipaddr);
+    TEST_ASSERT_EQUAL_HEX32(ADDR_B, IDEMIP_ACD_IO(work_b)->ipaddr);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ACD_STATE_PROBE_WAIT, IDEMIP_ACD_IO(work_a)->state);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ACD_STATE_PROBE_WAIT, IDEMIP_ACD_IO(work_b)->state);
+
+    // A second start on one borrow republishes only that one.
+    IDEMIP_ACD_IO(work_a)->start_args.ipaddr = ADDR_B;
+    Acd.start(work_a);
+    TEST_ASSERT_EQUAL_HEX32(ADDR_B, IDEMIP_ACD_IO(work_a)->ipaddr);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(ADDR_B, IDEMIP_ACD_IO(work_b)->ipaddr, "a start on one borrow reached the other");
     TEST_ASSERT_EQUAL_INT(IDEMIP_ACD_DEFEND_ALWAYS, IDEMIP_ACD_IO(work_b)->start_args.defense);
 }
 
@@ -571,6 +585,15 @@ void test_exactly_announce_num_announcements_go_out_announce_interval_apart(void
     while (IDEMIP_ACD_IO(work_a)->state != IDEMIP_ACD_STATE_ONGOING)
     {
         uint32_t due = IDEMIP_ACD_IO(work_a)->deadline_ms;
+        // One millisecond short of the deadline nothing goes out. A caller sweeping at
+        // IDEMIP_ACD_TMR_INTERVAL_MS would otherwise emit the next Announcement 100 ms after the
+        // last, where sec 2.3 spaces them ANNOUNCE_INTERVAL apart.
+        tick_at(work_a, due - 1u, 0u);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_ACD_IO(work_a)->status,
+                                      "a tick before the deadline was not BUSY");
+        TEST_ASSERT_FALSE_MESSAGE(IDEMIP_ACD_IO(work_a)->send_announce, "an Announcement went out early");
+        TEST_ASSERT_FALSE(IDEMIP_ACD_IO(work_a)->send_probe);
+
         tick_at(work_a, due, 0u);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ACD_IO(work_a)->status);
         TEST_ASSERT_TRUE(IDEMIP_ACD_IO(work_a)->send_announce);
@@ -757,6 +780,45 @@ void test_announcing_takes_the_section_2_4_test_and_not_the_probe_test(void)
 
     mk_request(g_other_mac, ADDR_A, ADDR_A);
     arp_at(work_a, 5000u);
+    TEST_ASSERT_TRUE(IDEMIP_ACD_IO(work_a)->conflict);
+}
+
+// sec 2.4 opens "At any time, if a host receives an ARP packet (Request *or* Reply) where the
+// 'sender IP address' is (one of) the host's own IP address(es) configured on that interface". The
+// Reply half is not decorative: RFC 3927 sec 2.5 makes the broadcast Reply the primary conflict
+// signal for link-local addresses, "All ARP packets (replies as well as requests) that contain a
+// Link-Local 'sender IP address' MUST be sent using link-layer broadcast".
+void test_an_ongoing_conflict_is_taken_from_a_reply_as_well_as_a_request(void)
+{
+    clear_and_start(work_a, ADDR_A, IDEMIP_ACD_DEFEND_ONCE, 0u, 0u);
+    drive_to(work_a, IDEMIP_ACD_STATE_ONGOING);
+
+    mk_reply(g_other_mac, ADDR_A, ADDR_B);
+    arp_at(work_a, 20000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ACD_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_ACD_IO(work_a)->conflict, "a conflicting Reply was not a conflict");
+    // DEFEND_ONCE is sec 2.4 (b): one Announcement per DEFEND_INTERVAL, and the address is kept.
+    TEST_ASSERT_TRUE(IDEMIP_ACD_IO(work_a)->send_announce);
+    TEST_ASSERT_EQUAL_HEX32(ADDR_A, IDEMIP_ACD_IO(work_a)->ipaddr);
+
+    // The 'sender hardware address' half holds for a Reply too: this host's own is no conflict.
+    clear_and_start(work_a, ADDR_A, IDEMIP_ACD_DEFEND_ONCE, 0u, 0u);
+    drive_to(work_a, IDEMIP_ACD_STATE_ONGOING);
+    mk_reply(g_mac, ADDR_A, ADDR_B);
+    arp_at(work_a, 20000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ACD_IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_ACD_IO(work_a)->conflict, "this host's own Reply was a conflict");
+}
+
+// The same over ANNOUNCING, which sec 2.4 covers from the first Announcement onward.
+void test_an_announcing_conflict_is_taken_from_a_reply(void)
+{
+    clear_and_start(work_a, ADDR_A, IDEMIP_ACD_DEFEND_ONCE, 0u, 0u);
+    drive_to(work_a, IDEMIP_ACD_STATE_ANNOUNCING);
+
+    mk_reply(g_other_mac, ADDR_A, ADDR_B);
+    arp_at(work_a, 5000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ACD_IO(work_a)->status);
     TEST_ASSERT_TRUE(IDEMIP_ACD_IO(work_a)->conflict);
 }
 
@@ -1164,7 +1226,13 @@ void test_arp_in_refuses_a_packet_that_is_not_ethernet_ipv4(void)
     arp_at(work_a, 100u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_ACD_IO(work_a)->status);
     TEST_ASSERT_FALSE(IDEMIP_ACD_IO(work_a)->conflict);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ACD_STATE_PROBE_WAIT, IDEMIP_ACD_IO(work_a)->state);
+    // A refused arp_in returns before acd_publish, so io->state still holds the start's own output
+    // and reading it here proves nothing. A tick republishes what the context actually holds: the
+    // machine is still the one PROBE_WAIT left, so the next due tick sends the first Probe.
+    tick_due(work_a, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ACD_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_ACD_IO(work_a)->send_probe, "the refused packet moved the machine");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ACD_STATE_PROBING, IDEMIP_ACD_IO(work_a)->state);
 
     mk_reply(g_other_mac, ADDR_A, ADDR_B);
     g_pkt[IDEMIP_ARP_OFF_HLN] = 8u;

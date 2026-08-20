@@ -66,9 +66,12 @@ typedef enum IDEMIP_ENUM_PACKED
  * @brief What start takes: the address to claim, and how it is defended.
  *
  * RFC 5227 sec 2.1.1 fills an ARP Probe's 'sender hardware address' with "the hardware address of
- * the interface through which it is sending the packet", and tests an arriving probe's 'sender
- * hardware address' against "the hardware address of any of the host's interfaces", so both need
- * this interface's own address.
+ * the interface through which it is sending the packet", and this machine is one interface's: sec
+ * 2.1 scopes the whole claim to one, "if the host experiences MAX_CONFLICTS or more address
+ * conflicts on a given interface, then the host MUST limit the rate at which it probes for new
+ * addresses on this interface", and RFC 3927 sec 3.4 says to "run the algorithm independently on
+ * each interface". So the comparison an arriving packet is tested against is this interface's own
+ * address, and a second interface is a second borrow.
  *
  * @var AcdStartArgs::mac     this interface's 48-bit address, IDEMIP_ARP_HLN_ETHERNET octets
  * @var AcdStartArgs::ipaddr  the address being claimed, which becomes an ARP Probe's 'target IP

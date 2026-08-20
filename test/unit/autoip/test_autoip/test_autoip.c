@@ -88,7 +88,8 @@ void test_every_entry_survives_a_null_borrow(void)
 }
 
 // The borrow IS the interface, and the operand block is in it, so two interfaces share no byte at all.
-// This is the property the whole storage model rests on.
+// This is the property the whole storage model rests on, so an entry runs on each borrow between the
+// stores and the reads: without one this asserts only that two distinct C objects do not alias.
 void test_two_borrows_share_no_byte(void)
 {
     AutoIp.clear(work_a);
@@ -98,9 +99,21 @@ void test_two_borrows_share_no_byte(void)
     arm_start(work_b, 0x2222u);
     IDEMIP_AUTOIP_IO(work_b)->start_args.now_ms = 5000u;
 
-    TEST_ASSERT_EQUAL_UINT32(0x1111u, IDEMIP_AUTOIP_IO(work_a)->start_args.rand);
-    TEST_ASSERT_EQUAL_UINT32(0x2222u, IDEMIP_AUTOIP_IO(work_b)->start_args.rand);
-    TEST_ASSERT_EQUAL_UINT32(1000u, IDEMIP_AUTOIP_IO(work_a)->start_args.now_ms);
+    AutoIp.start(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_AUTOIP_IO(work_a)->status);
+    AutoIp.start(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_AUTOIP_IO(work_b)->status);
+
+    // Two seeds draw two addresses, each published into its own borrow.
+    const uint32_t addr_a = IDEMIP_AUTOIP_IO(work_a)->ipaddr;
+    const uint32_t addr_b = IDEMIP_AUTOIP_IO(work_b)->ipaddr;
+    TEST_ASSERT_TRUE_MESSAGE(addr_a != addr_b, "two seeds drew the same address");
+
+    // A second start on one leaves the other's published address where it stood.
+    IDEMIP_AUTOIP_IO(work_a)->start_args.rand = 0x3333u;
+    AutoIp.start(work_a);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(addr_b, IDEMIP_AUTOIP_IO(work_b)->ipaddr,
+                                    "a start on one borrow reached the other");
     TEST_ASSERT_EQUAL_UINT32(5000u, IDEMIP_AUTOIP_IO(work_b)->start_args.now_ms);
 }
 
@@ -401,6 +414,34 @@ void test_no_draw_lands_on_a_reserved_address(void)
     }
 }
 
+// The draw's second limb, the fold, is what enforces sec 2.1's reserved ranges when four consecutive
+// draws are rejected; the loop's early return covers every other case. A run of four rejects is about
+// one call in 2.7e8, so no seed this suite can afford to search reaches the fold, and its two
+// branches stay uncovered. What is checked here is the arithmetic they rest on, at runtime rather
+// than only in the static asserts at autoip.c:66-73: a fold by AUTOIP_SPAN from either side of the
+// range lands inside it, so neither branch can put an address in a reserved 256.
+void test_the_fold_span_lands_inside_the_reserved_range_bounds(void)
+{
+    const uint32_t span = IDEMIP_AUTOIP_LAST - IDEMIP_AUTOIP_FIRST + 1u;
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(254u * 256u, span, "the fold does not step by the whole range");
+
+    // The lowest address the low limb can hold is the prefix itself; raising it by the span must not
+    // run past the last usable address.
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_AUTOIP_PREFIX + span <= IDEMIP_AUTOIP_LAST,
+                             "a fold up from the bottom of the prefix leaves the range");
+    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_PREFIX + span >= IDEMIP_AUTOIP_FIRST);
+
+    // The highest is the broadcast address; lowering it by the span must not fall below the first.
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_AUTOIP_BROADCAST - span >= IDEMIP_AUTOIP_FIRST,
+                             "a fold down from the top of the prefix leaves the range");
+    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_BROADCAST - span <= IDEMIP_AUTOIP_LAST);
+
+    // And the step-off a taken address takes wraps inside the range rather than past its end.
+    assert_in_range(IDEMIP_AUTOIP_FIRST);
+    assert_in_range(IDEMIP_AUTOIP_LAST);
+    assert_in_range(IDEMIP_AUTOIP_LAST - 1u + 1u);
+}
+
 // sec 2.2.1: a conflict means the host "MUST select a new pseudo-random address and repeat the
 // process", so the address the other host answered for is not the one drawn next.
 void test_a_conflict_draws_a_new_address(void)
@@ -653,6 +694,12 @@ void test_the_rate_limit_survives_a_clock_rollover(void)
 
 // sec 2.2.1 counts conflicts "in the process of trying to acquire an address", which sec 2.4's
 // announcement ends, so the count starts over and MAX_CONFLICTS more are answered at once.
+//
+// This is the opposite of what the acd suite asserts for the same constants, and both are right:
+// acd implements RFC 5227, whose sec 2.1 scopes the count to the interface and says the rule
+// "applies not only to conflicts experienced during the initial probing phase, but also to conflicts
+// experienced later"; autoip implements RFC 3927, which scopes it to one acquisition. The two
+// documents differ, so the two modules differ with them.
 void test_binding_the_address_starts_the_conflict_count_over(void)
 {
     fresh_start(work_a, g_mac, 0x8888u);
@@ -701,7 +748,17 @@ void test_a_conflict_and_a_bind_inside_the_rate_limit_are_refused(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
     AutoIp.bound(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
-    TEST_ASSERT_EQUAL_HEX32_MESSAGE(due, IO(work_a)->deadline_ms, "a refused call moved the deadline");
+
+    // Both refused entries return before autoip_report, so io->deadline_ms is the copy the last
+    // reporting call left and reading it here compares a local to the byte it came from. A tick does
+    // reach autoip_report, so it republishes what the context actually holds.
+    tick_at(work_a, due - 1u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(due, IO(work_a)->deadline_ms, "a refused call moved the rate limit deadline");
+
+    // And the rate limit still ends where it was stamped, so the draw is released at the deadline.
+    tick_at(work_a, due, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 }
 
 // An interface already claiming an address is left as it stands, and no second claim is asked for: the
