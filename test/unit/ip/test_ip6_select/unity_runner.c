@@ -44,6 +44,10 @@ extern void test_sec10_2_third_prefer_higher_precedence(void);
 extern void test_sec10_2_fourth_prefer_smaller_scope(void);
 extern void test_sec10_2_fifth_prefer_home_address(void);
 extern void test_dest_rule1_avoid_unusable_destinations(void);
+extern void test_dest_rule1_ties_and_rule2_breaks_it(void);
+extern void test_dest_rule3_avoids_a_deprecated_source(void);
+extern void test_dest_rule5_prefers_a_matching_label(void);
+extern void test_sec4_a_site_local_destination_only_takes_a_source_from_its_own_site(void);
 extern void test_dest_rule7_prefer_native_transport(void);
 extern void test_dest_rule9_use_longest_matching_prefix(void);
 extern void test_dest_rule10_leaves_the_order_unchanged(void);
@@ -148,13 +152,17 @@ int main(void)
   run_test(test_sec10_2_fourth_prefer_smaller_scope, "test_sec10_2_fourth_prefer_smaller_scope", 771);
   run_test(test_sec10_2_fifth_prefer_home_address, "test_sec10_2_fifth_prefer_home_address", 792);
   run_test(test_dest_rule1_avoid_unusable_destinations, "test_dest_rule1_avoid_unusable_destinations", 813);
-  run_test(test_dest_rule7_prefer_native_transport, "test_dest_rule7_prefer_native_transport", 831);
-  run_test(test_dest_rule9_use_longest_matching_prefix, "test_dest_rule9_use_longest_matching_prefix", 849);
-  run_test(test_dest_rule10_leaves_the_order_unchanged, "test_dest_rule10_leaves_the_order_unchanged", 867);
-  run_test(test_a_destination_with_no_source_sorts_last, "test_a_destination_with_no_source_sorts_last", 888);
-  run_test(test_dest_at_refuses_before_a_sort_and_past_the_end, "test_dest_at_refuses_before_a_sort_and_past_the_end", 912);
-  run_test(test_adding_after_a_sort_invalidates_it, "test_adding_after_a_sort_invalidates_it", 932);
-  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 948);
+  run_test(test_dest_rule1_ties_and_rule2_breaks_it, "test_dest_rule1_ties_and_rule2_breaks_it", 834);
+  run_test(test_dest_rule3_avoids_a_deprecated_source, "test_dest_rule3_avoids_a_deprecated_source", 853);
+  run_test(test_dest_rule5_prefers_a_matching_label, "test_dest_rule5_prefers_a_matching_label", 875);
+  run_test(test_sec4_a_site_local_destination_only_takes_a_source_from_its_own_site, "test_sec4_a_site_local_destination_only_takes_a_source_from_its_own_site", 912);
+  run_test(test_dest_rule7_prefer_native_transport, "test_dest_rule7_prefer_native_transport", 966);
+  run_test(test_dest_rule9_use_longest_matching_prefix, "test_dest_rule9_use_longest_matching_prefix", 984);
+  run_test(test_dest_rule10_leaves_the_order_unchanged, "test_dest_rule10_leaves_the_order_unchanged", 1002);
+  run_test(test_a_destination_with_no_source_sorts_last, "test_a_destination_with_no_source_sorts_last", 1023);
+  run_test(test_dest_at_refuses_before_a_sort_and_past_the_end, "test_dest_at_refuses_before_a_sort_and_past_the_end", 1047);
+  run_test(test_adding_after_a_sort_invalidates_it, "test_adding_after_a_sort_invalidates_it", 1067);
+  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 1083);
 
   return UNITY_END();
 }

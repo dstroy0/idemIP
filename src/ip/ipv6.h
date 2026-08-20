@@ -522,6 +522,18 @@ IDEMIP_INLINE IdemIpIp6Chain idemip_ip6_walk(const uint8_t *p, size_t len)
         {
             c.fragmented = IDEMIP_TRUE;
             c.frag_hdr = c.offset;
+            // sec 4.5 lays a fragment packet out as "(1) The Per-Fragment headers ... (2) A Fragment
+            // header ... (3) The fragment itself", and puts the Extension and Upper-Layer headers
+            // "in the first fragment" alone. On-arrival processing covers "whatever headers are
+            // present, preceding the Fragment header in each fragment packet", so past a non-zero
+            // Fragment Offset the bytes are fragment data and the walk ends here.
+            if (idemip_ip6_frag_offset_bytes(p + c.offset) != 0u)
+            {
+                c.offset += step;
+                c.hops = (uint16_t)(c.hops + 1u);
+                c.ok = IDEMIP_TRUE;
+                return c;
+            }
         }
         // sec 4.4, over a Routing Type this library executes none of. Segments Left zero is the case
         // the same section ignores, so only a non-zero one is recorded.

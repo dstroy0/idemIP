@@ -826,6 +826,141 @@ void test_dest_rule1_avoid_unusable_destinations(void)
     sorted_is(work_a, 1u, dead, s6);
 }
 
+// sec 6: "The pair-wise comparison of destination addresses consists of ten rules, which MUST be
+// applied in order. If a rule determines a result, then the remaining rules are not relevant and
+// MUST be ignored. Subsequent rules act as tiebreakers for earlier rules." Rule 1 ties when both
+// destinations are unreachable, and sec 6 makes Rules 2 through 5 and Rule 9 inapplicable only when
+// "there is no source address available for destination D", so a tie is broken by Rule 2 next.
+void test_dest_rule1_ties_and_rule2_breaks_it(void)
+{
+    Ip6Select.clear(work_a);
+    uint8_t *site_src = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 2u);
+    src(work_a, site_src);
+
+    uint8_t *site_dst = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 9u);              // Scope(DA) = site-local
+    uint8_t *global_dst = A(0x2001u, 0x0DB8u, 9u, 0, 0, 0, 0, 1u);     // Scope(DB) = global
+    dst_add(work_a, site_dst, 0u, 1, 0);                               // both unreachable, so Rule 1 ties
+    dst_add(work_a, global_dst, 0u, 1, 0);
+
+    Ip6Select.dest_sort(work_a);
+    // Rule 2: "If Scope(DA) = Scope(Source(DA)) and Scope(DB) <> Scope(Source(DB)), then prefer DA."
+    sorted_is(work_a, 0u, site_dst, site_src);
+    sorted_is(work_a, 1u, global_dst, site_src);
+}
+
+// Rule 3: "Avoid deprecated addresses. If Source(DA) is deprecated and Source(DB) is not, then prefer
+// DB." RFC 4862 sec 5.5.4 is what deprecates one: "An address ... to be used with caution."
+void test_dest_rule3_avoids_a_deprecated_source(void)
+{
+    Ip6Select.clear(work_a);
+    // sec 4 confines a link-local destination's candidates to its own link, so each destination has
+    // exactly one source and sec 5's own Rule 3 cannot pick the other one first.
+    uint8_t *old = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
+    uint8_t *fresh = A(0xFE80u, 0, 0, 0, 0, 0, 0, 3u);
+    src_add(work_a, old, 1u, 1, 0, 0, 0, 0); // deprecated, on interface 1
+    src_add(work_a, fresh, 0u, 0, 0, 0, 0, 0);
+
+    uint8_t *da = A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u);  // on interface 1, so Source(DA) is deprecated
+    uint8_t *db = A(0xFE80u, 0, 0, 0, 0, 0, 0, 0xAu); // on interface 0
+    dst_add(work_a, da, 1u, 0, 0);
+    dst_add(work_a, db, 0u, 0, 0);
+
+    Ip6Select.dest_sort(work_a);
+    sorted_is(work_a, 0u, db, fresh);
+    sorted_is(work_a, 1u, da, old);
+}
+
+// Rule 5: "Prefer matching label. If Label(Source(DA)) = Label(DA) and Label(Source(DB)) <>
+// Label(DB), then prefer DA." sec 2.1's table is what assigns a label to each.
+void test_dest_rule5_prefers_a_matching_label(void)
+{
+    Ip6Select.clear(work_a);
+    Ip6SelectPolicyArgs *p = &IDEMIP_IP6_SELECT_IO(work_a)->policy_args;
+    // Two rows on the same precedence, so Rule 6 cannot decide and Rule 5 is what is left.
+    p->prefix = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 0);
+    p->zone = 0u;
+    p->prefix_len = 48u;
+    p->precedence = 40u;
+    p->label = 11u;
+    Ip6Select.policy_set(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+    p->prefix = A(0x2001u, 0x0DB8u, 2u, 0, 0, 0, 0, 0);
+    p->zone = 0u;
+    p->prefix_len = 48u;
+    p->precedence = 40u;
+    p->label = 12u;
+    Ip6Select.policy_set(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+
+    uint8_t *s_lab11 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    src(work_a, s_lab11);
+
+    uint8_t *da = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 9u); // Label(DA) = 11 = Label(Source(DA))
+    uint8_t *db = A(0x2001u, 0x0DB8u, 2u, 0, 0, 0, 0, 9u); // Label(DB) = 12 <> 11
+    dst(work_a, db);
+    dst(work_a, da);
+
+    Ip6Select.dest_sort(work_a);
+    sorted_is(work_a, 0u, da, s_lab11);
+    sorted_is(work_a, 1u, db, s_lab11);
+}
+
+// RFC 6724 sec 4: "For site-local unicast destination addresses, the set of candidate source
+// addresses MUST only include addresses assigned to interfaces belonging to the same site as the
+// outgoing interface." RFC 4007 sec 6 numbers the zones, so a source in a different site zone is not
+// a candidate at all.
+void test_sec4_a_site_local_destination_only_takes_a_source_from_its_own_site(void)
+{
+    Ip6Select.clear(work_a);
+    uint8_t *near_site = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 2u);
+    uint8_t *far_site = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 3u);
+    Ip6SelectSourceArgs *s = &IDEMIP_IP6_SELECT_IO(work_a)->source_args;
+
+    s->addr = far_site;
+    s->zone = 9u; // a different site
+    s->netif = 0u;
+    s->deprecated = IDEMIP_FALSE;
+    s->temporary = IDEMIP_FALSE;
+    s->home = IDEMIP_FALSE;
+    s->care_of = IDEMIP_FALSE;
+    s->next_hop = IDEMIP_FALSE;
+    Ip6Select.source_add(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+
+    s->addr = near_site;
+    s->zone = 4u; // the destination's site
+    s->netif = 0u;
+    Ip6Select.source_add(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+
+    IDEMIP_IP6_SELECT_IO(work_a)->query_args.addr = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 9u);
+    IDEMIP_IP6_SELECT_IO(work_a)->query_args.zone = 4u;
+    IDEMIP_IP6_SELECT_IO(work_a)->query_args.netif = 0u;
+    Ip6Select.source_select(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+    TEST_ASSERT_TRUE(IDEMIP_IP6_SELECT_IO(work_a)->found);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(near_site, IDEMIP_IP6_SELECT_IO(work_a)->source, IDEMIP_IP6_ADDR_LEN,
+                                          "a source outside the destination's site is not a candidate");
+
+    // With only the far-site source in the set there is no candidate at all.
+    Ip6Select.clear(work_a);
+    s = &IDEMIP_IP6_SELECT_IO(work_a)->source_args;
+    s->addr = far_site;
+    s->zone = 9u;
+    s->netif = 0u;
+    s->deprecated = IDEMIP_FALSE;
+    s->temporary = IDEMIP_FALSE;
+    s->home = IDEMIP_FALSE;
+    s->care_of = IDEMIP_FALSE;
+    s->next_hop = IDEMIP_FALSE;
+    Ip6Select.source_add(work_a);
+    IDEMIP_IP6_SELECT_IO(work_a)->query_args.addr = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 9u);
+    IDEMIP_IP6_SELECT_IO(work_a)->query_args.zone = 4u;
+    IDEMIP_IP6_SELECT_IO(work_a)->query_args.netif = 0u;
+    Ip6Select.source_select(work_a);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP6_SELECT_IO(work_a)->found, "sec 4's candidate set is empty here");
+}
+
 // Rule 7: "If DA is reached via an encapsulating transition mechanism (e.g., IPv6 in IPv4) and DB is
 // not, then prefer DB."
 void test_dest_rule7_prefer_native_transport(void)

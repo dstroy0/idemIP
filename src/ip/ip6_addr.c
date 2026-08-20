@@ -140,7 +140,11 @@ static void ip6_addr_zone(uint8_t *restrict work)
     {
     case IDEMIP_IP6_SCOPE_INTERFACE_LOCAL:
     case IDEMIP_IP6_SCOPE_LINK_LOCAL:
-        io->zone = (uint32_t)io->zone_args.netif;
+        // RFC 4007 sec 6 assigns "A unique interface index for each interface. A unique link index
+        // for each interface", and the same section reserves index zero: "the index value zero at
+        // each scope SHOULD be reserved to mean 'use the default zone'". Interface zero is a real
+        // interface here, so the derived index is biased off the reserved one.
+        io->zone = (uint32_t)io->zone_args.netif + 1u;
         io->zone_derived = IDEMIP_TRUE;
         break;
     case IDEMIP_IP6_SCOPE_GLOBAL:

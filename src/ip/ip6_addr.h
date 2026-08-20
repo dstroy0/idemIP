@@ -221,7 +221,13 @@ IDEMIP_INLINE IdemIpIp6Scope idemip_ip6_addr_scope_of(const uint8_t *addr, IdemI
     switch (type)
     {
     case IDEMIP_IP6_TYPE_MULTICAST:
-        return (IdemIpIp6Scope)(addr[1] & IDEMIP_IP6_MCAST_SCOP_MASK);
+    {
+        // RFC 4291 sec 2.7: "Nodes should not originate a packet to a multicast address whose scop
+        // field contains the reserved value F; if such a packet is sent or received, it must be
+        // treated the same as packets destined to a global (scop E) multicast address."
+        uint8_t scop = (uint8_t)(addr[1] & IDEMIP_IP6_MCAST_SCOP_MASK);
+        return (scop == (uint8_t)IDEMIP_IP6_SCOPE_RESERVED_F) ? IDEMIP_IP6_SCOPE_GLOBAL : (IdemIpIp6Scope)scop;
+    }
     case IDEMIP_IP6_TYPE_LINK_LOCAL:
     case IDEMIP_IP6_TYPE_LOOPBACK:
         return IDEMIP_IP6_SCOPE_LINK_LOCAL;

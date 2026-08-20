@@ -368,15 +368,52 @@ void test_solicited_refuses_a_multicast_or_unspecified_address(void)
 // --- RFC 4007 sec 5 and sec 6, zones -----------------------------------------
 
 // sec 5: "Each link and the interfaces attached to that link comprise a single zone of link-local
-// scope", and sec 6's default assignment gives "A unique link index for each interface".
+// scope", and sec 6's default assignment gives "A unique link index for each interface". sec 6 also
+// reserves index zero, "the index value zero at each scope SHOULD be reserved to mean 'use the
+// default zone'", so a derived index is one past the interface it came from.
 void test_rfc4007_link_local_takes_the_interface_index(void)
 {
     Ip6Addr.clear(work_a);
     a6(addr_a, 0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
     zone_of(work_a, addr_a, 3u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_ADDR_IO(work_a)->status);
-    TEST_ASSERT_EQUAL_UINT32(3u, IDEMIP_IP6_ADDR_IO(work_a)->zone);
+    TEST_ASSERT_EQUAL_UINT32(4u, IDEMIP_IP6_ADDR_IO(work_a)->zone);
     TEST_ASSERT_TRUE(IDEMIP_IP6_ADDR_IO(work_a)->zone_derived);
+
+    // Two interfaces derive two different zones, which is what keeps sec 5's "two different physical
+    // links may each contain a node with the link-local address fe80::1" distinct.
+    zone_of(work_a, addr_a, 4u);
+    TEST_ASSERT_EQUAL_UINT32(5u, IDEMIP_IP6_ADDR_IO(work_a)->zone);
+}
+
+// Interface zero is a real interface here, and sec 6 reserves zone index zero for the default zone,
+// so a derived index must never land on it. sec 5 is what breaks if it does: "addresses of a given
+// (non-global) scope may be re-used in different zones of that scope."
+void test_rfc4007_interface_zero_does_not_derive_the_default_zone(void)
+{
+    Ip6Addr.clear(work_a);
+    a6(addr_a, 0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    zone_of(work_a, addr_a, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_ADDR_IO(work_a)->status);
+    TEST_ASSERT_TRUE(IDEMIP_IP6_ADDR_IO(work_a)->zone_derived);
+    uint32_t zone0 = IDEMIP_IP6_ADDR_IO(work_a)->zone;
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(IDEMIP_IP6_ZONE_DEFAULT, zone0,
+                                  "interface zero must not derive the reserved default-zone index");
+
+    // The same fe80::1 on interface 0 and on interface 2 names two different interfaces.
+    zone_of(work_a, addr_a, 2u);
+    uint32_t zone2 = IDEMIP_IP6_ADDR_IO(work_a)->zone;
+    Ip6Addr.clear(work_a);
+    a6(addr_b, 0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.a = addr_a;
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.b = addr_b;
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.a_zone = zone0;
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.b_zone = zone2;
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.prefix_len = 128u;
+    Ip6Addr.match(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_ADDR_IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP6_ADDR_IO(work_a)->equal,
+                              "one link-local address on two links is two addresses");
 }
 
 // sec 5: "Each interface on a node comprises a single zone of interface-local scope (for multicast
@@ -387,8 +424,37 @@ void test_rfc4007_interface_local_multicast_takes_the_interface_index(void)
     a6(addr_a, 0xFF01u, 0, 0, 0, 0, 0, 0, 1u);
     zone_of(work_a, addr_a, 2u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_ADDR_IO(work_a)->status);
-    TEST_ASSERT_EQUAL_UINT32(2u, IDEMIP_IP6_ADDR_IO(work_a)->zone);
+    TEST_ASSERT_EQUAL_UINT32(3u, IDEMIP_IP6_ADDR_IO(work_a)->zone);
     TEST_ASSERT_TRUE(IDEMIP_IP6_ADDR_IO(work_a)->zone_derived);
+}
+
+// RFC 4291 sec 2.7: "Nodes should not originate a packet to a multicast address whose scop field
+// contains the reserved value F; if such a packet is sent or received, it must be treated the same
+// as packets destined to a global (scop E) multicast address." RFC 6724 sec 3.1 enumerates only
+// "interface-local (0x1), link-local (0x2), admin-local (0x4), site-local (0x5),
+// organization-local (0x8), and global (0xE) scopes", so nothing above global exists to compare.
+void test_rfc4291_a_scop_f_multicast_address_has_global_scope(void)
+{
+    Ip6Addr.clear(work_a);
+    a6(addr_a, 0xFF1Fu, 0, 0, 0, 0, 0, 0, 1u);
+    IDEMIP_IP6_ADDR_IO(work_a)->classify_args.addr = addr_a;
+    Ip6Addr.classify(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_ADDR_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_TYPE_MULTICAST, IDEMIP_IP6_ADDR_IO(work_a)->type);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP6_SCOPE_GLOBAL, IDEMIP_IP6_ADDR_IO(work_a)->scope,
+                                  "scop F is treated the same as scop E");
+
+    // The scop-E address it must be indistinguishable from.
+    a6(addr_b, 0xFF1Eu, 0, 0, 0, 0, 0, 0, 1u);
+    IDEMIP_IP6_ADDR_IO(work_a)->classify_args.addr = addr_b;
+    Ip6Addr.classify(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_SCOPE_GLOBAL, IDEMIP_IP6_ADDR_IO(work_a)->scope);
+
+    // And scop E's neighbour below it still reads as itself.
+    a6(addr_b, 0xFF08u, 0, 0, 0, 0, 0, 0, 1u);
+    IDEMIP_IP6_ADDR_IO(work_a)->classify_args.addr = addr_b;
+    Ip6Addr.classify(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_SCOPE_ORG_LOCAL, IDEMIP_IP6_ADDR_IO(work_a)->scope);
 }
 
 // sec 5: "There is a single zone of global scope", so the default index names it whatever interface

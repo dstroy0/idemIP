@@ -502,7 +502,12 @@ static int ip6_select_cmp_dest(uint8_t *restrict work, uint8_t ia, uint8_t ib, u
         return a_bad ? -1 : 1;
     }
 
-    idemip_bool sourced = (!a_bad && !b_bad) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    // Rules 2 through 5 and Rule 9 read Source(DA) and Source(DB), which sec 6 makes inapplicable
+    // only when "there is no source address available for destination D". The unreachable flag is
+    // Rule 1's operand alone, and a tie there is broken by Rule 2 next: "If a rule determines a
+    // result, then the remaining rules are not relevant and MUST be ignored."
+    idemip_bool sourced =
+        (da->source != IDEMIP_IP6_SELECT_NONE && db->source != IDEMIP_IP6_SELECT_NONE) ? IDEMIP_TRUE : IDEMIP_FALSE;
     if (sourced)
     {
         const Ip6SelectSource *sa = IP6_SELECT_SOURCE_AT(work, da->source);

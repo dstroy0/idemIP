@@ -319,7 +319,30 @@ void test_the_three_high_option_type_bits_decode_as_section_4_2_states(void)
     // 0x20 is bit 5, the third highest, and it is disjoint from the action pair.
     TEST_ASSERT_EQUAL_HEX8(0x20u, IDEMIP_IP6_OPT_CHG_MASK);
     TEST_ASSERT_EQUAL_HEX8(0u, IDEMIP_IP6_OPT_CHG_MASK & IDEMIP_IP6_OPT_ACT_MASK);
-    TEST_ASSERT_EQUAL_HEX8(IDEMIP_IP6_OPT_CHG_MASK, 0x20u & IDEMIP_IP6_OPT_CHG_MASK);
+
+    // What acts on those bits: an option stream carrying only skip actions is walked through, and one
+    // carrying any other action stops the packet at the offending Option Type. The change-en-route
+    // bit is not part of the decision, so setting it does not alter either answer.
+    // PadN, then an option whose action bits are 00 and whose change-en-route bit is set.
+    static const uint8_t stream_skip[6] = {IDEMIP_IP6_OPT_PADN, 2u, 0u, 0u, IDEMIP_IP6_OPT_CHG_MASK, 0u};
+    memcpy(pkt, stream_skip, sizeof stream_skip);
+    size_t bad = 0xFFFFu;
+    TEST_ASSERT_FALSE(idemip_ip6_opts_refused(pkt, 0u, 6u, &bad));
+
+    static const uint8_t acts[3] = {IDEMIP_IP6_OPT_ACT_DISCARD, IDEMIP_IP6_OPT_ACT_DISCARD_ICMP,
+                                    IDEMIP_IP6_OPT_ACT_DISCARD_UNI};
+    for (size_t i = 0; i < 3u; i++)
+    {
+        pkt[0] = IDEMIP_IP6_OPT_PADN;
+        pkt[1] = 2u;
+        pkt[2] = 0u;
+        pkt[3] = 0u;
+        pkt[4] = (uint8_t)(acts[i] | IDEMIP_IP6_OPT_CHG_MASK | 0x0Au);
+        pkt[5] = 0u;
+        bad = 0xFFFFu;
+        TEST_ASSERT_TRUE_MESSAGE(idemip_ip6_opts_refused(pkt, 0u, 6u, &bad), "an action above skip refuses");
+        TEST_ASSERT_EQUAL_size_t_MESSAGE(4u, bad, "the pointer names the unrecognized Option Type");
+    }
 }
 
 // --- sec 4.5, the fragment header ---------------------------------------------
@@ -475,6 +498,124 @@ void test_walk_sizes_a_fragment_header_at_eight_not_by_the_second_octet(void)
     TEST_ASSERT_EQUAL_size_t(48u, c.offset);
     TEST_ASSERT_EQUAL_UINT16(1u, c.hops);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP6_NH_TCP, c.next_hdr);
+}
+
+// sec 4.5 lays a fragment packet out as "(1) The Per-Fragment headers ... (2) A Fragment header ...
+// (3) The fragment itself", and puts "(3) Extension headers, if any, and the Upper-Layer header.
+// These headers must be in the first fragment." Past a non-zero Fragment Offset the bytes are data,
+// so the walk ends at the Fragment header rather than reading them as headers.
+void test_walk_stops_at_a_fragment_header_carrying_a_non_zero_offset(void)
+{
+    // Next Header 60 on the Fragment header, then eight octets that would decode as a Destination
+    // Options header with an option whose action bits are 10, "discard the packet and ... send an
+    // ICMP Parameter Problem, Code 2".
+    size_t at = lay_hdr(IDEMIP_IP6_NH_FRAGMENT, 16u);
+    idemip_ip6_frag_build(pkt + at, IDEMIP_IP6_NH_DSTOPTS, 8u, IDEMIP_FALSE, 0x55667788u);
+    pkt[at + 8u] = 0x06u;
+    pkt[at + 9u] = 0x00u;
+    pkt[at + 10u] = 0x80u;
+    for (size_t i = 11u; i < 16u; i++)
+    {
+        pkt[at + i] = 0u;
+    }
+    IdemIpIp6Chain c = idemip_ip6_walk(pkt, at + 16u);
+    TEST_ASSERT_TRUE_MESSAGE(c.ok, "the fragment is queued for reassembly, not refused");
+    TEST_ASSERT_TRUE(c.fragmented);
+    TEST_ASSERT_EQUAL_size_t(at, c.frag_hdr);
+    TEST_ASSERT_EQUAL_size_t_MESSAGE(at + 8u, c.offset, "the walk ends one Fragment header past its start");
+    TEST_ASSERT_EQUAL_UINT16(1u, c.hops);
+    TEST_ASSERT_FALSE_MESSAGE(c.refused, "fragment data is not an option stream");
+    TEST_ASSERT_EQUAL_HEX32(0x55667788u, idemip_ip6_frag_ident(pkt + c.frag_hdr));
+
+    // The offset-zero fragment is where those headers really are, so the walk does follow them.
+    at = lay_hdr(IDEMIP_IP6_NH_FRAGMENT, 16u);
+    idemip_ip6_frag_build(pkt + at, IDEMIP_IP6_NH_DSTOPTS, 0u, IDEMIP_TRUE, 0x55667788u);
+    pkt[at + 8u] = IDEMIP_IP6_NH_TCP;
+    pkt[at + 9u] = 0u;
+    pkt[at + 10u] = IDEMIP_IP6_OPT_PADN;
+    pkt[at + 11u] = 4u;
+    for (size_t i = 12u; i < 16u; i++)
+    {
+        pkt[at + i] = 0u;
+    }
+    c = idemip_ip6_walk(pkt, at + 16u);
+    TEST_ASSERT_TRUE(c.ok);
+    TEST_ASSERT_TRUE(c.fragmented);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP6_NH_TCP, c.next_hdr);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(2u, c.hops, "the first fragment carries the Extension headers");
+}
+
+// sec 4.4: "If Segments Left is non-zero, the node must discard the packet and send an ICMP Parameter
+// Problem, Code 0, message to the packet's Source Address, pointing to the unrecognized Routing
+// Type." Segments Left zero is the case the same section ignores, so the walk records only the first
+// Routing header above zero.
+void test_walk_records_a_routing_header_with_segments_left(void)
+{
+    size_t at = lay_hdr(IDEMIP_IP6_NH_ROUTING, 36u);
+    lay_ext(at, IDEMIP_IP6_NH_ROUTING, 0u);
+    pkt[at + IDEMIP_IP6_RT_OFF_TYPE] = 99u; // a Routing Type this library executes none of
+    pkt[at + IDEMIP_IP6_RT_OFF_SEGS_LEFT] = 3u;
+    lay_ext(at + 8u, IDEMIP_IP6_NH_TCP, 0u);
+    pkt[at + 8u + IDEMIP_IP6_RT_OFF_SEGS_LEFT] = 1u;
+    IdemIpIp6Chain c = idemip_ip6_walk(pkt, at + 36u);
+    TEST_ASSERT_TRUE(c.ok);
+    TEST_ASSERT_TRUE_MESSAGE(c.routed, "a non-zero Segments Left is what sec 4.4 acts on");
+    TEST_ASSERT_EQUAL_size_t_MESSAGE(at, c.routing_hdr, "the first such header is the one reported");
+    TEST_ASSERT_EQUAL_UINT8(3u, idemip_ip6_rt_segs_left(pkt + c.routing_hdr));
+
+    // Segments Left zero: "ignore the Routing header and proceed to process the next header".
+    at = lay_hdr(IDEMIP_IP6_NH_ROUTING, 28u);
+    lay_ext(at, IDEMIP_IP6_NH_TCP, 0u);
+    pkt[at + IDEMIP_IP6_RT_OFF_SEGS_LEFT] = 0u;
+    c = idemip_ip6_walk(pkt, at + 28u);
+    TEST_ASSERT_TRUE(c.ok);
+    TEST_ASSERT_FALSE(c.routed);
+}
+
+// sec 4.2, the highest-order two bits of an Option Type: "00 - skip over this option", "01 - discard
+// the packet", "10 - discard the packet and, regardless of whether or not the packet's Destination
+// Address was a multicast address, send an ICMP Parameter Problem, Code 2, message to the packet's
+// Source Address, pointing to the unrecognized Option Type", "11 - ... only if the packet's
+// Destination Address was not a multicast address".
+void test_walk_refuses_an_option_whose_action_bits_are_not_skip(void)
+{
+    static const uint8_t act[3] = {0x40u, 0x80u, 0xC0u}; // 01, 10, 11
+    for (size_t i = 0; i < 3u; i++)
+    {
+        size_t at = lay_hdr(IDEMIP_IP6_NH_DSTOPTS, 16u);
+        lay_ext(at, IDEMIP_IP6_NH_TCP, 0u);
+        pkt[at + 2u] = (uint8_t)(act[i] | 0x1Fu); // an Option Type this library recognizes none of
+        pkt[at + 3u] = 4u;
+        for (size_t j = 4u; j < 8u; j++)
+        {
+            pkt[at + j] = 0u;
+        }
+        IdemIpIp6Chain c = idemip_ip6_walk(pkt, at + 16u);
+        TEST_ASSERT_TRUE(c.ok);
+        TEST_ASSERT_TRUE_MESSAGE(c.refused, "an action above 00 stops the packet");
+        TEST_ASSERT_EQUAL_size_t_MESSAGE(at + 2u, c.opt_hdr, "the pointer names the unrecognized Option Type");
+    }
+
+    // "00 - skip over this option and continue processing the header", which PadN carries.
+    size_t at = lay_hdr(IDEMIP_IP6_NH_DSTOPTS, 16u);
+    lay_ext(at, IDEMIP_IP6_NH_TCP, 0u);
+    pkt[at + 2u] = IDEMIP_IP6_OPT_PADN;
+    pkt[at + 3u] = 4u;
+    for (size_t j = 4u; j < 8u; j++)
+    {
+        pkt[at + j] = 0u;
+    }
+    IdemIpIp6Chain c = idemip_ip6_walk(pkt, at + 16u);
+    TEST_ASSERT_TRUE(c.ok);
+    TEST_ASSERT_FALSE(c.refused);
+
+    // An option whose length runs past its header is a header the walk could not step at all.
+    at = lay_hdr(IDEMIP_IP6_NH_DSTOPTS, 16u);
+    lay_ext(at, IDEMIP_IP6_NH_TCP, 0u);
+    pkt[at + 2u] = IDEMIP_IP6_OPT_PADN;
+    pkt[at + 3u] = 200u;
+    c = idemip_ip6_walk(pkt, at + 16u);
+    TEST_ASSERT_FALSE_MESSAGE(c.ok, "an option running past its header is malformed, not refused");
 }
 
 // sec 4.3: Hop-by-Hop Options is "identified by a Next Header value of 0 in the IPv6 header", and
