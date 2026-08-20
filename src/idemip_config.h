@@ -509,9 +509,33 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_MLD6_TMR_INTERVAL_MS 100u
 #endif
 
-/** @brief lwIP MLD6_JOIN_DELAYING_MEMBER_TMR_MS. */
+/**
+ * @brief RFC 2710 sec 7.10 [Unsolicited Report Interval], the top of the interval a join's sec 5
+ * start timer draws from.
+ *
+ * sec 5's start-listening action: "If this is an unsolicited Report, the timer is set to a delay
+ * value chosen uniformly from the interval [0, [Unsolicited Report Interval] ]", and sec 4 gives the
+ * purpose: "To cover the possibility of the initial Report being lost or damaged, it is recommended
+ * that it be repeated once or twice after short delays [Unsolicited Report Interval]." sec 7 opens
+ * "Most of these timers are configurable", so this takes lwIP's
+ * MLD6_JOIN_DELAYING_MEMBER_TMR_MS rather than sec 7.10's 10-second default; the draw over it is
+ * what spreads two nodes joining at the same instant.
+ */
 #ifndef IDEMIP_MLD6_JOIN_DELAY_MS
 #define IDEMIP_MLD6_JOIN_DELAY_MS 500u
+#endif
+
+/**
+ * @brief RFC 2710 sec 4's Done optimization turned off, which it is not by default.
+ *
+ * "If the node's most recent Report message was suppressed by hearing another Report message, it MAY
+ * send nothing, as it is highly likely that there is another listener for that address still present
+ * on the same link. If this optimization is implemented, it MUST be able to be turned off but SHOULD
+ * default to on." A caller that turns it off sets @ref Mld6GroupArgs::done_always from this; clear is
+ * the section's default, so a zeroed operand block runs the optimization.
+ */
+#ifndef IDEMIP_MLD6_DONE_ALWAYS
+#define IDEMIP_MLD6_DONE_ALWAYS 0
 #endif
 
 /** @brief lwIP MLD6_HL: RFC 2710 sec 3 puts every MLD message at hop limit 1. */

@@ -184,13 +184,6 @@ void test_clear_zeroes_the_context_apart_from_the_cleared_mark(void)
     TEST_ASSERT_EQUAL_size_t_MESSAGE(1u, set, "clear must zero the context apart from the cleared mark");
 }
 
-// A zeroed entry is Non-Listener, which is the state RFC 2710 sec 5 calls "the initial state for all
-// multicast addresses on all interfaces".
-void test_the_zeroed_state_is_non_listener(void)
-{
-    TEST_ASSERT_EQUAL_INT(0, IDEMIP_MLD6_NON_LISTENER);
-}
-
 // The operand block is the caller's, so clear does not touch what the caller put there.
 void test_clear_leaves_the_operand_block_alone(void)
 {
@@ -319,12 +312,23 @@ static const uint8_t g_global[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x0E, 0, 0, 0, 0, 0,
 // A non-multicast address, which RFC 4291 sec 2.7 marks by the absence of 11111111 in octet 0.
 static const uint8_t g_unicast[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
 
-static IdemIpStatus do_join(uint8_t *w, const uint8_t *grp, uint8_t netif)
+// RFC 2710 sec 5's start timer draws over [0, Unsolicited Report Interval], so a join takes the clock
+// it runs from and the word it draws out of. A rand of all ones lands the draw at the top of the
+// interval, which is the fixed delay every case below was written against.
+static IdemIpStatus do_join_at(uint8_t *w, const uint8_t *grp, uint8_t netif, uint32_t now_ms, uint32_t rand)
 {
     IDEMIP_MLD6_IO(w)->group_args.group = grp;
     IDEMIP_MLD6_IO(w)->group_args.netif = netif;
+    IDEMIP_MLD6_IO(w)->group_args.now_ms = now_ms;
+    IDEMIP_MLD6_IO(w)->group_args.rand = rand;
+    IDEMIP_MLD6_IO(w)->group_args.done_always = IDEMIP_FALSE;
     Mld6.join(w);
     return IDEMIP_MLD6_IO(w)->status;
+}
+
+static IdemIpStatus do_join(uint8_t *w, const uint8_t *grp, uint8_t netif)
+{
+    return do_join_at(w, grp, netif, 0u, 0xFFFFFFFFu);
 }
 
 static IdemIpStatus do_leave(uint8_t *w, const uint8_t *grp, uint8_t netif)
@@ -424,15 +428,68 @@ void test_join_sends_a_report_sets_the_flag_and_starts_the_timer(void)
     TEST_ASSERT_EQUAL_UINT8_ARRAY(g_group, IDEMIP_MLD6_IO(work_a)->group, IDEMIP_IP6_ADDR_LEN);
 }
 
-// sec 4 repeats the initial Report "after short delays [Unsolicited Report Interval]", so the timer the
-// join starts is measured from the clock in milliseconds. The clock a sweep left in the borrow is the
-// one it is measured from, since Mld6GroupArgs carries none.
-void test_the_join_timer_is_the_join_delay_from_the_last_sweeps_clock(void)
+// sec 5 start listening: "If this is an unsolicited Report, the timer is set to a delay value chosen
+// uniformly from the interval [0, [Unsolicited Report Interval] ]", and sec 4 gives the purpose, "To
+// cover the possibility of the initial Report being lost or damaged, it is recommended that it be
+// repeated once or twice after short delays [Unsolicited Report Interval]." The delay is measured from
+// the clock the join was handed.
+void test_the_join_timer_is_drawn_over_the_unsolicited_report_interval(void)
 {
     Mld6.clear(work_a);
-    TEST_ASSERT_EQUAL_INT(0, drain(work_a, 40000u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join_at(work_a, g_group, 0u, 40000u, 0x12345678u));
+    const uint32_t at = IDEMIP_MLD6_IO(work_a)->deadline_ms;
+    TEST_ASSERT_TRUE_MESSAGE(at >= 40000u, "the delay runs forward from the clock the join was handed");
+    TEST_ASSERT_TRUE_MESSAGE(at <= 40000u + IDEMIP_MLD6_JOIN_DELAY_MS,
+                             "the delay is inside [0, Unsolicited Report Interval]");
+}
+
+// The draw is what spreads two nodes that joined at the same instant, so two different words on the
+// same clock place the repeat differently, and the same word places it the same way.
+void test_the_join_timer_follows_the_callers_random_word(void)
+{
+    Mld6.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join_at(work_a, g_group, 0u, 0u, 0x0F0F0F0Fu));
+    const uint32_t first = IDEMIP_MLD6_IO(work_a)->deadline_ms;
+
+    Mld6.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join_at(work_a, g_group, 0u, 0u, 0xF0F0F0F0u));
+    const uint32_t second = IDEMIP_MLD6_IO(work_a)->deadline_ms;
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(first, second, "a fixed delay would put every node on the same repeat");
+
+    Mld6.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join_at(work_a, g_group, 0u, 0u, 0x0F0F0F0Fu));
+    TEST_ASSERT_EQUAL_UINT32(first, IDEMIP_MLD6_IO(work_a)->deadline_ms);
+}
+
+// sec 4: "If the node's most recent Report message was suppressed by hearing another Report message,
+// it MAY send nothing ... If this optimization is implemented, it MUST be able to be turned off but
+// SHOULD default to on."
+void test_the_done_optimization_can_be_turned_off(void)
+{
+    Mld6.clear(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join(work_a, g_group, 0u));
-    TEST_ASSERT_EQUAL_UINT32(40000u + IDEMIP_MLD6_JOIN_DELAY_MS, IDEMIP_MLD6_IO(work_a)->deadline_ms);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_report_in(work_a, g_group, 0u)); // another node's Report
+
+    IDEMIP_MLD6_IO(work_a)->group_args.group = g_group;
+    IDEMIP_MLD6_IO(work_a)->group_args.netif = 0u;
+    IDEMIP_MLD6_IO(work_a)->group_args.done_always = IDEMIP_TRUE;
+    Mld6.leave(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_MLD6_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_MLD6_IO(work_a)->send_done,
+                             "turned off, the optimization must not withhold the Done");
+
+    // Turned off, the Done still goes to none of the addresses sec 5 forbids MLD messages for: "MLD
+    // messages are never sent for multicast addresses whose scope is 0 (reserved) or 1 (node-local),
+    // ... nor for the link-scope all-nodes address."
+    Mld6.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join(work_a, g_all_nodes, 0u));
+    IDEMIP_MLD6_IO(work_a)->group_args.group = g_all_nodes;
+    IDEMIP_MLD6_IO(work_a)->group_args.netif = 0u;
+    IDEMIP_MLD6_IO(work_a)->group_args.done_always = IDEMIP_TRUE;
+    Mld6.leave(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_MLD6_IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_MLD6_IO(work_a)->send_done,
+                              "sec 5 sends no MLD message for the link-scope all-nodes address");
 }
 
 // sec 5: "start listening ... may occur only in the Non-Listener state", so a group already listened to
@@ -593,18 +650,41 @@ void test_leaving_a_group_that_is_not_listened_to_is_refused(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, do_leave(work_a, g_group, 1u));
 }
 
+// RFC 2710 sec 5, Non-Listener: "This is the initial state for all multicast addresses on all
+// interfaces; it requires no storage in the node." An entry the module zeroed reports it, which is
+// what lets clear be a memset.
+void test_the_zeroed_state_is_non_listener(void)
+{
+    // A table left holding a membership, then cleared.
+    Mld6.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join(work_a, g_group, 0u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_MLD6_DELAYING_LISTENER, state_of(work_a, g_group, 0u));
+
+    Mld6.clear(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, do_find(work_a, g_group, 0u), "a cleared table stores nothing");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_MLD6_NON_LISTENER, IDEMIP_MLD6_IO(work_a)->state,
+                                  "the state a zeroed entry reports is Non-Listener");
+
+    // And a leave puts an entry back to it, which is the same zero.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join(work_a, g_group, 0u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_leave(work_a, g_group, 0u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_MLD6_NON_LISTENER, IDEMIP_MLD6_IO(work_a)->state);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, do_find(work_a, g_group, 0u));
+}
+
 // --- find --------------------------------------------------------------------
 
 // sec 5 holds one state per address per interface, and find reports it with the running timer.
 void test_find_reports_the_state_and_the_deadline(void)
 {
     Mld6.clear(work_a);
-    TEST_ASSERT_EQUAL_INT(0, drain(work_a, 1000u));
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join(work_a, g_group, 0u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join_at(work_a, g_group, 0u, 1000u, 0x2468ACE0u));
+    const uint32_t armed = IDEMIP_MLD6_IO(work_a)->deadline_ms;
 
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_find(work_a, g_group, 0u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_MLD6_DELAYING_LISTENER, IDEMIP_MLD6_IO(work_a)->state);
-    TEST_ASSERT_EQUAL_UINT32(1000u + IDEMIP_MLD6_JOIN_DELAY_MS, IDEMIP_MLD6_IO(work_a)->deadline_ms);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(armed, IDEMIP_MLD6_IO(work_a)->deadline_ms,
+                                     "find reports the timer the join started");
     TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_MLD6_IO(work_a)->netif);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(g_group, IDEMIP_MLD6_IO(work_a)->group, IDEMIP_IP6_ADDR_LEN);
 }
@@ -979,14 +1059,15 @@ void test_an_expiring_timer_sends_a_report_and_sets_the_flag(void)
 void test_a_sweep_before_the_deadline_fires_nothing(void)
 {
     Mld6.clear(work_a);
-    TEST_ASSERT_EQUAL_INT(0, drain(work_a, 1000u));
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join(work_a, g_group, 0u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join_at(work_a, g_group, 0u, 1000u, 0x13579BDFu));
+    const uint32_t at = IDEMIP_MLD6_IO(work_a)->deadline_ms;
+    TEST_ASSERT_TRUE_MESSAGE(at > 1000u, "the draw landed on the clock, so there is nothing to be early for");
 
-    TEST_ASSERT_EQUAL_INT(0, sweep(work_a, 1000u + IDEMIP_MLD6_JOIN_DELAY_MS - 1u));
+    TEST_ASSERT_EQUAL_INT(0, sweep(work_a, at - 1u));
     TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_MLD6_IO(work_a)->expired);
     TEST_ASSERT_EQUAL_INT(IDEMIP_MLD6_DELAYING_LISTENER, state_of(work_a, g_group, 0u));
 
-    TEST_ASSERT_EQUAL_INT(1, sweep(work_a, 1000u + IDEMIP_MLD6_JOIN_DELAY_MS));
+    TEST_ASSERT_EQUAL_INT(1, sweep(work_a, at));
 }
 
 // Mld6Io names one group and carries one send_report, so a sweep fires the first due timer and counts every
@@ -1026,12 +1107,13 @@ void test_a_sweep_with_nothing_due_is_ok_and_not_busy(void)
 void test_a_deadline_survives_the_millisecond_clocks_wrap(void)
 {
     Mld6.clear(work_a);
-    TEST_ASSERT_EQUAL_INT(0, drain(work_a, 0xFFFFFF00u));
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join(work_a, g_group, 0u));
-    TEST_ASSERT_EQUAL_UINT32(0xFFFFFF00u + IDEMIP_MLD6_JOIN_DELAY_MS, IDEMIP_MLD6_IO(work_a)->deadline_ms);
+    // A clock 16 milliseconds short of the wrap, and a draw the whole interval past it.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join_at(work_a, g_group, 0u, 0xFFFFFFF0u, 0x2468ACE0u));
+    const uint32_t at = IDEMIP_MLD6_IO(work_a)->deadline_ms;
+    TEST_ASSERT_TRUE_MESSAGE(at < 0xFFFFFFF0u, "the deadline is meant to sit past the wrap");
 
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, sweep(work_a, 0xFFFFFFF0u), "a wrapped deadline fired before its time");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(1, sweep(work_a, 0x00000100u), "a wrapped deadline never came due");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, sweep(work_a, 0xFFFFFFF8u), "a wrapped deadline fired before its time");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, sweep(work_a, at), "a wrapped deadline never came due");
 }
 
 // --- the whole sec 5 walk ----------------------------------------------------

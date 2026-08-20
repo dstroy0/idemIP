@@ -51,13 +51,28 @@ typedef enum IDEMIP_ENUM_PACKED
 /**
  * @brief What a membership call takes.
  *
- * @var Mld6GroupArgs::group the sec 3.6 Multicast Address, IDEMIP_IP6_ADDR_LEN octets
- * @var Mld6GroupArgs::netif the interface the node listens on
+ * @var Mld6GroupArgs::group  the sec 3.6 Multicast Address, IDEMIP_IP6_ADDR_LEN octets
+ * @var Mld6GroupArgs::netif  the interface the node listens on
+ * @var Mld6GroupArgs::now_ms the caller's monotonic millisecond count, which a join's sec 5 start
+ *                            timer runs from
+ * @var Mld6GroupArgs::rand   a random word, which a join draws its sec 5 delay out of: "If this is an
+ *                            unsolicited Report, the timer is set to a delay value chosen uniformly
+ *                            from the interval [0, [Unsolicited Report Interval] ]"
+ * @var Mld6GroupArgs::done_always sec 4's Done optimization turned off. "If the node's most recent
+ *                            Report message was suppressed by hearing another Report message, it MAY
+ *                            send nothing ... If this optimization is implemented, it MUST be able to
+ *                            be turned off but SHOULD default to on." Clear is that default, so a
+ *                            leave after a suppressed Report sends nothing; set, the Done goes out for
+ *                            every group sec 5 reports at all, and for none of the ones it forbids MLD
+ *                            messages for.
  */
 typedef struct
 {
     const uint8_t *group;
+    uint32_t now_ms;
+    uint32_t rand;
     uint8_t netif;
+    idemip_bool done_always;
 } Mld6GroupArgs;
 
 /**

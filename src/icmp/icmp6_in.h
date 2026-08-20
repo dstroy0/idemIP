@@ -201,6 +201,15 @@ typedef struct
  *                           errors (bad ICMP checksums, bad length, etc.)", so this and @ref
  *                           Icmp6InIo::cksum_ok are the two that name one. A discard with neither
  *                           set is sec 2.4 (b)'s unknown informational type and is no error.
+ * @var Icmp6InIo::truncated the error message's quoted packet does not reach its upper-layer header,
+ *                           which sec 2.4 (d) names as ordinary: "the ICMPv6 message is silently
+ *                           dropped after any IPv6-layer processing. One example of such a case is an
+ *                           ICMPv6 message with an unusually large amount of extension headers that
+ *                           does not have the upper-layer protocol type due to truncation of the
+ *                           original packet to meet the minimum IPv6 MTU limit." Reported with
+ *                           @ref IDEMIP_ICMP6_IN_ACT_DISCARD and without @ref Icmp6InIo::bad_len,
+ *                           because sec 2.4 (c)'s quote is "as much of invoking packet as possible"
+ *                           and a short one is no error of the message.
  */
 typedef struct
 {
@@ -225,6 +234,7 @@ typedef struct
     uint8_t tokens;
     idemip_bool cksum_ok;
     idemip_bool bad_len;
+    idemip_bool truncated;
 } Icmp6InIo;
 
 // ---------------------------------------------------------------------------

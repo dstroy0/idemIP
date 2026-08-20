@@ -439,8 +439,11 @@ void test_destination_unreachable_reaches_the_upper_layer_protocol(void)
 }
 
 // sec 2.4 (d): "In cases where it is not possible to retrieve the upper-layer protocol type from the
-// ICMPv6 message, the ICMPv6 message is silently dropped after any IPv6-layer processing."
-void test_an_error_whose_body_names_no_upper_layer_is_discarded(void)
+// ICMPv6 message, the ICMPv6 message is silently dropped after any IPv6-layer processing." A body too
+// short to hold an IPv6 header at all is a length error of the message itself, which RFC 2466 counts:
+// ipv6IfIcmpInErrors is "The number of ICMP messages which the interface received but determined as
+// having ICMP-specific errors (bad ICMP checksums, bad length, etc.)".
+void test_an_error_whose_body_is_shorter_than_an_ipv6_header_is_a_length_error(void)
 {
     uint8_t *m = pkt + IDEMIP_IPV6_HDR_LEN;
     const size_t len = IDEMIP_ICMP6_ERR_HDR_LEN + 4u; // less of the invoking packet than a header
@@ -452,6 +455,76 @@ void test_an_error_whose_body_names_no_upper_layer_is_discarded(void)
     load_recv(work_a);
     Icmp6In.recv(work_a);
     TEST_ASSERT_BITS_HIGH(IDEMIP_ICMP6_IN_ACT_DISCARD, IDEMIP_ICMP6_IN_IO(work_a)->act);
+    TEST_ASSERT_TRUE(IDEMIP_ICMP6_IN_IO(work_a)->bad_len);
+    TEST_ASSERT_FALSE(IDEMIP_ICMP6_IN_IO(work_a)->truncated);
+}
+
+// The two outcomes sec 2.4 (d) names as ordinary: a quote whose chain does not close, "One example of
+// such a case is an ICMPv6 message with an unusually large amount of extension headers that does not
+// have the upper-layer protocol type due to truncation of the original packet to meet the minimum IPv6
+// MTU limit", and one whose Next Header is 59. sec 2.4 (c) makes the quote "as much of invoking packet
+// as possible", so neither is an ICMP-specific error of the received message.
+void test_a_truncated_quote_is_dropped_without_being_counted_an_error(void)
+{
+    // A Destination Options header whose Hdr Ext Len runs past the quote the message carries.
+    uint8_t *m = pkt + IDEMIP_IPV6_HDR_LEN;
+    uint8_t *body = m + IDEMIP_ICMP6_ERR_HDR_LEN;
+    memset(body, 0, IDEMIP_IPV6_HDR_LEN + 8u);
+    IdemIpIp6BuildArgs f;
+    memset(&f, 0, sizeof f);
+    f.src = HOST6;
+    f.dst = PEER6;
+    f.payload_len = 8u;
+    f.next_hdr = IDEMIP_IP6_NH_DSTOPTS;
+    f.hop_limit = 64u;
+    idemip_ip6_build(body, &f);
+    body[IDEMIP_IPV6_HDR_LEN] = IDEMIP_IP6_NH_UDP;
+    body[IDEMIP_IPV6_HDR_LEN + 1u] = 0xFFu; // 2048 octets, past what the quote carries
+    const size_t len = IDEMIP_ICMP6_ERR_HDR_LEN + IDEMIP_IPV6_HDR_LEN + 8u;
+    idemip_icmp6_hdr_write(m, (uint8_t)IDEMIP_ICMP6_PACKET_TOO_BIG, IDEMIP_ICMP6_CODE_PTB);
+    idemip_wr32(m + IDEMIP_ICMP6_OFF_BODY, 1280u);
+    put_ip6(PEER6, HOST6, IDEMIP_IP6_NH_ICMPV6, len);
+    seal(len);
+    load_recv(work_a);
+    Icmp6In.recv(work_a);
+
+    const Icmp6InIo *io = IDEMIP_ICMP6_IN_IO(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_BITS_HIGH(IDEMIP_ICMP6_IN_ACT_DISCARD, io->act);
+    TEST_ASSERT_BITS_LOW(IDEMIP_ICMP6_IN_ACT_TRANSPORT, io->act);
+    TEST_ASSERT_TRUE(io->truncated);
+    TEST_ASSERT_FALSE_MESSAGE(io->bad_len, "a legally truncated quote is no ICMP-specific error");
+    TEST_ASSERT_TRUE_MESSAGE(io->cksum_ok, "the message itself is well formed");
+
+    // The same through a quote whose own Next Header is 59, RFC 8200 sec 4.7's No Next Header.
+    memset(body, 0, IDEMIP_IPV6_HDR_LEN + 8u);
+    f.next_hdr = IDEMIP_IP6_NH_NONE;
+    idemip_ip6_build(body, &f);
+    idemip_icmp6_hdr_write(m, (uint8_t)IDEMIP_ICMP6_PACKET_TOO_BIG, IDEMIP_ICMP6_CODE_PTB);
+    idemip_wr32(m + IDEMIP_ICMP6_OFF_BODY, 1280u);
+    put_ip6(PEER6, HOST6, IDEMIP_IP6_NH_ICMPV6, len);
+    seal(len);
+    load_recv(work_a);
+    Icmp6In.recv(work_a);
+    TEST_ASSERT_BITS_HIGH(IDEMIP_ICMP6_IN_ACT_DISCARD, IDEMIP_ICMP6_IN_IO(work_a)->act);
+    TEST_ASSERT_TRUE(IDEMIP_ICMP6_IN_IO(work_a)->truncated);
+    TEST_ASSERT_FALSE(IDEMIP_ICMP6_IN_IO(work_a)->bad_len);
+}
+
+// sec 3.3, Upper Layer Notification: "An incoming Time Exceeded message MUST be passed to the
+// upper-layer process if the relevant process can be identified (see Section 2.4, (d))."
+void test_time_exceeded_reaches_the_upper_layer_process(void)
+{
+    put_error6((uint8_t)IDEMIP_ICMP6_TIME_EXCEEDED, IDEMIP_ICMP6_TE_HOP_LIMIT, 0u);
+    load_recv(work_a);
+    Icmp6In.recv(work_a);
+
+    const Icmp6InIo *io = IDEMIP_ICMP6_IN_IO(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_BITS_HIGH(IDEMIP_ICMP6_IN_ACT_TRANSPORT, io->act);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP6_NH_UDP, io->proto);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_ICMP6_TIME_EXCEEDED, io->type);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP6_TE_HOP_LIMIT, io->code);
 }
 
 // sec 3.2: "MTU: The Maximum Transmission Unit of the next-hop link."
@@ -461,6 +534,9 @@ void test_packet_too_big_reports_the_mtu(void)
     load_recv(work_a);
     Icmp6In.recv(work_a);
     TEST_ASSERT_EQUAL_UINT32(1400u, IDEMIP_ICMP6_IN_IO(work_a)->mtu);
+    // sec 3.2: "An incoming Packet Too Big message MUST be passed to the upper-layer process."
+    TEST_ASSERT_BITS_HIGH(IDEMIP_ICMP6_IN_ACT_TRANSPORT, IDEMIP_ICMP6_IN_IO(work_a)->act);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP6_NH_UDP, IDEMIP_ICMP6_IN_IO(work_a)->proto);
 }
 
 // sec 3.4: "Pointer: Identifies the octet offset within the invoking packet where the error was
@@ -471,6 +547,9 @@ void test_parameter_problem_reports_the_pointer(void)
     load_recv(work_a);
     Icmp6In.recv(work_a);
     TEST_ASSERT_EQUAL_UINT32(40u, IDEMIP_ICMP6_IN_IO(work_a)->pointer);
+    // sec 3.4: "A node receiving this ICMPv6 message MUST notify the upper-layer process."
+    TEST_ASSERT_BITS_HIGH(IDEMIP_ICMP6_IN_ACT_TRANSPORT, IDEMIP_ICMP6_IN_IO(work_a)->act);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP6_NH_UDP, IDEMIP_ICMP6_IN_IO(work_a)->proto);
 }
 
 // RFC 8200 sec 4: "the first one that is not an extension header indicates that the next item in the

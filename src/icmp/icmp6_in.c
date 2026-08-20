@@ -217,6 +217,7 @@ static void icmp6_in_result_clear(Icmp6InIo *io)
     io->suppress = IDEMIP_ICMP6_IN_SUPPRESS_NONE;
     io->cksum_ok = IDEMIP_FALSE;
     io->bad_len = IDEMIP_FALSE;
+    io->truncated = IDEMIP_FALSE;
 }
 
 // RFC 4443 sec 2.4 (d): "the upper-layer protocol type is extracted from the original packet
@@ -240,10 +241,25 @@ static void icmp6_in_error_arrived(Icmp6InIo *io, const uint8_t *msg, size_t msg
     }
     const uint8_t *body = msg + IDEMIP_ICMP6_ERR_HDR_LEN;
     const size_t body_len = msg_len - IDEMIP_ICMP6_ERR_HDR_LEN;
+    // A body shorter than an IPv6 header carries no quoted packet at all, which is a length error of
+    // the message itself. Past that, sec 2.4 (d) names the two outcomes below as ordinary: "In cases
+    // where it is not possible to retrieve the upper-layer protocol type from the ICMPv6 message, the
+    // ICMPv6 message is silently dropped after any IPv6-layer processing. One example of such a case
+    // is an ICMPv6 message with an unusually large amount of extension headers that does not have the
+    // upper-layer protocol type due to truncation of the original packet to meet the minimum IPv6 MTU
+    // limit." sec 2.4 (c) makes the quote "as much of invoking packet as possible", so a truncated one
+    // is expected, and the RFC 2466 ipv6IfIcmpInErrors counter is over "ICMP-specific errors" of the
+    // received message.
+    if (body_len < (size_t)IDEMIP_IP6_OFF_PAYLOAD)
+    {
+        io->bad_len = IDEMIP_TRUE;
+        io->act = (uint8_t)(io->act | IDEMIP_ICMP6_IN_ACT_DISCARD);
+        return;
+    }
     const IdemIpIp6Chain c = idemip_ip6_walk(body, body_len);
     if (!c.ok || c.next_hdr == IDEMIP_IP6_NH_NONE)
     {
-        io->bad_len = IDEMIP_TRUE;
+        io->truncated = IDEMIP_TRUE;
         io->act = (uint8_t)(io->act | IDEMIP_ICMP6_IN_ACT_DISCARD);
         return;
     }

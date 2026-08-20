@@ -270,9 +270,13 @@ static void mld6_join(uint8_t *restrict work)
     ctx->groups++;
     if (mld6_reportable(g->group))
     {
+        // sec 5 start listening: "If this is an unsolicited Report, the timer is set to a delay value
+        // chosen uniformly from the interval [0, [Unsolicited Report Interval] ]." A fixed delay would
+        // put every node that joined at the same instant on the same repeat.
+        uint32_t mixer = io->group_args.rand;
         g->state = IDEMIP_MLD6_DELAYING_LISTENER;
         g->last_reporter = IDEMIP_TRUE;
-        g->deadline_ms = ctx->now_ms + IDEMIP_MLD6_JOIN_DELAY_MS;
+        g->deadline_ms = io->group_args.now_ms + mld6_draw(&mixer, (uint32_t)IDEMIP_MLD6_JOIN_DELAY_MS);
         io->send_report = IDEMIP_TRUE;
     }
     else
@@ -313,7 +317,11 @@ static void mld6_leave(uint8_t *restrict work)
     }
 
     Mld6Group *g = MLD6_GROUP_AT(work, index);
-    io->send_done = g->last_reporter;
+    // sec 4: "If the node's most recent Report message was suppressed by hearing another Report
+    // message, it MAY send nothing ... If this optimization is implemented, it MUST be able to be
+    // turned off but SHOULD default to on." Off, the Done goes out for every group sec 5 reports at
+    // all, and still for none of the ones it forbids MLD messages for.
+    io->send_done = io->group_args.done_always ? mld6_reportable(g->group) : g->last_reporter;
     io->last_reporter = g->last_reporter;
     memset(g, 0, sizeof(*g));
     ctx->groups--;
