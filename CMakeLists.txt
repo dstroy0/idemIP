@@ -69,6 +69,11 @@ add_child_option(IDEMIP_ENABLE_UDP "Build the UDP capability" ON
 # needs. See src/clock.h.
 option(IDEMIP_ENABLE_TIME_DETERMINISM "Enable time determinism" OFF)
 
+# The benches, which are not tests: they measure and report and assert nothing, so ctest does not
+# run them and a normal build does not carry them. They link the library rather than including its
+# sources, so what they time is the translation unit this build produced under this build's flags.
+option(IDEMIP_BENCH "Build the timing benches under test/bench" OFF)
+
 # --- the translation units each capability is ---------------------------------
 # One list per capability, and a file appears in exactly one of them. An option that is off leaves
 # its files out of the target, so a disabled capability reaches the compiler as no file at all.
@@ -192,6 +197,35 @@ endif()
 
 add_executable(idemip_sizes "${CMAKE_CURRENT_SOURCE_DIR}/tools/idemip_sizes.c")
 target_link_libraries(idemip_sizes PRIVATE idemip)
+
+# --- benches -----------------------------------------------------------------
+# Measurement, not test: nothing here asserts, so ctest never sees these and BUILD_TESTING does not
+# gate them. They link idemip, so the entries they time are the ones this build compiled, with this
+# build's optimisation and LTO settings, rather than a copy recompiled beside them.
+
+if(IDEMIP_BENCH)
+    foreach(b bench_words bench_entries)
+        add_executable(${b} "${CMAKE_CURRENT_SOURCE_DIR}/test/bench/${b}.c")
+        target_link_libraries(${b} PRIVATE idemip)
+        # The bench takes the library's own optimisation, so the two sides of a comparison are
+        # compiled the same way. A bench built at a different level than the code it links measures
+        # the difference between the two builds and calls it a result.
+        target_compile_options(${b} PRIVATE
+            $<$<AND:$<C_COMPILER_ID:GNU,Clang>,$<CONFIG:Release>>:-O2>)
+        if(b STREQUAL "bench_words")
+            # bench_words models a machine whose word is 16, 32 or 64 bits wide, so the compiler must
+            # not widen past the word the row names. This host does sixteen octets at a time given the
+            # chance, and then every row reads the same and none of them is about a word. As a
+            # `#pragma GCC optimize` inside the file this was unreliable - it can reset the rest of the
+            # optimisation level with it - so it is a flag on the one target that wants it.
+            target_compile_options(${b} PRIVATE
+                $<$<C_COMPILER_ID:GNU,Clang>:-fno-tree-vectorize>)
+        endif()
+        if(IDEMIP_LTO AND IDEMIP_IPO_OK)
+            set_property(TARGET ${b} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+        endif()
+    endforeach()
+endif()
 
 # --- tests -------------------------------------------------------------------
 

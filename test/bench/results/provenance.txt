@@ -1,0 +1,6 @@
+commit: 5b01a97647a3d7c3e90b5cd657398e1f1edbbeca
+date: 2026-08-20
+compiler: gcc.exe (MinGW-W64 x86_64-ucrt-posix-seh, built by Brecht Sanders, r8) 13.2.0
+cpu: Intel(R) Core(TM) i7-5960X CPU @ 3.00GHz  
+os: Windows 11 Pro 10.0.26200
+build: cmake -DCMAKE_BUILD_TYPE=Release -DIDEMIP_BENCH=ON -DBUILD_TESTING=OFF, -O2, LTO on
