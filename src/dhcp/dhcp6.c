@@ -655,7 +655,7 @@ static idemip_bool dhcp6_client_id_matches(const Dhcp6Ctx *ctx, const uint8_t *o
     {
         return IDEMIP_FALSE;
     }
-    return (memcmp(d, ctx->cfg->duid, dlen) == 0) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (idemip_bytes_eq(d, ctx->cfg->duid, dlen)) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
 // sec 21.13: "If the Status Code option does not appear in a message in which the option could appear,

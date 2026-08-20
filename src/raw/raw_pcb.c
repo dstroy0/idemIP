@@ -313,7 +313,7 @@ static idemip_bool raw_pcb_score(const RawPcbEntry *e, const RawPcbFindArgs *a, 
     uint8_t s = 0u;
     if (!raw_pcb_is_any(e->f.local_ip, len))
     {
-        if (memcmp(e->f.local_ip, a->local_ip, len) != 0 ||
+        if (!idemip_bytes_eq(e->f.local_ip, a->local_ip, len) ||
             !raw_pcb_zone_ok(e->f.ip_version, e->f.local_zone, a->local_zone))
         {
             return IDEMIP_FALSE;
@@ -322,7 +322,7 @@ static idemip_bool raw_pcb_score(const RawPcbEntry *e, const RawPcbFindArgs *a, 
     }
     if (e->f.connected)
     {
-        if (memcmp(e->f.remote_ip, a->remote_ip, len) != 0 ||
+        if (!idemip_bytes_eq(e->f.remote_ip, a->remote_ip, len) ||
             !raw_pcb_zone_ok(e->f.ip_version, e->f.remote_zone, a->remote_zone))
         {
             return IDEMIP_FALSE;

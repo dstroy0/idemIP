@@ -211,7 +211,7 @@ static_assert((uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS <= ND6_RETRANS_MAX_MS,
 // RFC 4861 sec 5.1 keys a Neighbor Cache entry on the whole unicast address.
 static idemip_bool nd6_addr_eq(const uint8_t *a, const uint8_t *b)
 {
-    return (memcmp(a, b, IDEMIP_IP6_ADDR_LEN) == 0) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN)) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
 // RFC 4861 sec 5.2 longest prefix match over the first len bits: (len >> 3) whole octets compare
@@ -220,7 +220,7 @@ static idemip_bool nd6_prefix_eq(const uint8_t *a, const uint8_t *b, uint8_t len
 {
     size_t whole = (size_t)(len >> 3);
     uint8_t bits = (uint8_t)(len & 7u);
-    if (whole != 0u && memcmp(a, b, whole) != 0)
+    if (whole != 0u && !idemip_bytes_eq(a, b, whole))
     {
         return IDEMIP_FALSE;
     }
@@ -630,7 +630,7 @@ static void nd6_set_neighbor(uint8_t *restrict work)
 
     Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, i);
     idemip_bool differs =
-        (a->lladdr != NULL && memcmp(n->lladdr, a->lladdr, IDEMIP_MAC_LEN) != 0) ? IDEMIP_TRUE : IDEMIP_FALSE;
+        (a->lladdr != NULL && !idemip_bytes_eq(n->lladdr, a->lladdr, IDEMIP_MAC_LEN)) ? IDEMIP_TRUE : IDEMIP_FALSE;
     idemip_bool was_router = n->is_router;
 
     if (n->state == IDEMIP_ND6_INCOMPLETE)
@@ -1131,7 +1131,7 @@ static void nd6_router_set(uint8_t *restrict work)
         else
         {
             Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, ni);
-            if (memcmp(n->lladdr, a->lladdr, IDEMIP_MAC_LEN) != 0)
+            if (!idemip_bytes_eq(n->lladdr, a->lladdr, IDEMIP_MAC_LEN))
             {
                 // "If a cache entry already exists and is updated with a different link-layer
                 // address, the reachability state MUST also be set to STALE."

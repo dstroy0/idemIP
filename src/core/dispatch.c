@@ -1458,7 +1458,7 @@ static DispatchDest d_ip6_dest(uint8_t *restrict work, const uint8_t *dst)
         Ip6AddrIo *i6 = IDEMIP_IP6_ADDR_IO(ctx->ip6_addr);
         i6->solicited_args.addr = IDEMIP_NETIF_IO(ctx->netif)->addr6;
         Ip6Addr.solicited(ctx->ip6_addr);
-        if (i6->status == IDEMIP_OK && memcmp(i6->solicited, dst, IDEMIP_IP6_ADDR_LEN) == 0)
+        if (i6->status == IDEMIP_OK && idemip_bytes_eq(i6->solicited, dst, IDEMIP_IP6_ADDR_LEN))
         {
             return D_DEST_LOCAL;
         }

@@ -390,7 +390,7 @@ static void ip6_forward_decide(uint8_t *restrict work)
     // routers". A next hop that is neither is not a target this may name, so no redirect is asked for.
     if (a->src_neighbor && !ip6_forward_crosses_link(a) && !ip6_forward_is_multicast(dst))
     {
-        const idemip_bool target_is_dst = (idemip_bool)(memcmp(a->next_hop, dst, IDEMIP_IP6_ADDR_LEN) == 0);
+        const idemip_bool target_is_dst = (idemip_bool)(idemip_bytes_eq(a->next_hop, dst, IDEMIP_IP6_ADDR_LEN));
         if (target_is_dst || ip6_forward_is_link_local(a->next_hop))
         {
             io->redirect = IDEMIP_TRUE;

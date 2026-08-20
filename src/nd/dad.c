@@ -100,7 +100,7 @@ static idemip_bool dad_ready(uint8_t *restrict work)
 
 static idemip_bool dad_addr_eq(const uint8_t *a, const uint8_t *b)
 {
-    return (idemip_bool)(memcmp(a, b, IDEMIP_IP6_ADDR_LEN) == 0);
+    return (idemip_bool)(idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
 }
 
 // RFC 4291 sec 2.7: a multicast address begins with FF.

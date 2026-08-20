@@ -16,6 +16,7 @@
 
 #include "src/idemip_config.h" // the entry point: the enable gate below, and the widths
 
+#include "src/common.h"
 #include "src/dns/dns.h"
 #include "src/endian.h"
 
@@ -1002,13 +1003,13 @@ static uint8_t dns_match(uint8_t *work, const uint8_t *msg, size_t len)
             continue;
         }
         size_t alen = a->ipv6 ? (size_t)IDEMIP_DNS_ADDR_LEN : (size_t)IDEMIP_DNS_A_RDLEN;
-        if (memcmp(s->addr, a->src, alen) != 0)
+        if (!idemip_bytes_eq(s->addr, a->src, alen))
         {
             continue;
         }
         // sec 9.1: "Destination address against query source address". A datagram addressed to
         // another of this host's addresses answers no question this host asked.
-        if (q->local_set && a->dst != NULL && memcmp(q->local, a->dst, alen) != 0)
+        if (q->local_set && a->dst != NULL && !idemip_bytes_eq(q->local, a->dst, alen))
         {
             continue;
         }

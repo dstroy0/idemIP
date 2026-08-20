@@ -113,7 +113,7 @@ static uint8_t udp_pcb_addr_len(uint8_t ip_version)
 // True when the two addresses hold the same @p n octets.
 static idemip_bool udp_pcb_addr_eq(const uint8_t *a, const uint8_t *b, uint8_t n)
 {
-    return (memcmp(a, b, (size_t)n) == 0) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (idemip_bytes_eq(a, b, (size_t)n)) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
 // True when the @p n octets are all zero: RFC 1122 sec 3.2.1.3's "{ 0, 0 } This host on this

@@ -96,7 +96,7 @@ static idemip_bool slaac_ready(uint8_t *restrict work)
 
 static idemip_bool slaac_addr_eq(const uint8_t *a, const uint8_t *b)
 {
-    return (idemip_bool)(memcmp(a, b, IDEMIP_IP6_ADDR_LEN) == 0);
+    return (idemip_bool)(idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
 }
 
 // sec 5.5.3 (d): "equal" over the first @p len bits. The (len >> 3) whole octets compare exactly, and
@@ -105,7 +105,7 @@ static idemip_bool slaac_prefix_eq(const uint8_t *a, const uint8_t *b, uint8_t l
 {
     size_t whole = (size_t)(len >> 3);
     uint8_t bits = (uint8_t)(len & 7u);
-    if (whole != 0u && memcmp(a, b, whole) != 0)
+    if (whole != 0u && !idemip_bytes_eq(a, b, whole))
     {
         return IDEMIP_FALSE;
     }

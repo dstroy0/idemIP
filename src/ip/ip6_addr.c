@@ -182,7 +182,7 @@ static void ip6_addr_match(uint8_t *restrict work)
         return;
     }
     io->prefix_equal = idemip_ip6_addr_prefix_eq(a, b, io->match_args.prefix_len);
-    if (memcmp(a, b, IDEMIP_IP6_ADDR_LEN) == 0)
+    if (idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN))
     {
         IdemIpIp6Scope scope = idemip_ip6_addr_scope(a);
         io->equal = (scope == IDEMIP_IP6_SCOPE_GLOBAL || io->match_args.a_zone == io->match_args.b_zone ||

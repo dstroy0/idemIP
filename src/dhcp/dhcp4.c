@@ -594,7 +594,7 @@ static idemip_bool dhcp4_take(uint8_t *restrict work)
     {
         return IDEMIP_FALSE;
     }
-    if (memcmp(msg + IDEMIP_DHCP4_MSG_OFF_CHADDR, cfg->chaddr, cfg->hlen) != 0)
+    if (!idemip_bytes_eq(msg + IDEMIP_DHCP4_MSG_OFF_CHADDR, cfg->chaddr, cfg->hlen))
     {
         return IDEMIP_FALSE;
     }

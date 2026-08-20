@@ -241,7 +241,7 @@ static uint8_t ip6_reass_match(uint8_t *restrict work, const uint8_t *src, const
     {
         Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, i);
         if (dg->used && (dg->state == IP6_REASS_HOLDING || dg->state == IP6_REASS_ABANDONED) && dg->ident == ident &&
-            memcmp(dg->src, src, IDEMIP_IP6_ADDR_LEN) == 0 && memcmp(dg->dst, dst, IDEMIP_IP6_ADDR_LEN) == 0)
+            idemip_bytes_eq(dg->src, src, IDEMIP_IP6_ADDR_LEN) && idemip_bytes_eq(dg->dst, dst, IDEMIP_IP6_ADDR_LEN))
         {
             return i;
         }

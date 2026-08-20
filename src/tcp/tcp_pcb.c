@@ -201,7 +201,7 @@ static uint8_t tcp_pcb_addr_bytes(uint8_t ip_version)
 
 static idemip_bool tcp_pcb_addr_eq(const uint8_t *a, const uint8_t *b, uint8_t n)
 {
-    return (memcmp(a, b, (size_t)n) == 0) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (idemip_bytes_eq(a, b, (size_t)n)) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
 // RFC 9293 sec 3.9.1.1: a passive OPEN whose "local IP address" parameter is unspecified "will await

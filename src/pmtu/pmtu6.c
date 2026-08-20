@@ -71,7 +71,7 @@ static idemip_bool pmtu6_ready(uint8_t *restrict work)
 
 static idemip_bool pmtu6_addr_eq(const uint8_t *a, const uint8_t *b)
 {
-    return (idemip_bool)(memcmp(a, b, IDEMIP_IP6_ADDR_LEN) == 0);
+    return (idemip_bool)(idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
 }
 
 // RFC 8201 sec 5.2 names the path a message applies to: "if the destination address is used as the

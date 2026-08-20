@@ -83,7 +83,7 @@ static idemip_bool rdnss_ready(uint8_t *restrict work)
 
 static idemip_bool rdnss_addr_eq(const uint8_t *a, const uint8_t *b)
 {
-    return (idemip_bool)(memcmp(a, b, IDEMIP_IP6_ADDR_LEN) == 0);
+    return (idemip_bool)(idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
 }
 
 // sec 5.3.1 checks "the validity of the RDNSS option ... with the 'Addresses of IPv6 Recursive DNS

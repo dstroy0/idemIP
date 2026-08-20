@@ -106,7 +106,7 @@ static uint8_t mld6_index_of(uint8_t *work, const uint8_t *group, uint8_t netif)
     for (uint8_t i = 0u; i < IDEMIP_MLD6_GROUPS; i++)
     {
         const Mld6Group *g = MLD6_GROUP_AT(work, i);
-        if (g->used && g->netif == netif && memcmp(g->group, group, IDEMIP_IP6_ADDR_LEN) == 0)
+        if (g->used && g->netif == netif && idemip_bytes_eq(g->group, group, IDEMIP_IP6_ADDR_LEN))
         {
             return i;
         }

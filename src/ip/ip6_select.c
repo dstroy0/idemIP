@@ -267,7 +267,7 @@ static uint8_t ip6_select_label(uint8_t *restrict work, const uint8_t *addr, uin
 // which matches whatever zone the other names.
 static idemip_bool ip6_select_same_addr(const uint8_t *a, uint32_t a_zone, const uint8_t *b, uint32_t b_zone)
 {
-    if (memcmp(a, b, IDEMIP_IP6_ADDR_LEN) != 0)
+    if (!idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN))
     {
         return IDEMIP_FALSE;
     }
@@ -674,7 +674,7 @@ static void ip6_select_policy_set(uint8_t *restrict work)
     {
         Ip6SelectPolicy *row = IP6_SELECT_POLICY_AT(work, i);
         if (row->used && row->prefix_len == io->policy_args.prefix_len && row->zone == io->policy_args.zone &&
-            memcmp(row->prefix, prefix, IDEMIP_IP6_ADDR_LEN) == 0)
+            idemip_bytes_eq(row->prefix, prefix, IDEMIP_IP6_ADDR_LEN))
         {
             slot = i;
             break;

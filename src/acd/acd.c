@@ -181,7 +181,7 @@ static idemip_bool acd_probe_conflict(const AcdCtx *ctx, const uint8_t *packet)
     // conflict.
     return (idemip_bool)(idemip_arp_is_request(packet) && idemip_arp_spa(packet) == 0u &&
                          idemip_arp_tpa(packet) == ctx->ipaddr &&
-                         memcmp(idemip_arp_sha(packet), ctx->mac, IDEMIP_ARP_HLN_ETHERNET) != 0);
+                         !idemip_bytes_eq(idemip_arp_sha(packet), ctx->mac, IDEMIP_ARP_HLN_ETHERNET));
 }
 
 // sec 2.4: an ARP packet "where the 'sender IP address' is (one of) the host's own IP address(es)
@@ -190,7 +190,7 @@ static idemip_bool acd_probe_conflict(const AcdCtx *ctx, const uint8_t *packet)
 static idemip_bool acd_ongoing_conflict(const AcdCtx *ctx, const uint8_t *packet)
 {
     return (idemip_bool)(idemip_arp_spa(packet) == ctx->ipaddr &&
-                         memcmp(idemip_arp_sha(packet), ctx->mac, IDEMIP_ARP_HLN_ETHERNET) != 0);
+                         !idemip_bytes_eq(idemip_arp_sha(packet), ctx->mac, IDEMIP_ARP_HLN_ETHERNET));
 }
 
 // sec 2.4's (a), (b) and (c) over one conflicting ARP packet, as IdemIpAcdDefense selects.
