@@ -383,7 +383,7 @@ void test_sec2_1_a_zone_qualified_row_answers_only_its_own_zone(void)
     Ip6Select.policy_set(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
 
-    uint8_t *ll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    const uint8_t *ll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
 
     // In its own zone the qualified row wins, and it wins on length: ::/0 matches this address too,
     // and sec 2.1 takes "the entry that has the longest matching prefix".
