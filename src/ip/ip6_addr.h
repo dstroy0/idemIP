@@ -455,8 +455,31 @@ typedef struct
 } Ip6AddrNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const Ip6AddrNs Ip6Addr;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_ip6_addr_clear(uint8_t *restrict work);
+void idemip_ip6_addr_classify(uint8_t *restrict work);
+void idemip_ip6_addr_solicited_io(uint8_t *restrict work);
+void idemip_ip6_addr_zone(uint8_t *restrict work);
+void idemip_ip6_addr_match(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Ip6Addr.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const Ip6AddrNs Ip6Addr IDEMIP_UNUSED = {
+    .clear = idemip_ip6_addr_clear,
+    .classify = idemip_ip6_addr_classify,
+    .solicited = idemip_ip6_addr_solicited_io,
+    .zone = idemip_ip6_addr_zone,
+    .match = idemip_ip6_addr_match};
 // RFC 4291 sec 2.7.1 appends 24 bits to a 104-bit prefix, and the two fill an address.
 static_assert(IDEMIP_IP6_SOLICITED_PREFIX_BYTES + IDEMIP_IP6_SOLICITED_SUFFIX_BYTES == IDEMIP_IP6_ADDR_LEN,
               "the RFC 4291 sec 2.7.1 prefix and its 24 bits must fill an address");

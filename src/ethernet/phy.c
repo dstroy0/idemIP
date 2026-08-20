@@ -39,7 +39,7 @@ static_assert(IDEMIP_PHY_OFF_CTX + sizeof(PhyCtx) <= IDEMIP_PHY_BORROW,
 
 // Every member is called without a null test on the frame path, so an incomplete driver is
 // refused here rather than faulting at the first frame.
-static void phy_bind(uint8_t *restrict work)
+void idemip_phy_bind(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -65,7 +65,7 @@ static void phy_bind(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void phy_poll_link(uint8_t *restrict work)
+void idemip_phy_poll_link(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -85,7 +85,7 @@ static void phy_poll_link(uint8_t *restrict work)
 
 // The engine wrote the buffer, so any cached copy of it is stale and is discarded before the
 // frame is read. An empty ring is BUSY: the caller comes back on a later tick.
-static void phy_rx_claim(uint8_t *restrict work)
+void idemip_phy_rx_claim(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -114,7 +114,7 @@ static void phy_rx_claim(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void phy_rx_release(uint8_t *restrict work)
+void idemip_phy_rx_release(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -137,7 +137,7 @@ static void phy_rx_release(uint8_t *restrict work)
 // A full ring is BUSY, which is a retry on a later tick. A length no frame can ever carry (RFC 894)
 // is ERR, which is not: the driver answers both with a null buffer, so the length is bounded here
 // rather than letting a request that can never fit be retried forever.
-static void phy_tx_claim(uint8_t *restrict work)
+void idemip_phy_tx_claim(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -157,7 +157,7 @@ static void phy_tx_claim(uint8_t *restrict work)
 
 // The engine reads the buffer, so what the build left in cache is written back before the
 // descriptor is handed over. A driver that could not queue it reports BUSY.
-static void phy_tx_commit(uint8_t *restrict work)
+void idemip_phy_tx_commit(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -175,7 +175,7 @@ static void phy_tx_commit(uint8_t *restrict work)
     io->tx = NULL;
 }
 
-static void phy_mdio_read(uint8_t *restrict work)
+void idemip_phy_mdio_read(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -192,7 +192,7 @@ static void phy_mdio_read(uint8_t *restrict work)
     io->status = ctx->drv->mdio_read(ctx->addr, io->reg_args.reg, &io->reg) ? IDEMIP_OK : IDEMIP_BUSY;
 }
 
-static void phy_mdio_write(uint8_t *restrict work)
+void idemip_phy_mdio_write(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -207,14 +207,5 @@ static void phy_mdio_write(uint8_t *restrict work)
     }
     io->status = ctx->drv->mdio_write(ctx->addr, io->reg_args.reg, io->reg_args.val) ? IDEMIP_OK : IDEMIP_BUSY;
 }
-
-const PhyNs Phy = {.bind = phy_bind,
-                   .poll_link = phy_poll_link,
-                   .rx_claim = phy_rx_claim,
-                   .rx_release = phy_rx_release,
-                   .tx_claim = phy_tx_claim,
-                   .tx_commit = phy_tx_commit,
-                   .mdio_read = phy_mdio_read,
-                   .mdio_write = phy_mdio_write};
 
 IDEMIP_END_DECLS

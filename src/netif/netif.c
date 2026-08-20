@@ -401,7 +401,7 @@ static uint8_t netif_age_addr6(uint8_t *restrict work, uint32_t now_ms)
 // Zeroes the context and both tables, then stamps the context. A zeroed interface holds a null phy
 // and a zeroed address table holds IDEMIP_NETIF_ADDR6_INVALID in every slot, which is the state
 // every other entry reads as empty. The operand block is the caller's and is left alone.
-static void netif_clear(uint8_t *restrict work)
+void idemip_netif_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -415,7 +415,7 @@ static void netif_clear(uint8_t *restrict work)
 // RFC 894 bounds the data field: "the maximum length of an IP datagram sent over an Ethernet is 1500
 // octets". An MTU outside that, a missing link and a missing hardware address are all ERR: no retry
 // turns any of them into a frame this link can carry.
-static void netif_bind(uint8_t *restrict work)
+void idemip_netif_bind(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -438,7 +438,7 @@ static void netif_bind(uint8_t *restrict work)
 
 // RFC 4862 sec 2, an invalid address "is not assigned to any interface". An index inside the table
 // is dropped whether or not it held a link, so the entry ends where the call names either way.
-static void netif_unbind(uint8_t *restrict work)
+void idemip_netif_unbind(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -457,7 +457,7 @@ static void netif_unbind(uint8_t *restrict work)
 // RFC 1122 sec 3.3.1.6 makes the IP address, the address mask and the gateway configurable.
 // RFC 1122 sec 3.2.1.3 bars the broadcast, multicast and loopback forms from an interface's own
 // address, and a barred form is ERR: no retry makes it a legal source address.
-static void netif_set_addr4(uint8_t *restrict work)
+void idemip_netif_set_addr4(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -489,7 +489,7 @@ static void netif_set_addr4(uint8_t *restrict work)
 // specified in the link-type-specific document". The floor is RFC 8200 sec 5's 1280 octets, the
 // ceiling is the MTU bind took for this link. Outside that the value is ERR: it is the option's own
 // value and no later tick changes it.
-static void netif_set_mtu(uint8_t *restrict work)
+void idemip_netif_set_mtu(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -513,7 +513,7 @@ static void netif_set_mtu(uint8_t *restrict work)
 // RFC 1122 sec 3.2.1.3 broadcast forms and RFC 1112 group membership run per interface, so the flags
 // that say which the link carries are one word on the entry. The raised bits go up, then the cleared
 // bits come down, so a bit named in both ends down.
-static void netif_set_flags(uint8_t *restrict work)
+void idemip_netif_set_flags(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -560,7 +560,7 @@ static void netif_set_flags(uint8_t *restrict work)
 }
 
 // A header whose bit is set here is left to the MAC, so RFC 1071 is not run over it.
-static void netif_set_offload(uint8_t *restrict work)
+void idemip_netif_set_offload(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -584,7 +584,7 @@ static void netif_set_offload(uint8_t *restrict work)
 
 // RFC 1122 sec 3.3.1.1 names the record a route decision reads. An entry with no link is not an
 // interface, and no retry gives it one, so it is ERR.
-static void netif_get(uint8_t *restrict work)
+void idemip_netif_get(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -609,7 +609,7 @@ static void netif_get(uint8_t *restrict work)
 // RFC 1122 sec 3.2.1.3, "the IP source address MUST be one of its own IP addresses". Walks the
 // bound interfaces for the one holding the named address. A miss is ERR: the table is what it is,
 // and no later tick puts the address on an interface.
-static void netif_find4(uint8_t *restrict work)
+void idemip_netif_find4(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -636,7 +636,7 @@ static void netif_find4(uint8_t *restrict work)
 // RFC 1122 sec 3.3.1.1 extracts both addresses with the mask and compares them. The answer is OK
 // whichever way it went, the decision itself being the result; only an entry with no mask to extract
 // by is ERR.
-static void netif_local4(uint8_t *restrict work)
+void idemip_netif_local4(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -665,7 +665,7 @@ static void netif_local4(uint8_t *restrict work)
 // rewritten in its slot, which is what RFC 4862 sec 5.5.3 e) does to a lifetime a later
 // advertisement revises. A table with no free slot is BUSY: RFC 4862 sec 5.5.4 invalidates a slot
 // when its valid lifetime expires, so a later tick frees one.
-static void netif_add_addr6(uint8_t *restrict work)
+void idemip_netif_add_addr6(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -720,7 +720,7 @@ static void netif_add_addr6(uint8_t *restrict work)
 // RFC 4862 sec 2, an invalid address "is not assigned to any interface", so the slot is zeroed back
 // to it. An address the interface does not hold is ERR: the table holds what it holds, and no retry
 // changes the answer.
-static void netif_remove_addr6(uint8_t *restrict work)
+void idemip_netif_remove_addr6(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -754,7 +754,7 @@ static void netif_remove_addr6(uint8_t *restrict work)
 // Nor is a tentative one, which sec 5.4 says "is not considered 'assigned to an interface' in the
 // traditional sense" and whose other packets "should be silently discarded"; the Target Address match
 // sec 5.4.3 does want it, so that arrives through @ref NetifAddr6Args::tentative.
-static void netif_find_addr6(uint8_t *restrict work)
+void idemip_netif_find_addr6(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -792,7 +792,7 @@ static void netif_find_addr6(uint8_t *restrict work)
 
 // RFC 4862 sec 2 names the state and the two lifetimes an assigned address carries. A slot holding
 // IDEMIP_NETIF_ADDR6_INVALID carries none of them, so it is ERR.
-static void netif_get_addr6(uint8_t *restrict work)
+void idemip_netif_get_addr6(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -817,7 +817,7 @@ static void netif_get_addr6(uint8_t *restrict work)
 
 // RFC 4862 sec 5.5.4, "A preferred address becomes deprecated when its preferred lifetime expires".
 // The sweep is the whole table, and the millisecond it ran at is kept so a later add ages from it.
-static void netif_tick(uint8_t *restrict work)
+void idemip_netif_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -837,24 +837,5 @@ static void netif_tick(uint8_t *restrict work)
 }
 
 #endif // IDEMIP_ENABLE_IPV6
-
-const NetifNs Netif = {.clear = netif_clear,
-                       .bind = netif_bind,
-                       .unbind = netif_unbind,
-                       .set_addr4 = netif_set_addr4,
-                       .set_mtu = netif_set_mtu,
-                       .set_flags = netif_set_flags,
-                       .set_offload = netif_set_offload,
-                       .get = netif_get,
-                       .find4 = netif_find4,
-                       .local4 = netif_local4,
-#if IDEMIP_ENABLE_IPV6
-                       .add_addr6 = netif_add_addr6,
-                       .remove_addr6 = netif_remove_addr6,
-                       .find_addr6 = netif_find_addr6,
-                       .get_addr6 = netif_get_addr6,
-                       .tick = netif_tick
-#endif
-};
 
 IDEMIP_END_DECLS

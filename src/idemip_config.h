@@ -49,6 +49,20 @@
 #define IDEMIP_ENUM_PACKED
 #endif
 
+/**
+ * @brief A definition a translation unit may never read, without the compiler saying so.
+ *
+ * A namespace table is defined in its header so every caller sees the initializer, which is what
+ * makes @c Ns.entry(work) a direct call. A translation unit that includes the header for a type and
+ * calls no entry still gets the definition, and that is the one the diagnostic fires on. Where the
+ * attribute is unavailable the definition stays and only the diagnostic returns.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define IDEMIP_UNUSED __attribute__((__unused__))
+#else
+#define IDEMIP_UNUSED
+#endif
+
 /** @brief A truth value. Named rather than `bool` so the width is the same on every target. */
 typedef uint8_t idemip_bool;
 #define IDEMIP_TRUE ((idemip_bool)1)

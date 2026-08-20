@@ -355,7 +355,7 @@ static uint16_t udp_pcb_match(uint8_t *restrict work)
 // The context and the table are contiguous from IDEMIP_UDP_PCB_OFF_CTX to the end of the borrow, so
 // one store covers both. The operand block is the caller's and is left as it was found, except for
 // the members a call reports through.
-static void udp_pcb_clear(uint8_t *restrict work)
+void idemip_udp_pcb_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -376,7 +376,7 @@ static void udp_pcb_clear(uint8_t *restrict work)
 // mimic UDP", which is the full coverage a Checksum Coverage of zero names. A version other than
 // RFC 791 sec 3.1's 4 and RFC 8200 sec 3's 6 is ERR, no retry making it one of them. A table with
 // every entry open is BUSY, since a close frees one.
-static void udp_pcb_open(uint8_t *restrict work)
+void idemip_udp_pcb_open(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -417,7 +417,7 @@ static void udp_pcb_open(uint8_t *restrict work)
 
 // Zeroes the entry, which is the state open reads as free. An entry that is not open is ERR: no
 // retry opens it.
-static void udp_pcb_close(uint8_t *restrict work)
+void idemip_udp_pcb_close(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -444,7 +444,7 @@ static void udp_pcb_close(uint8_t *restrict work)
 // alone. An endpoint another entry already carries is ERR, since no retry frees it; a port of
 // IDEMIP_UDP_PCB_PORT_ANY is assigned one no entry holds out of RFC 6335 sec 6's dynamic range, and a
 // range with none left is BUSY, since a close frees one.
-static void udp_pcb_bind(uint8_t *restrict work)
+void idemip_udp_pcb_bind(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -491,7 +491,7 @@ static void udp_pcb_bind(uint8_t *restrict work)
 // (RFC 4291 sec 2.5.2: it "must not be used as the destination address of IPv6 packets"), and an
 // identity another entry already carries leaves the two indistinguishable to a find, so all three are
 // ERR. A nonzero interface pins the binding to it.
-static void udp_pcb_connect(uint8_t *restrict work)
+void idemip_udp_pcb_connect(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -528,7 +528,7 @@ static void udp_pcb_connect(uint8_t *restrict work)
 
 // Zeroes the RFC 768 Destination Port and the address a connect set, leaving the local endpoint and
 // its interface as the bind left them.
-static void udp_pcb_disconnect(uint8_t *restrict work)
+void idemip_udp_pcb_disconnect(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -558,7 +558,7 @@ static void udp_pcb_disconnect(uint8_t *restrict work)
 // Checksum Coverage that is neither zero nor at least eight is ERR, RFC 3828 sec 3.1 stating "the
 // value of the Checksum Coverage field MUST be either 0 or at least 8"; so is a nonzero coverage on
 // a binding that is not UDP-Lite, RFC 768 carrying a Length in those octets.
-static void udp_pcb_set_opts(uint8_t *restrict work)
+void idemip_udp_pcb_set_opts(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -601,7 +601,7 @@ static void udp_pcb_set_opts(uint8_t *restrict work)
 
 // Reports one binding. The two addresses point into the entry, which is a region of this borrow, so
 // they stay valid until the next call that writes it.
-static void udp_pcb_load(uint8_t *restrict work)
+void idemip_udp_pcb_load(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -645,7 +645,7 @@ static void udp_pcb_load(uint8_t *restrict work)
 // receiver", and so is a version other than 4 or 6. No binding is ERR too, not BUSY: nothing frees
 // later, and it is the RFC 1122 sec 4.1.3.1 case where "UDP SHOULD send an ICMP Port Unreachable
 // message".
-static void udp_pcb_find(uint8_t *restrict work)
+void idemip_udp_pcb_find(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -673,15 +673,5 @@ static void udp_pcb_find(uint8_t *restrict work)
     io->index = i;
     io->status = (i == IDEMIP_UDP_PCB_NONE) ? IDEMIP_ERR : IDEMIP_OK;
 }
-
-const UdpPcbNs UdpPcb = {.clear = udp_pcb_clear,
-                         .open = udp_pcb_open,
-                         .close = udp_pcb_close,
-                         .bind = udp_pcb_bind,
-                         .connect = udp_pcb_connect,
-                         .disconnect = udp_pcb_disconnect,
-                         .set_opts = udp_pcb_set_opts,
-                         .load = udp_pcb_load,
-                         .find = udp_pcb_find};
 
 IDEMIP_END_DECLS

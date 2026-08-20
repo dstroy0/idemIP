@@ -303,8 +303,41 @@ typedef struct
 } Ip6SelectNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const Ip6SelectNs Ip6Select;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_ip6_select_clear(uint8_t *restrict work);
+void idemip_ip6_select_policy_set(uint8_t *restrict work);
+void idemip_ip6_select_policy_lookup(uint8_t *restrict work);
+void idemip_ip6_select_scope_of(uint8_t *restrict work);
+void idemip_ip6_select_common_prefix_entry(uint8_t *restrict work);
+void idemip_ip6_select_source_add(uint8_t *restrict work);
+void idemip_ip6_select_dest_add(uint8_t *restrict work);
+void idemip_ip6_select_source_select(uint8_t *restrict work);
+void idemip_ip6_select_dest_sort(uint8_t *restrict work);
+void idemip_ip6_select_dest_at(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Ip6Select.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const Ip6SelectNs Ip6Select IDEMIP_UNUSED = {
+    .clear = idemip_ip6_select_clear,
+    .policy_set = idemip_ip6_select_policy_set,
+    .policy_lookup = idemip_ip6_select_policy_lookup,
+    .scope_of = idemip_ip6_select_scope_of,
+    .common_prefix = idemip_ip6_select_common_prefix_entry,
+    .source_add = idemip_ip6_select_source_add,
+    .dest_add = idemip_ip6_select_dest_add,
+    .source_select = idemip_ip6_select_source_select,
+    .dest_sort = idemip_ip6_select_dest_sort,
+    .dest_at = idemip_ip6_select_dest_at};
 // Every table index counts the entries the borrow holds, so IDEMIP_IP6_SELECT_NONE names none.
 static_assert(IDEMIP_IP6_SELECT_SOURCES < IDEMIP_IP6_SELECT_NONE &&
                   IDEMIP_IP6_SELECT_DESTS < IDEMIP_IP6_SELECT_NONE &&

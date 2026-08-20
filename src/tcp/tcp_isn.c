@@ -295,7 +295,7 @@ static uint32_t tcp_isn_derive(uint8_t *restrict work, size_t addr_len)
 // IDEMIP_TCP_ISN_OFF_CTX to the end of the borrow, so one store covers them all and no octet of a
 // former key survives. The operand block is the caller's and is left as it was found, except for the
 // members a call reports through.
-static void tcp_isn_reset(uint8_t *restrict work)
+void idemip_tcp_isn_reset(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -308,7 +308,7 @@ static void tcp_isn_reset(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void tcp_isn_seed(uint8_t *restrict work)
+void idemip_tcp_isn_seed(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -335,7 +335,7 @@ static void tcp_isn_seed(uint8_t *restrict work)
 // RFC 6528 sec 3's ISN = M + F(localip, localport, remoteip, remoteport, secretkey). Nothing here
 // waits on anything, so there is no BUSY: the PRF runs to completion on the operands it was given,
 // and every refusal above is a state or an operand the same call can never fix.
-static void tcp_isn_generate(uint8_t *restrict work)
+void idemip_tcp_isn_generate(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -357,7 +357,5 @@ static void tcp_isn_generate(uint8_t *restrict work)
     io->isn = tcp_isn_derive(work, addr_len);
     io->status = IDEMIP_OK;
 }
-
-const TcpIsnNs TcpIsn = {.reset = tcp_isn_reset, .seed = tcp_isn_seed, .generate = tcp_isn_generate};
 
 IDEMIP_END_DECLS

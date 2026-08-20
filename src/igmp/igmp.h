@@ -313,8 +313,35 @@ typedef struct
 } IgmpNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const IgmpNs Igmp;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_igmp_clear(uint8_t *restrict work);
+void idemip_igmp_join(uint8_t *restrict work);
+void idemip_igmp_leave(uint8_t *restrict work);
+void idemip_igmp_find(uint8_t *restrict work);
+void idemip_igmp_query_in(uint8_t *restrict work);
+void idemip_igmp_report_in(uint8_t *restrict work);
+void idemip_igmp_tick(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Igmp.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const IgmpNs Igmp IDEMIP_UNUSED = {
+    .clear = idemip_igmp_clear,
+    .join = idemip_igmp_join,
+    .leave = idemip_igmp_leave,
+    .find = idemip_igmp_find,
+    .query_in = idemip_igmp_query_in,
+    .report_in = idemip_igmp_report_in,
+    .tick = idemip_igmp_tick};
 // RFC 2236 sec 2 draws Type, Max Resp Time and Checksum above the 32-bit Group Address, which is the 8
 // octets sec 2.5 bounds the processed part of a message at.
 static_assert(IDEMIP_IGMP_OFF_GROUP + 4u == IDEMIP_IGMP_MSG_LEN,

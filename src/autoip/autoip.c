@@ -205,7 +205,7 @@ static void autoip_report(uint8_t *restrict work)
 
 // The context, zeroed, then the mark. A zeroed context is IDEMIP_AUTOIP_STATE_OFF with no address
 // selected. The operand block is the caller's and is left as it stands.
-static void autoip_clear(uint8_t *restrict work)
+void idemip_autoip_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -225,7 +225,7 @@ static void autoip_clear(uint8_t *restrict work)
 // claim: OK when it is claiming or bound, BUSY while its draw waits out sec 2.2.1's rate limit, since
 // the same call on a later tick makes progress. A refused call reports the status and clears the
 // claim, leaving the state the other members mirror as it stands.
-static void autoip_start(uint8_t *restrict work)
+void idemip_autoip_start(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -266,7 +266,7 @@ static void autoip_start(uint8_t *restrict work)
 // An interface with no address out reports ERR: nothing was handed to acd for another host to answer
 // for, and calling again cannot change that. A conflict inside sec 2.2.1's rate limit reports BUSY,
 // the draw being due on a later tick.
-static void autoip_conflict(uint8_t *restrict work)
+void idemip_autoip_conflict(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -301,7 +301,7 @@ static void autoip_conflict(uint8_t *restrict work)
 // starts over.
 //
 // An interface with no address out reports ERR: there is nothing acd could have announced.
-static void autoip_bound(uint8_t *restrict work)
+void idemip_autoip_bound(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -331,7 +331,7 @@ static void autoip_bound(uint8_t *restrict work)
 // The candidate, the count of addresses drawn and any rate limit stay in the context, sec 2.1 using
 // "a previously recorded address" as "their first candidate when probing" and sec 2.2.1's limit
 // counting new addresses rather than starts.
-static void autoip_stop(uint8_t *restrict work)
+void idemip_autoip_stop(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -353,7 +353,7 @@ static void autoip_stop(uint8_t *restrict work)
 // the address another host answered for is taken and handed to acd. A sweep with no draw held ran and
 // found nothing due, which is OK; a sweep inside the interval reports BUSY, the draw being due later.
 // An interface stopped while a draw was held stays stopped: only start puts an address back on it.
-static void autoip_tick(uint8_t *restrict work)
+void idemip_autoip_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -384,12 +384,5 @@ static void autoip_tick(uint8_t *restrict work)
     io->claim = IDEMIP_TRUE;
     io->status = IDEMIP_OK;
 }
-
-const AutoIpNs AutoIp = {.clear = autoip_clear,
-                         .start = autoip_start,
-                         .conflict = autoip_conflict,
-                         .bound = autoip_bound,
-                         .stop = autoip_stop,
-                         .tick = autoip_tick};
 
 IDEMIP_END_DECLS

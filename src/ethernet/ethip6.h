@@ -225,8 +225,29 @@ typedef struct
 } Ethip6Ns;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const Ethip6Ns Ethip6;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_ethip6_clear(uint8_t *restrict work);
+void idemip_ethip6_multicast_map(uint8_t *restrict work);
+void idemip_ethip6_eui64(uint8_t *restrict work);
+void idemip_ethip6_linklocal(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Ethip6.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const Ethip6Ns Ethip6 IDEMIP_UNUSED = {
+    .clear = idemip_ethip6_clear,
+    .multicast_map = idemip_ethip6_multicast_map,
+    .eui64 = idemip_ethip6_eui64,
+    .linklocal = idemip_ethip6_linklocal};
 // RFC 2464 sec 7 fills a 48-bit Ethernet address with a two-octet prefix and four octets of DST.
 static_assert(IDEMIP_ETHIP6_MCAST_PREFIX_LEN + IDEMIP_ETHIP6_MCAST_TAIL_LEN == IDEMIP_MAC_LEN,
               "the RFC 2464 sec 7 mapping must fill a 48-bit Ethernet address");

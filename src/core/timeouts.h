@@ -178,8 +178,31 @@ typedef struct
 } TimeoutsNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const TimeoutsNs Timeouts;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_timeouts_clear(uint8_t *restrict work);
+void idemip_timeouts_arm(uint8_t *restrict work);
+void idemip_timeouts_cancel(uint8_t *restrict work);
+void idemip_timeouts_tick(uint8_t *restrict work);
+void idemip_timeouts_expire(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Timeouts.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const TimeoutsNs Timeouts IDEMIP_UNUSED = {
+    .clear = idemip_timeouts_clear,
+    .arm = idemip_timeouts_arm,
+    .cancel = idemip_timeouts_cancel,
+    .tick = idemip_timeouts_tick,
+    .expire = idemip_timeouts_expire};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET

@@ -695,7 +695,7 @@ static void ip6_reass_file(uint8_t *restrict work)
 
 // Zeroes the context and the three tables, then marks the borrow this module's. The operand block is
 // the caller's and is left alone.
-static void ip6_reass_clear(uint8_t *restrict work)
+void idemip_ip6_reass_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -710,7 +710,7 @@ static void ip6_reass_clear(uint8_t *restrict work)
 // A table with no free entry is BUSY: one frees when a datagram is dropped after completing or
 // ageing out, so the same fragment lands on a later tick. Everything sec 4.5 says to discard is ERR
 // with err naming the ICMP answer, since no retry of that fragment can ever be taken.
-static void ip6_reass_input(uint8_t *restrict work)
+void idemip_ip6_reass_input(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -736,7 +736,7 @@ static void ip6_reass_input(uint8_t *restrict work)
 // RFC 8200 sec 4.5, whose Fragmentable Part "is constructed from the fragments following the Fragment
 // headers", each fragment's "relative position in Fragmentable Part computed from its Fragment Offset
 // value". The list rises with Fragment Offset, so index is that position.
-static void ip6_reass_frag_at(uint8_t *restrict work)
+void idemip_ip6_reass_frag_at(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -774,7 +774,7 @@ static void ip6_reass_frag_at(uint8_t *restrict work)
 
 // RFC 8200 sec 4.5, which discards "all the fragments that have been received for that packet" when
 // reassembly is abandoned. A datagram no entry holds is ERR: it names nothing to give up.
-static void ip6_reass_drop(uint8_t *restrict work)
+void idemip_ip6_reass_drop(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -799,7 +799,7 @@ static void ip6_reass_drop(uint8_t *restrict work)
 // be given up, with the Time Exceeded sec 4.5 answers it with when "the first fragment (i.e., the one
 // with a Fragment Offset of zero) has been received". Nothing is freed here: the caller walks the
 // fragments out to unpin them and calls drop, and the next sweep names the next one.
-static void ip6_reass_tick(uint8_t *restrict work)
+void idemip_ip6_reass_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -850,11 +850,5 @@ static void ip6_reass_tick(uint8_t *restrict work)
     }
     io->status = IDEMIP_OK;
 }
-
-const Ip6ReassNs Ip6Reass = {.clear = ip6_reass_clear,
-                             .input = ip6_reass_input,
-                             .frag_at = ip6_reass_frag_at,
-                             .drop = ip6_reass_drop,
-                             .tick = ip6_reass_tick};
 
 IDEMIP_END_DECLS

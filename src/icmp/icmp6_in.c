@@ -277,7 +277,7 @@ static void icmp6_in_build_echo_reply(Icmp6InIo *io, const uint8_t *msg, size_t 
 
 // --- the entries -----------------------------------------------------------
 
-static void icmp6_in_clear(uint8_t *restrict work)
+void idemip_icmp6_in_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -295,7 +295,7 @@ static void icmp6_in_clear(uint8_t *restrict work)
 // this build does not implement are all discarded, which is sec 2.4 (b): "If an ICMPv6 informational
 // message of unknown type is received, it MUST be silently discarded." The RFC 2710 and RFC 4861
 // types are their own units' and reach those before this entry.
-static void icmp6_in_recv(uint8_t *restrict work)
+void idemip_icmp6_in_recv(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -393,7 +393,7 @@ static void icmp6_in_recv(uint8_t *restrict work)
 // (c): "Every ICMPv6 error message (type < 128) MUST include as much of the IPv6 offending (invoking)
 // packet (the packet that caused the error) as possible without making the error message packet
 // exceed the minimum IPv6 MTU".
-static void icmp6_in_error(uint8_t *restrict work)
+void idemip_icmp6_in_error(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -464,7 +464,5 @@ static void icmp6_in_error(uint8_t *restrict work)
                 idemip_icmp6_cksum_compute(a->out, io->out_len, io->src, io->dst));
     io->status = IDEMIP_OK;
 }
-
-const Icmp6InNs Icmp6In = {.clear = icmp6_in_clear, .recv = icmp6_in_recv, .error = icmp6_in_error};
 
 IDEMIP_END_DECLS

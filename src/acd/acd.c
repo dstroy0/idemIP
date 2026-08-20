@@ -430,7 +430,7 @@ static void acd_cease(uint8_t *restrict work)
 
 // The context, zeroed, then the mark. A zeroed context is IDEMIP_ACD_STATE_OFF with no address in it.
 // The operand block is the caller's and is left as it stands.
-static void acd_clear(uint8_t *restrict work)
+void idemip_acd_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -441,7 +441,7 @@ static void acd_clear(uint8_t *restrict work)
     ACD_IO(work)->status = IDEMIP_OK;
 }
 
-static void acd_start(uint8_t *restrict work)
+void idemip_acd_start(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -458,7 +458,7 @@ static void acd_start(uint8_t *restrict work)
     acd_claim(work);
 }
 
-static void acd_stop(uint8_t *restrict work)
+void idemip_acd_stop(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -474,7 +474,7 @@ static void acd_stop(uint8_t *restrict work)
     acd_cease(work);
 }
 
-static void acd_arp_in(uint8_t *restrict work)
+void idemip_acd_arp_in(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -490,7 +490,7 @@ static void acd_arp_in(uint8_t *restrict work)
     acd_receive(work);
 }
 
-static void acd_tick(uint8_t *restrict work)
+void idemip_acd_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -505,7 +505,5 @@ static void acd_tick(uint8_t *restrict work)
     }
     acd_fire(work);
 }
-
-const AcdNs Acd = {.clear = acd_clear, .start = acd_start, .stop = acd_stop, .arp_in = acd_arp_in, .tick = acd_tick};
 
 IDEMIP_END_DECLS

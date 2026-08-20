@@ -60,7 +60,7 @@ static idemip_bool ethip6_is_universal(const uint8_t *mac)
 
 // --- the entries -----------------------------------------------------------
 
-static void ethip6_clear(uint8_t *restrict work)
+void idemip_ethip6_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -76,7 +76,7 @@ static void ethip6_clear(uint8_t *restrict work)
 // last four octets are the last four octets of DST." A destination that is not multicast (RFC 4291
 // sec 2.7) is ERR: the mapping is stated for a multicast DST alone, and no retry changes an
 // address.
-static void ethip6_multicast_map(uint8_t *restrict work)
+void idemip_ethip6_multicast_map(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -102,7 +102,7 @@ static void ethip6_multicast_map(uint8_t *restrict work)
 }
 
 // RFC 2464 sec 4, the EUI-64 interface identifier of a built-in 48-bit address.
-static void ethip6_eui64(uint8_t *restrict work)
+void idemip_ethip6_eui64(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -124,7 +124,7 @@ static void ethip6_eui64(uint8_t *restrict work)
 // RFC 2464 sec 5: "The IPv6 link-local address for an Ethernet interface is formed by appending the
 // Interface Identifier, as defined above, to the prefix FE80::/64." The prefix is the 1111111010
 // and 54 zero bits the sec 5 figure prints.
-static void ethip6_linklocal(uint8_t *restrict work)
+void idemip_ethip6_linklocal(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -145,10 +145,5 @@ static void ethip6_linklocal(uint8_t *restrict work)
     io->universal = ethip6_is_universal(io->mac_args.mac);
     io->status = IDEMIP_OK;
 }
-
-const Ethip6Ns Ethip6 = {.clear = ethip6_clear,
-                         .multicast_map = ethip6_multicast_map,
-                         .eui64 = ethip6_eui64,
-                         .linklocal = ethip6_linklocal};
 
 IDEMIP_END_DECLS

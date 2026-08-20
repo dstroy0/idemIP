@@ -172,7 +172,7 @@ static void timeouts_report(uint8_t *restrict work)
 
 // Zeroes the table and the context, then marks the borrow bound. A zeroed slot carries
 // IDEMIP_TIMEOUT_UNIT_NONE and no ARMED bit, so the list is empty and every slot is free.
-static void timeouts_clear(uint8_t *restrict work)
+void idemip_timeouts_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -190,7 +190,7 @@ static void timeouts_clear(uint8_t *restrict work)
 // Keys a slot on the unit and argument index and holds the deadline in milliseconds. A slot already
 // holding that pair is rearmed in place, moving to the deadline the caller now names. A list with
 // every slot armed is BUSY: a cancel or an expire frees one, so the retry can succeed.
-static void timeouts_arm(uint8_t *restrict work)
+void idemip_timeouts_arm(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -232,7 +232,7 @@ static void timeouts_arm(uint8_t *restrict work)
 
 // Drops the deadline the unit and argument index name and frees its slot, leaving the order of the
 // rest as it was. No slot holding that pair reports BUSY, which is what timeouts.h states for it.
-static void timeouts_cancel(uint8_t *restrict work)
+void idemip_timeouts_cancel(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -260,7 +260,7 @@ static void timeouts_cancel(uint8_t *restrict work)
 
 // Records the caller's millisecond count, which is the count expire compares each deadline against,
 // and reports the wait to the earliest one. It drops nothing, so the list is unchanged.
-static void timeouts_tick(uint8_t *restrict work)
+void idemip_timeouts_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -281,7 +281,7 @@ static void timeouts_tick(uint8_t *restrict work)
 // Takes the head of the deadline order when the recorded count has reached its deadline, reports the
 // unit and argument index that named it, and frees the slot. Called again it takes the next one, so a
 // caller drains every due deadline in order. Nothing due is BUSY: a later tick makes the head due.
-static void timeouts_expire(uint8_t *restrict work)
+void idemip_timeouts_expire(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -312,11 +312,5 @@ static void timeouts_expire(uint8_t *restrict work)
     timeouts_report(work);
     io->status = IDEMIP_OK;
 }
-
-const TimeoutsNs Timeouts = {.clear = timeouts_clear,
-                             .arm = timeouts_arm,
-                             .cancel = timeouts_cancel,
-                             .tick = timeouts_tick,
-                             .expire = timeouts_expire};
 
 IDEMIP_END_DECLS

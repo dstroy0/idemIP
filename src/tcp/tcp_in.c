@@ -198,7 +198,7 @@ static void tcp_in_result_clear(TcpInIo *io)
 
 // The context is the whole borrow past the operand block, so one store covers it. The operand block
 // is the caller's and is left as it was found, except for the members a call reports through.
-static void tcp_in_clear(uint8_t *restrict work)
+void idemip_tcp_in_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -219,7 +219,7 @@ static void tcp_in_clear(uint8_t *restrict work)
 // SEG.LEN is the data octets "counting SYN and FIN" (sec 3.4). RFC 7323 sec 2.3: "The window field
 // (SEG.WND) in the header of every incoming segment, with the exception of <SYN> segments, MUST be
 // left-shifted by Snd.Wind.Shift bits."
-static void tcp_in_parse(uint8_t *restrict work)
+void idemip_tcp_in_parse(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -319,7 +319,7 @@ static void tcp_in_parse(uint8_t *restrict work)
 
 // RFC 9293 sec 3.4's "A segment is judged to occupy a portion of valid receive sequence space", in
 // the four cases sec 3.10.7.4 Table 6 lays out.
-static void tcp_in_acceptable(uint8_t *restrict work)
+void idemip_tcp_in_acceptable(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -339,7 +339,7 @@ static void tcp_in_acceptable(uint8_t *restrict work)
 // RFC 9293 sec 3.10.7.1: "If the state is CLOSED (i.e., TCB does not exist) ... An incoming segment
 // containing a RST is discarded. An incoming segment not containing a RST causes a RST to be sent in
 // response."
-static void tcp_in_closed(uint8_t *restrict work)
+void idemip_tcp_in_closed(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -362,7 +362,7 @@ static void tcp_in_closed(uint8_t *restrict work)
 
 // RFC 9293 sec 3.10.7.2 LISTEN STATE, its four checks in order. The ISS the third needs is
 // @ref IdemIpTcpVars::iss, which the caller draws through tcp_isn.h before the call.
-static void tcp_in_listen(uint8_t *restrict work)
+void idemip_tcp_in_listen(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -463,7 +463,7 @@ static void tcp_in_check_fin(TcpInIo *io);
 
 // RFC 9293 sec 3.10.7.3 SYN-SENT STATE, its five checks in order. The third, the security and
 // compartment of Appendix A.1, has nothing in a TCB here to compare and is not made.
-static void tcp_in_syn_sent(uint8_t *restrict work)
+void idemip_tcp_in_syn_sent(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -942,7 +942,7 @@ static void tcp_in_check_fin(TcpInIo *io)
 // RFC 9293 sec 3.10.7.4 Other States, its eight checks in the order that section lists them. The
 // third, the security and compartment of Appendix A.1, has nothing in a TCB here to compare and is
 // not made; every other check is.
-static void tcp_in_segment(uint8_t *restrict work)
+void idemip_tcp_in_segment(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1025,13 +1025,5 @@ static void tcp_in_segment(uint8_t *restrict work)
         tcp_in_check_fin(io);
     }
 }
-
-const TcpInNs TcpIn = {.clear = tcp_in_clear,
-                       .parse = tcp_in_parse,
-                       .acceptable = tcp_in_acceptable,
-                       .closed = tcp_in_closed,
-                       .listen = tcp_in_listen,
-                       .syn_sent = tcp_in_syn_sent,
-                       .segment = tcp_in_segment};
 
 IDEMIP_END_DECLS

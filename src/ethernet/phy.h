@@ -186,8 +186,37 @@ typedef struct
 } PhyNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const PhyNs Phy;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_phy_bind(uint8_t *restrict work);
+void idemip_phy_poll_link(uint8_t *restrict work);
+void idemip_phy_rx_claim(uint8_t *restrict work);
+void idemip_phy_rx_release(uint8_t *restrict work);
+void idemip_phy_tx_claim(uint8_t *restrict work);
+void idemip_phy_tx_commit(uint8_t *restrict work);
+void idemip_phy_mdio_read(uint8_t *restrict work);
+void idemip_phy_mdio_write(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Phy.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const PhyNs Phy IDEMIP_UNUSED = {
+    .bind = idemip_phy_bind,
+    .poll_link = idemip_phy_poll_link,
+    .rx_claim = idemip_phy_rx_claim,
+    .rx_release = idemip_phy_rx_release,
+    .tx_claim = idemip_phy_tx_claim,
+    .tx_commit = idemip_phy_tx_commit,
+    .mdio_read = idemip_phy_mdio_read,
+    .mdio_write = idemip_phy_mdio_write};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET

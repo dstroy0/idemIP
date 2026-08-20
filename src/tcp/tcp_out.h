@@ -301,8 +301,49 @@ typedef struct
 } TcpOutNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const TcpOutNs TcpOut;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_tcp_out_clear(uint8_t *restrict work);
+void idemip_tcp_out_build(uint8_t *restrict work);
+void idemip_tcp_out_send(uint8_t *restrict work);
+void idemip_tcp_out_ack(uint8_t *restrict work);
+void idemip_tcp_out_rst(uint8_t *restrict work);
+void idemip_tcp_out_rtt(uint8_t *restrict work);
+void idemip_tcp_out_rtx_arm(uint8_t *restrict work);
+void idemip_tcp_out_rtx_stop(uint8_t *restrict work);
+void idemip_tcp_out_rtx_restart(uint8_t *restrict work);
+void idemip_tcp_out_rtx_expire(uint8_t *restrict work);
+void idemip_tcp_out_cc_init(uint8_t *restrict work);
+void idemip_tcp_out_cc_ack(uint8_t *restrict work);
+void idemip_tcp_out_cc_dupack(uint8_t *restrict work);
+void idemip_tcp_out_cc_recover(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `TcpOut.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const TcpOutNs TcpOut IDEMIP_UNUSED = {
+    .clear = idemip_tcp_out_clear,
+    .build = idemip_tcp_out_build,
+    .send = idemip_tcp_out_send,
+    .ack = idemip_tcp_out_ack,
+    .rst = idemip_tcp_out_rst,
+    .rtt = idemip_tcp_out_rtt,
+    .rtx_arm = idemip_tcp_out_rtx_arm,
+    .rtx_stop = idemip_tcp_out_rtx_stop,
+    .rtx_restart = idemip_tcp_out_rtx_restart,
+    .rtx_expire = idemip_tcp_out_rtx_expire,
+    .cc_init = idemip_tcp_out_cc_init,
+    .cc_ack = idemip_tcp_out_cc_ack,
+    .cc_dupack = idemip_tcp_out_cc_dupack,
+    .cc_recover = idemip_tcp_out_cc_recover};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_TCP

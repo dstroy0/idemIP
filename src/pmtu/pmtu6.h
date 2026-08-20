@@ -213,8 +213,29 @@ typedef struct
 } Pmtu6Ns;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const Pmtu6Ns Pmtu6;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_pmtu6_clear(uint8_t *restrict work);
+void idemip_pmtu6_too_big(uint8_t *restrict work);
+void idemip_pmtu6_tick(uint8_t *restrict work);
+void idemip_pmtu6_forget(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Pmtu6.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const Pmtu6Ns Pmtu6 IDEMIP_UNUSED = {
+    .clear = idemip_pmtu6_clear,
+    .too_big = idemip_pmtu6_too_big,
+    .tick = idemip_pmtu6_tick,
+    .forget = idemip_pmtu6_forget};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6

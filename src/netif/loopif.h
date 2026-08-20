@@ -175,8 +175,35 @@ typedef struct
 } LoopifNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const LoopifNs Loopif;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_loopif_clear(uint8_t *restrict work);
+void idemip_loopif_bind(uint8_t *restrict work);
+void idemip_loopif_output(uint8_t *restrict work);
+void idemip_loopif_claim(uint8_t *restrict work);
+void idemip_loopif_release(uint8_t *restrict work);
+void idemip_loopif_owns4(uint8_t *restrict work);
+void idemip_loopif_owns6(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Loopif.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const LoopifNs Loopif IDEMIP_UNUSED = {
+    .clear = idemip_loopif_clear,
+    .bind = idemip_loopif_bind,
+    .output = idemip_loopif_output,
+    .claim = idemip_loopif_claim,
+    .release = idemip_loopif_release,
+    .owns4 = idemip_loopif_owns4,
+    .owns6 = idemip_loopif_owns6};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET

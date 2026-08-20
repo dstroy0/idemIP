@@ -713,8 +713,61 @@ typedef struct
 } TcpPcbNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const TcpPcbNs TcpPcb;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_tcp_pcb_clear(uint8_t *restrict work);
+void idemip_tcp_pcb_open(uint8_t *restrict work);
+void idemip_tcp_pcb_opt(uint8_t *restrict work);
+void idemip_tcp_pcb_close(uint8_t *restrict work);
+void idemip_tcp_pcb_bind(uint8_t *restrict work);
+void idemip_tcp_pcb_connect(uint8_t *restrict work);
+void idemip_tcp_pcb_load(uint8_t *restrict work);
+void idemip_tcp_pcb_store(uint8_t *restrict work);
+void idemip_tcp_pcb_accept(uint8_t *restrict work);
+void idemip_tcp_pcb_listen(uint8_t *restrict work);
+void idemip_tcp_pcb_unlisten(uint8_t *restrict work);
+void idemip_tcp_pcb_find(uint8_t *restrict work);
+void idemip_tcp_pcb_find_listener(uint8_t *restrict work);
+void idemip_tcp_pcb_seg_alloc(uint8_t *restrict work);
+void idemip_tcp_pcb_seg_load(uint8_t *restrict work);
+void idemip_tcp_pcb_seg_sent(uint8_t *restrict work);
+void idemip_tcp_pcb_seg_free(uint8_t *restrict work);
+void idemip_tcp_pcb_oos_alloc(uint8_t *restrict work);
+void idemip_tcp_pcb_oos_load(uint8_t *restrict work);
+void idemip_tcp_pcb_oos_free(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `TcpPcb.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const TcpPcbNs TcpPcb IDEMIP_UNUSED = {
+    .clear = idemip_tcp_pcb_clear,
+    .open = idemip_tcp_pcb_open,
+    .opt = idemip_tcp_pcb_opt,
+    .close = idemip_tcp_pcb_close,
+    .bind = idemip_tcp_pcb_bind,
+    .connect = idemip_tcp_pcb_connect,
+    .load = idemip_tcp_pcb_load,
+    .store = idemip_tcp_pcb_store,
+    .accept = idemip_tcp_pcb_accept,
+    .listen = idemip_tcp_pcb_listen,
+    .unlisten = idemip_tcp_pcb_unlisten,
+    .find = idemip_tcp_pcb_find,
+    .find_listener = idemip_tcp_pcb_find_listener,
+    .seg_alloc = idemip_tcp_pcb_seg_alloc,
+    .seg_load = idemip_tcp_pcb_seg_load,
+    .seg_sent = idemip_tcp_pcb_seg_sent,
+    .seg_free = idemip_tcp_pcb_seg_free,
+    .oos_alloc = idemip_tcp_pcb_oos_alloc,
+    .oos_load = idemip_tcp_pcb_oos_load,
+    .oos_free = idemip_tcp_pcb_oos_free};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_TCP

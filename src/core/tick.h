@@ -272,8 +272,35 @@ typedef struct
 } TickNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const TickNs Tick;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_tick_clear(uint8_t *restrict work);
+void idemip_tick_bind(uint8_t *restrict work);
+void idemip_tick_if_bind(uint8_t *restrict work);
+void idemip_tick_open(uint8_t *restrict work);
+void idemip_tick_drain(uint8_t *restrict work);
+void idemip_tick_service(uint8_t *restrict work);
+void idemip_tick_flush(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Tick.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const TickNs Tick IDEMIP_UNUSED = {
+    .clear = idemip_tick_clear,
+    .bind = idemip_tick_bind,
+    .if_bind = idemip_tick_if_bind,
+    .open = idemip_tick_open,
+    .drain = idemip_tick_drain,
+    .service = idemip_tick_service,
+    .flush = idemip_tick_flush};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET

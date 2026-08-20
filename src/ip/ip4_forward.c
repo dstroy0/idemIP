@@ -342,7 +342,7 @@ static void ip4_forward_drop_icmp(Ip4ForwardIo *io, IdemIpIp4ForwardReason reaso
 // The context, zeroed, then the mark and the two switches RFC 1812 defaults on: sec 5.3.7's address
 // checks and sec 5.3.5.2's directed broadcast forwarding. The operand block is the caller's and is
 // left as it stands.
-static void ip4_forward_clear(uint8_t *restrict work)
+void idemip_ip4_forward_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -359,7 +359,7 @@ static void ip4_forward_clear(uint8_t *restrict work)
 
 // The switches raised, then the switches lowered. A bit outside IDEMIP_IP4_FORWARD_P_MASK is ERR: it
 // names no switch, so no later call gives it one.
-static void ip4_forward_set_policy(uint8_t *restrict work)
+void idemip_ip4_forward_set_policy(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -390,7 +390,7 @@ static void ip4_forward_set_policy(uint8_t *restrict work)
 // IDEMIP_NETIF_COUNT, or an outgoing MTU under the 68 octets RFC 791 sec 3.2 requires every internet
 // module to forward. Nothing here is BUSY: the same operands decide the same way forever, so a retry
 // can never change the answer.
-static void ip4_forward_decide(uint8_t *restrict work)
+void idemip_ip4_forward_decide(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -575,9 +575,5 @@ static void ip4_forward_decide(uint8_t *restrict work)
     io->netif = a->out_netif;
     io->status = IDEMIP_OK;
 }
-
-const Ip4ForwardNs Ip4Forward = {.clear = ip4_forward_clear,
-                                 .set_policy = ip4_forward_set_policy,
-                                 .decide = ip4_forward_decide};
 
 IDEMIP_END_DECLS

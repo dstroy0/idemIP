@@ -317,8 +317,39 @@ typedef struct
 } UdpPcbNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const UdpPcbNs UdpPcb;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_udp_pcb_clear(uint8_t *restrict work);
+void idemip_udp_pcb_open(uint8_t *restrict work);
+void idemip_udp_pcb_close(uint8_t *restrict work);
+void idemip_udp_pcb_bind(uint8_t *restrict work);
+void idemip_udp_pcb_connect(uint8_t *restrict work);
+void idemip_udp_pcb_disconnect(uint8_t *restrict work);
+void idemip_udp_pcb_set_opts(uint8_t *restrict work);
+void idemip_udp_pcb_load(uint8_t *restrict work);
+void idemip_udp_pcb_find(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `UdpPcb.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const UdpPcbNs UdpPcb IDEMIP_UNUSED = {
+    .clear = idemip_udp_pcb_clear,
+    .open = idemip_udp_pcb_open,
+    .close = idemip_udp_pcb_close,
+    .bind = idemip_udp_pcb_bind,
+    .connect = idemip_udp_pcb_connect,
+    .disconnect = idemip_udp_pcb_disconnect,
+    .set_opts = idemip_udp_pcb_set_opts,
+    .load = idemip_udp_pcb_load,
+    .find = idemip_udp_pcb_find};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_UDP

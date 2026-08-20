@@ -100,7 +100,7 @@ static uint16_t pmtu4_above(uint16_t size)
 // --- the entries -----------------------------------------------------------
 
 // The context, zeroed, then the mark. The operand block is the caller's and is left as it stands.
-static void pmtu4_clear(uint8_t *restrict work)
+void idemip_pmtu4_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -125,7 +125,7 @@ static void pmtu4_clear(uint8_t *restrict work)
 // an internet header, a next-hop MTU below the 68 octets sec 4 states the field never falls under,
 // and a search that lands under that floor are all ERR: none of them can be applied, now or on a
 // later call. Nothing here waits on a resource, so nothing here is BUSY.
-static void pmtu4_too_big(uint8_t *restrict work)
+void idemip_pmtu4_too_big(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -223,7 +223,7 @@ static void pmtu4_too_big(uint8_t *restrict work)
 
 // sec 5's search over Table 7-1, on its own. A size at or under the last row is ERR: no plateau lies
 // below it, and sec 3 floors the estimate there anyway.
-static void pmtu4_plateau_below(uint8_t *restrict work)
+void idemip_pmtu4_plateau_below(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -248,7 +248,7 @@ static void pmtu4_plateau_below(uint8_t *restrict work)
 // sec 7.1's raise: "periodically increase the PMTU estimate to the next-highest value in the plateau
 // table (or the first-hop MTU, if that is smaller)". A size already at the top of the table and one
 // already at the first hop's MTU are both ERR: the table holds nothing above either.
-static void pmtu4_plateau_above(uint8_t *restrict work)
+void idemip_pmtu4_plateau_above(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -285,7 +285,7 @@ static void pmtu4_plateau_above(uint8_t *restrict work)
 // BUSY, sec 3 forbidding the attempt before it. An estimate already at the first hop's MTU is BUSY,
 // since a later decrease is what leaves something to raise. A first hop that cannot carry RFC 791's
 // 68 octets is ERR.
-static void pmtu4_age(uint8_t *restrict work)
+void idemip_pmtu4_age(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -336,11 +336,5 @@ static void pmtu4_age(uint8_t *restrict work)
     io->mtu = mtu;
     io->status = IDEMIP_OK;
 }
-
-const Pmtu4Ns Pmtu4 = {.clear = pmtu4_clear,
-                       .too_big = pmtu4_too_big,
-                       .plateau_below = pmtu4_plateau_below,
-                       .plateau_above = pmtu4_plateau_above,
-                       .age = pmtu4_age};
 
 IDEMIP_END_DECLS

@@ -205,8 +205,35 @@ typedef struct
 } Mld6Ns;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const Mld6Ns Mld6;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_mld6_clear(uint8_t *restrict work);
+void idemip_mld6_join(uint8_t *restrict work);
+void idemip_mld6_leave(uint8_t *restrict work);
+void idemip_mld6_find(uint8_t *restrict work);
+void idemip_mld6_query_in(uint8_t *restrict work);
+void idemip_mld6_report_in(uint8_t *restrict work);
+void idemip_mld6_tick(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Mld6.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const Mld6Ns Mld6 IDEMIP_UNUSED = {
+    .clear = idemip_mld6_clear,
+    .join = idemip_mld6_join,
+    .leave = idemip_mld6_leave,
+    .find = idemip_mld6_find,
+    .query_in = idemip_mld6_query_in,
+    .report_in = idemip_mld6_report_in,
+    .tick = idemip_mld6_tick};
 // RFC 2710 sec 3 draws Type, Code, Checksum, Maximum Response Delay and Reserved above the 16-octet
 // Multicast Address, which is the 24 octets sec 3.7 bounds a message at.
 static_assert(IDEMIP_MLD6_MSG_LEN == 8u + IDEMIP_IP6_ADDR_LEN,

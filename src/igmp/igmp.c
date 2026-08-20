@@ -410,7 +410,7 @@ static void igmp_do_tick(uint8_t *restrict work)
 
 // The context and the table, zeroed, then the mark. A zeroed entry is in the sec 6 Non-Member state,
 // which "requires no storage in the host". The operand block is the caller's and is left as it stands.
-static void igmp_clear(uint8_t *restrict work)
+void idemip_igmp_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -443,7 +443,7 @@ static void igmp_result_clear(IgmpIo *io)
 // A full table is BUSY: leave frees an entry, so the retry succeeds once a membership is dropped. A
 // bad address, an interface this build does not carry, an uncleared borrow and a group already joined
 // are ERR, since no later call changes any of them.
-static void igmp_join(uint8_t *restrict work)
+void idemip_igmp_join(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -461,7 +461,7 @@ static void igmp_join(uint8_t *restrict work)
 
 // A group that is not joined is ERR: sec 6's leave group event "may occur only in the Delaying Member
 // and Idle Member states", and no retry puts it in one.
-static void igmp_leave(uint8_t *restrict work)
+void idemip_igmp_leave(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -477,7 +477,7 @@ static void igmp_leave(uint8_t *restrict work)
     igmp_do_leave(work);
 }
 
-static void igmp_find(uint8_t *restrict work)
+void idemip_igmp_find(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -496,7 +496,7 @@ static void igmp_find(uint8_t *restrict work)
 // A Max Response Time wider than the sec 2.2 field can carry is ERR: the field is 8 bits "in units of
 // 1/10 second", so no arriving Query produces one and no retry makes it legal. A Query the host holds
 // no membership for is OK, since sec 6 ignores it rather than refusing it.
-static void igmp_query_in(uint8_t *restrict work)
+void idemip_igmp_query_in(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -516,7 +516,7 @@ static void igmp_query_in(uint8_t *restrict work)
 
 // A Report for a group the host is not a member of is OK: sec 6 ignores it "for memberships in the
 // Non-Member or Idle Member state", which is a completed call that changed nothing.
-static void igmp_report_in(uint8_t *restrict work)
+void idemip_igmp_report_in(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -533,7 +533,7 @@ static void igmp_report_in(uint8_t *restrict work)
 }
 
 // A sweep that found nothing due is OK, not BUSY: it completed, and expired says nothing fired.
-static void igmp_tick(uint8_t *restrict work)
+void idemip_igmp_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -551,13 +551,5 @@ static void igmp_tick(uint8_t *restrict work)
     }
     igmp_do_tick(work);
 }
-
-const IgmpNs Igmp = {.clear = igmp_clear,
-                     .join = igmp_join,
-                     .leave = igmp_leave,
-                     .find = igmp_find,
-                     .query_in = igmp_query_in,
-                     .report_in = igmp_report_in,
-                     .tick = igmp_tick};
 
 IDEMIP_END_DECLS

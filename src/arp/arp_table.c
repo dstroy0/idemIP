@@ -422,7 +422,7 @@ static idemip_bool arp_report_request(uint8_t *restrict work, uint32_t now_ms)
 
 // The context and both tables, zeroed, then the mark. The operand block is the caller's and is left
 // as it stands.
-static void arp_clear(uint8_t *restrict work)
+void idemip_arp_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -436,7 +436,7 @@ static void arp_clear(uint8_t *restrict work)
 // RFC 826 "Packet Reception", the merge and the add over one triplet the caller already trusts. A
 // full table whose every row carries pinned holds is BUSY, because a hold's deadline frees one; a
 // triplet this end cannot key is ERR, because no retry changes the operands.
-static void arp_add(uint8_t *restrict work)
+void idemip_arp_add(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -479,7 +479,7 @@ static void arp_add(uint8_t *restrict work)
 // queue the frame, which opens the row and starts the REQUESTs. The timeout is not restarted here:
 // RFC 1122 sec 2.3.2.1 mechanism (1) times an entry out "even if they are in use", and restarts only
 // on observing the peer's own ARP.
-static void arp_find(uint8_t *restrict work)
+void idemip_arp_find(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -520,7 +520,7 @@ static void arp_find(uint8_t *restrict work)
 // RFC 1122 sec 2.3.2.1 mechanisms (3) and (4), the link-layer and higher-layer flush. The row goes,
 // and whatever it held becomes reclaimable so tick hands each pinned descriptor back. A pair with no
 // row is ERR: there is nothing to flush and no retry puts one there.
-static void arp_remove(uint8_t *restrict work)
+void idemip_arp_remove(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -559,7 +559,7 @@ static void arp_remove(uint8_t *restrict work)
 // A triplet that found no row reads as index IDEMIP_ARP_INDEX_NONE with merged false, and the call is
 // still OK: the REPLY the packet may owe does not depend on the table, so reporting BUSY here would
 // have the caller run the same packet again and answer it twice.
-static void arp_input(uint8_t *restrict work)
+void idemip_arp_input(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -628,7 +628,7 @@ static void arp_input(uint8_t *restrict work)
 // What is held is the descriptor the caller pinned, so the octets stay in the engine's buffer. Every
 // hold taken is BUSY, because a deadline or a REPLY frees one. A resolved address is ERR: the frame
 // needs no hold and the caller transmits it, and holding it would pin a descriptor for nothing.
-static void arp_queue(uint8_t *restrict work)
+void idemip_arp_queue(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -688,7 +688,7 @@ static void arp_queue(uint8_t *restrict work)
 // whose row now carries ar$sha, oldest first. Its descriptor and the hardware address to send it to
 // go in the operand block, and the hold goes free. Nothing resolved is BUSY, because a REPLY can land
 // on a later tick.
-static void arp_dequeue(uint8_t *restrict work)
+void idemip_arp_dequeue(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -740,7 +740,7 @@ static void arp_dequeue(uint8_t *restrict work)
 // index and netif naming its row. The row sweep runs at most once per IDEMIP_ARP_TMR_INTERVAL_MS,
 // which is the interval lwIP's etharp_tmr is documented to run on; the holds and the REQUESTs are
 // looked at on every call.
-static void arp_tick(uint8_t *restrict work)
+void idemip_arp_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -776,14 +776,5 @@ static void arp_tick(uint8_t *restrict work)
     }
     io->status = IDEMIP_BUSY;
 }
-
-const ArpTableNs ArpTable = {.clear = arp_clear,
-                             .add = arp_add,
-                             .find = arp_find,
-                             .remove = arp_remove,
-                             .input = arp_input,
-                             .queue = arp_queue,
-                             .dequeue = arp_dequeue,
-                             .tick = arp_tick};
 
 IDEMIP_END_DECLS

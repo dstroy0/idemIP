@@ -586,7 +586,7 @@ static void dns_advance(uint8_t *work, DnsQuery *q)
 
 // Every byte of the borrow, the operand block included, which leaves every query and every cached
 // answer at state zero: free.
-static void dns_clear(uint8_t *restrict work)
+void idemip_dns_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -596,7 +596,7 @@ static void dns_clear(uint8_t *restrict work)
     DNS_IO(work)->status = IDEMIP_OK;
 }
 
-static void dns_bind(uint8_t *restrict work)
+void idemip_dns_bind(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -617,7 +617,7 @@ static void dns_bind(uint8_t *restrict work)
 
 // An IPv4 server occupies the first IDEMIP_DNS_A_RDLEN octets of the entry and an IPv6 one all
 // IDEMIP_DNS_ADDR_LEN of them, so the entry is zeroed first and the rest of it stays zero.
-static void dns_set_server(uint8_t *restrict work)
+void idemip_dns_set_server(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -736,7 +736,7 @@ static void dns_query_register(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dns_query(uint8_t *restrict work)
+void idemip_dns_query(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -814,7 +814,7 @@ static void dns_lookup_cached(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dns_lookup(uint8_t *restrict work)
+void idemip_dns_lookup(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -954,7 +954,7 @@ static void dns_build_query(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dns_build(uint8_t *restrict work)
+void idemip_dns_build(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1235,7 +1235,7 @@ static void dns_take(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dns_input(uint8_t *restrict work)
+void idemip_dns_input(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1283,7 +1283,7 @@ static void dns_sweep(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-static void dns_tick(uint8_t *restrict work)
+void idemip_dns_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1301,7 +1301,7 @@ static void dns_tick(uint8_t *restrict work)
 
 // A slot holding no question has nothing to drop, and asking again cannot change that, so it is ERR
 // rather than BUSY.
-static void dns_cancel(uint8_t *restrict work)
+void idemip_dns_cancel(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1325,7 +1325,7 @@ static void dns_cancel(uint8_t *restrict work)
 
 // The answer table and the name regions the answers own, which are the ones at and above
 // IDEMIP_DNS_QUERIES. The questions and the servers are left as they are.
-static void dns_flush(uint8_t *restrict work)
+void idemip_dns_flush(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1342,16 +1342,5 @@ static void dns_flush(uint8_t *restrict work)
     memset(DNS_NAME_AT(work, IDEMIP_DNS_QUERIES), 0, (size_t)IDEMIP_DNS_ENTRIES << IDEMIP_DNS_NAME_SHIFT);
     io->status = IDEMIP_OK;
 }
-
-const DnsNs Dns = {.clear = dns_clear,
-                   .bind = dns_bind,
-                   .set_server = dns_set_server,
-                   .query = dns_query,
-                   .lookup = dns_lookup,
-                   .build = dns_build,
-                   .input = dns_input,
-                   .tick = dns_tick,
-                   .cancel = dns_cancel,
-                   .flush = dns_flush};
 
 IDEMIP_END_DECLS

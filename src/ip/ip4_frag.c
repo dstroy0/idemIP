@@ -310,7 +310,7 @@ static void ip4_frag_write(uint8_t *restrict work)
 
 // --- the entries -----------------------------------------------------------
 
-static void ip4_frag_clear(uint8_t *restrict work)
+void idemip_ip4_frag_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -321,7 +321,7 @@ static void ip4_frag_clear(uint8_t *restrict work)
     IP4_FRAG_IO(work)->status = IDEMIP_OK;
 }
 
-static void ip4_frag_begin(uint8_t *restrict work)
+void idemip_ip4_frag_begin(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -346,7 +346,7 @@ static void ip4_frag_begin(uint8_t *restrict work)
     ip4_frag_take(work);
 }
 
-static void ip4_frag_next(uint8_t *restrict work)
+void idemip_ip4_frag_next(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -369,7 +369,5 @@ static void ip4_frag_next(uint8_t *restrict work)
     io->err = IDEMIP_IP4_FRAG_ERR_NONE;
     ip4_frag_write(work);
 }
-
-const Ip4FragNs Ip4Frag = {.clear = ip4_frag_clear, .begin = ip4_frag_begin, .next = ip4_frag_next};
 
 IDEMIP_END_DECLS

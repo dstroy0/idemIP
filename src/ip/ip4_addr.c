@@ -42,7 +42,7 @@ static_assert(IDEMIP_IP4_ADDR_OFF_END <= IDEMIP_IP4_ADDR_BORROW,
 
 // --- the entries -----------------------------------------------------------
 
-static void ip4_addr_clear(uint8_t *restrict work)
+void idemip_ip4_addr_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -53,7 +53,7 @@ static void ip4_addr_clear(uint8_t *restrict work)
     IP4_ADDR_IO(work)->status = IDEMIP_OK;
 }
 
-static void ip4_addr_classify(uint8_t *restrict work)
+void idemip_ip4_addr_classify(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -75,7 +75,7 @@ static void ip4_addr_classify(uint8_t *restrict work)
 // the specified subnet", is the network number with every masked-off bit set. A mask of all ones
 // leaves no host field, and the same section requires each field "will be at least two bits long",
 // so a /32 has no directed broadcast and only the limited one of case (c) answers.
-static void ip4_addr_match(uint8_t *restrict work)
+void idemip_ip4_addr_match(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -114,7 +114,7 @@ static void ip4_addr_match(uint8_t *restrict work)
 
 // RFC 1112 sec 6.4 maps a host group address, which sec 4 fixes at class D. An address outside it
 // has no mapping at all, so it is ERR: no later call maps it either.
-static void ip4_addr_mcast_mac(uint8_t *restrict work)
+void idemip_ip4_addr_mcast_mac_io(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -135,10 +135,5 @@ static void ip4_addr_mcast_mac(uint8_t *restrict work)
     idemip_ip4_addr_mcast_mac(io->mac, group);
     io->status = IDEMIP_OK;
 }
-
-const Ip4AddrNs Ip4Addr = {.clear = ip4_addr_clear,
-                           .classify = ip4_addr_classify,
-                           .match = ip4_addr_match,
-                           .mcast_mac = ip4_addr_mcast_mac};
 
 IDEMIP_END_DECLS

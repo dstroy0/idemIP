@@ -384,8 +384,53 @@ typedef struct
 } Nd6Ns;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const Nd6Ns Nd6;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_nd6_clear(uint8_t *restrict work);
+void idemip_nd6_neighbor_find(uint8_t *restrict work);
+void idemip_nd6_neighbor_set(uint8_t *restrict work);
+void idemip_nd6_neighbor_confirm(uint8_t *restrict work);
+void idemip_nd6_neighbor_used(uint8_t *restrict work);
+void idemip_nd6_neighbor_remove(uint8_t *restrict work);
+void idemip_nd6_dest_find(uint8_t *restrict work);
+void idemip_nd6_dest_set(uint8_t *restrict work);
+void idemip_nd6_prefix_set(uint8_t *restrict work);
+void idemip_nd6_prefix_on_link(uint8_t *restrict work);
+void idemip_nd6_router_set(uint8_t *restrict work);
+void idemip_nd6_router_select(uint8_t *restrict work);
+void idemip_nd6_pending_push(uint8_t *restrict work);
+void idemip_nd6_pending_pop(uint8_t *restrict work);
+void idemip_nd6_params_set(uint8_t *restrict work);
+void idemip_nd6_tick(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Nd6.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const Nd6Ns Nd6 IDEMIP_UNUSED = {
+    .clear = idemip_nd6_clear,
+    .neighbor_find = idemip_nd6_neighbor_find,
+    .neighbor_set = idemip_nd6_neighbor_set,
+    .neighbor_confirm = idemip_nd6_neighbor_confirm,
+    .neighbor_used = idemip_nd6_neighbor_used,
+    .neighbor_remove = idemip_nd6_neighbor_remove,
+    .dest_find = idemip_nd6_dest_find,
+    .dest_set = idemip_nd6_dest_set,
+    .prefix_set = idemip_nd6_prefix_set,
+    .prefix_on_link = idemip_nd6_prefix_on_link,
+    .router_set = idemip_nd6_router_set,
+    .router_select = idemip_nd6_router_select,
+    .pending_push = idemip_nd6_pending_push,
+    .pending_pop = idemip_nd6_pending_pop,
+    .params_set = idemip_nd6_params_set,
+    .tick = idemip_nd6_tick};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6

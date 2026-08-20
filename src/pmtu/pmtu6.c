@@ -163,7 +163,7 @@ static uint8_t pmtu6_take(uint8_t *restrict work, const uint8_t *dst, uint32_t n
 
 // The context and the stamps, zeroed, then the mark. The operand block is the caller's and is left
 // as it stands.
-static void pmtu6_clear(uint8_t *restrict work)
+void idemip_pmtu6_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -186,7 +186,7 @@ static void pmtu6_clear(uint8_t *restrict work)
 // in sixteen bits is carried at that ceiling; the field as it arrived is reported whole.
 //
 // sec 5.3 ages by the last decrease, so a decrease is what stamps the path.
-static void pmtu6_too_big(uint8_t *restrict work)
+void idemip_pmtu6_too_big(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -263,7 +263,7 @@ static void pmtu6_too_big(uint8_t *restrict work)
 //
 // No path due is BUSY: a later tick or a later Packet Too Big makes one. A link MTU under the IPv6
 // minimum is ERR, RFC 8200 sec 5 admitting no such link.
-static void pmtu6_tick(uint8_t *restrict work)
+void idemip_pmtu6_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -304,7 +304,7 @@ static void pmtu6_tick(uint8_t *restrict work)
 
 // RFC 4861 sec 5.1 keeps the Destination Cache, and an entry leaving it takes the clock aging its
 // estimate with it. A path carrying no stamp is ERR: this table cannot grow that row on its own.
-static void pmtu6_forget(uint8_t *restrict work)
+void idemip_pmtu6_forget(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -326,7 +326,5 @@ static void pmtu6_forget(uint8_t *restrict work)
     io->index = i;
     io->status = IDEMIP_OK;
 }
-
-const Pmtu6Ns Pmtu6 = {.clear = pmtu6_clear, .too_big = pmtu6_too_big, .tick = pmtu6_tick, .forget = pmtu6_forget};
 
 IDEMIP_END_DECLS

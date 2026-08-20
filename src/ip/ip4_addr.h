@@ -384,8 +384,29 @@ typedef struct
 } Ip4AddrNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const Ip4AddrNs Ip4Addr;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_ip4_addr_clear(uint8_t *restrict work);
+void idemip_ip4_addr_classify(uint8_t *restrict work);
+void idemip_ip4_addr_match(uint8_t *restrict work);
+void idemip_ip4_addr_mcast_mac_io(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Ip4Addr.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const Ip4AddrNs Ip4Addr IDEMIP_UNUSED = {
+    .clear = idemip_ip4_addr_clear,
+    .classify = idemip_ip4_addr_classify,
+    .match = idemip_ip4_addr_match,
+    .mcast_mac = idemip_ip4_addr_mcast_mac_io};
 // The class tags and their masks agree with the bit patterns RFC 791 sec 3.2 prints.
 static_assert((IDEMIP_IP4_CLASS_A_TAG & ~IDEMIP_IP4_CLASS_A_MASK) == 0u &&
                   (IDEMIP_IP4_CLASS_B_TAG & ~IDEMIP_IP4_CLASS_B_MASK) == 0u &&

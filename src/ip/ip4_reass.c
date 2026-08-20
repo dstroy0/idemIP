@@ -712,7 +712,7 @@ static void ip4_reass_expire(uint8_t *restrict work)
 
 // The context and all three tables, zeroed, then the mark. The operand block is the caller's and is
 // left as it stands.
-static void ip4_reass_clear(uint8_t *restrict work)
+void idemip_ip4_reass_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -724,7 +724,7 @@ static void ip4_reass_clear(uint8_t *restrict work)
     IP4_REASS_IO(work)->status = IDEMIP_OK;
 }
 
-static void ip4_reass_hold(uint8_t *restrict work)
+void idemip_ip4_reass_hold(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -743,7 +743,7 @@ static void ip4_reass_hold(uint8_t *restrict work)
     ip4_reass_take(work);
 }
 
-static void ip4_reass_next(uint8_t *restrict work)
+void idemip_ip4_reass_next(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -764,7 +764,7 @@ static void ip4_reass_next(uint8_t *restrict work)
     ip4_reass_report(work);
 }
 
-static void ip4_reass_release(uint8_t *restrict work)
+void idemip_ip4_reass_release(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -781,7 +781,7 @@ static void ip4_reass_release(uint8_t *restrict work)
     ip4_reass_done(work);
 }
 
-static void ip4_reass_reclaim(uint8_t *restrict work)
+void idemip_ip4_reass_reclaim(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -799,7 +799,7 @@ static void ip4_reass_reclaim(uint8_t *restrict work)
     ip4_reass_unpin(work);
 }
 
-static void ip4_reass_tick(uint8_t *restrict work)
+void idemip_ip4_reass_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -817,12 +817,5 @@ static void ip4_reass_tick(uint8_t *restrict work)
     }
     ip4_reass_expire(work);
 }
-
-const Ip4ReassNs Ip4Reass = {.clear = ip4_reass_clear,
-                             .hold = ip4_reass_hold,
-                             .next = ip4_reass_next,
-                             .release = ip4_reass_release,
-                             .reclaim = ip4_reass_reclaim,
-                             .tick = ip4_reass_tick};
 
 IDEMIP_END_DECLS

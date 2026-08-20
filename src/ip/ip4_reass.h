@@ -230,8 +230,33 @@ typedef struct
 } Ip4ReassNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const Ip4ReassNs Ip4Reass;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_ip4_reass_clear(uint8_t *restrict work);
+void idemip_ip4_reass_hold(uint8_t *restrict work);
+void idemip_ip4_reass_next(uint8_t *restrict work);
+void idemip_ip4_reass_release(uint8_t *restrict work);
+void idemip_ip4_reass_reclaim(uint8_t *restrict work);
+void idemip_ip4_reass_tick(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Ip4Reass.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const Ip4ReassNs Ip4Reass IDEMIP_UNUSED = {
+    .clear = idemip_ip4_reass_clear,
+    .hold = idemip_ip4_reass_hold,
+    .next = idemip_ip4_reass_next,
+    .release = idemip_ip4_reass_release,
+    .reclaim = idemip_ip4_reass_reclaim,
+    .tick = idemip_ip4_reass_tick};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4

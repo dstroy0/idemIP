@@ -292,8 +292,35 @@ typedef struct
 } TcpInNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const TcpInNs TcpIn;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_tcp_in_clear(uint8_t *restrict work);
+void idemip_tcp_in_parse(uint8_t *restrict work);
+void idemip_tcp_in_acceptable(uint8_t *restrict work);
+void idemip_tcp_in_closed(uint8_t *restrict work);
+void idemip_tcp_in_listen(uint8_t *restrict work);
+void idemip_tcp_in_syn_sent(uint8_t *restrict work);
+void idemip_tcp_in_segment(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `TcpIn.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const TcpInNs TcpIn IDEMIP_UNUSED = {
+    .clear = idemip_tcp_in_clear,
+    .parse = idemip_tcp_in_parse,
+    .acceptable = idemip_tcp_in_acceptable,
+    .closed = idemip_tcp_in_closed,
+    .listen = idemip_tcp_in_listen,
+    .syn_sent = idemip_tcp_in_syn_sent,
+    .segment = idemip_tcp_in_segment};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_TCP

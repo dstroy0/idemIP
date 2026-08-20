@@ -180,8 +180,41 @@ typedef struct
 } DmaNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const DmaNs Dma;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_dma_clear(uint8_t *restrict work);
+void idemip_dma_bind(uint8_t *restrict work);
+void idemip_dma_rx_take(uint8_t *restrict work);
+void idemip_dma_rx_post(uint8_t *restrict work);
+void idemip_dma_pin(uint8_t *restrict work);
+void idemip_dma_unpin(uint8_t *restrict work);
+void idemip_dma_tx_take(uint8_t *restrict work);
+void idemip_dma_tx_post(uint8_t *restrict work);
+void idemip_dma_tx_reap(uint8_t *restrict work);
+void idemip_dma_pinned(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Dma.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const DmaNs Dma IDEMIP_UNUSED = {
+    .clear = idemip_dma_clear,
+    .bind = idemip_dma_bind,
+    .rx_take = idemip_dma_rx_take,
+    .rx_post = idemip_dma_rx_post,
+    .pin = idemip_dma_pin,
+    .unpin = idemip_dma_unpin,
+    .tx_take = idemip_dma_tx_take,
+    .tx_post = idemip_dma_tx_post,
+    .tx_reap = idemip_dma_tx_reap,
+    .pinned = idemip_dma_pinned};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET

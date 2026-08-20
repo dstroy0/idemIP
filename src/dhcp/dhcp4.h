@@ -424,8 +424,41 @@ typedef struct
 } Dhcp4Ns;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const Dhcp4Ns Dhcp4;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_dhcp4_clear(uint8_t *restrict work);
+void idemip_dhcp4_bind(uint8_t *restrict work);
+void idemip_dhcp4_start(uint8_t *restrict work);
+void idemip_dhcp4_stop(uint8_t *restrict work);
+void idemip_dhcp4_input(uint8_t *restrict work);
+void idemip_dhcp4_build(uint8_t *restrict work);
+void idemip_dhcp4_tick(uint8_t *restrict work);
+void idemip_dhcp4_release(uint8_t *restrict work);
+void idemip_dhcp4_decline(uint8_t *restrict work);
+void idemip_dhcp4_inform(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Dhcp4.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const Dhcp4Ns Dhcp4 IDEMIP_UNUSED = {
+    .clear = idemip_dhcp4_clear,
+    .bind = idemip_dhcp4_bind,
+    .start = idemip_dhcp4_start,
+    .stop = idemip_dhcp4_stop,
+    .input = idemip_dhcp4_input,
+    .build = idemip_dhcp4_build,
+    .tick = idemip_dhcp4_tick,
+    .release = idemip_dhcp4_release,
+    .decline = idemip_dhcp4_decline,
+    .inform = idemip_dhcp4_inform};
 // The field chain of RFC 2131 sec 2, Figure 1, each field starting where the one before it ends.
 static_assert(IDEMIP_DHCP4_MSG_OFF_CHADDR + IDEMIP_DHCP4_CHADDR_LEN == IDEMIP_DHCP4_MSG_OFF_SNAME,
               "chaddr is 16 octets and sname follows it (RFC 2131 sec 2, Figure 1)");

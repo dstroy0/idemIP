@@ -443,8 +443,41 @@ typedef struct
 } Dhcp6Ns;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const Dhcp6Ns Dhcp6;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_dhcp6_clear(uint8_t *restrict work);
+void idemip_dhcp6_bind(uint8_t *restrict work);
+void idemip_dhcp6_start(uint8_t *restrict work);
+void idemip_dhcp6_stop(uint8_t *restrict work);
+void idemip_dhcp6_input(uint8_t *restrict work);
+void idemip_dhcp6_build(uint8_t *restrict work);
+void idemip_dhcp6_tick(uint8_t *restrict work);
+void idemip_dhcp6_confirm(uint8_t *restrict work);
+void idemip_dhcp6_release(uint8_t *restrict work);
+void idemip_dhcp6_decline(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Dhcp6.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const Dhcp6Ns Dhcp6 IDEMIP_UNUSED = {
+    .clear = idemip_dhcp6_clear,
+    .bind = idemip_dhcp6_bind,
+    .start = idemip_dhcp6_start,
+    .stop = idemip_dhcp6_stop,
+    .input = idemip_dhcp6_input,
+    .build = idemip_dhcp6_build,
+    .tick = idemip_dhcp6_tick,
+    .confirm = idemip_dhcp6_confirm,
+    .release = idemip_dhcp6_release,
+    .decline = idemip_dhcp6_decline};
 // The field chain of RFC 8415 sec 8, Figure 2, and sec 21.1, Figure 12.
 static_assert(IDEMIP_DHCP6_MSG_OFF_XID + 3u == IDEMIP_DHCP6_MSG_OFF_OPTIONS,
               "transaction-id is three octets and the options follow it (RFC 8415 sec 8)");

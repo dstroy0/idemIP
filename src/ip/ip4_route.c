@@ -260,7 +260,7 @@ static void ip4_route_derive_host(Ip4RouteEntry *e, const Ip4RouteEntry *from, u
 
 // The context and the table, zeroed, then the mark. The operand block is the caller's and is left as
 // it stands.
-static void ip4_route_clear(uint8_t *restrict work)
+void idemip_ip4_route_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -278,7 +278,7 @@ static void ip4_route_clear(uint8_t *restrict work)
 // of service and gateway is rewritten in place, so the table holds one route per key. A full table is
 // BUSY: a remove frees a row. A mask with a gap, or a gateway route naming no gateway, is ERR: the
 // same operands can never be written.
-static void ip4_route_add(uint8_t *restrict work)
+void idemip_ip4_route_add(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -339,7 +339,7 @@ static void ip4_route_add(uint8_t *restrict work)
 // since RemoveArgs names no type of service. RFC 1191 sec 6.3: "PMTU estimates may disappear from the
 // routing table if the per-host routes are removed", so the estimate goes with the row. A destination
 // and mask no row holds is ERR: the table cannot grow that row on its own.
-static void ip4_route_remove(uint8_t *restrict work)
+void idemip_ip4_route_remove(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -375,7 +375,7 @@ static void ip4_route_remove(uint8_t *restrict work)
 // is to be transmitted directly to the destination host", so the next hop is the destination itself;
 // with it, case (c) sends to field (4). No row matching and no default gateway is BUSY: sec 3.3.1.2
 // builds rows as datagrams flow, and an added route or a Redirect makes the same lookup succeed.
-static void ip4_route_lookup(uint8_t *restrict work)
+void idemip_ip4_route_lookup(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -427,7 +427,7 @@ static void ip4_route_lookup(uint8_t *restrict work)
 // A gateway of zero, a gateway off every connected net, and a route sec 3.3.1.2 flagged static without
 // flagging it overridable are all ERR: the same Redirect can never be applied. A table with no row for
 // the destination, or no free row to create one in, is BUSY.
-static void ip4_route_redirect(uint8_t *restrict work)
+void idemip_ip4_route_redirect(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -499,7 +499,7 @@ static void ip4_route_redirect(uint8_t *restrict work)
 // An estimate below the RFC 791 sec 3.2 minimum is ERR: sec 4 states the field "will never contain a
 // value less than 68". No row routing the destination, and no free row to hold the per-host route,
 // are BUSY.
-static void ip4_route_set_pmtu(uint8_t *restrict work)
+void idemip_ip4_route_set_pmtu(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -555,7 +555,7 @@ static void ip4_route_set_pmtu(uint8_t *restrict work)
 // estimate is set to the MTU of the associated first hop." A row carrying no estimate reports the
 // first-hop MTU to its caller, so clearing the estimate is that assignment. A sweep that is not due
 // is BUSY: the next tick past the period runs it.
-static void ip4_route_tick(uint8_t *restrict work)
+void idemip_ip4_route_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -596,13 +596,5 @@ static void ip4_route_tick(uint8_t *restrict work)
     }
     io->status = IDEMIP_OK;
 }
-
-const Ip4RouteNs Ip4Route = {.clear = ip4_route_clear,
-                             .add = ip4_route_add,
-                             .remove = ip4_route_remove,
-                             .lookup = ip4_route_lookup,
-                             .redirect = ip4_route_redirect,
-                             .set_pmtu = ip4_route_set_pmtu,
-                             .tick = ip4_route_tick};
 
 IDEMIP_END_DECLS

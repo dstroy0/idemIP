@@ -120,7 +120,7 @@ static void udplite_report(UdpLiteIo *io, const uint8_t *dgram, uint16_t cov, ui
 
 // --- the entries -----------------------------------------------------------
 
-static void udplite_clear(uint8_t *restrict work)
+void idemip_udplite_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -134,7 +134,7 @@ static void udplite_clear(uint8_t *restrict work)
 
 // The sec 3.1 rules over the Coverage the datagram carries, and nothing else: no address is read and
 // no sum is run.
-static void udplite_cover(uint8_t *restrict work)
+void idemip_udplite_cover(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -169,7 +169,7 @@ static void udplite_cover(uint8_t *restrict work)
 
 // The sec 3.1 rules, then the sum: the sec 3.2 pseudo-header first, then the covered octets with the
 // Checksum field as it arrived. RFC 1071 sec 1 makes that come out zero when the datagram checks out.
-static void udplite_check(uint8_t *restrict work)
+void idemip_udplite_check(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -223,7 +223,7 @@ static void udplite_check(uint8_t *restrict work)
 // The eight header octets with the requested Coverage and a cleared Checksum field, then the sum over
 // the covered span stored back into that field. RFC 3828 sec 3.1: "Prior to computation, the checksum
 // field MUST be set to zero. If the computed checksum is 0, it is transmitted as all ones."
-static void udplite_build(uint8_t *restrict work)
+void idemip_udplite_build_io(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -260,8 +260,5 @@ static void udplite_build(uint8_t *restrict work)
     idemip_udp_set_cksum(a->dgram, c);
     udplite_report(io, a->dgram, a->cov, span, a->ip_payload_len, c);
 }
-
-const UdpLiteNs UdpLite = {
-    .clear = udplite_clear, .cover = udplite_cover, .check = udplite_check, .build = udplite_build};
 
 IDEMIP_END_DECLS

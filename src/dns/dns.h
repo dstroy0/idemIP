@@ -492,8 +492,41 @@ typedef struct
 } DnsNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const DnsNs Dns;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_dns_clear(uint8_t *restrict work);
+void idemip_dns_bind(uint8_t *restrict work);
+void idemip_dns_set_server(uint8_t *restrict work);
+void idemip_dns_query(uint8_t *restrict work);
+void idemip_dns_lookup(uint8_t *restrict work);
+void idemip_dns_build(uint8_t *restrict work);
+void idemip_dns_input(uint8_t *restrict work);
+void idemip_dns_tick(uint8_t *restrict work);
+void idemip_dns_cancel(uint8_t *restrict work);
+void idemip_dns_flush(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Dns.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const DnsNs Dns IDEMIP_UNUSED = {
+    .clear = idemip_dns_clear,
+    .bind = idemip_dns_bind,
+    .set_server = idemip_dns_set_server,
+    .query = idemip_dns_query,
+    .lookup = idemip_dns_lookup,
+    .build = idemip_dns_build,
+    .input = idemip_dns_input,
+    .tick = idemip_dns_tick,
+    .cancel = idemip_dns_cancel,
+    .flush = idemip_dns_flush};
 // The header of RFC 1035 sec 4.1.1: six 16-bit fields, the question section behind them.
 static_assert(IDEMIP_DNS_HDR_OFF_ARCOUNT + 2u == IDEMIP_DNS_HDR_LEN,
               "the header is six 16-bit fields (RFC 1035 sec 4.1.1)");

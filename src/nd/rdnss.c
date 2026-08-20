@@ -308,7 +308,7 @@ static void rdnss_apply(uint8_t *restrict work, const uint8_t *addr, uint32_t li
 
 // The context and the list, zeroed, then the mark. The operand block is the caller's and is left as
 // it stands.
-static void rdnss_clear(uint8_t *restrict work)
+void idemip_rdnss_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -326,7 +326,7 @@ static void rdnss_clear(uint8_t *restrict work)
 // equal to the minimum value (3) and satisfies the requirement that (Length - 1) % 2 == 0", and the
 // addresses "should be unicast addresses". An option that fails is discarded whole, since "Otherwise,
 // the host MUST discard the options."
-static void rdnss_option_in(uint8_t *restrict work)
+void idemip_rdnss_option_in(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -386,7 +386,7 @@ static void rdnss_option_in(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void rdnss_get(uint8_t *restrict work)
+void idemip_rdnss_get(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -408,7 +408,7 @@ static void rdnss_get(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void rdnss_find(uint8_t *restrict work)
+void idemip_rdnss_find(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -432,7 +432,7 @@ static void rdnss_find(uint8_t *restrict work)
 }
 
 // sec 6.2 step (b) deletes an entry "in order to prevent the RDNSS address from being used any more".
-static void rdnss_remove(uint8_t *restrict work)
+void idemip_rdnss_remove(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -463,7 +463,7 @@ static void rdnss_remove(uint8_t *restrict work)
 // Repository." One per call, the address reported so the caller drops it from the resolver too.
 //
 // Nothing expired reports BUSY, since the same call on a later tick fires one.
-static void rdnss_tick(uint8_t *restrict work)
+void idemip_rdnss_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -493,12 +493,5 @@ static void rdnss_tick(uint8_t *restrict work)
     io->servers = count;
     io->status = IDEMIP_BUSY;
 }
-
-const RdnssNs Rdnss = {.clear = rdnss_clear,
-                       .option_in = rdnss_option_in,
-                       .get = rdnss_get,
-                       .find = rdnss_find,
-                       .remove = rdnss_remove,
-                       .tick = rdnss_tick};
 
 IDEMIP_END_DECLS

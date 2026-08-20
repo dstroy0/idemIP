@@ -106,7 +106,7 @@ static uint32_t *stats_if_at(uint8_t *restrict work, uint8_t netif, IdemIpStatsI
 // --- the entries -----------------------------------------------------------
 
 // Zeroes the counter block, the interface table and the context, then marks the borrow bound.
-static void stats_clear(uint8_t *restrict work)
+void idemip_stats_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -128,7 +128,7 @@ static void stats_clear(uint8_t *restrict work)
 //
 // Every refusal is ERR and none is BUSY: an uncleared borrow, an id past the block, and a Gauge id
 // all read the same on the next call, so retrying cannot succeed. Nothing here defers.
-static void stats_bump(uint8_t *restrict work)
+void idemip_stats_bump(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -149,7 +149,7 @@ static void stats_bump(uint8_t *restrict work)
 // Assigns ctr_args.value to a group Gauge. RFC 1155 sec 3.2.3.4: a Gauge rises and falls and latches
 // at 2^32-1, which a uint32_t store cannot pass. A Counter id is refused, sec 3.2.3.3 having it
 // increase monotonically, so it is reached by bump instead.
-static void stats_set(uint8_t *restrict work)
+void idemip_stats_set(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -168,7 +168,7 @@ static void stats_set(uint8_t *restrict work)
 
 // Reports a group counter in io->value. RFC 1213 sec 6.6 through sec 6.9 give every object of those
 // groups ACCESS read-only, Counter and Gauge alike, so both kinds read here.
-static void stats_read(uint8_t *restrict work)
+void idemip_stats_read(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -188,7 +188,7 @@ static void stats_read(uint8_t *restrict work)
 
 // Adds if_args.value to one interface's ifEntry Counter, RFC 1213 sec 6.4. RFC 1155 sec 3.2.3.3
 // wraps it at 2^32-1, which is the uint32_t sum. ifSpeed and ifOutQLen are refused, being Gauges.
-static void stats_if_bump(uint8_t *restrict work)
+void idemip_stats_if_bump(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -209,7 +209,7 @@ static void stats_if_bump(uint8_t *restrict work)
 
 // Assigns if_args.value to one interface's ifSpeed or ifOutQLen, the RFC 1213 sec 6.4 Gauges. RFC 1155
 // sec 3.2.3.4 latches a Gauge at 2^32-1, which a uint32_t store cannot pass. A Counter id is refused.
-static void stats_if_set(uint8_t *restrict work)
+void idemip_stats_if_set(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -228,7 +228,7 @@ static void stats_if_set(uint8_t *restrict work)
 }
 
 // Reports one interface's ifEntry counter in io->value, RFC 1213 sec 6.4, Counter and Gauge alike.
-static void stats_if_read(uint8_t *restrict work)
+void idemip_stats_if_read(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -245,13 +245,5 @@ static void stats_if_read(uint8_t *restrict work)
     io->value = *stats_if_at(work, io->if_args.netif, io->if_args.id);
     io->status = IDEMIP_OK;
 }
-
-const StatsNs Stats = {.clear = stats_clear,
-                       .bump = stats_bump,
-                       .set = stats_set,
-                       .read = stats_read,
-                       .if_bump = stats_if_bump,
-                       .if_set = stats_if_set,
-                       .if_read = stats_if_read};
 
 IDEMIP_END_DECLS

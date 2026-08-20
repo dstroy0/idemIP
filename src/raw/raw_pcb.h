@@ -250,8 +250,39 @@ typedef struct
 } RawPcbNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const RawPcbNs RawPcb;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_raw_pcb_clear(uint8_t *restrict work);
+void idemip_raw_pcb_open(uint8_t *restrict work);
+void idemip_raw_pcb_close(uint8_t *restrict work);
+void idemip_raw_pcb_bind(uint8_t *restrict work);
+void idemip_raw_pcb_connect(uint8_t *restrict work);
+void idemip_raw_pcb_disconnect(uint8_t *restrict work);
+void idemip_raw_pcb_set_opts(uint8_t *restrict work);
+void idemip_raw_pcb_load(uint8_t *restrict work);
+void idemip_raw_pcb_find(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `RawPcb.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const RawPcbNs RawPcb IDEMIP_UNUSED = {
+    .clear = idemip_raw_pcb_clear,
+    .open = idemip_raw_pcb_open,
+    .close = idemip_raw_pcb_close,
+    .bind = idemip_raw_pcb_bind,
+    .connect = idemip_raw_pcb_connect,
+    .disconnect = idemip_raw_pcb_disconnect,
+    .set_opts = idemip_raw_pcb_set_opts,
+    .load = idemip_raw_pcb_load,
+    .find = idemip_raw_pcb_find};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6

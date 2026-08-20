@@ -623,7 +623,7 @@ static int ip6_select_cmp_dest(uint8_t *restrict work, uint8_t ia, uint8_t ib, u
 // implementation: "If an implementation is not configurable or has not been configured, then it
 // SHOULD operate according to the algorithms specified here in conjunction with the following
 // default policy table".
-static void ip6_select_clear(uint8_t *restrict work)
+void idemip_ip6_select_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -654,7 +654,7 @@ static void ip6_select_clear(uint8_t *restrict work)
 // A row whose prefix and length already sit in the table is overwritten, so a caller reconfigures
 // one of sec 2.1's defaults rather than adding a second row that shadows it. A table with no free
 // row is ERR: nothing frees one on a later tick, so the same call would fail the same way.
-static void ip6_select_policy_set(uint8_t *restrict work)
+void idemip_ip6_select_policy_set(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -704,7 +704,7 @@ static void ip6_select_policy_set(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void ip6_select_policy_lookup(uint8_t *restrict work)
+void idemip_ip6_select_policy_lookup(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -735,7 +735,7 @@ static void ip6_select_policy_lookup(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void ip6_select_scope_of(uint8_t *restrict work)
+void idemip_ip6_select_scope_of(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -753,7 +753,7 @@ static void ip6_select_scope_of(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void ip6_select_common_prefix_entry(uint8_t *restrict work)
+void idemip_ip6_select_common_prefix_entry(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -773,7 +773,7 @@ static void ip6_select_common_prefix_entry(uint8_t *restrict work)
 // RFC 6724 sec 4: "In any case, multicast addresses and the unspecified address MUST NOT be included
 // in a candidate set." Both are ERR, since no later call makes either eligible. A full candidate set
 // is ERR for the same reason: only clear empties it.
-static void ip6_select_source_add(uint8_t *restrict work)
+void idemip_ip6_select_source_add(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -813,7 +813,7 @@ static void ip6_select_source_add(uint8_t *restrict work)
 
 // The list keeps the order it was added in, which is the "original list" sec 6 Rule 10 falls back
 // to. A full list is ERR: only clear empties it.
-static void ip6_select_dest_add(uint8_t *restrict work)
+void idemip_ip6_select_dest_add(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -846,7 +846,7 @@ static void ip6_select_dest_add(uint8_t *restrict work)
 
 // A destination with no eligible candidate is sec 6's "Source(D) is undefined", which is an answer
 // rather than a fault: the call reports OK with found clear.
-static void ip6_select_source_select(uint8_t *restrict work)
+void idemip_ip6_select_source_select(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -883,7 +883,7 @@ static void ip6_select_source_select(uint8_t *restrict work)
 // sec 6 runs the source algorithm per destination first, then orders the list. A selection sort over
 // the order region walks a fixed count of pairs and moves no entry, so the destinations keep the
 // original positions Rule 10 compares.
-static void ip6_select_dest_sort(uint8_t *restrict work)
+void idemip_ip6_select_dest_sort(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -928,7 +928,7 @@ static void ip6_select_dest_sort(uint8_t *restrict work)
 
 // Reads one place of the sorted list. A list no sort has run over, and a place past its end, are
 // both ERR: neither becomes readable on a later tick without a call the caller makes.
-static void ip6_select_dest_at(uint8_t *restrict work)
+void idemip_ip6_select_dest_at(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -962,16 +962,5 @@ static void ip6_select_dest_at(uint8_t *restrict work)
     }
     io->status = IDEMIP_OK;
 }
-
-const Ip6SelectNs Ip6Select = {.clear = ip6_select_clear,
-                               .policy_set = ip6_select_policy_set,
-                               .policy_lookup = ip6_select_policy_lookup,
-                               .scope_of = ip6_select_scope_of,
-                               .common_prefix = ip6_select_common_prefix_entry,
-                               .source_add = ip6_select_source_add,
-                               .dest_add = ip6_select_dest_add,
-                               .source_select = ip6_select_source_select,
-                               .dest_sort = ip6_select_dest_sort,
-                               .dest_at = ip6_select_dest_at};
 
 IDEMIP_END_DECLS

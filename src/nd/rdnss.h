@@ -221,8 +221,33 @@ typedef struct
 } RdnssNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const RdnssNs Rdnss;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_rdnss_clear(uint8_t *restrict work);
+void idemip_rdnss_option_in(uint8_t *restrict work);
+void idemip_rdnss_get(uint8_t *restrict work);
+void idemip_rdnss_find(uint8_t *restrict work);
+void idemip_rdnss_remove(uint8_t *restrict work);
+void idemip_rdnss_tick(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Rdnss.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const RdnssNs Rdnss IDEMIP_UNUSED = {
+    .clear = idemip_rdnss_clear,
+    .option_in = idemip_rdnss_option_in,
+    .get = idemip_rdnss_get,
+    .find = idemip_rdnss_find,
+    .remove = idemip_rdnss_remove,
+    .tick = idemip_rdnss_tick};
 // Every slot index counts the entries the borrow holds, so IDEMIP_RDNSS_NONE names none of them.
 static_assert(IDEMIP_RDNSS_SERVERS < IDEMIP_RDNSS_NONE,
               "the list is wider than the index a result member carries");

@@ -283,8 +283,37 @@ typedef struct
 } DadNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const DadNs Dad;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_dad_clear(uint8_t *restrict work);
+void idemip_dad_bind(uint8_t *restrict work);
+void idemip_dad_start(uint8_t *restrict work);
+void idemip_dad_stop(uint8_t *restrict work);
+void idemip_dad_find(uint8_t *restrict work);
+void idemip_dad_ns_in(uint8_t *restrict work);
+void idemip_dad_na_in(uint8_t *restrict work);
+void idemip_dad_tick(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Dad.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const DadNs Dad IDEMIP_UNUSED = {
+    .clear = idemip_dad_clear,
+    .bind = idemip_dad_bind,
+    .start = idemip_dad_start,
+    .stop = idemip_dad_stop,
+    .find = idemip_dad_find,
+    .ns_in = idemip_dad_ns_in,
+    .na_in = idemip_dad_na_in,
+    .tick = idemip_dad_tick};
 // Every slot index counts the machines the borrow holds, so IDEMIP_DAD_NONE names none of them.
 static_assert(IDEMIP_IP6_ADDRESSES < IDEMIP_DAD_NONE,
               "the table is wider than the index a result member carries");

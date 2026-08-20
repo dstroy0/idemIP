@@ -191,8 +191,33 @@ typedef struct
 } AutoIpNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const AutoIpNs AutoIp;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_autoip_clear(uint8_t *restrict work);
+void idemip_autoip_start(uint8_t *restrict work);
+void idemip_autoip_conflict(uint8_t *restrict work);
+void idemip_autoip_bound(uint8_t *restrict work);
+void idemip_autoip_stop(uint8_t *restrict work);
+void idemip_autoip_tick(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `AutoIp.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const AutoIpNs AutoIp IDEMIP_UNUSED = {
+    .clear = idemip_autoip_clear,
+    .start = idemip_autoip_start,
+    .conflict = idemip_autoip_conflict,
+    .bound = idemip_autoip_bound,
+    .stop = idemip_autoip_stop,
+    .tick = idemip_autoip_tick};
 // RFC 3927 sec 2.1: "a uniform distribution in the range from 169.254.1.0 to 169.254.254.255
 // inclusive", and "The first 256 and last 256 addresses in the 169.254/16 prefix are reserved for
 // future use and MUST NOT be selected by a host using this dynamic configuration mechanism."

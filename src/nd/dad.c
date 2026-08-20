@@ -24,7 +24,7 @@ IDEMIP_BEGIN_DECLS
 
 // A deadline is one absolute millisecond on the 64-bit clock. RFC 4862 sec 5.4 waits RetransTimer
 // milliseconds for a defence and RFC 4861 sec 6.3.4 lets a Router Advertisement set that timer, so the
-// value reaching dad_start is a remote party's; it is served whole rather than held at a bound.
+// value reaching idemip_dad_start is a remote party's; it is served whole rather than held at a bound.
 
 // One machine over one tentative address (RFC 4862 sec 5.4). sent counts the solicitations sec 5.4.2
 // transmits, received the ones sec 5.4.3 counts against the loopback semantics, and hw_derived is
@@ -328,7 +328,7 @@ static void dad_solicitation(uint8_t *restrict work, uint8_t index)
 
 // The context and the table, zeroed, then the mark. A zeroed slot is IDEMIP_DAD_STATE_FREE and holds
 // no address. The operand block is the caller's and is left as it stands.
-static void dad_clear(uint8_t *restrict work)
+void idemip_dad_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -340,7 +340,7 @@ static void dad_clear(uint8_t *restrict work)
 }
 
 // sec 5.1's node configuration variables, which the caller holds in rodata.
-static void dad_bind(uint8_t *restrict work)
+void idemip_dad_bind(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -363,7 +363,7 @@ static void dad_bind(uint8_t *restrict work)
 //
 // sec 5.4: "An interface whose DupAddrDetectTransmits variable is set to zero does not perform
 // Duplicate Address Detection", so the address is unique on the call that opened it.
-static void dad_start(uint8_t *restrict work)
+void idemip_dad_start(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -426,7 +426,7 @@ static void dad_start(uint8_t *restrict work)
 }
 
 // The machine over an address, dropped, freeing its slot.
-static void dad_stop(uint8_t *restrict work)
+void idemip_dad_stop(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -449,7 +449,7 @@ static void dad_stop(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dad_find(uint8_t *restrict work)
+void idemip_dad_find(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -478,7 +478,7 @@ static void dad_find(uint8_t *restrict work)
 // "If the target address is tentative, and the source address is a unicast address, the solicitation's
 // sender is performing address resolution on the target; the solicitation should be silently ignored."
 // A node "MUST NOT respond to a Neighbor Solicitation for a tentative address" in any case.
-static void dad_ns_in(uint8_t *restrict work)
+void idemip_dad_ns_in(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -512,7 +512,7 @@ static void dad_ns_in(uint8_t *restrict work)
 // sec 5.4.4 (1): "If the target address is tentative, the tentative address is not unique." Case 2, a
 // target matching an assigned address, is "beyond the scope of this document", and case 3 is
 // RFC 4861's, which tentative false reports.
-static void dad_na_in(uint8_t *restrict work)
+void idemip_dad_na_in(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -543,7 +543,7 @@ static void dad_na_in(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dad_tick(uint8_t *restrict work)
+void idemip_dad_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -558,14 +558,5 @@ static void dad_tick(uint8_t *restrict work)
     }
     dad_fire(work);
 }
-
-const DadNs Dad = {.clear = dad_clear,
-                   .bind = dad_bind,
-                   .start = dad_start,
-                   .stop = dad_stop,
-                   .find = dad_find,
-                   .ns_in = dad_ns_in,
-                   .na_in = dad_na_in,
-                   .tick = dad_tick};
 
 IDEMIP_END_DECLS

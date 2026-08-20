@@ -512,7 +512,7 @@ static idemip_bool t_flush_tcp_ack(uint8_t *restrict work)
 
 // --- the entries -----------------------------------------------------------
 
-static void tick_clear(uint8_t *restrict work)
+void idemip_tick_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -533,7 +533,7 @@ static void tick_clear(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void tick_bind(uint8_t *restrict work)
+void idemip_tick_bind(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -563,7 +563,7 @@ static void tick_bind(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void tick_if_bind(uint8_t *restrict work)
+void idemip_tick_if_bind(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -587,7 +587,7 @@ static void tick_if_bind(uint8_t *restrict work)
 
 // The clock arrives from the caller and every deadline this tick compares is measured from it, so
 // one tick is one instant however long its phases take.
-static void tick_open(uint8_t *restrict work)
+void idemip_tick_open(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -621,7 +621,7 @@ static void tick_open(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void tick_drain(uint8_t *restrict work)
+void idemip_tick_drain(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -658,7 +658,7 @@ static void tick_drain(uint8_t *restrict work)
 
 // One step of one service. A unit that reported work stays under the cursor, so it is asked again
 // before the next unit runs; one that reported none moves the cursor on.
-static void tick_service(uint8_t *restrict work)
+void idemip_tick_service(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -737,7 +737,7 @@ static void tick_service(uint8_t *restrict work)
     io->status = IDEMIP_BUSY;
 }
 
-static void tick_flush(uint8_t *restrict work)
+void idemip_tick_flush(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -796,13 +796,5 @@ static void tick_flush(uint8_t *restrict work)
     io->phase = IDEMIP_TICK_PHASE_DONE;
     io->status = IDEMIP_BUSY;
 }
-
-const TickNs Tick = {.clear = tick_clear,
-                     .bind = tick_bind,
-                     .if_bind = tick_if_bind,
-                     .open = tick_open,
-                     .drain = tick_drain,
-                     .service = tick_service,
-                     .flush = tick_flush};
 
 IDEMIP_END_DECLS

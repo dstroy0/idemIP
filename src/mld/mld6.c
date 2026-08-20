@@ -210,7 +210,7 @@ static idemip_bool mld6_arm(Mld6Group *g, uint32_t now_ms, uint32_t max_resp_ms,
 // Zeroes the context and the table, then marks the borrow this module's. A zeroed entry is in the
 // sec 5 Non-Listener state, which "requires no storage in the node". The operand block is the
 // caller's and is left alone.
-static void mld6_clear(uint8_t *restrict work)
+void idemip_mld6_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -228,7 +228,7 @@ static void mld6_clear(uint8_t *restrict work)
 // state, where sec 5 puts start listening, so it transitions nothing and reports the entry it has.
 // A full table is BUSY, since an entry frees when the node stops listening; a bad address or interface
 // is ERR, since no retry changes it.
-static void mld6_join(uint8_t *restrict work)
+void idemip_mld6_join(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -294,7 +294,7 @@ static void mld6_join(uint8_t *restrict work)
 // send a single Done message to the link-scope all-routers multicast address (FF02::2)", and "if the
 // node's most recent Report message was suppressed by hearing another Report message, it MAY send
 // nothing". The freed entry is scrubbed, so the reported address is the caller's own operand.
-static void mld6_leave(uint8_t *restrict work)
+void idemip_mld6_leave(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -336,7 +336,7 @@ static void mld6_leave(uint8_t *restrict work)
 
 // RFC 2710 sec 5, which holds one state per multicast address per interface. A group the node does not
 // listen to on that interface is in Non-Listener state, which holds nothing to report, so it is ERR.
-static void mld6_find(uint8_t *restrict work)
+void idemip_mld6_find(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -372,7 +372,7 @@ static void mld6_find(uint8_t *restrict work)
 // Response Delay of zero draws zero, which
 // lands the deadline on the clock and leaves the sec 5 timer expired action to the sweep that follows.
 // A Query names a group in Non-Listener state, which sec 5 ignores and which no retry changes, so ERR.
-static void mld6_query_in(uint8_t *restrict work)
+void idemip_mld6_query_in(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -432,7 +432,7 @@ static void mld6_query_in(uint8_t *restrict work)
 // thus suppressing duplicate reports on the link". sec 5 draws that as "(stop timer, clear flag)" into
 // Idle Listener, and "It is ignored in the Non-Listener or Idle Listener state". A Report for a group
 // this node does not listen to on that interface is Non-Listener, which holds no entry, so it is ERR.
-static void mld6_report_in(uint8_t *restrict work)
+void idemip_mld6_report_in(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -470,7 +470,7 @@ static void mld6_report_in(uint8_t *restrict work)
 // send_report, so a sweep fires the first due timer and counts every timer due at this clock into
 // expired; the caller sweeps again while send_report is set. Nothing here blocks, so a sweep with no
 // timer due is OK with expired zero, not BUSY.
-static void mld6_tick(uint8_t *restrict work)
+void idemip_mld6_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -516,13 +516,5 @@ static void mld6_tick(uint8_t *restrict work)
     mld6_report_entry(io, g, first);
     io->status = IDEMIP_OK;
 }
-
-const Mld6Ns Mld6 = {.clear = mld6_clear,
-                     .join = mld6_join,
-                     .leave = mld6_leave,
-                     .find = mld6_find,
-                     .query_in = mld6_query_in,
-                     .report_in = mld6_report_in,
-                     .tick = mld6_tick};
 
 IDEMIP_END_DECLS

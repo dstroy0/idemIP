@@ -137,7 +137,7 @@ static void loopif_pop(uint8_t *restrict work)
 // Zeroes the context and every frame region, then stamps the context. A zeroed context holds no
 // address, an empty queue and no claim, which is the state every other entry reads as unbound. The
 // operand block is the caller's and is left alone.
-static void loopif_clear(uint8_t *restrict work)
+void idemip_loopif_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -148,7 +148,7 @@ static void loopif_clear(uint8_t *restrict work)
     LOOPIF_IO(work)->status = IDEMIP_OK;
 }
 
-static void loopif_bind(uint8_t *restrict work)
+void idemip_loopif_bind(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -189,7 +189,7 @@ static void loopif_bind(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void loopif_output(uint8_t *restrict work)
+void idemip_loopif_output(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -218,7 +218,7 @@ static void loopif_output(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void loopif_claim(uint8_t *restrict work)
+void idemip_loopif_claim(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -251,7 +251,7 @@ static void loopif_claim(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void loopif_release(uint8_t *restrict work)
+void idemip_loopif_release(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -276,7 +276,7 @@ static void loopif_release(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void loopif_owns4(uint8_t *restrict work)
+void idemip_loopif_owns4(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -297,7 +297,7 @@ static void loopif_owns4(uint8_t *restrict work)
 
 #if IDEMIP_ENABLE_IPV6
 
-static void loopif_owns6(uint8_t *restrict work)
+void idemip_loopif_owns6(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -317,16 +317,5 @@ static void loopif_owns6(uint8_t *restrict work)
 }
 
 #endif // IDEMIP_ENABLE_IPV6
-
-const LoopifNs Loopif = {.clear = loopif_clear,
-                         .bind = loopif_bind,
-                         .output = loopif_output,
-                         .claim = loopif_claim,
-                         .release = loopif_release,
-                         .owns4 = loopif_owns4,
-#if IDEMIP_ENABLE_IPV6
-                         .owns6 = loopif_owns6
-#endif
-};
 
 IDEMIP_END_DECLS

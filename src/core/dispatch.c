@@ -1876,7 +1876,7 @@ static idemip_bool d_link(uint8_t *restrict work, size_t *payload_off)
 
 // --- the entries -----------------------------------------------------------
 
-static void dispatch_clear(uint8_t *restrict work)
+void idemip_dispatch_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1896,7 +1896,7 @@ static void dispatch_clear(uint8_t *restrict work)
     D_IO(work)->status = IDEMIP_OK;
 }
 
-static void dispatch_bind(uint8_t *restrict work)
+void idemip_dispatch_bind(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1943,7 +1943,7 @@ static void dispatch_bind(uint8_t *restrict work)
 
 // An interface is a member of one VLAN or of none. RFC 6325 sec 4.1.1 runs the usable range 0x001
 // through 0xFFE, so a membership outside it names no VLAN and is refused.
-static void dispatch_if_bind(uint8_t *restrict work)
+void idemip_dispatch_if_bind(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1967,7 +1967,7 @@ static void dispatch_if_bind(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dispatch_if_get(uint8_t *restrict work)
+void idemip_dispatch_if_get(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1987,7 +1987,7 @@ static void dispatch_if_get(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dispatch_input(uint8_t *restrict work)
+void idemip_dispatch_input(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -2052,7 +2052,7 @@ static void dispatch_input(uint8_t *restrict work)
 //
 // The descriptor the delivery names stays pinned until the call after, so the caller reads the
 // octets between the two calls.
-static void dispatch_tcp_deliver(uint8_t *restrict work)
+void idemip_dispatch_tcp_deliver(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -2131,7 +2131,7 @@ static void dispatch_tcp_deliver(uint8_t *restrict work)
 
 // RFC 9293 sec 3.10.7.4 (MUST-58, MUST-59). One acknowledgment per connection per batch, of the
 // sec 3.10.7.4 seventh form "<SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK>".
-static void dispatch_tcp_ack(uint8_t *restrict work)
+void idemip_dispatch_tcp_ack(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -2179,16 +2179,5 @@ static void dispatch_tcp_ack(uint8_t *restrict work)
 }
 
 #endif // IDEMIP_ENABLE_TCP
-
-const DispatchNs Dispatch = {.clear = dispatch_clear,
-                             .bind = dispatch_bind,
-                             .if_bind = dispatch_if_bind,
-                             .if_get = dispatch_if_get,
-                             .input = dispatch_input,
-#if IDEMIP_ENABLE_TCP
-                             .tcp_deliver = dispatch_tcp_deliver,
-                             .tcp_ack = dispatch_tcp_ack
-#endif
-};
 
 IDEMIP_END_DECLS

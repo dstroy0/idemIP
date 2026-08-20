@@ -258,8 +258,37 @@ typedef struct
 } ArpTableNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const ArpTableNs ArpTable;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_arp_clear(uint8_t *restrict work);
+void idemip_arp_add(uint8_t *restrict work);
+void idemip_arp_find(uint8_t *restrict work);
+void idemip_arp_remove(uint8_t *restrict work);
+void idemip_arp_input(uint8_t *restrict work);
+void idemip_arp_queue(uint8_t *restrict work);
+void idemip_arp_dequeue(uint8_t *restrict work);
+void idemip_arp_tick(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `ArpTable.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const ArpTableNs ArpTable IDEMIP_UNUSED = {
+    .clear = idemip_arp_clear,
+    .add = idemip_arp_add,
+    .find = idemip_arp_find,
+    .remove = idemip_arp_remove,
+    .input = idemip_arp_input,
+    .queue = idemip_arp_queue,
+    .dequeue = idemip_arp_dequeue,
+    .tick = idemip_arp_tick};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4

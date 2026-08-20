@@ -839,7 +839,7 @@ static idemip_bool dhcp6_take_advertise(uint8_t *restrict work, const uint8_t *o
 
 // Every byte of the borrow, the operand block and the DUID region included, which leaves the state at
 // zero: IDLE, running no exchange.
-static void dhcp6_clear(uint8_t *restrict work)
+void idemip_dhcp6_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -852,7 +852,7 @@ static void dhcp6_clear(uint8_t *restrict work)
 // RFC 8415 sec 11.1 puts a DUID at "at least 1 octet and at most 128 octets" behind a 2-octet type
 // code, so a client DUID outside that, or a missing one, is refused here rather than written past at
 // the first build.
-static void dhcp6_bind(uint8_t *restrict work)
+void idemip_dhcp6_bind(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -881,7 +881,7 @@ static void dhcp6_bind(uint8_t *restrict work)
 // transaction-id sec 16.1 asks for and the word the first-message delay is drawn from both arrive as
 // operands, so this entry stays a function of the borrow. ERR from any state but IDLE: an exchange is
 // already running and repeating the call cannot change that.
-static void dhcp6_start(uint8_t *restrict work)
+void idemip_dhcp6_start(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -915,7 +915,7 @@ static void dhcp6_start(uint8_t *restrict work)
 
 // sec 18.2 names no stop, so this is the unit's off switch: the running exchange ends and no lease is
 // held. Idempotent, so an already-idle client reports OK.
-static void dhcp6_stop(uint8_t *restrict work)
+void idemip_dhcp6_stop(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -960,7 +960,7 @@ static void dhcp6_enter_bound(uint8_t *restrict work)
 // One received message, validated as sec 16 requires and acted on per sec 18.2.9 and sec 18.2.10. A
 // message the RFC has the client discard is ERR: the same octets can never be accepted, so there is
 // nothing for a caller to come back for.
-static void dhcp6_input(uint8_t *restrict work)
+void idemip_dhcp6_input(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1185,7 +1185,7 @@ static void dhcp6_input(uint8_t *restrict work)
 // The message the state owes, into the caller's buffer. BUSY when nothing is owed, which is every call
 // until a tick arms one and every call after the message has been taken. A buffer too short for the
 // message is ERR: retrying the same buffer cannot make it fit.
-static void dhcp6_build(uint8_t *restrict work)
+void idemip_dhcp6_build(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1302,7 +1302,7 @@ static void dhcp6_exchange_failed(uint8_t *restrict work)
 
 // The sec 15 retransmission timer and the sec 21.4 T1 and T2 deadlines. OK when the tick moved the
 // client on, BUSY when nothing was due yet, which is the ordinary answer on most ticks.
-static void dhcp6_tick(uint8_t *restrict work)
+void idemip_dhcp6_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1423,7 +1423,7 @@ static void dhcp6_tick(uint8_t *restrict work)
 // sec 18.2.3, the Confirm that asks whether the addresses still suit this link. It carries the IAs
 // "assigned to the interface", so ERR without a lease: there is nothing to confirm and repeating the
 // call cannot produce one.
-static void dhcp6_confirm(uint8_t *restrict work)
+void idemip_dhcp6_confirm(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1448,7 +1448,7 @@ static void dhcp6_confirm(uint8_t *restrict work)
 
 // sec 18.2.7, the Release to the server that assigned the leases. The Server Identifier of sec 21.3 is
 // a MUST here, so a client that never recorded one is refused.
-static void dhcp6_release(uint8_t *restrict work)
+void idemip_dhcp6_release(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1473,7 +1473,7 @@ static void dhcp6_release(uint8_t *restrict work)
 
 // sec 18.2.8, the Decline for an address already in use on the link. It names the server that
 // allocated the address in a sec 21.3 Server Identifier, so a client without one is refused.
-static void dhcp6_decline(uint8_t *restrict work)
+void idemip_dhcp6_decline(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1495,16 +1495,5 @@ static void dhcp6_decline(uint8_t *restrict work)
     io->status = IDEMIP_OK;
     dhcp6_publish(work);
 }
-
-const Dhcp6Ns Dhcp6 = {.clear = dhcp6_clear,
-                       .bind = dhcp6_bind,
-                       .start = dhcp6_start,
-                       .stop = dhcp6_stop,
-                       .input = dhcp6_input,
-                       .build = dhcp6_build,
-                       .tick = dhcp6_tick,
-                       .confirm = dhcp6_confirm,
-                       .release = dhcp6_release,
-                       .decline = dhcp6_decline};
 
 IDEMIP_END_DECLS

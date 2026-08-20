@@ -228,7 +228,7 @@ static idemip_bool ip6_forward_crosses_link(const Ip6ForwardArgs *a)
 // --- the entries -----------------------------------------------------------
 
 // The context, zeroed, then the mark. The operand block is the caller's and is left as it stands.
-static void ip6_forward_clear(uint8_t *restrict work)
+void idemip_ip6_forward_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -248,7 +248,7 @@ static void ip6_forward_clear(uint8_t *restrict work)
 // IDEMIP_NETIF_COUNT, a routed call with no next hop, or an outgoing MTU under the 1280 octets RFC
 // 8200 sec 5 requires of every link. Nothing here is BUSY: the same operands decide the same way
 // forever, so a retry can never change the answer.
-static void ip6_forward_decide(uint8_t *restrict work)
+void idemip_ip6_forward_decide(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -404,7 +404,5 @@ static void ip6_forward_decide(uint8_t *restrict work)
     io->netif = a->out_netif;
     io->status = IDEMIP_OK;
 }
-
-const Ip6ForwardNs Ip6Forward = {.clear = ip6_forward_clear, .decide = ip6_forward_decide};
 
 IDEMIP_END_DECLS

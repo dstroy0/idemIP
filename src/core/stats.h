@@ -276,8 +276,32 @@ typedef struct
     void (*const if_read)(uint8_t *restrict work);
 } StatsNs;
 
-/** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const StatsNs Stats;
+// What the table binds. Each takes the one borrow and nothing else: everything an entry reads is an
+// operand in the block at IDEMIP_STATS_OFF_IO, or a region of the borrow at a fixed offset.
+void idemip_stats_clear(uint8_t *restrict work);
+void idemip_stats_bump(uint8_t *restrict work);
+void idemip_stats_set(uint8_t *restrict work);
+void idemip_stats_read(uint8_t *restrict work);
+void idemip_stats_if_bump(uint8_t *restrict work);
+void idemip_stats_if_set(uint8_t *restrict work);
+void idemip_stats_if_read(uint8_t *restrict work);
+
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A `const`
+ * object whose initializer every translation unit can see is a compile-time fact, so `Stats.bump(w)`
+ * resolves to a named function and becomes a direct call, and the table itself is read by nothing at
+ * run time and is not emitted. An `extern` table leaves the call indirect: the caller loads the
+ * pointer and branches through it, because nothing at the call site says what it holds.
+ */
+static const StatsNs Stats IDEMIP_UNUSED = {.clear = idemip_stats_clear,
+                                            .bump = idemip_stats_bump,
+                                            .set = idemip_stats_set,
+                                            .read = idemip_stats_read,
+                                            .if_bump = idemip_stats_if_bump,
+                                            .if_set = idemip_stats_if_set,
+                                            .if_read = idemip_stats_if_read};
 
 IDEMIP_END_DECLS
 

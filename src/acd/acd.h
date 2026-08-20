@@ -221,8 +221,31 @@ typedef struct
 } AcdNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const AcdNs Acd;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_acd_clear(uint8_t *restrict work);
+void idemip_acd_start(uint8_t *restrict work);
+void idemip_acd_stop(uint8_t *restrict work);
+void idemip_acd_arp_in(uint8_t *restrict work);
+void idemip_acd_tick(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Acd.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const AcdNs Acd IDEMIP_UNUSED = {
+    .clear = idemip_acd_clear,
+    .start = idemip_acd_start,
+    .stop = idemip_acd_stop,
+    .arp_in = idemip_acd_arp_in,
+    .tick = idemip_acd_tick};
 // RFC 5227 sec 1.1 prints PROBE_MIN 1 second and PROBE_MAX 2 seconds, and sec 2.1.1 spaces each probe
 // "randomly and uniformly, PROBE_MIN to PROBE_MAX seconds apart", so the span between them is what a
 // random word is masked against.

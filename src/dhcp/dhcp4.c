@@ -935,7 +935,7 @@ static idemip_bool dhcp4_run(uint8_t *restrict work)
 
 // Every byte of the borrow, the operand block included, which leaves the state at zero: the INIT
 // sec 4.4.1 begins in.
-static void dhcp4_clear(uint8_t *restrict work)
+void idemip_dhcp4_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -947,7 +947,7 @@ static void dhcp4_clear(uint8_t *restrict work)
 
 // 'chaddr' is 16 octets and 'hlen' counts how many of them carry the address (RFC 2131 sec 2), so a
 // length past that, or a missing address, is refused here rather than read past at the first build.
-static void dhcp4_bind(uint8_t *restrict work)
+void idemip_dhcp4_bind(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -968,7 +968,7 @@ static void dhcp4_bind(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dhcp4_start(uint8_t *restrict work)
+void idemip_dhcp4_start(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1024,7 +1024,7 @@ static void dhcp4_start(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dhcp4_stop(uint8_t *restrict work)
+void idemip_dhcp4_stop(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1044,7 +1044,7 @@ static void dhcp4_stop(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dhcp4_input(uint8_t *restrict work)
+void idemip_dhcp4_input(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1067,7 +1067,7 @@ static void dhcp4_input(uint8_t *restrict work)
     io->status = took ? IDEMIP_OK : IDEMIP_ERR;
 }
 
-static void dhcp4_build(uint8_t *restrict work)
+void idemip_dhcp4_build(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1108,7 +1108,7 @@ static void dhcp4_build(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dhcp4_tick(uint8_t *restrict work)
+void idemip_dhcp4_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1128,7 +1128,7 @@ static void dhcp4_tick(uint8_t *restrict work)
     io->status = moved ? IDEMIP_OK : IDEMIP_BUSY;
 }
 
-static void dhcp4_release(uint8_t *restrict work)
+void idemip_dhcp4_release(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1157,7 +1157,7 @@ static void dhcp4_release(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dhcp4_decline(uint8_t *restrict work)
+void idemip_dhcp4_decline(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1184,7 +1184,7 @@ static void dhcp4_decline(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void dhcp4_inform(uint8_t *restrict work)
+void idemip_dhcp4_inform(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1216,16 +1216,5 @@ static void dhcp4_inform(uint8_t *restrict work)
     dhcp4_publish(work);
     io->status = IDEMIP_OK;
 }
-
-const Dhcp4Ns Dhcp4 = {.clear = dhcp4_clear,
-                       .bind = dhcp4_bind,
-                       .start = dhcp4_start,
-                       .stop = dhcp4_stop,
-                       .input = dhcp4_input,
-                       .build = dhcp4_build,
-                       .tick = dhcp4_tick,
-                       .release = dhcp4_release,
-                       .decline = dhcp4_decline,
-                       .inform = dhcp4_inform};
 
 IDEMIP_END_DECLS

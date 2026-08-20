@@ -372,8 +372,51 @@ typedef struct
 } NetifNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const NetifNs Netif;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_netif_clear(uint8_t *restrict work);
+void idemip_netif_bind(uint8_t *restrict work);
+void idemip_netif_unbind(uint8_t *restrict work);
+void idemip_netif_set_addr4(uint8_t *restrict work);
+void idemip_netif_set_mtu(uint8_t *restrict work);
+void idemip_netif_set_flags(uint8_t *restrict work);
+void idemip_netif_set_offload(uint8_t *restrict work);
+void idemip_netif_get(uint8_t *restrict work);
+void idemip_netif_find4(uint8_t *restrict work);
+void idemip_netif_local4(uint8_t *restrict work);
+void idemip_netif_add_addr6(uint8_t *restrict work);
+void idemip_netif_remove_addr6(uint8_t *restrict work);
+void idemip_netif_find_addr6(uint8_t *restrict work);
+void idemip_netif_get_addr6(uint8_t *restrict work);
+void idemip_netif_tick(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Netif.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const NetifNs Netif IDEMIP_UNUSED = {
+    .clear = idemip_netif_clear,
+    .bind = idemip_netif_bind,
+    .unbind = idemip_netif_unbind,
+    .set_addr4 = idemip_netif_set_addr4,
+    .set_mtu = idemip_netif_set_mtu,
+    .set_flags = idemip_netif_set_flags,
+    .set_offload = idemip_netif_set_offload,
+    .get = idemip_netif_get,
+    .find4 = idemip_netif_find4,
+    .local4 = idemip_netif_local4,
+    .add_addr6 = idemip_netif_add_addr6,
+    .remove_addr6 = idemip_netif_remove_addr6,
+    .find_addr6 = idemip_netif_find_addr6,
+    .get_addr6 = idemip_netif_get_addr6,
+    .tick = idemip_netif_tick};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET

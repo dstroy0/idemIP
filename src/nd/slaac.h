@@ -261,8 +261,35 @@ typedef struct
 } SlaacNs;
 
 /** @brief The one symbol this module exports. Immutable, so it costs no RAM. */
-extern const SlaacNs Slaac;
+// What the table binds. Each takes the one borrow and nothing else: everything an
+// entry reads is an operand in the block at offset zero, or a region of the borrow
+// at a fixed offset.
+void idemip_slaac_clear(uint8_t *restrict work);
+void idemip_slaac_link_local(uint8_t *restrict work);
+void idemip_slaac_prefix_in(uint8_t *restrict work);
+void idemip_slaac_find(uint8_t *restrict work);
+void idemip_slaac_get(uint8_t *restrict work);
+void idemip_slaac_remove(uint8_t *restrict work);
+void idemip_slaac_tick(uint8_t *restrict work);
 
+/**
+ * @brief The one symbol this module exports. Immutable, so it costs no RAM.
+ *
+ * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * `const` object whose initializer every translation unit can see is a compile-time fact, so
+ * `Slaac.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
+ * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
+ * caller loads the pointer and branches through it, because nothing at the call site says what it
+ * holds.
+ */
+static const SlaacNs Slaac IDEMIP_UNUSED = {
+    .clear = idemip_slaac_clear,
+    .link_local = idemip_slaac_link_local,
+    .prefix_in = idemip_slaac_prefix_in,
+    .find = idemip_slaac_find,
+    .get = idemip_slaac_get,
+    .remove = idemip_slaac_remove,
+    .tick = idemip_slaac_tick};
 // Every slot index counts the addresses the borrow holds, so IDEMIP_SLAAC_NONE names none of them.
 static_assert(IDEMIP_IP6_ADDRESSES < IDEMIP_SLAAC_NONE,
               "the list is wider than the index a result member carries");

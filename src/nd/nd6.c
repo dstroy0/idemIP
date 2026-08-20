@@ -565,7 +565,7 @@ static void nd6_free_neighbor(uint8_t *restrict work, uint8_t ni)
 
 // Zeroes the context and the five tables, then marks the borrow this module's. The operand block is
 // the caller's and is left alone.
-static void nd6_clear(uint8_t *restrict work)
+void idemip_nd6_clear(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -577,7 +577,7 @@ static void nd6_clear(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void nd6_neighbor_find(uint8_t *restrict work)
+void idemip_nd6_neighbor_find(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -692,7 +692,7 @@ static void nd6_set_neighbor(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void nd6_neighbor_set(uint8_t *restrict work)
+void idemip_nd6_neighbor_set(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -710,7 +710,7 @@ static void nd6_neighbor_set(uint8_t *restrict work)
     nd6_set_neighbor(work);
 }
 
-static void nd6_neighbor_confirm(uint8_t *restrict work)
+void idemip_nd6_neighbor_confirm(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -742,7 +742,7 @@ static void nd6_neighbor_confirm(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void nd6_neighbor_used(uint8_t *restrict work)
+void idemip_nd6_neighbor_used(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -774,7 +774,7 @@ static void nd6_neighbor_used(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void nd6_neighbor_remove(uint8_t *restrict work)
+void idemip_nd6_neighbor_remove(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -812,7 +812,7 @@ static void nd6_neighbor_remove(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void nd6_dest_find(uint8_t *restrict work)
+void idemip_nd6_dest_find(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -847,7 +847,7 @@ static void nd6_dest_find(uint8_t *restrict work)
     }
 }
 
-static void nd6_dest_set(uint8_t *restrict work)
+void idemip_nd6_dest_set(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -921,7 +921,7 @@ static void nd6_dest_set(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void nd6_prefix_set(uint8_t *restrict work)
+void idemip_nd6_prefix_set(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1004,7 +1004,7 @@ static void nd6_prefix_set(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void nd6_prefix_on_link(uint8_t *restrict work)
+void idemip_nd6_prefix_on_link(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1056,7 +1056,7 @@ static void nd6_prefix_on_link(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void nd6_router_set(uint8_t *restrict work)
+void idemip_nd6_router_set(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1178,7 +1178,7 @@ static void nd6_router_set(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void nd6_router_select(uint8_t *restrict work)
+void idemip_nd6_router_select(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1265,7 +1265,7 @@ static void nd6_router_select(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void nd6_pending_push(uint8_t *restrict work)
+void idemip_nd6_pending_push(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1329,7 +1329,7 @@ static void nd6_pending_push(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void nd6_pending_pop(uint8_t *restrict work)
+void idemip_nd6_pending_pop(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1359,7 +1359,7 @@ static void nd6_pending_pop(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-static void nd6_params_set(uint8_t *restrict work)
+void idemip_nd6_params_set(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1609,7 +1609,7 @@ static void nd6_sweep(uint8_t *restrict work)
     io->status = (expired != 0u || reported) ? IDEMIP_OK : IDEMIP_BUSY;
 }
 
-static void nd6_tick(uint8_t *restrict work)
+void idemip_nd6_tick(uint8_t *restrict work)
 {
     if (!work)
     {
@@ -1633,22 +1633,5 @@ static void nd6_tick(uint8_t *restrict work)
     ctx->now_ms = io->tick_args.now_ms;
     nd6_sweep(work);
 }
-
-const Nd6Ns Nd6 = {.clear = nd6_clear,
-                   .neighbor_find = nd6_neighbor_find,
-                   .neighbor_set = nd6_neighbor_set,
-                   .neighbor_confirm = nd6_neighbor_confirm,
-                   .neighbor_used = nd6_neighbor_used,
-                   .neighbor_remove = nd6_neighbor_remove,
-                   .dest_find = nd6_dest_find,
-                   .dest_set = nd6_dest_set,
-                   .prefix_set = nd6_prefix_set,
-                   .prefix_on_link = nd6_prefix_on_link,
-                   .router_set = nd6_router_set,
-                   .router_select = nd6_router_select,
-                   .pending_push = nd6_pending_push,
-                   .pending_pop = nd6_pending_pop,
-                   .params_set = nd6_params_set,
-                   .tick = nd6_tick};
 
 IDEMIP_END_DECLS
