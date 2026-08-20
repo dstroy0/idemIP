@@ -43,6 +43,11 @@ extern void test_build_round_trips_every_field(void);
 extern void test_length_constants(void);
 extern void test_minimum_forwardable_datagram_is_sixty_eight_octets(void);
 extern void test_five_hundred_seventy_six_is_the_required_reassembly_size(void);
+extern void test_mask_ones_counts_every_prefix_length(void);
+extern void test_mask_ones_counts_a_mask_with_holes(void);
+extern void test_every_leading_run_of_ones_is_contiguous(void);
+extern void test_a_mask_with_a_hole_is_not_contiguous(void);
+extern void test_a_contiguous_mask_is_rebuilt_from_its_own_count(void);
 
 
 /*=======Mock Management=====*/
@@ -138,6 +143,11 @@ int main(void)
   run_test(test_length_constants, "test_length_constants", 822);
   run_test(test_minimum_forwardable_datagram_is_sixty_eight_octets, "test_minimum_forwardable_datagram_is_sixty_eight_octets", 832);
   run_test(test_five_hundred_seventy_six_is_the_required_reassembly_size, "test_five_hundred_seventy_six_is_the_required_reassembly_size", 840);
+  run_test(test_mask_ones_counts_every_prefix_length, "test_mask_ones_counts_every_prefix_length", 853);
+  run_test(test_mask_ones_counts_a_mask_with_holes, "test_mask_ones_counts_a_mask_with_holes", 865);
+  run_test(test_every_leading_run_of_ones_is_contiguous, "test_every_leading_run_of_ones_is_contiguous", 876);
+  run_test(test_a_mask_with_a_hole_is_not_contiguous, "test_a_mask_with_a_hole_is_not_contiguous", 886);
+  run_test(test_a_contiguous_mask_is_rebuilt_from_its_own_count, "test_a_contiguous_mask_is_rebuilt_from_its_own_count", 897);
 
   return UNITY_END();
 }

@@ -44,7 +44,8 @@ typedef struct
     uint8_t tos;
     uint8_t flags;
     uint8_t state;
-    uint8_t reserved[8];
+    uint8_t plen; ///< RFC 1812 sec 5.2.4.3's route.length, taken from the mask when the row is written
+    uint8_t reserved[7];
 } Ip4RouteEntry;
 
 // The context: the mark, and the millisecond of the last aging sweep.
@@ -96,25 +97,20 @@ static idemip_bool ip4_route_ready(uint8_t *restrict work)
 
 // RFC 1122 sec 3.3.1.1 (a): the mask "selects the network number and subnet number fields", and RFC
 // 1812 sec 5.2.4.3 rule 1 reads it as "the most significant route.length bits", so the set bits run
-// from bit 31 down with no gap. Complementing turns that into a low run of ones, and a low run of
-// ones and its successor share no bit.
+// from bit 31 down with no gap. A route whose mask has a hole has no route.length to match on and is
+// refused. ipv4.h holds the test, and held it while this unit carried its own copy of the same
+// arithmetic.
 static idemip_bool ip4_route_mask_ok(uint32_t mask)
 {
-    uint32_t inv = ~mask;
-    return (idemip_bool)((inv & (inv + 1u)) == 0u);
+    return idemip_ip4_addr_mask_contiguous(mask);
 }
 
-// route.length of RFC 1812 sec 5.2.4.3: the set bits of the mask, counted by folding pairs, then
-// nibbles, then bytes, then halves.
+// route.length of RFC 1812 sec 5.2.4.3, taken once when a row is written rather than on every pass
+// that reads it. The lookup makes four passes over the table and each needs this for every row it
+// looks at, so the row carrying it turns 4N population counts per lookup into none.
 static uint8_t ip4_route_prefix_len(uint32_t mask)
 {
-    uint32_t n = mask;
-    n = n - ((n >> 1) & 0x55555555u);
-    n = (n & 0x33333333u) + ((n >> 2) & 0x33333333u);
-    n = (n + (n >> 4)) & 0x0F0F0F0Fu;
-    n = n + (n >> 8);
-    n = n + (n >> 16);
-    return (uint8_t)(n & 0x3Fu);
+    return idemip_ip4_addr_mask_ones(mask);
 }
 
 // The row carrying exactly these four RFC 1122 sec 3.3.1.3 fields, or the terminator. Field (4) is
@@ -178,7 +174,7 @@ static uint8_t ip4_route_best(uint8_t *restrict work, uint32_t dst, uint8_t tos,
         {
             continue;
         }
-        uint8_t len = ip4_route_prefix_len(e->mask);
+        uint8_t len = e->plen;
         if (!matched || len > best_len)
         {
             best_len = len;
@@ -202,7 +198,7 @@ static uint8_t ip4_route_best(uint8_t *restrict work, uint32_t dst, uint8_t tos,
     for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP4_ROUTES; i++)
     {
         Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
-        if (ip4_route_basic_match(e, dst) && ip4_route_prefix_len(e->mask) == best_len && e->tos == tos)
+        if (ip4_route_basic_match(e, dst) && e->plen == best_len && e->tos == tos)
         {
             exact = IDEMIP_TRUE;
         }
@@ -216,7 +212,7 @@ static uint8_t ip4_route_best(uint8_t *restrict work, uint32_t dst, uint8_t tos,
     for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP4_ROUTES; i++)
     {
         Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
-        if (!ip4_route_basic_match(e, dst) || ip4_route_prefix_len(e->mask) != best_len || e->tos != want)
+        if (!ip4_route_basic_match(e, dst) || e->plen != best_len || e->tos != want)
         {
             continue;
         }
@@ -233,7 +229,7 @@ static uint8_t ip4_route_best(uint8_t *restrict work, uint32_t dst, uint8_t tos,
         for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP4_ROUTES; i++)
         {
             Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
-            if (ip4_route_basic_match(e, dst) && ip4_route_prefix_len(e->mask) == best_len &&
+            if (ip4_route_basic_match(e, dst) && e->plen == best_len &&
                 (e->flags & (uint8_t)IDEMIP_IP4_ROUTE_F_GATEWAY) == 0u)
             {
                 out->direct = IDEMIP_TRUE;
@@ -250,6 +246,7 @@ static void ip4_route_derive_host(Ip4RouteEntry *e, const Ip4RouteEntry *from, u
 {
     e->dst = dst;
     e->mask = IP4_ROUTE_MASK_HOST;
+    e->plen = ip4_route_prefix_len(IP4_ROUTE_MASK_HOST);
     e->gw = from->gw;
     e->pmtu_ms = 0;
     e->pmtu = 0;
@@ -319,6 +316,7 @@ void idemip_ip4_route_add(uint8_t *restrict work)
     Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
     e->dst = dst;
     e->mask = mask;
+    e->plen = ip4_route_prefix_len(mask);
     e->gw = io->add_args.gw;
     e->pmtu_ms = 0;
     e->pmtu = 0;

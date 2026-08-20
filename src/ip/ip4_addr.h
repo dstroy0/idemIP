@@ -216,29 +216,10 @@ IDEMIP_INLINE IdemIpIp4AddrType idemip_ip4_addr_type(uint32_t addr)
     return IDEMIP_IP4_TYPE_UNICAST;
 }
 
-/** @brief Ones in the mask, folded in five steps. Shifts and masks only: no divide, no table. */
-IDEMIP_INLINE uint8_t idemip_ip4_addr_mask_ones(uint32_t mask)
-{
-    uint32_t n = mask - ((mask >> 1) & 0x55555555u);
-    n = (n & 0x33333333u) + ((n >> 2) & 0x33333333u);
-    n = (n + (n >> 4)) & 0x0F0F0F0Fu;
-    n = n + (n >> 8);
-    n = n + (n >> 16);
-    return (uint8_t)(n & 0x3Fu);
-}
-
-/**
- * @brief True when the mask's ones are its leading bits, with no hole below them.
- *
- * Such a mask leaves a host part one below a power of two, so adding one to the complement clears
- * every bit but the carry. RFC 1122 sec 3.2.1.3 allows a mask with holes, which fails this test and
- * is reported rather than refused.
- */
-IDEMIP_INLINE idemip_bool idemip_ip4_addr_mask_contiguous(uint32_t mask)
-{
-    uint32_t host = (uint32_t)(~mask) + 1u;
-    return ((host & (host - 1u)) == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
-}
+// idemip_ip4_addr_mask_ones and idemip_ip4_addr_mask_contiguous were here. They are arithmetic over
+// a mask rather than anything about classifying an address, and ip4_route needs both - it has no
+// reason to include a header about address types, so it carried its own copy of each. They are in
+// ipv4.h now, which both units already take, and which this header includes.
 
 /**
  * @brief Write the RFC 1112 sec 6.4 Ethernet address of a class D group into @p out.

@@ -841,3 +841,66 @@ void test_five_hundred_seventy_six_is_the_required_reassembly_size(void)
 {
     TEST_ASSERT_EQUAL_UINT32(576u, IDEMIP_IPV4_MIN_MTU);
 }
+
+// --- the subnet mask ---------------------------------------------------------
+// Two units read these: ip4_addr reports what a mask says about an address, and ip4_route needs RFC
+// 1812 sec 5.2.4.3's route.length for every row it prunes. They were tested only through the entry
+// that reports them, at five prefix lengths. They are pure arithmetic over 33 legal masks, so every
+// one of them fits in a case.
+
+// RFC 1812 sec 5.2.4.3 reads a mask as "the most significant route.length bits", so counting its
+// ones has to answer route.length at every length such a mask can have.
+void test_mask_ones_counts_every_prefix_length(void)
+{
+    for (unsigned len = 0; len <= 32u; len++)
+    {
+        const uint32_t mask = (len == 0u) ? 0u : (uint32_t)(0xFFFFFFFFu << (32u - len));
+        TEST_ASSERT_EQUAL_UINT8_MESSAGE((uint8_t)len, idemip_ip4_addr_mask_ones(mask),
+                                        "a contiguous mask must count as its own prefix length");
+    }
+}
+
+// The count is a population count, so it answers for a mask with holes too - it is
+// idemip_ip4_addr_mask_contiguous that says whether the mask is one RFC 1812 can use.
+void test_mask_ones_counts_a_mask_with_holes(void)
+{
+    TEST_ASSERT_EQUAL_UINT8(16u, idemip_ip4_addr_mask_ones(0xFF00FF00u));
+    TEST_ASSERT_EQUAL_UINT8(1u, idemip_ip4_addr_mask_ones(0x00000001u));
+    TEST_ASSERT_EQUAL_UINT8(32u, idemip_ip4_addr_mask_ones(0xFFFFFFFFu));
+    TEST_ASSERT_EQUAL_UINT8(0u, idemip_ip4_addr_mask_ones(0u));
+}
+
+// RFC 1122 sec 3.2.1.3: the "-1" notation "is not intended to imply that the 1-bits in an address
+// mask need be contiguous", so a holed mask is a thing that exists and has to be recognised. Every
+// mask whose ones are its leading bits passes, including the two ends.
+void test_every_leading_run_of_ones_is_contiguous(void)
+{
+    for (unsigned len = 0; len <= 32u; len++)
+    {
+        const uint32_t mask = (len == 0u) ? 0u : (uint32_t)(0xFFFFFFFFu << (32u - len));
+        TEST_ASSERT_TRUE_MESSAGE(idemip_ip4_addr_mask_contiguous(mask),
+                                 "a mask that is a leading run of ones must read as contiguous");
+    }
+}
+
+void test_a_mask_with_a_hole_is_not_contiguous(void)
+{
+    TEST_ASSERT_FALSE(idemip_ip4_addr_mask_contiguous(0xFF00FF00u));
+    TEST_ASSERT_FALSE(idemip_ip4_addr_mask_contiguous(0x80000001u));
+    TEST_ASSERT_FALSE(idemip_ip4_addr_mask_contiguous(0xFFFFFFFDu)); // a /32 with bit 1 punched out
+    TEST_ASSERT_FALSE(idemip_ip4_addr_mask_contiguous(0x00000001u)); // ones, but not leading ones
+}
+
+// The two answer about the same mask, so a mask the second rejects still has a count and a mask it
+// accepts counts to a length that reconstructs it. That round trip is what ip4_route relies on when
+// it stores route.length beside the mask rather than recomputing it.
+void test_a_contiguous_mask_is_rebuilt_from_its_own_count(void)
+{
+    for (unsigned len = 0; len <= 32u; len++)
+    {
+        const uint32_t mask = (len == 0u) ? 0u : (uint32_t)(0xFFFFFFFFu << (32u - len));
+        const uint8_t ones = idemip_ip4_addr_mask_ones(mask);
+        const uint32_t rebuilt = (ones == 0u) ? 0u : (uint32_t)(0xFFFFFFFFu << (32u - ones));
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(mask, rebuilt, "route.length must name the mask it came from");
+    }
+}

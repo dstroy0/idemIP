@@ -443,6 +443,42 @@ IDEMIP_INLINE IdemIpStatus idemip_ip4_verify(const uint8_t *h, size_t avail)
 }
 
 // ---------------------------------------------------------------------------
+// A subnet mask
+// ---------------------------------------------------------------------------
+// Arithmetic over the mask itself, which both the address classifier and the routing table ask for.
+// RFC 1122 sec 3.3.1.1 (a) makes it "a 32-bit mask that selects the network number and subnet number
+// fields", and RFC 1812 sec 5.2.4.3 rule 1 reads the same mask as "the most significant
+// route.length bits".
+//
+// They lived in ip4_addr.h. ip4_route has no reason to include a header about classifying addresses,
+// so it wrote its own copy of each, the same arithmetic character for character. Here they are one
+// copy, in the header both units already take.
+
+/** @brief Ones in the mask, folded in five steps. Shifts and masks only: no divide, no table. */
+IDEMIP_INLINE uint8_t idemip_ip4_addr_mask_ones(uint32_t mask)
+{
+    uint32_t n = mask - ((mask >> 1) & 0x55555555u);
+    n = (n & 0x33333333u) + ((n >> 2) & 0x33333333u);
+    n = (n + (n >> 4)) & 0x0F0F0F0Fu;
+    n = n + (n >> 8);
+    n = n + (n >> 16);
+    return (uint8_t)(n & 0x3Fu);
+}
+
+/**
+ * @brief True when the mask's ones are its leading bits, with no hole below them.
+ *
+ * Such a mask leaves a host part one below a power of two, so adding one to the complement clears
+ * every bit but the carry. RFC 1122 sec 3.2.1.3 allows a mask with holes, which fails this test and
+ * is reported rather than refused.
+ */
+IDEMIP_INLINE idemip_bool idemip_ip4_addr_mask_contiguous(uint32_t mask)
+{
+    uint32_t host = (uint32_t)(~mask) + 1u;
+    return ((host & (host - 1u)) == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+}
+
+// ---------------------------------------------------------------------------
 // The map closes on itself
 // ---------------------------------------------------------------------------
 // Each offset is the one before it plus that field's width, and the last lands on the option-free
