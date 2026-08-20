@@ -71,6 +71,10 @@ typedef struct
     uint32_t ready;
 } DispatchCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_DISPATCH_OFF_CTX, sizeof(DispatchCtx), IDEMIP_DISPATCH_OFF_END, "dispatch's context");
+
 // The mark clear leaves.
 #define DISPATCH_READY 0x44535043u
 

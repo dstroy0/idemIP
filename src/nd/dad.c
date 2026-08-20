@@ -53,6 +53,10 @@ typedef struct
     uint32_t tick_hi; // its high word, raised each time that reading wraps
 } DadCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_DAD_OFF_CTX, sizeof(DadCtx), IDEMIP_DAD_OFF_ENTRIES, "dad's context");
+
 // An index is (i << SHIFT), so each entry is exactly its width.
 static_assert(sizeof(DadEntry) == (1u << IDEMIP_DAD_ENTRY_SHIFT),
               "a DAD entry must be 1 << IDEMIP_DAD_ENTRY_SHIFT wide");

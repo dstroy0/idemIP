@@ -123,6 +123,10 @@ typedef struct
     idemip_bool ready;
 } Nd6Ctx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_ND6_OFF_CTX, sizeof(Nd6Ctx), IDEMIP_ND6_OFF_END, "nd6's context");
+
 // An index is (i << SHIFT), so each entry is exactly its width.
 static_assert(sizeof(Nd6Neighbor) == (1u << IDEMIP_ND6_NEIGHBOR_ENTRY_SHIFT),
               "a neighbor entry must be 1 << IDEMIP_ND6_NEIGHBOR_ENTRY_SHIFT wide");

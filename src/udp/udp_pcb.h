@@ -260,7 +260,7 @@ typedef struct
 // operand block and the context growing does not move an entry.
 
 #define IDEMIP_UDP_PCB_OFF_IO 0u ///< the operand and result block
-#define IDEMIP_UDP_PCB_OFF_CTX (IDEMIP_UDP_PCB_OFF_IO + sizeof(UdpPcbIo)) ///< the running context
+#define IDEMIP_UDP_PCB_OFF_CTX (IDEMIP_UDP_PCB_OFF_IO + IDEMIP_ROUND_UP(sizeof(UdpPcbIo), IDEMIP_ALIGN)) ///< the running context
 #define IDEMIP_UDP_PCB_OFF_TAB IDEMIP_UDP_PCB_CTX_BYTES ///< IDEMIP_UDP_PCBS entries follow
 
 /** @brief The operand block, at its offset in the caller's borrow. */

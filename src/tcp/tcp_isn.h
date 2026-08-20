@@ -124,7 +124,7 @@ typedef struct
 // operand block and the context growing does not move either.
 
 #define IDEMIP_TCP_ISN_OFF_IO 0u ///< the operand and result block
-#define IDEMIP_TCP_ISN_OFF_CTX (IDEMIP_TCP_ISN_OFF_IO + sizeof(TcpIsnIo)) ///< the secret key and M's base
+#define IDEMIP_TCP_ISN_OFF_CTX (IDEMIP_TCP_ISN_OFF_IO + IDEMIP_ROUND_UP(sizeof(TcpIsnIo), IDEMIP_ALIGN)) ///< the secret key and M's base
 
 /**
  * @brief The connection-id the PRF is fed, IDEMIP_TCP_ISN_BLOCK_BYTES octets.

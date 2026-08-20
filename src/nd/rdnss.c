@@ -43,6 +43,10 @@ typedef struct
     uint32_t tick_hi;
 } RdnssCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_RDNSS_OFF_CTX, sizeof(RdnssCtx), IDEMIP_RDNSS_OFF_ENTRIES, "rdnss's context");
+
 // An index is (i << SHIFT), so each entry is exactly its width.
 static_assert(sizeof(RdnssEntry) == (1u << IDEMIP_RDNSS_ENTRY_SHIFT),
               "an RDNSS entry must be 1 << IDEMIP_RDNSS_ENTRY_SHIFT wide");

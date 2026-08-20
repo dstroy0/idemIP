@@ -39,6 +39,10 @@ typedef struct
     uint8_t pad[2];
 } TimeoutsCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_TIMEOUTS_OFF_CTX, sizeof(TimeoutsCtx), IDEMIP_TIMEOUTS_OFF_TAB, "timeouts's context");
+
 #define TIMEOUTS_MAGIC 0x54494D45u ///< what clear writes
 #define TIMEOUTS_NONE 0xFFu        ///< the end of the armed list
 #define TIMEOUTS_TAB_BYTES ((size_t)(IDEMIP_TIMEOUTS) << IDEMIP_TIMEOUT_ENTRY_SHIFT)

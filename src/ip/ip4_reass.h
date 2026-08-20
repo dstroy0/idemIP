@@ -152,7 +152,7 @@ typedef struct
 #define IDEMIP_IP4_REASS_OFF_IO 0u
 
 /** @brief The private context, right behind the operand block. */
-#define IDEMIP_IP4_REASS_OFF_CTX (IDEMIP_IP4_REASS_OFF_IO + sizeof(Ip4ReassIo))
+#define IDEMIP_IP4_REASS_OFF_CTX (IDEMIP_IP4_REASS_OFF_IO + IDEMIP_ROUND_UP(sizeof(Ip4ReassIo), IDEMIP_ALIGN))
 
 /** @brief IDEMIP_IP4_REASS_DATAGRAMS rows, one RFC 791 buffer identifier each. */
 #define IDEMIP_IP4_REASS_OFF_DGRAM IDEMIP_IP4_REASS_CTX_BYTES

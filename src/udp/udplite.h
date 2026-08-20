@@ -180,7 +180,7 @@ typedef struct
 // operand block and the context behind it.
 
 #define IDEMIP_UDPLITE_OFF_IO 0u                                             ///< the operand and result block
-#define IDEMIP_UDPLITE_OFF_CTX (IDEMIP_UDPLITE_OFF_IO + sizeof(UdpLiteIo))   ///< the running context
+#define IDEMIP_UDPLITE_OFF_CTX (IDEMIP_UDPLITE_OFF_IO + IDEMIP_ROUND_UP(sizeof(UdpLiteIo), IDEMIP_ALIGN))   ///< the running context
 
 /** @brief The operand block, at its offset in the caller's borrow. */
 #define IDEMIP_UDPLITE_IO(w) ((UdpLiteIo *)(void *)((w) + IDEMIP_UDPLITE_OFF_IO))

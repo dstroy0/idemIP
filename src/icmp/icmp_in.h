@@ -236,7 +236,7 @@ typedef struct
 // the map is public.
 
 #define IDEMIP_ICMP_IN_OFF_IO 0u ///< the operand and result block
-#define IDEMIP_ICMP_IN_OFF_CTX (IDEMIP_ICMP_IN_OFF_IO + sizeof(IcmpInIo)) ///< the running context
+#define IDEMIP_ICMP_IN_OFF_CTX (IDEMIP_ICMP_IN_OFF_IO + IDEMIP_ROUND_UP(sizeof(IcmpInIo), IDEMIP_ALIGN)) ///< the running context
 
 /** @brief The operand block, at its offset in the caller's borrow. */
 #define IDEMIP_ICMP_IN_IO(w) ((IcmpInIo *)(void *)((w) + IDEMIP_ICMP_IN_OFF_IO))

@@ -48,6 +48,10 @@ typedef struct
     uint32_t tick_hi;
 } SlaacCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_SLAAC_OFF_CTX, sizeof(SlaacCtx), IDEMIP_SLAAC_OFF_ENTRIES, "slaac's context");
+
 // An index is (i << SHIFT), so each entry is exactly its width.
 static_assert(sizeof(SlaacEntry) == (1u << IDEMIP_SLAAC_ENTRY_SHIFT),
               "a SLAAC entry must be 1 << IDEMIP_SLAAC_ENTRY_SHIFT wide");

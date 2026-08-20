@@ -50,6 +50,10 @@ typedef struct
     uint32_t ready;
 } Ip6ForwardCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_IP6_FORWARD_OFF_CTX, sizeof(Ip6ForwardCtx), IDEMIP_IP6_FORWARD_BORROW, "ip6_forward's context");
+
 // The caller's borrow, split: the operand block, then the context. ip6_forward.h publishes the
 // offsets; the assert proves the span covers them before anything runs.
 static_assert(IDEMIP_IP6_FORWARD_OFF_CTX + sizeof(Ip6ForwardCtx) <= IDEMIP_IP6_FORWARD_BORROW,

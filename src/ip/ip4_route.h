@@ -187,7 +187,7 @@ typedef struct
 #define IDEMIP_IP4_ROUTE_OFF_IO 0u
 
 /** @brief The private context, right behind the operand block. */
-#define IDEMIP_IP4_ROUTE_OFF_CTX (IDEMIP_IP4_ROUTE_OFF_IO + sizeof(Ip4RouteIo))
+#define IDEMIP_IP4_ROUTE_OFF_CTX (IDEMIP_IP4_ROUTE_OFF_IO + IDEMIP_ROUND_UP(sizeof(Ip4RouteIo), IDEMIP_ALIGN))
 
 /** @brief IDEMIP_IP4_ROUTES rows, at the end of the head region. */
 #define IDEMIP_IP4_ROUTE_OFF_TAB IDEMIP_IP4_ROUTE_CTX_BYTES

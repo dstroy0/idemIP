@@ -38,6 +38,10 @@ typedef struct
     uint32_t ready;
 } Pmtu6Ctx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_PMTU6_OFF_CTX, sizeof(Pmtu6Ctx), IDEMIP_PMTU6_OFF_END, "pmtu6's context");
+
 // Stamp i is at (i << SHIFT), so the width has to be exactly the shift.
 static_assert(sizeof(Pmtu6Stamp) == (1u << IDEMIP_PMTU6_ENTRY_SHIFT),
               "a Pmtu6Stamp must be exactly 1 << IDEMIP_PMTU6_ENTRY_SHIFT wide - pad it, or raise the shift");

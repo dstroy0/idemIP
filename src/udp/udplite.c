@@ -25,6 +25,10 @@ typedef struct
     uint32_t ready;
 } UdpLiteCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_UDPLITE_OFF_CTX, sizeof(UdpLiteCtx), IDEMIP_UDPLITE_BORROW, "udplite's context");
+
 // The mark clear leaves.
 #define UDPLITE_READY 0x554C5445u
 

@@ -85,6 +85,10 @@ typedef struct
     uint8_t next_server; ///< the server the next question goes to first (RFC 1035 sec 4.2.1)
 } DnsCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_DNS_OFF_CTX, sizeof(DnsCtx), IDEMIP_DNS_OFF_ENTRIES, "dns's context");
+
 // An index is a shift, so every entry width is a power of two and the struct is padded to it.
 static_assert(sizeof(DnsQuery) == (1u << IDEMIP_DNS_QUERY_ENTRY_SHIFT),
               "DnsQuery is not 1 << IDEMIP_DNS_QUERY_ENTRY_SHIFT wide: pad it, or raise the shift");

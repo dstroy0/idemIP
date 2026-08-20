@@ -53,6 +53,10 @@ typedef struct
     idemip_bool v1_present[IDEMIP_NETIF_COUNT];
 } IgmpCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_IGMP_OFF_CTX, sizeof(IgmpCtx), IDEMIP_IGMP_OFF_END, "igmp's context");
+
 // An index is (i << SHIFT), so each entry is exactly its width.
 static_assert(sizeof(IgmpGroup) == (1u << IDEMIP_IGMP_ENTRY_SHIFT),
               "an IgmpGroup must be exactly 1 << IDEMIP_IGMP_ENTRY_SHIFT wide - pad it, or raise the shift");

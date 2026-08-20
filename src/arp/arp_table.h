@@ -180,7 +180,7 @@ typedef struct
 #define IDEMIP_ARP_OFF_IO 0u
 
 /** @brief The private context, right behind the operand block. */
-#define IDEMIP_ARP_OFF_CTX (IDEMIP_ARP_OFF_IO + sizeof(ArpTableIo))
+#define IDEMIP_ARP_OFF_CTX (IDEMIP_ARP_OFF_IO + IDEMIP_ROUND_UP(sizeof(ArpTableIo), IDEMIP_ALIGN))
 
 /** @brief IDEMIP_ARP_ENTRIES rows, one RFC 826 triplet each, at the end of the head region. */
 #define IDEMIP_ARP_OFF_TAB IDEMIP_ARP_CTX_BYTES

@@ -239,7 +239,7 @@ typedef struct
 // compile-time offset, so nothing is derived at runtime.
 
 #define IDEMIP_TCP_IN_OFF_IO 0u ///< the operand and result block
-#define IDEMIP_TCP_IN_OFF_CTX (IDEMIP_TCP_IN_OFF_IO + sizeof(TcpInIo)) ///< the running context
+#define IDEMIP_TCP_IN_OFF_CTX (IDEMIP_TCP_IN_OFF_IO + IDEMIP_ROUND_UP(sizeof(TcpInIo), IDEMIP_ALIGN)) ///< the running context
 
 /** @brief The operand block, at its offset in the caller's borrow. */
 #define IDEMIP_TCP_IN_IO(w) ((TcpInIo *)(void *)((w) + IDEMIP_TCP_IN_OFF_IO))

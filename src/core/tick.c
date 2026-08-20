@@ -47,6 +47,10 @@ typedef struct
     idemip_bool ip4_timed_out;
 } TickCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_TICK_OFF_CTX, sizeof(TickCtx), IDEMIP_TICK_OFF_END, "tick's context");
+
 // The mark clear leaves.
 #define TICK_READY 0x54494B4Bu
 

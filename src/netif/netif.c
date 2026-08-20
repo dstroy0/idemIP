@@ -29,6 +29,10 @@ typedef struct
     uint32_t tick_hi; // its high word, raised each time that reading wraps
 } NetifCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_NETIF_OFF_CTX, sizeof(NetifCtx), IDEMIP_NETIF_OFF_TAB, "netif's context");
+
 // One interface. RFC 1122 sec 3.3.1.1 routes by addr and mask, sec 3.3.1.2 by gw. hwaddr is the
 // RFC 894 48-bit address, phy is the borrow this interface's link was bound in, mtu6 is what an
 // RFC 4861 sec 4.6.4 MTU option revised the link MTU to.

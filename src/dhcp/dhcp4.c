@@ -47,6 +47,10 @@ typedef struct
     uint16_t secs; ///< the sec 2 'secs' field, seconds since acquisition began
 } Dhcp4Ctx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_DHCP4_OFF_CTX, sizeof(Dhcp4Ctx), IDEMIP_DHCP4_BORROW, "dhcp4's context");
+
 // The caller's borrow, split: the operand block, then the context. dhcp4.h publishes the offsets;
 // the asserts below prove the span covers them before anything runs.
 static_assert(IDEMIP_DHCP4_OFF_CTX + sizeof(Dhcp4Ctx) <= IDEMIP_DHCP4_CTX_BYTES,

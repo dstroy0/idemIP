@@ -74,6 +74,10 @@ typedef struct
     idemip_bool ready;
 } Ip6SelectCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_IP6_SELECT_OFF_CTX, sizeof(Ip6SelectCtx), IDEMIP_IP6_SELECT_OFF_END, "ip6_select's context");
+
 // An index is (i << SHIFT), so each entry is exactly its width.
 static_assert(sizeof(Ip6SelectSource) == (1u << IDEMIP_IP6_SELECT_SOURCE_ENTRY_SHIFT),
               "a candidate entry must be 1 << IDEMIP_IP6_SELECT_SOURCE_ENTRY_SHIFT wide");

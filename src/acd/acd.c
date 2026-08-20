@@ -41,6 +41,10 @@ typedef struct
     uint8_t reserved[3];
 } AcdCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_ACD_OFF_CTX, sizeof(AcdCtx), IDEMIP_ACD_OFF_END, "acd's context");
+
 // The caller's borrow, split: the operand block, then the context. acd.h publishes the offsets; these
 // two asserts prove the span covers them before anything runs. The first keeps the context inside the
 // region IDEMIP_ACD_CTX_BYTES names, the second the whole map inside the borrow.

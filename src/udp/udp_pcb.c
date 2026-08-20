@@ -61,6 +61,10 @@ typedef struct
     uint32_t ready;
 } UdpPcbCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_UDP_PCB_OFF_CTX, sizeof(UdpPcbCtx), IDEMIP_UDP_PCB_OFF_TAB, "udp_pcb's context");
+
 // The mark clear leaves.
 #define UDP_PCB_READY 0x55445050u
 

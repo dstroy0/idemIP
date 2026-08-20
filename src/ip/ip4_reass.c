@@ -86,6 +86,10 @@ typedef struct
     uint8_t reserved[3];
 } Ip4ReassCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_IP4_REASS_OFF_CTX, sizeof(Ip4ReassCtx), IDEMIP_IP4_REASS_BORROW, "ip4_reass's context");
+
 // Row i of each table is at (i << SHIFT), so each width has to be exactly its shift.
 static_assert(sizeof(Ip4ReassDatagram) == (1u << IDEMIP_IP4_REASS_DATAGRAM_ENTRY_SHIFT),
               "an Ip4ReassDatagram must be exactly 1 << IDEMIP_IP4_REASS_DATAGRAM_ENTRY_SHIFT wide - pad it, or raise "

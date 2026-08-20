@@ -253,6 +253,41 @@ typedef enum IDEMIP_ENUM_PACKED
 #endif
 
 // ---------------------------------------------------------------------------
+// A region of a borrow, asserted
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief One region of a caller's borrow: where it starts, how wide it is, and what holds it.
+ *
+ * Every address in this tree is a compile-time fact, and this is what says so. A unit states its map
+ * as offsets, an entry reaches a region as the one pointer it was handed plus one of them, and
+ * nothing is derived at run time - so the compiler knows every address before it emits a single
+ * instruction, and is free to group and order the accesses accordingly.
+ *
+ * The two claims:
+ *
+ *   Aligned. A region that starts off the word turns every access to it into a split load on a
+ *   target that permits one at all, and a fault on the parts that do not. Twelve of the thirteen
+ *   offsets computed as OFF_IO + sizeof(XIo) landed on the alignment because their operand block
+ *   happened to be a whole number of words; ip4_route's did not, and sat four octets past a
+ *   boundary. That was luck holding the invariant, and this is the arithmetic holding it instead.
+ *
+ *   Contained. The region ends at or before the end of whatever holds it, so a map that outgrows its
+ *   borrow says so at compile time and not by writing over the region behind it.
+ *
+ * @param OFF   the region's offset in the borrow
+ * @param BYTES how wide it is, usually a sizeof
+ * @param END   the first offset past what holds it: the context region, or the whole borrow
+ * @param WHAT  a string naming the region, for the message
+ */
+#define IDEMIP_ASSERT_REGION(OFF, BYTES, END, WHAT)                                                                    \
+    static_assert(((size_t)(OFF) & (size_t)(IDEMIP_ALIGN - 1u)) == 0u,                                                 \
+                  WHAT " must start on IDEMIP_ALIGN: a region off the word makes every access to it "                  \
+                       "a split load, and a fault where a split load is not permitted");                               \
+    static_assert((size_t)(OFF) + (size_t)(BYTES) <= (size_t)(END),                                                    \
+                  WHAT " runs past what holds it - raise it in idemip_config.h")
+
+// ---------------------------------------------------------------------------
 // The determinism pad's window (clock.h)
 // ---------------------------------------------------------------------------
 // The range a function's pad is tuned inside, in the pad's own unit: microseconds at the FINE and

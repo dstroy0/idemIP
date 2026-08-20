@@ -39,6 +39,10 @@ typedef struct
 #endif
 } LoopifCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_LOOPIF_OFF_CTX, sizeof(LoopifCtx), IDEMIP_LOOPIF_OFF_END, "loopif's context");
+
 // The caller's borrow, split: the operand block, the context, then the frame regions. loopif.h
 // publishes the offsets; the asserts below prove the span covers them and that a region holds a
 // whole frame before anything runs.

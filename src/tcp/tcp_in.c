@@ -28,6 +28,10 @@ typedef struct
     uint32_t challenges;
 } TcpInCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_TCP_IN_OFF_CTX, sizeof(TcpInCtx), IDEMIP_TCP_IN_BORROW, "tcp_in's context");
+
 // The mark clear leaves.
 #define TCP_IN_READY 0x54435049u
 

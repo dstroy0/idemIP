@@ -54,6 +54,10 @@ typedef struct
     uint32_t tick_ms;
 } Ip4RouteCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_IP4_ROUTE_OFF_CTX, sizeof(Ip4RouteCtx), IDEMIP_IP4_ROUTE_OFF_TAB, "ip4_route's context");
+
 // Row i is at (i << SHIFT), so the width has to be exactly the shift.
 static_assert(sizeof(Ip4RouteEntry) == (1u << IDEMIP_IP4_ROUTE_ENTRY_SHIFT),
               "an Ip4RouteEntry must be exactly 1 << IDEMIP_IP4_ROUTE_ENTRY_SHIFT wide - pad it, or raise the shift");

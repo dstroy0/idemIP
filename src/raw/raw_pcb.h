@@ -196,7 +196,7 @@ typedef struct
 // operand block and the context growing does not move an entry.
 
 #define IDEMIP_RAW_PCB_OFF_IO 0u ///< the operand and result block
-#define IDEMIP_RAW_PCB_OFF_CTX (IDEMIP_RAW_PCB_OFF_IO + sizeof(RawPcbIo)) ///< the running context
+#define IDEMIP_RAW_PCB_OFF_CTX (IDEMIP_RAW_PCB_OFF_IO + IDEMIP_ROUND_UP(sizeof(RawPcbIo), IDEMIP_ALIGN)) ///< the running context
 #define IDEMIP_RAW_PCB_OFF_TAB IDEMIP_RAW_PCB_CTX_BYTES ///< IDEMIP_RAW_PCBS entries follow
 
 /** @brief The operand block, at its offset in the caller's borrow. */

@@ -38,6 +38,10 @@ typedef struct
     uint32_t magic;
 } StatsCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_STATS_OFF_CTX, sizeof(StatsCtx), IDEMIP_STATS_BORROW, "stats's context");
+
 #define STATS_MAGIC 0x53544154u ///< what clear writes
 #define STATS_CTR_BYTES ((size_t)IDEMIP_STAT_COUNT << IDEMIP_STATS_CTR_SHIFT)
 #define STATS_IF_BYTES ((size_t)(IDEMIP_NETIF_COUNT) << IDEMIP_STATS_IF_ENTRY_SHIFT)

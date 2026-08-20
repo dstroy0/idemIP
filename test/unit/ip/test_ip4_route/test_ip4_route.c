@@ -208,9 +208,25 @@ void test_a_lookup_on_an_uncleared_borrow_is_refused(void)
 void test_the_published_offsets_are_ordered_and_do_not_overlap(void)
 {
     TEST_ASSERT_EQUAL_size_t(0u, (size_t)IDEMIP_IP4_ROUTE_OFF_IO);
-    TEST_ASSERT_EQUAL_size_t(sizeof(Ip4RouteIo), (size_t)IDEMIP_IP4_ROUTE_OFF_CTX);
+    // The context starts where the operand block ends, rounded up to the alignment. This case used
+    // to pin it at sizeof(Ip4RouteIo) exactly, which is 68 and four octets past a boundary: the one
+    // context in the tree that did not start on IDEMIP_ALIGN, with a case holding it there.
+    TEST_ASSERT_TRUE_MESSAGE((size_t)IDEMIP_IP4_ROUTE_OFF_CTX >= sizeof(Ip4RouteIo),
+                             "the context must start at or after the end of the operand block");
+    TEST_ASSERT_TRUE_MESSAGE((size_t)IDEMIP_IP4_ROUTE_OFF_CTX - sizeof(Ip4RouteIo) < IDEMIP_ALIGN,
+                             "the context must start at the first alignment past the operand block, not later");
     TEST_ASSERT_TRUE_MESSAGE((size_t)IDEMIP_IP4_ROUTE_OFF_CTX < (size_t)IDEMIP_IP4_ROUTE_OFF_TAB,
                              "the context must sit between the operand block and the rows");
+}
+
+// Every region of this borrow starts on IDEMIP_ALIGN, so an entry reaching one reaches a word and
+// not a split load. idemip_config.h's IDEMIP_ASSERT_REGION says the same at compile time; this says
+// it where a reader looking for the map's rules will find it.
+void test_every_published_offset_is_aligned(void)
+{
+    TEST_ASSERT_EQUAL_size_t(0u, (size_t)IDEMIP_IP4_ROUTE_OFF_IO & (IDEMIP_ALIGN - 1u));
+    TEST_ASSERT_EQUAL_size_t(0u, (size_t)IDEMIP_IP4_ROUTE_OFF_CTX & (IDEMIP_ALIGN - 1u));
+    TEST_ASSERT_EQUAL_size_t(0u, (size_t)IDEMIP_IP4_ROUTE_OFF_TAB & (IDEMIP_ALIGN - 1u));
 }
 
 void test_the_borrow_covers_the_published_map(void)

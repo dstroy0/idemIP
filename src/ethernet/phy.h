@@ -137,7 +137,7 @@ typedef struct
 // compile-time offset, so nothing is derived at runtime.
 
 #define IDEMIP_PHY_OFF_IO 0u ///< the operand and result block
-#define IDEMIP_PHY_OFF_CTX (IDEMIP_PHY_OFF_IO + sizeof(PhyIo))
+#define IDEMIP_PHY_OFF_CTX (IDEMIP_PHY_OFF_IO + IDEMIP_ROUND_UP(sizeof(PhyIo), IDEMIP_ALIGN))
 
 /** @brief The operand block, at its offset in the caller's borrow. */
 #define IDEMIP_PHY_IO(w) ((PhyIo *)(void *)((w) + IDEMIP_PHY_OFF_IO))

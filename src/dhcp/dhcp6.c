@@ -59,6 +59,10 @@ typedef struct
     uint8_t server[IDEMIP_IP6_ADDR_LEN]; ///< where the assigning server answered from
 } Dhcp6Ctx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_DHCP6_OFF_CTX, sizeof(Dhcp6Ctx), IDEMIP_DHCP6_BORROW, "dhcp6's context");
+
 // The caller's borrow, split: the operand block and the context in the first IDEMIP_DHCP6_CTX_BYTES
 // octets, then the server's DUID. dhcp6.h publishes the offsets; the asserts below prove the span
 // covers them before anything runs.

@@ -93,6 +93,10 @@ typedef struct
     idemip_bool ready;
 } Ip6ReassCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_IP6_REASS_OFF_CTX, sizeof(Ip6ReassCtx), IDEMIP_IP6_REASS_OFF_END, "ip6_reass's context");
+
 // An index is (i << SHIFT), so each entry is exactly its width.
 static_assert(sizeof(Ip6ReassDatagram) == (1u << IDEMIP_IP6_REASS_DATAGRAM_ENTRY_SHIFT),
               "a datagram entry must be 1 << IDEMIP_IP6_REASS_DATAGRAM_ENTRY_SHIFT wide");

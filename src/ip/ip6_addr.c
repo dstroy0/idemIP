@@ -25,6 +25,10 @@ typedef struct
     idemip_bool ready;
 } Ip6AddrCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_IP6_ADDR_OFF_CTX, sizeof(Ip6AddrCtx), IDEMIP_IP6_ADDR_OFF_END, "ip6_addr's context");
+
 // The caller's borrow, split: the operand block, then the context. ip6_addr.h publishes the
 // offsets; these two asserts prove the span covers them before anything runs.
 static_assert(IDEMIP_IP6_ADDR_OFF_CTX + sizeof(Ip6AddrCtx) <= IDEMIP_IP6_ADDR_OFF_END,

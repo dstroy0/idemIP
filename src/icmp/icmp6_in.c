@@ -27,6 +27,10 @@ typedef struct
     uint8_t tokens;
 } Icmp6InCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_ICMP6_IN_OFF_CTX, sizeof(Icmp6InCtx), IDEMIP_ICMP6_IN_BORROW, "icmp6_in's context");
+
 // The mark clear leaves.
 #define ICMP6_IN_READY 0x49434D36u
 

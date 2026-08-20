@@ -34,6 +34,10 @@ typedef struct
     uint16_t pinned;  // receive descriptors pinned, bounded by IDEMIP_MAX_PINNED_FRAMES
 } DmaCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_DMA_OFF_CTX, sizeof(DmaCtx), IDEMIP_DMA_OFF_END, "dma's context");
+
 // One descriptor. buf is the driver's frame buffer, len the octets in it, flags the IdemIpDmaFlag
 // set, and pins the retaining units holding it.
 typedef struct

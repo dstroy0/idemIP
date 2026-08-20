@@ -594,7 +594,7 @@ typedef struct
 // operand block and the context growing does not move an entry.
 
 #define IDEMIP_TCP_PCB_OFF_IO 0u ///< the operand and result block
-#define IDEMIP_TCP_PCB_OFF_CTX (IDEMIP_TCP_PCB_OFF_IO + sizeof(TcpPcbIo)) ///< the running context
+#define IDEMIP_TCP_PCB_OFF_CTX (IDEMIP_TCP_PCB_OFF_IO + IDEMIP_ROUND_UP(sizeof(TcpPcbIo), IDEMIP_ALIGN)) ///< the running context
 #define IDEMIP_TCP_PCB_OFF_TCB IDEMIP_TCP_PCB_CTX_BYTES ///< IDEMIP_TCP_PCBS Transmission Control Blocks
 
 /** @brief IDEMIP_TCP_LISTEN_PCBS listeners, one per passive OPEN. */

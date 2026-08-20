@@ -34,6 +34,10 @@ typedef struct
     idemip_bool keyed;
 } TcpIsnCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_TCP_ISN_OFF_CTX, sizeof(TcpIsnCtx), IDEMIP_TCP_ISN_BORROW, "tcp_isn's context");
+
 // The mark reset leaves.
 #define TCP_ISN_READY 0x54494E31u
 

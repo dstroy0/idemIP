@@ -23,6 +23,10 @@ typedef struct
     uint8_t pad[7];
 } VlanCtx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_VLAN_OFF_CTX, sizeof(VlanCtx), IDEMIP_VLAN_OFF_END, "vlan's context");
+
 // The caller's borrow, split: the operand block, then the context. vlan.h publishes the offsets;
 // these two asserts prove the span covers them before anything runs.
 static_assert(IDEMIP_VLAN_OFF_CTX + sizeof(VlanCtx) <= IDEMIP_VLAN_OFF_END,

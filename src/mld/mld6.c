@@ -41,6 +41,10 @@ typedef struct
     uint8_t pad[2];
 } Mld6Ctx;
 
+// Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
+// holds it. common.h's IDEMIP_ASSERT_REGION states both.
+IDEMIP_ASSERT_REGION(IDEMIP_MLD6_OFF_CTX, sizeof(Mld6Ctx), IDEMIP_MLD6_OFF_END, "mld6's context");
+
 // An index is (i << SHIFT), so each entry is exactly its width.
 static_assert(sizeof(Mld6Group) == (1u << IDEMIP_MLD6_ENTRY_SHIFT),
               "a group entry must be 1 << IDEMIP_MLD6_ENTRY_SHIFT wide");
