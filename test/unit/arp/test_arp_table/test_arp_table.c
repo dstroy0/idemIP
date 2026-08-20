@@ -430,8 +430,11 @@ void test_find_does_not_restart_the_cache_timeout(void)
 {
     ready_at(work_a, 1000u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, add_at(work_a, 1000u, IPA_Y, EA_Y, 0u));
-    for (uint32_t t = 1000u; t < MAXAGE_MS; t += MAXAGE_MS / 4u)
+    // The clock advances across the lookups. Without this the finds all run at the millisecond the
+    // row was added, and a find that did restart the timeout would write the same value back.
+    for (uint32_t t = 1000u; t < 1000u + MAXAGE_MS; t += MAXAGE_MS / 4u)
     {
+        IDEMIP_ARP_IO(work_a)->now_ms = t;
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, find_ip(work_a, IPA_Y));
     }
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, tick_at(work_a, 1000u + MAXAGE_MS));
@@ -455,6 +458,78 @@ void test_a_request_for_this_end_is_added_and_owes_a_reply(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, find_ip(work_a, IPA_X));
     TEST_ASSERT_EQUAL_UINT8_ARRAY(EA_X, IDEMIP_ARP_IO(work_a)->mac, IDEMIP_ARP_HLN_ETHERNET);
     TEST_ASSERT_EQUAL_UINT8(2u, IDEMIP_ARP_IO(work_a)->netif);
+}
+
+// RFC 1812 sec 3.3.2: "A router MUST not believe any ARP reply that claims that the Link Layer
+// address of another host or router is a broadcast or multicast address." Neither the broadcast
+// address nor a multicast group address may be keyed into the table or handed back as a next hop.
+void test_a_group_sender_hardware_address_is_not_believed(void)
+{
+    static const uint8_t EA_BCAST[IDEMIP_ARP_HLN_ETHERNET] = {0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu};
+    static const uint8_t EA_MCAST[IDEMIP_ARP_HLN_ETHERNET] = {0x01u, 0x00u, 0x5Eu, 0x7Fu, 0x00u, 0x01u};
+
+    // Through ArpTable.input, as a REPLY addressed to this end.
+    ready_at(work_a, 1000u);
+    idemip_arp_build_reply(pkt, EA_BCAST, IPA_X, EA_Y, IPA_Y);
+    (void)input_at(work_a, 1000u, pkt, IPA_Y, 0u);
+    TEST_ASSERT_FALSE(IDEMIP_ARP_IO(work_a)->merged);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, find_ip(work_a, IPA_X),
+                                  "a broadcast ar$sha was installed as a next hop");
+
+    // And as an unsolicited REQUEST, which merges before the opcode is read.
+    ready_at(work_a, 1000u);
+    idemip_arp_build_request(pkt, EA_MCAST, IPA_X, IPA_Y);
+    (void)input_at(work_a, 1000u, pkt, IPA_Y, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, find_ip(work_a, IPA_X),
+                                  "a multicast ar$sha was installed as a next hop");
+
+    // Through ArpTable.add, which is the same learn.
+    ready_at(work_a, 1000u);
+    TEST_ASSERT_NOT_EQUAL_INT(IDEMIP_OK, add_at(work_a, 1000u, IPA_X, EA_BCAST, 0u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, find_ip(work_a, IPA_X));
+
+    // The positive control: the same call with a unicast address is believed.
+    ready_at(work_a, 1000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, add_at(work_a, 1000u, IPA_X, EA_X, 0u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, find_ip(work_a, IPA_X));
+
+    // A row that already holds a unicast address is not overwritten by a group one either.
+    idemip_arp_build_reply(pkt, EA_BCAST, IPA_X, EA_Y, IPA_Y);
+    (void)input_at(work_a, 1000u, pkt, IPA_Y, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, find_ip(work_a, IPA_X));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(EA_X, IDEMIP_ARP_IO(work_a)->mac, IDEMIP_ARP_HLN_ETHERNET,
+                                          "a broadcast ar$sha overwrote a known unicast row");
+}
+
+// RFC 5227 sec 2.4: an ARP packet whose sender IP address is this end's own is a conflicting ARP
+// packet. It is reported to the caller, keyed into no row, and owed no REPLY: sec 2.5 says the REPLY
+// obligation is for "an ARP Request, that's not a conflicting ARP packet as described above in
+// Section 2.4".
+void test_a_sender_claiming_this_ends_address_is_a_conflict(void)
+{
+    ready_at(work_a, 1000u);
+    idemip_arp_build_request(pkt, EA_X, IPA_Y, IPA_Y); // another station claims IPA_Y, which is ours
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, input_at(work_a, 1000u, pkt, IPA_Y, 0u));
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_ARP_IO(work_a)->conflict, "a station claiming our address is a conflict");
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_ARP_IO(work_a)->reply_owed, "a conflicting packet is owed no REPLY");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, find_ip(work_a, IPA_Y),
+                                  "this end's own address was keyed to a foreign hardware address");
+
+    // A REPLY carrying the same claim is a conflict too.
+    ready_at(work_a, 1000u);
+    idemip_arp_build_reply(pkt, EA_X, IPA_Y, EA_Y, IPA_Y);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, input_at(work_a, 1000u, pkt, IPA_Y, 0u));
+    TEST_ASSERT_TRUE(IDEMIP_ARP_IO(work_a)->conflict);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, find_ip(work_a, IPA_Y));
+
+    // The positive control: the same REQUEST from a different sender is not a conflict and is owed
+    // a REPLY, and its sender is learned.
+    ready_at(work_a, 1000u);
+    idemip_arp_build_request(pkt, EA_X, IPA_X, IPA_Y);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, input_at(work_a, 1000u, pkt, IPA_Y, 0u));
+    TEST_ASSERT_FALSE(IDEMIP_ARP_IO(work_a)->conflict);
+    TEST_ASSERT_TRUE(IDEMIP_ARP_IO(work_a)->reply_owed);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, find_ip(work_a, IPA_X));
 }
 
 // RFC 826: "If Merge_flag is false, add the triplet ... to the translation table" sits under

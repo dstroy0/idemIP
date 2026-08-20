@@ -141,6 +141,10 @@ typedef struct
  *                               table and its hardware address was updated
  * @var ArpTableIo::reply_owed   the packet was a REQUEST for this end's protocol address, so RFC 826
  *                               "Packet Reception" owes a REPLY on the interface it arrived on
+ * @var ArpTableIo::conflict     RFC 5227 sec 2.4: the packet's sender IP address is this end's own,
+ *                               which is a conflicting ARP packet. No row is keyed on it and no
+ *                               REPLY is owed for it; the caller answers it through sec 2.4's (a),
+ *                               (b) or (c), which is what src/acd implements
  */
 typedef struct
 {
@@ -162,6 +166,7 @@ typedef struct
     uint8_t netif;
     idemip_bool merged;
     idemip_bool reply_owed;
+    idemip_bool conflict;
 } ArpTableIo;
 
 // ---------------------------------------------------------------------------

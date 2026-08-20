@@ -222,6 +222,14 @@ static void arp_row_open(uint8_t *restrict work, uint8_t i, uint16_t pro, uint32
 static uint8_t arp_learn(uint8_t *restrict work, uint16_t pro, uint32_t spa, const uint8_t *sha, uint8_t netif,
                          uint32_t now_ms, idemip_bool add_absent, idemip_bool *merged)
 {
+    // RFC 1812 sec 3.3.2: "A router MUST not believe any ARP reply that claims that the Link Layer
+    // address of another host or router is a broadcast or multicast address." Bit 0 of the first
+    // octet is the group bit, which the broadcast address and every multicast group address carry.
+    if ((sha[0] & 0x01u) != 0u)
+    {
+        *merged = IDEMIP_FALSE;
+        return ARP_NONE;
+    }
     uint8_t i = arp_row_find(work, pro, spa);
     *merged = (idemip_bool)(i != ARP_NONE);
     if (i == ARP_NONE)
@@ -561,6 +569,7 @@ static void arp_input(uint8_t *restrict work)
     io->status = IDEMIP_ERR;
     io->merged = IDEMIP_FALSE;
     io->reply_owed = IDEMIP_FALSE;
+    io->conflict = IDEMIP_FALSE;
     io->index = ARP_NONE;
     if (!arp_ready(work))
     {
@@ -582,7 +591,11 @@ static void arp_input(uint8_t *restrict work)
     uint32_t local_pa = io->input_args.local_pa;
     idemip_bool target = (idemip_bool)(local_pa != 0u && idemip_arp_is_target(packet, local_pa));
     uint32_t spa = idemip_arp_spa(packet);
-    if (spa != 0u)
+    // RFC 5227 sec 2.4: a packet whose sender IP address is this end's own is a conflicting ARP
+    // packet. Keying a row on it would point this end's own address at another station's hardware
+    // address, so it is reported to the caller for sec 2.4's (a), (b) or (c) and learned from never.
+    io->conflict = (idemip_bool)(local_pa != 0u && spa == local_pa);
+    if (spa != 0u && !io->conflict)
     {
         idemip_bool merged = IDEMIP_FALSE;
         uint8_t i = arp_learn(work, idemip_arp_pro(packet), spa, idemip_arp_sha(packet), io->input_args.netif,
@@ -599,7 +612,10 @@ static void arp_input(uint8_t *restrict work)
     // polluting ARP caches in other hosts", so no row is keyed on it. RFC 5227 sec 2.5 still owes it
     // a REPLY: the obligation "applies equally for both standard ARP Requests with non-zero sender
     // IP addresses and Probe Requests with all-zero sender IP addresses."
-    io->reply_owed = (idemip_bool)(target && idemip_arp_is_request(packet));
+    // sec 2.5 carves the conflicting packet out of that obligation: the REPLY is owed "whenever a
+    // host receives an ARP Request, that's not a conflicting ARP packet as described above in
+    // Section 2.4".
+    io->reply_owed = (idemip_bool)(target && !io->conflict && idemip_arp_is_request(packet));
     io->status = IDEMIP_OK;
 }
 
