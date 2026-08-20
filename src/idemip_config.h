@@ -1340,8 +1340,10 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 // the answer address, the RFC 1035 sec 3.2.1 TYPE, the TTL and the same name index. Names are one
 // table at IDEMIP_DNS_NAME_MAX each, one per query and one per cached answer. A server entry is an
 // address with its zone.
+// RFC 5452 sec 9.1 matches a response's destination address "against query source address", so each
+// outstanding question records the local address its datagram was sent from, which is sixteen octets.
 #ifndef IDEMIP_DNS_QUERY_ENTRY_SHIFT
-#define IDEMIP_DNS_QUERY_ENTRY_SHIFT 5u
+#define IDEMIP_DNS_QUERY_ENTRY_SHIFT 6u
 #endif
 #ifndef IDEMIP_DNS_ENTRY_SHIFT
 #define IDEMIP_DNS_ENTRY_SHIFT 5u

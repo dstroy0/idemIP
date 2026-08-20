@@ -530,15 +530,27 @@ static size_t good_response(const char *name, uint16_t type, uint32_t ttl, const
     return wrr(g_msg, at, type, IDEMIP_DNS_CLASS_IN, ttl, rd, rdlen);
 }
 
-static void deliver(uint8_t *w, size_t len, const uint8_t *src, uint16_t sport, uint16_t dport)
+// The two local addresses a host has on the bound interface, so RFC 5452 sec 9.1's "Destination
+// address against query source address" has something to tell apart.
+static const uint8_t g_local_a[4] = {192u, 0u, 2u, 10u};
+static const uint8_t g_local_b[4] = {192u, 0u, 2u, 11u};
+
+static void deliver_to(uint8_t *w, size_t len, const uint8_t *src, uint16_t sport, uint16_t dport,
+                       const uint8_t *dst)
 {
     IDEMIP_DNS_IO(w)->input_args.msg = g_msg;
     IDEMIP_DNS_IO(w)->input_args.len = len;
     IDEMIP_DNS_IO(w)->input_args.src = src;
+    IDEMIP_DNS_IO(w)->input_args.dst = dst;
     IDEMIP_DNS_IO(w)->input_args.src_port = sport;
     IDEMIP_DNS_IO(w)->input_args.dst_port = dport;
     IDEMIP_DNS_IO(w)->input_args.ipv6 = IDEMIP_FALSE;
     Dns.input(w);
+}
+
+static void deliver(uint8_t *w, size_t len, const uint8_t *src, uint16_t sport, uint16_t dport)
+{
+    deliver_to(w, len, src, sport, dport, NULL);
 }
 
 static void deliver_ok(uint8_t *w, size_t len)
@@ -573,14 +585,20 @@ static uint8_t ask(uint8_t *w, const char *name, uint16_t type)
 
 static uint8_t g_out[IDEMIP_DNS_MSG_MAX];
 
-static void put_on_the_wire(uint8_t *w, uint8_t slot)
+static void put_on_the_wire_from(uint8_t *w, uint8_t slot, const uint8_t *src)
 {
     memset(g_out, 0, sizeof g_out);
     IDEMIP_DNS_IO(w)->build_args.out = g_out;
     IDEMIP_DNS_IO(w)->build_args.cap = sizeof g_out;
     IDEMIP_DNS_IO(w)->build_args.query = slot;
+    IDEMIP_DNS_IO(w)->build_args.src = src;
     Dns.build(w);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(w)->status);
+}
+
+static void put_on_the_wire(uint8_t *w, uint8_t slot)
+{
+    put_on_the_wire_from(w, slot, NULL);
 }
 
 static void run_tick(uint8_t *w, uint32_t now_ms)
@@ -986,6 +1004,37 @@ void test_a_response_with_another_id_is_invalid(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
 }
 
+// "Destination address against query source address". A host with two addresses on the interface
+// asks from one of them; a response addressed to the other answers no question this host asked.
+void test_a_response_to_another_local_address_is_invalid(void)
+{
+    uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire_from(work_a, slot, g_local_a);
+
+    size_t len = good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+    deliver_to(work_a, len, g_v4, IDEMIP_DNS_PORT, SPORT, g_local_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status);
+
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status,
+                                  "a response to another local address reached the cache");
+
+    // The address the question left from is still accepted, so the forgery did not retire it.
+    deliver_to(work_a, len, g_v4, IDEMIP_DNS_PORT, SPORT, g_local_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+}
+
+// A caller that names no source address at build time leaves the question with none recorded, and
+// the other five attributes still decide. The comparison is skipped rather than failed.
+void test_a_question_with_no_recorded_source_matches_on_the_rest(void)
+{
+    uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+    size_t len = good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+    deliver_to(work_a, len, g_v4, IDEMIP_DNS_PORT, SPORT, g_local_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+}
+
 // "Destination port against query source port". The port the question left from is the second half of
 // the RFC 5452 sec 9.2 ID space, so a response to any other port is invalid.
 void test_a_response_to_another_port_is_invalid(void)
@@ -1233,8 +1282,11 @@ void test_a_pointer_at_itself_is_refused(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, IDEMIP_DNS_IO(work_a)->ttl_s, "a self naming owner produced an answer");
 
+    // No address is cached for the name. RFC 1123 sec 6.1.3.3 (4) does cache the negative outcome,
+    // so the lookup is answered from that entry rather than left outstanding.
     look(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status, "a self naming owner reached the cache");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status, "a self naming owner reached the cache");
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_DNS_IO(work_a)->addr[0]);
 }
 
 // A pointer at a higher offset is not "a prior occurance" either, and a pair of them pointing at each
@@ -1266,7 +1318,8 @@ void test_a_forward_pointer_and_a_pointer_ring_are_refused(void)
     deliver_ok(work_a, len + 8u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     look(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status, "a pointer ring reached the cache");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status, "a pointer ring reached the cache");
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_DNS_IO(work_a)->addr[0]);
 }
 
 // sec 4.1.4: "The 10 and 01 combinations are reserved for future use", so a length octet with one high
@@ -1319,8 +1372,9 @@ void test_a_record_owned_by_another_name_is_not_an_answer(void)
     deliver_ok(work_a, at);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     look(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status,
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status,
                                   "an out of domain record was cached for the queried name");
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, IDEMIP_DNS_IO(work_a)->addr[0], "the attacker's address was handed back");
 }
 
 // RFC 1035 sec 3.2.4 gives the class its own field, so a record of the right type in another class is
@@ -1335,7 +1389,8 @@ void test_a_record_of_another_class_is_not_an_answer(void)
     deliver_ok(work_a, len);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     look(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_DNS_IO(work_a)->addr[0]);
 }
 
 // RFC 1035 sec 3.4.1 gives an A record four octets of RDATA and RFC 3596 sec 2.2 gives an AAAA sixteen,
@@ -1349,7 +1404,8 @@ void test_a_record_of_the_wrong_rdlength_is_not_an_answer(void)
     deliver_ok(work_a, len);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     look(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_DNS_IO(work_a)->addr[0]);
 }
 
 // A count larger than the section holds must not carry the walk past the message.
@@ -1626,9 +1682,12 @@ void test_a_name_error_retires_the_question(void)
     Dns.build(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status);
 
+    // RFC 1123 sec 6.1.3.3 (4) caches the Name Error, so the lookup is answered from that entry and
+    // a repeat of the same question does not go on the wire again.
     look(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_DNS_RCODE_NAME_ERR, IDEMIP_DNS_IO(work_a)->rcode);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)IDEMIP_DNS_NEG_TTL_S, IDEMIP_DNS_IO(work_a)->ttl_s);
 }
 
 // RFC 1035 sec 4.1.1 RCODE 2 is a "Server failure - The name server was unable to process this query
@@ -1701,8 +1760,10 @@ void test_a_response_with_no_record_of_the_type_retires_the_question(void)
     deliver_ok(work_a, at);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_DNS_IO(work_a)->answers);
+    // sec 6.1.3.3 (4)'s other half, "or data of the specified type, does not exist", is cached too.
     look(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)IDEMIP_DNS_NEG_TTL_S, IDEMIP_DNS_IO(work_a)->ttl_s);
 }
 
 // --- the retry sweep ---------------------------------------------------------
@@ -1748,15 +1809,23 @@ void test_the_retries_run_out(void)
 {
     uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
     uint32_t now = 0;
+    // RFC 1123 sec 6.1.3.3 (5) backs the interval off per try, so the clock follows the deadline the
+    // send stamped rather than a flat step.
+    uint32_t wait = (uint32_t)IDEMIP_DNS_RETRY_MS;
     for (unsigned k = 0; k < g_cfg.retries; k++)
     {
         put_on_the_wire(work_a, slot);
-        now += IDEMIP_DNS_RETRY_MS;
+        now += wait;
         run_tick(work_a, now);
+        if (wait < (uint32_t)IDEMIP_DNS_RETRY_MAX_MS)
+        {
+            wait <<= 1;
+        }
     }
     IDEMIP_DNS_IO(work_a)->build_args.out = g_out;
     IDEMIP_DNS_IO(work_a)->build_args.cap = sizeof g_out;
     IDEMIP_DNS_IO(work_a)->build_args.query = slot;
+    IDEMIP_DNS_IO(work_a)->build_args.src = NULL;
     Dns.build(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status, "a question outlived its retries");
 
@@ -1770,6 +1839,78 @@ void test_the_retries_run_out(void)
     TEST_ASSERT_EQUAL_UINT8(slot, IDEMIP_DNS_IO(work_a)->query);
     TEST_ASSERT_EQUAL_UINT16(0x5555u, IDEMIP_DNS_IO(work_a)->xid);
     put_on_the_wire(work_a, slot);
+}
+
+// RFC 1123 sec 6.1.3.3 (5): "When a DNS server or resolver retries a UDP query, the retry interval
+// SHOULD be constrained by an exponential backoff algorithm, and SHOULD also have upper and lower
+// bounds." The interval doubles per try rather than staying at one constant.
+void test_the_retry_interval_backs_off(void)
+{
+    uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+
+    // The first send is armed at the lower bound.
+    put_on_the_wire(work_a, slot);
+    run_tick(work_a, (uint32_t)IDEMIP_DNS_RETRY_MS - 1u);
+    IDEMIP_DNS_IO(work_a)->build_args.query = slot;
+    IDEMIP_DNS_IO(work_a)->build_args.out = g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.cap = sizeof g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.src = NULL;
+    Dns.build(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status, "a re-send went out early");
+    run_tick(work_a, (uint32_t)IDEMIP_DNS_RETRY_MS);
+
+    // The second is armed at twice it, so a tick one interval on does not release a third.
+    const uint32_t sent = (uint32_t)IDEMIP_DNS_RETRY_MS;
+    put_on_the_wire(work_a, slot);
+    run_tick(work_a, sent + (uint32_t)IDEMIP_DNS_RETRY_MS);
+    IDEMIP_DNS_IO(work_a)->build_args.query = slot;
+    IDEMIP_DNS_IO(work_a)->build_args.out = g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.cap = sizeof g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.src = NULL;
+    Dns.build(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status,
+                                  "the second interval did not double");
+
+    // At twice the interval it is due.
+    run_tick(work_a, sent + (2u * (uint32_t)IDEMIP_DNS_RETRY_MS));
+    put_on_the_wire(work_a, slot);
+}
+
+// RFC 1123 sec 6.1.3.3 (2): "After a query has been retransmitted several times without a response,
+// an implementation MUST give up and return a soft error to the application." A question that gave
+// up is not the same result as one still in flight, and its slot goes back.
+void test_a_question_that_gave_up_returns_a_soft_error(void)
+{
+    uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+
+    // While the question is outstanding the lookup is BUSY.
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_FALSE(IDEMIP_DNS_IO(work_a)->failed);
+
+    uint32_t now = 0;
+    uint32_t wait = (uint32_t)IDEMIP_DNS_RETRY_MS;
+    for (unsigned k = 0; k < g_cfg.retries; k++)
+    {
+        put_on_the_wire(work_a, slot);
+        now += wait;
+        run_tick(work_a, now);
+        if (wait < (uint32_t)IDEMIP_DNS_RETRY_MAX_MS)
+        {
+            wait <<= 1;
+        }
+    }
+
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status,
+                                  "a question that gave up read as one still in flight");
+    TEST_ASSERT_TRUE(IDEMIP_DNS_IO(work_a)->failed);
+
+    // The slot went back, so the table is not held by a question nothing will answer and the same
+    // name can be asked again.
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_DNS_QUERIES, IDEMIP_DNS_IO(work_a)->query);
 }
 
 // RFC 1035 sec 4.2.1 asks for a "minimum retransmission interval" of "2-5 seconds", so the deadline a

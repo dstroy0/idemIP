@@ -128,6 +128,28 @@ IDEMIP_BEGIN_DECLS
  *
  * RFC 1035 sec 4.2.1: "the minimum retransmission interval should be 2-5 seconds".
  */
+/**
+ * @brief The upper bound RFC 1123 sec 6.1.3.3 (5) puts on the backoff.
+ *
+ * "the retry interval SHOULD be constrained by an exponential backoff algorithm, and SHOULD also
+ * have upper and lower bounds." IDEMIP_DNS_RETRY_MS is the lower bound and this is the upper.
+ */
+#ifndef IDEMIP_DNS_RETRY_MAX_MS
+#define IDEMIP_DNS_RETRY_MAX_MS 32000u
+#endif
+
+/**
+ * @brief Seconds a negative response is held.
+ *
+ * RFC 1123 sec 6.1.3.3 (4) asks that a response saying the name, or data of the type, does not exist
+ * be cached; item (3) of the same section gives the scale for the related case as "of the order of
+ * minutes". A response carries an SOA MINIMUM this could take instead, which is not parsed here, so
+ * this is the bounded default that stands in for it.
+ */
+#ifndef IDEMIP_DNS_NEG_TTL_S
+#define IDEMIP_DNS_NEG_TTL_S 300u
+#endif
+
 #ifndef IDEMIP_DNS_RETRY_MS
 #define IDEMIP_DNS_RETRY_MS 2000u
 #endif
@@ -186,6 +208,10 @@ typedef enum IDEMIP_ENUM_PACKED
 {
     IDEMIP_DNS_ENTRY_FREE = 0, ///< the slot holds no answer
     IDEMIP_DNS_ENTRY_VALID,    ///< an answer inside its TTL
+    /** RFC 1123 sec 6.1.3.3 (4): "All DNS name servers and resolvers SHOULD cache negative responses
+     *  that indicate the specified name, or data of the specified type, does not exist". The slot
+     *  holds that outcome and its RCODE, inside IDEMIP_DNS_NEG_TTL_S. */
+    IDEMIP_DNS_ENTRY_NEGATIVE,
 } IdemIpDnsEntryState;
 
 /**
@@ -260,11 +286,16 @@ typedef struct
  * @var DnsBuildArgs::out   the buffer, IDEMIP_DNS_HDR_LEN or more
  * @var DnsBuildArgs::cap   octets of it, at most IDEMIP_DNS_MSG_MAX reaching the wire
  * @var DnsBuildArgs::query the query slot, below IDEMIP_DNS_QUERIES
+ * @var DnsBuildArgs::src   the local address the datagram will be sent from, which RFC 5452 sec 9.1
+ *                          matches a response's destination address against. IDEMIP_DNS_ADDR_LEN
+ *                          octets when the server is IPv6, else 4. Null leaves the question with no
+ *                          source address recorded, and a response is then matched without it
  */
 typedef struct
 {
     uint8_t *out;
     size_t cap;
+    const uint8_t *src;
     uint8_t query;
 } DnsBuildArgs;
 
@@ -276,6 +307,8 @@ typedef struct
  * @var DnsInputArgs::src      the source address the datagram carried
  * @var DnsInputArgs::src_port the source port it carried, which must be the server's
  * @var DnsInputArgs::dst_port the port it arrived on, which must be the question's source port
+ * @var DnsInputArgs::dst      the destination address it carried, which RFC 5452 sec 9.1 matches
+ *                             "against query source address". Null skips that one comparison
  * @var DnsInputArgs::ipv6     true when @ref DnsInputArgs::src is 16 octets
  */
 typedef struct
@@ -283,6 +316,7 @@ typedef struct
     const uint8_t *msg;
     size_t len;
     const uint8_t *src;
+    const uint8_t *dst;
     uint16_t src_port;
     uint16_t dst_port;
     idemip_bool ipv6;
@@ -330,6 +364,11 @@ typedef struct
  * @var DnsIo::dst_port    that server's port
  * @var DnsIo::src_port    the port the question goes out of
  * @var DnsIo::xid         the ID build wrote, or input matched
+ * @var DnsIo::failed      the question this lookup names gave up. RFC 1123 sec 6.1.3.3 (2): "After a
+ *                         query has been retransmitted several times without a response, an
+ *                         implementation MUST give up and return a soft error to the application."
+ *                         The lookup reports ERR with this set and the slot goes back, so the same
+ *                         name may be asked again
  */
 typedef struct
 {
@@ -356,6 +395,7 @@ typedef struct
     uint16_t dst_port;
     uint16_t src_port;
     uint16_t xid;
+    idemip_bool failed;
 } DnsIo;
 
 // ---------------------------------------------------------------------------

@@ -40,7 +40,14 @@ typedef struct
     uint8_t name; ///< the name region this question asked about
     IdemIpDnsQueryState state;
     uint8_t rcode; ///< the RFC 1035 sec 4.1.1 RCODE the last response to it carried
-    uint8_t pad[15];
+    /** RFC 5452 sec 9.1 matches a response's "Destination address against query source address", so
+     *  the address the question's datagram left from is kept here for that comparison. */
+    uint8_t local[IDEMIP_DNS_ADDR_LEN];
+    idemip_bool local_set;
+    /** RFC 1123 sec 6.1.3.3 (2): the tries ran out with no response at all, as against a question a
+     *  server answered with NXDOMAIN or with no record of the type. */
+    idemip_bool gave_up;
+    uint8_t pad[29];
 } DnsQuery;
 
 // One cached answer: the address, the RFC 1035 sec 4.1.3 TTL it was given, and the deadline that TTL
@@ -54,7 +61,8 @@ typedef struct
     uint8_t name;
     IdemIpDnsEntryState state;
     idemip_bool ipv6;
-    uint8_t pad[3];
+    uint8_t rcode; ///< the sec 4.1.1 RCODE a negative entry holds, zero for the no-record case
+    uint8_t pad[2];
 } DnsEntry;
 
 // One server, from DHCP option 6, RFC 3646 sec 3, or RFC 8106 RDNSS.
@@ -198,9 +206,12 @@ static idemip_bool dns_name_end(const uint8_t *msg, size_t len, size_t off, size
             return IDEMIP_FALSE;
         }
         spent += 1u + (size_t)n;
-        if (spent > IDEMIP_DNS_NAME_WIRE_MAX)
+        // sec 3.1 bounds a name at 255 octets counting every "label octets and label length octets",
+        // and "every domain name ends with the null label of the root", whose length octet is one of
+        // them. The root octet is consumed above without being counted, so it is added here.
+        if ((spent + 1u) > IDEMIP_DNS_NAME_WIRE_MAX)
         {
-            return IDEMIP_FALSE; // sec 3.1 bounds a name at 255 octets
+            return IDEMIP_FALSE;
         }
         off += 1u + (size_t)n;
     }
@@ -239,7 +250,7 @@ static idemip_bool dns_name_eq_text(const uint8_t *msg, size_t len, size_t off, 
             return IDEMIP_FALSE;
         }
         spent += 1u + (size_t)n;
-        if (spent > IDEMIP_DNS_NAME_WIRE_MAX)
+        if ((spent + 1u) > IDEMIP_DNS_NAME_WIRE_MAX) // sec 3.1, the root's length octet counts
         {
             return IDEMIP_FALSE;
         }
@@ -302,7 +313,7 @@ static idemip_bool dns_name_eq_wire(const uint8_t *msg, size_t len, size_t a, si
             return IDEMIP_FALSE;
         }
         spent += 1u + (size_t)na;
-        if (spent > IDEMIP_DNS_NAME_WIRE_MAX)
+        if ((spent + 1u) > IDEMIP_DNS_NAME_WIRE_MAX) // sec 3.1, the root's length octet counts
         {
             return IDEMIP_FALSE;
         }
@@ -423,13 +434,20 @@ static uint8_t dns_query_find(uint8_t *work, const char *text, uint16_t type)
     return (uint8_t)IDEMIP_DNS_QUERIES;
 }
 
+// One question slot and the name region it owns, back to the free state.
+static void dns_query_free(uint8_t *work, uint8_t i)
+{
+    memset(DNS_NAME_AT(work, i), 0, DNS_NAME_BYTES);
+    memset(DNS_QUERY_AT(work, i), 0, sizeof(DnsQuery));
+}
+
 // The cached answer for this name and type that is still inside its TTL, or IDEMIP_DNS_ENTRIES.
 static uint8_t dns_cache_find(uint8_t *work, const char *text, uint16_t type, uint32_t now_ms)
 {
     for (uint8_t j = 0; j < IDEMIP_DNS_ENTRIES; j++)
     {
         const DnsEntry *e = DNS_ENTRY_AT(work, j);
-        if (e->state != IDEMIP_DNS_ENTRY_VALID || e->type != type || dns_reached(now_ms, e->expire_ms))
+        if (e->state == IDEMIP_DNS_ENTRY_FREE || e->type != type || dns_reached(now_ms, e->expire_ms))
         {
             continue;
         }
@@ -459,7 +477,7 @@ static uint8_t dns_cache_slot(uint8_t *work, const char *text, uint16_t type, ui
     for (uint8_t j = 0; j < IDEMIP_DNS_ENTRIES; j++)
     {
         const DnsEntry *e = DNS_ENTRY_AT(work, j);
-        if (e->state != IDEMIP_DNS_ENTRY_VALID || dns_reached(now_ms, e->expire_ms))
+        if (e->state == IDEMIP_DNS_ENTRY_FREE || dns_reached(now_ms, e->expire_ms))
         {
             return j;
         }
@@ -469,6 +487,30 @@ static uint8_t dns_cache_slot(uint8_t *work, const char *text, uint16_t type, ui
         }
     }
     return oldest;
+}
+
+// RFC 1123 sec 6.1.3.3 (4): "All DNS name servers and resolvers SHOULD cache negative responses that
+// indicate the specified name, or data of the specified type, does not exist". The slot holds the
+// RCODE the server gave, so a repeated lookup is answered here instead of putting the same question
+// on the wire again.
+static void dns_cache_negative(uint8_t *work, uint8_t query, uint16_t type, uint8_t rcode, uint32_t now_ms)
+{
+    const char *name = DNS_NAME_AT(work, query);
+    uint8_t j = dns_cache_slot(work, name, type, now_ms);
+    DnsEntry *e = DNS_ENTRY_AT(work, j);
+    size_t text = 0;
+    while ((text < (DNS_NAME_BYTES - 1u)) && (name[text] != '\0'))
+    {
+        text++;
+    }
+    memset(e, 0, sizeof *e);
+    e->expire_ms = now_ms + ((uint32_t)IDEMIP_DNS_NEG_TTL_S * IDEMIP_DNS_MS_PER_S);
+    e->ttl_s = (uint32_t)IDEMIP_DNS_NEG_TTL_S;
+    e->type = type;
+    e->name = (uint8_t)DNS_ENTRY_NAME_IDX(j);
+    e->state = IDEMIP_DNS_ENTRY_NEGATIVE;
+    e->rcode = rcode;
+    dns_name_store(work, DNS_ENTRY_NAME_IDX(j), name, text);
 }
 
 // The next server at or after @p from that set_server filled, or IDEMIP_DNS_SERVERS when the table
@@ -525,7 +567,11 @@ static void dns_advance(uint8_t *work, DnsQuery *q)
     }
     if (q->retries >= ctx->cfg->retries)
     {
+        // RFC 1123 sec 6.1.3.3 (2): "After a query has been retransmitted several times without a
+        // response, an implementation MUST give up and return a soft error to the application." The
+        // mark separates this from a question a server answered negatively, which FAILED also names.
         q->state = IDEMIP_DNS_QUERY_FAILED;
+        q->gave_up = IDEMIP_TRUE;
         return;
     }
     if (next < IDEMIP_DNS_SERVERS)
@@ -719,6 +765,7 @@ static void dns_lookup_cached(uint8_t *restrict work)
     io->type = 0u;
     io->ttl_s = 0u;
     io->rcode = 0u;
+    io->failed = IDEMIP_FALSE;
     io->query = (uint8_t)IDEMIP_DNS_QUERIES;
     if (a->name == NULL || a->name[0] == '\0')
     {
@@ -731,6 +778,17 @@ static void dns_lookup_cached(uint8_t *restrict work)
     {
         io->query = pending;
         io->rcode = DNS_QUERY_AT(work, pending)->rcode;
+        // RFC 1123 sec 6.1.3.3 (2): "After a query has been retransmitted several times without a
+        // response, an implementation MUST give up and return a soft error to the application." ERR
+        // is that error, and the slot goes back so the table is not held by a question nothing will
+        // answer. Without this the caller sees the same BUSY a question still in flight gives.
+        if (DNS_QUERY_AT(work, pending)->gave_up)
+        {
+            io->failed = IDEMIP_TRUE;
+            dns_query_free(work, pending);
+            io->status = IDEMIP_ERR;
+            return;
+        }
     }
 
     uint8_t j = dns_cache_find(work, a->name, a->type, ctx->now_ms);
@@ -740,10 +798,18 @@ static void dns_lookup_cached(uint8_t *restrict work)
         return;
     }
     const DnsEntry *e = DNS_ENTRY_AT(work, j);
-    memcpy(io->addr, e->addr, sizeof io->addr);
-    io->ipv6 = e->ipv6;
     io->type = e->type;
     io->ttl_s = e->ttl_s;
+    // A cached negative answers the lookup without a question going out again: the name, or data of
+    // the type, does not exist, which is not an address to hand back.
+    if (e->state == IDEMIP_DNS_ENTRY_NEGATIVE)
+    {
+        io->rcode = e->rcode;
+        io->status = IDEMIP_ERR;
+        return;
+    }
+    memcpy(io->addr, e->addr, sizeof io->addr);
+    io->ipv6 = e->ipv6;
     io->status = IDEMIP_OK;
 }
 
@@ -861,8 +927,29 @@ static void dns_build_query(uint8_t *restrict work)
     io->type = q->type;
     io->query = a->query;
 
+    // RFC 5452 sec 9.1 matches a response's destination against this, so it is recorded as the
+    // datagram leaves rather than looked up when one arrives.
+    q->local_set = IDEMIP_FALSE;
+    if (a->src != NULL)
+    {
+        memcpy(q->local, a->src, s->ipv6 ? (size_t)IDEMIP_DNS_ADDR_LEN : (size_t)IDEMIP_DNS_A_RDLEN);
+        q->local_set = IDEMIP_TRUE;
+    }
+
     q->state = IDEMIP_DNS_QUERY_SENT;
-    q->deadline_ms = ctx->now_ms + IDEMIP_DNS_RETRY_MS;
+    // RFC 1123 sec 6.1.3.3 (5): "the retry interval SHOULD be constrained by an exponential backoff
+    // algorithm, and SHOULD also have upper and lower bounds." The interval doubles per try, bounded
+    // above so it cannot run away.
+    uint32_t wait = (uint32_t)IDEMIP_DNS_RETRY_MS;
+    for (uint8_t r = 0; r < q->retries && wait < (uint32_t)IDEMIP_DNS_RETRY_MAX_MS; r++)
+    {
+        wait <<= 1;
+    }
+    if (wait > (uint32_t)IDEMIP_DNS_RETRY_MAX_MS)
+    {
+        wait = (uint32_t)IDEMIP_DNS_RETRY_MAX_MS;
+    }
+    q->deadline_ms = ctx->now_ms + wait;
     io->status = IDEMIP_OK;
 }
 
@@ -887,9 +974,10 @@ static void dns_build(uint8_t *restrict work)
  * The question slot a received message answers, or IDEMIP_DNS_QUERIES.
  *
  * RFC 5452 sec 9.1 requires a match on the response's source address against the question's
- * destination, its destination port against the question's source port, the query ID, the query name,
- * and the query class and type. Each is tested here; the question's own destination address is the
- * server entry it was sent to.
+ * destination, its destination address against the question's source address, its source and
+ * destination ports, the query ID, the query name, and the query class and type. Each is tested here;
+ * the question's own destination address is the server entry it was sent to, and its source address
+ * is the one build recorded.
  */
 static uint8_t dns_match(uint8_t *work, const uint8_t *msg, size_t len)
 {
@@ -915,6 +1003,12 @@ static uint8_t dns_match(uint8_t *work, const uint8_t *msg, size_t len)
         }
         size_t alen = a->ipv6 ? (size_t)IDEMIP_DNS_ADDR_LEN : (size_t)IDEMIP_DNS_A_RDLEN;
         if (memcmp(s->addr, a->src, alen) != 0)
+        {
+            continue;
+        }
+        // sec 9.1: "Destination address against query source address". A datagram addressed to
+        // another of this host's addresses answers no question this host asked.
+        if (q->local_set && a->dst != NULL && memcmp(q->local, a->dst, alen) != 0)
         {
             continue;
         }
@@ -1079,6 +1173,7 @@ static void dns_take(uint8_t *restrict work)
         if (rcode == (uint8_t)IDEMIP_DNS_RCODE_NAME_ERR)
         {
             q->state = IDEMIP_DNS_QUERY_FAILED;
+            dns_cache_negative(work, i, q->type, rcode, ctx->now_ms);
         }
         else
         {
@@ -1098,9 +1193,12 @@ static void dns_take(uint8_t *restrict work)
     uint32_t ttl = 0;
     if (!dns_answers_read(msg, len, at, io->answers, q->type, io->addr, &ttl))
     {
-        // The name exists and carries no record of the type asked for, so the exchange is over.
+        // The name exists and carries no record of the type asked for, so the exchange is over. RFC
+        // 1123 sec 6.1.3.3 (4) caches that half of the requirement too, "or data of the specified
+        // type, does not exist".
         memset(io->addr, 0, sizeof io->addr);
         q->state = IDEMIP_DNS_QUERY_FAILED;
+        dns_cache_negative(work, i, q->type, rcode, ctx->now_ms);
         io->status = IDEMIP_OK;
         return;
     }
@@ -1219,8 +1317,7 @@ static void dns_cancel(uint8_t *restrict work)
     {
         return;
     }
-    memset(DNS_NAME_AT(work, io->cancel_args.query), 0, DNS_NAME_BYTES);
-    memset(q, 0, sizeof *q);
+    dns_query_free(work, io->cancel_args.query);
     io->status = IDEMIP_OK;
 }
 
