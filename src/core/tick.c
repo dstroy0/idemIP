@@ -345,7 +345,7 @@ static idemip_bool t_service_netif(uint8_t *restrict work)
     {
         return IDEMIP_FALSE;
     }
-    IDEMIP_NETIF_IO(ctx->netif)->tick_args.now_ms = ctx->now_ms;
+    IDEMIP_NETIF_IO(ctx->netif)->now_ms = ctx->now_ms;
     Netif.tick(ctx->netif);
     return (idemip_bool)(IDEMIP_NETIF_IO(ctx->netif)->status == IDEMIP_OK &&
                          IDEMIP_NETIF_IO(ctx->netif)->aged != 0u);

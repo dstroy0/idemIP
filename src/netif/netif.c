@@ -701,7 +701,13 @@ void idemip_netif_add_addr6(uint8_t *restrict work)
     memcpy(addr6->addr, io->addr6_args.addr, IDEMIP_IP6_ADDR_LEN);
     addr6->preferred_s = io->addr6_args.preferred_s;
     addr6->valid_s = io->addr6_args.valid_s;
-    const IdemIpMs now = idemip_ms_join(NETIF_CTX(work)->tick_hi, NETIF_CTX(work)->tick_ms);
+    // The caller's own clock, and not the one the last tick left in the context. A lifetime is
+    // measured from the moment the address is assigned, so an address added before the first tick
+    // was stamped against a clock still at zero and the first tick with a real count retired it
+    // whole: sixty seconds of valid lifetime gone in one call, on a stack brought up sixty seconds
+    // into boot. Extending here as the sweep does keeps the two entries on one clock.
+    NetifCtx *ctx = NETIF_CTX(work);
+    const IdemIpMs now = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->now_ms);
     addr6->valid_at = netif_deadline(now, io->addr6_args.valid_s);
     addr6->preferred_at = netif_deadline(now, io->addr6_args.preferred_s);
     addr6->state = (uint8_t)io->addr6_args.state;
@@ -824,7 +830,7 @@ void idemip_netif_tick(uint8_t *restrict work)
     }
     // tick_ms is advanced by the sweep itself, by whole seconds only, so the sub-second remainder is
     // carried to the next call rather than dropped here.
-    io->aged = netif_age_addr6(work, io->tick_args.now_ms);
+    io->aged = netif_age_addr6(work, io->now_ms);
     io->status = IDEMIP_OK;
 }
 

@@ -72,6 +72,7 @@ extern void test_add_addr6_refuses_an_unbound_interface(void);
 extern void test_remove_addr6_frees_the_slot(void);
 extern void test_find_addr6_reports_the_interface_and_the_slot(void);
 extern void test_get_addr6_refuses_a_free_slot(void);
+extern void test_an_address_added_before_the_first_tick_keeps_its_whole_lifetime(void);
 extern void test_tick_deprecates_a_preferred_address_when_its_preferred_lifetime_expires(void);
 extern void test_tick_invalidates_an_address_when_its_valid_lifetime_expires(void);
 extern void test_tick_invalidates_a_tentative_address_whose_valid_lifetime_expired(void);
@@ -204,13 +205,14 @@ int main(void)
   run_test(test_remove_addr6_frees_the_slot, "test_remove_addr6_frees_the_slot", 1326);
   run_test(test_find_addr6_reports_the_interface_and_the_slot, "test_find_addr6_reports_the_interface_and_the_slot", 1349);
   run_test(test_get_addr6_refuses_a_free_slot, "test_get_addr6_refuses_a_free_slot", 1377);
-  run_test(test_tick_deprecates_a_preferred_address_when_its_preferred_lifetime_expires, "test_tick_deprecates_a_preferred_address_when_its_preferred_lifetime_expires", 1393);
-  run_test(test_tick_invalidates_an_address_when_its_valid_lifetime_expires, "test_tick_invalidates_an_address_when_its_valid_lifetime_expires", 1419);
-  run_test(test_tick_invalidates_a_tentative_address_whose_valid_lifetime_expired, "test_tick_invalidates_a_tentative_address_whose_valid_lifetime_expired", 1437);
-  run_test(test_tick_leaves_an_infinite_lifetime_where_it_is, "test_tick_leaves_an_infinite_lifetime_where_it_is", 1457);
-  run_test(test_tick_counts_every_address_it_moved, "test_tick_counts_every_address_it_moved", 1472);
-  run_test(test_unbind_drops_every_address_on_the_interface, "test_unbind_drops_every_address_on_the_interface", 1498);
-  run_test(test_the_addr6_tables_of_two_borrows_are_independent, "test_the_addr6_tables_of_two_borrows_are_independent", 1525);
+  run_test(test_an_address_added_before_the_first_tick_keeps_its_whole_lifetime, "test_an_address_added_before_the_first_tick_keeps_its_whole_lifetime", 1399);
+  run_test(test_tick_deprecates_a_preferred_address_when_its_preferred_lifetime_expires, "test_tick_deprecates_a_preferred_address_when_its_preferred_lifetime_expires", 1426);
+  run_test(test_tick_invalidates_an_address_when_its_valid_lifetime_expires, "test_tick_invalidates_an_address_when_its_valid_lifetime_expires", 1452);
+  run_test(test_tick_invalidates_a_tentative_address_whose_valid_lifetime_expired, "test_tick_invalidates_a_tentative_address_whose_valid_lifetime_expired", 1470);
+  run_test(test_tick_leaves_an_infinite_lifetime_where_it_is, "test_tick_leaves_an_infinite_lifetime_where_it_is", 1490);
+  run_test(test_tick_counts_every_address_it_moved, "test_tick_counts_every_address_it_moved", 1505);
+  run_test(test_unbind_drops_every_address_on_the_interface, "test_unbind_drops_every_address_on_the_interface", 1531);
+  run_test(test_the_addr6_tables_of_two_borrows_are_independent, "test_the_addr6_tables_of_two_borrows_are_independent", 1558);
 
   return UNITY_END();
 }

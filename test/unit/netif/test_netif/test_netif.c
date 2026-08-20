@@ -559,7 +559,7 @@ static void add6(uint8_t *w, uint8_t index, const uint8_t *a, IdemIpNetifAddr6St
 
 static void tick(uint8_t *w, uint32_t now_ms)
 {
-    IDEMIP_NETIF_IO(w)->tick_args.now_ms = now_ms;
+    IDEMIP_NETIF_IO(w)->now_ms = now_ms;
     Netif.tick(w);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_NETIF_IO(w)->status, "tick was refused");
 }
@@ -1390,6 +1390,39 @@ void test_get_addr6_refuses_a_free_slot(void)
 // RFC 4862 sec 5.5.4: "A preferred address becomes deprecated when its preferred lifetime expires."
 // The lifetime is seconds (RFC 4861 sec 4.6.2) and the sweep runs on milliseconds, so 30 seconds is
 // reached at 30000 ms after the address was taken.
+// RFC 4862 sec 5.5.3 e) measures a lifetime from the advertisement that carried it, so an address
+// carries its whole lifetime from the moment it is assigned and not from whenever a sweep last ran.
+// add_addr6 stamped its deadlines from the clock the last tick left in the context, and before the
+// first tick that clock is zero: an address added during bring-up on a host that had been up sixty
+// seconds was already past its valid lifetime when the first tick read the real count, and the sweep
+// retired it. Every other case here ticks before it adds, which is the one order that hides it.
+void test_an_address_added_before_the_first_tick_keeps_its_whole_lifetime(void)
+{
+    Netif.clear(work_a);
+    up(work_a, 0u, phy_a, g_mac_a, 1500u);
+
+    // No tick has run. The caller's clock reads ninety seconds, which is its own business.
+    IDEMIP_NETIF_IO(work_a)->now_ms = 90u * 1000u;
+    add6(work_a, 0u, v6_rfc4291_a, IDEMIP_NETIF_ADDR6_PREFERRED, 30u, 60u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status);
+
+    // The first sweep, at that same instant, moves nothing: no lifetime has run at all yet.
+    tick(work_a, 90u * 1000u);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, IDEMIP_NETIF_IO(work_a)->aged,
+                                    "a lifetime ran before the address was even assigned");
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_NETIF_ADDR6_PREFERRED, state_at(work_a, 0u, 0u));
+
+    // Thirty seconds from the assignment, not from zero, is where the preferred lifetime ends.
+    tick(work_a, (90u + 30u) * 1000u - 1u);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_NETIF_ADDR6_PREFERRED, state_at(work_a, 0u, 0u));
+    tick(work_a, (90u + 30u) * 1000u);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_NETIF_ADDR6_DEPRECATED, state_at(work_a, 0u, 0u));
+
+    // And sixty from the assignment is where the address goes.
+    tick(work_a, (90u + 60u) * 1000u);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_NETIF_ADDR6_INVALID, state_at(work_a, 0u, 0u));
+}
+
 void test_tick_deprecates_a_preferred_address_when_its_preferred_lifetime_expires(void)
 {
     Netif.clear(work_a);

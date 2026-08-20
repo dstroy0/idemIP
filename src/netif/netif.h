@@ -206,15 +206,9 @@ typedef struct
 
 #endif // IDEMIP_ENABLE_IPV6
 
-/**
- * @brief What a tick takes.
- *
- * @var NetifTickArgs::now_ms the millisecond the deadline sweep runs at
- */
-typedef struct
-{
-    uint32_t now_ms;
-} NetifTickArgs;
+// The clock is not a tick operand. It was, and add_addr6 read the one the last tick left behind
+// rather than the caller's own, so an address added before the first tick was stamped against a
+// clock still at zero and the first real tick retired it. See NetifIo::now_ms.
 
 /**
  * @brief The operands and results of a call, in the caller's borrow.
@@ -228,7 +222,9 @@ typedef struct
  *                           names
  * @var NetifIo::route_args  the destination on_link and find4 decide on
  * @var NetifIo::addr6_args  the address, state and lifetimes the IPv6 entries take
- * @var NetifIo::tick_args   the millisecond the lifetime sweep runs at
+ * @var NetifIo::now_ms      the millisecond clock the caller read before the call. Every deadline
+ *                           this unit stamps and every age it compares comes from it, so no entry
+ *                           reads a clock of its own and none reads the one another entry left.
  * @var NetifIo::status      what the call reports: OK, BUSY, or ERR
  * @var NetifIo::phy         the phy borrow the named interface is bound through
  * @var NetifIo::hwaddr      IDEMIP_MAC_LEN octets in this borrow, the named interface's address
@@ -257,8 +253,8 @@ typedef struct
 #if IDEMIP_ENABLE_IPV6
     NetifAddr6Args addr6_args;
 #endif
-    NetifTickArgs tick_args;
 
+    uint32_t now_ms;
     IdemIpStatus status;
     uint8_t *phy;
     const uint8_t *hwaddr;
