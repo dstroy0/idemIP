@@ -20,6 +20,7 @@
 #include "src/ip/ipv4.h"
 #if IDEMIP_ENABLE_IPV6
 #include "src/ip/ipv6.h"
+#include "src/ip/pseudo.h" // idemip_pseudo_accum, which a case below builds a checksum with
 #endif
 #if IDEMIP_ENABLE_TCP
 #include "src/tcp/tcp.h"
