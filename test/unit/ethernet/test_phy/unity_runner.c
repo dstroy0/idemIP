@@ -26,7 +26,7 @@ extern void test_commit_cleans_before_handing_over(void);
 extern void test_tx_claim_refuses_a_length_no_frame_can_carry(void);
 extern void test_tx_claim_admits_a_full_length_frame(void);
 extern void test_full_ring_is_busy_and_the_retry_succeeds(void);
-extern void test_commit_that_could_not_queue_is_busy(void);
+extern void test_commit_that_could_not_queue_is_busy_and_the_retry_succeeds(void);
 extern void test_commit_without_claim_is_refused(void);
 extern void test_mdio_refuses_an_out_of_range_register(void);
 extern void test_mdio_write_then_read(void);
@@ -109,10 +109,10 @@ int main(void)
   run_test(test_tx_claim_refuses_a_length_no_frame_can_carry, "test_tx_claim_refuses_a_length_no_frame_can_carry", 410);
   run_test(test_tx_claim_admits_a_full_length_frame, "test_tx_claim_admits_a_full_length_frame", 422);
   run_test(test_full_ring_is_busy_and_the_retry_succeeds, "test_full_ring_is_busy_and_the_retry_succeeds", 434);
-  run_test(test_commit_that_could_not_queue_is_busy, "test_commit_that_could_not_queue_is_busy", 450);
-  run_test(test_commit_without_claim_is_refused, "test_commit_without_claim_is_refused", 461);
-  run_test(test_mdio_refuses_an_out_of_range_register, "test_mdio_refuses_an_out_of_range_register", 474);
-  run_test(test_mdio_write_then_read, "test_mdio_write_then_read", 484);
+  run_test(test_commit_that_could_not_queue_is_busy_and_the_retry_succeeds, "test_commit_that_could_not_queue_is_busy_and_the_retry_succeeds", 454);
+  run_test(test_commit_without_claim_is_refused, "test_commit_without_claim_is_refused", 482);
+  run_test(test_mdio_refuses_an_out_of_range_register, "test_mdio_refuses_an_out_of_range_register", 495);
+  run_test(test_mdio_write_then_read, "test_mdio_write_then_read", 505);
 
   return UNITY_END();
 }

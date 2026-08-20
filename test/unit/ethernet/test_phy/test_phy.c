@@ -447,15 +447,36 @@ void test_full_ring_is_busy_and_the_retry_succeeds(void)
 }
 
 // A driver that could not queue a committed frame is BUSY for the same reason.
-void test_commit_that_could_not_queue_is_busy(void)
+// BUSY is a retry and not a fault, and a retry needs the buffer the claim holds. tx_commit cleared
+// PhyIo::tx whichever way the MAC answered, so the retry the contract asks for arrived with nothing
+// to commit and reported ERR - on a frame already built and already cleaned, and ERR is not a status
+// a caller retries. The claim stands until the MAC takes it.
+void test_commit_that_could_not_queue_is_busy_and_the_retry_succeeds(void)
 {
     bind_ok(work_a);
     IDEMIP_PHY_IO(work_a)->tx_args.len = 24u;
     Phy.tx_claim(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PHY_IO(work_a)->status);
+    uint8_t *claimed = IDEMIP_PHY_IO(work_a)->tx;
+    TEST_ASSERT_NOT_NULL(claimed);
+
     g_tx_commit_fails = 1;
     Phy.tx_commit(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_PHY_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_PTR_MESSAGE(claimed, IDEMIP_PHY_IO(work_a)->tx,
+                                  "the buffer went with the refusal, so there is nothing to retry");
+    TEST_ASSERT_EQUAL_INT(0, g_committed);
+
+    g_tx_commit_fails = 0;
+    Phy.tx_commit(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_PHY_IO(work_a)->status,
+                                  "the retry BUSY asked for had no buffer left to commit");
+    TEST_ASSERT_EQUAL_INT(1, g_committed);
+
+    // And once the MAC has it the claim is over, so a third commit is ERR rather than a double send.
+    Phy.tx_commit(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_PHY_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(1, g_committed);
 }
 
 void test_commit_without_claim_is_refused(void)

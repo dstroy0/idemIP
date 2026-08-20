@@ -112,7 +112,8 @@ typedef struct
  * @var PhyIo::mac        what poll_link reports, IDEMIP_MAC_LEN bytes in the driver's storage
  * @var PhyIo::frame      what rx_claim found, in the engine's buffer, valid until rx_release
  * @var PhyIo::len        how long that frame is, or 0 when the ring was empty
- * @var PhyIo::tx         what tx_claim handed back, or null when the ring was full
+ * @var PhyIo::tx         what tx_claim handed back, or null when the ring was full. It stays until
+ *                        the MAC takes it, so a commit that reported BUSY leaves it to retry with.
  * @var PhyIo::reg        what mdio_read returned
  */
 typedef struct
@@ -169,7 +170,9 @@ typedef struct
  * @var PhyNs::rx_release give the claimed descriptor back
  * @var PhyNs::tx_claim   claim a transmit buffer of @ref PhyTxArgs::len bytes. BUSY when the ring
  *                       is full, which is a retry and not a fault.
- * @var PhyNs::tx_commit  clean the buffer's cache lines and hand it to the MAC
+ * @var PhyNs::tx_commit  clean the buffer's cache lines and hand it to the MAC. BUSY when the MAC
+ *                        would not take it, and the claim stands so the retry commits the same
+ *                        buffer; @ref PhyIo::tx is cleared only once the MAC has it.
  * @var PhyNs::mdio_read  read one management register into @ref PhyNs::reg
  * @var PhyNs::mdio_write write one management register
  */

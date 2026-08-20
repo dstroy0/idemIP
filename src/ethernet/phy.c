@@ -175,8 +175,17 @@ void idemip_phy_tx_commit(uint8_t *restrict work)
         return;
     }
     ctx->drv->cache_clean(io->tx, io->tx_args.len);
-    io->status = ctx->drv->tx_commit(io->tx_args.len) ? IDEMIP_OK : IDEMIP_BUSY;
+    if (!ctx->drv->tx_commit(io->tx_args.len))
+    {
+        // BUSY is "come back on a later tick", and coming back needs the buffer this claim holds.
+        // Clearing io->tx here made the retry the contract asks for report ERR instead, on a frame
+        // already built and cleaned: the caller would have had to claim again to get anywhere, and
+        // ERR is not a status a retry follows. The claim stands until the MAC takes it.
+        io->status = IDEMIP_BUSY;
+        return;
+    }
     io->tx = NULL;
+    io->status = IDEMIP_OK;
 }
 
 void idemip_phy_mdio_read(uint8_t *restrict work)
