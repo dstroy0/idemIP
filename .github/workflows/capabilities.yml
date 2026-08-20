@@ -70,13 +70,20 @@ jobs:
         run: ctest --test-dir build --output-on-failure --timeout 120
 
   guards:
-    name: namespace guards
+    name: source guards
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       # The static form of the matrix above, and much faster: a member the struct declares under an
       # #if and the table sets without one is the exact shape of four of the six defects, and it is
-      # readable without building anything.
-      - name: Check every namespace table against its struct
+      # readable without building anything. It also checks that src/idemip.h names every namespace,
+      # which no build can check, since nothing in the library includes the front door.
+      - name: Check every namespace table against its struct, and the front door against both
         run: python3 tools/dev_env/guards.py
+
+      # Neither the matrix nor a suite can see a counter nothing writes: it compiles, it reads zero,
+      # and zero is what a quiet interface reads too. This pins which of the 124 are carried for the
+      # MIB's shape and which have to be written, so one going dead is a failure and not a silence.
+      - name: Check which MIB counters the library reaches
+        run: python3 tools/dev_env/counters.py

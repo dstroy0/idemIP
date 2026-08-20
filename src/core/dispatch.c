@@ -1087,6 +1087,13 @@ static void d_icmp4(uint8_t *restrict work, const uint8_t *ip4, size_t total_len
     {
         io->out_len = ic->out_len;
         io->act |= IDEMIP_DISPATCH_ACT_SEND;
+        // The one ICMPv4 message this path builds itself, and so the one whose out counters are its
+        // own rather than the caller's. RFC 1213 sec 6.7 icmpOutMsgs is "the total number of ICMP
+        // messages which this entity attempted to send", and the attempt is the message existing:
+        // IcmpIn.recv is ERR with no transmit buffer to build in, which returned above, so a reply
+        // counted here is a reply built.
+        d_bump(work, IDEMIP_STAT_ICMP4_OUT_MSGS);
+        d_bump(work, IDEMIP_STAT_ICMP4_OUT_ECHO_REPS);
     }
     if ((ic->act & IDEMIP_ICMP_IN_ACT_USER) != 0u)
     {
@@ -1686,6 +1693,11 @@ static void d_icmp6(uint8_t *restrict work, const uint8_t *ip6, size_t total_len
     {
         io->out_len = ic->out_len;
         io->act |= IDEMIP_DISPATCH_ACT_SEND;
+        // The twin of the v4 site, under RFC 2466 sec 4's own names: ipv6IfIcmpOutMsgs is "the total
+        // number of ICMP messages which this interface attempted to send" and
+        // ipv6IfIcmpOutEchoReplies is "the number of ICMP Echo Reply messages sent by the interface".
+        d_bump(work, IDEMIP_STAT_ICMP6_OUT_MSGS);
+        d_bump(work, IDEMIP_STAT_ICMP6_OUT_ECHO_REPLIES);
     }
     if ((ic->act & IDEMIP_ICMP6_IN_ACT_USER) != 0u)
     {

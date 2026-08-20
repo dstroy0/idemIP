@@ -32,9 +32,29 @@
  * and tcpCurrEstab are the three gauges.
  *
  * A counter with no event to reach it is still carried, so the id block is the MIB's shape and not
- * this library's. Those are icmpInAddrMasks and icmpInAddrMaskReps and their two out twins, RFC 1122
- * sec 3.2.2.9 leaving the Address Mask pair optional and this library not carrying it; and, on the
- * IPv6 side, the out counters of both groups, which belong to a send path this module does not own.
+ * this library's. There are three reasons one is carried and never written, and no fourth:
+ *
+ *   the RFC 1155 sec 3.2.3.4 gauges, which @ref StatsNs::set writes off the thing they measure -
+ *   the PHY's link speed, the driver's transmit queue, the count of TCB rows in a state - rather
+ *   than accumulating, so no event bumps them and tracking one by deltas would only drift;
+ *
+ *   the Address Mask ids, both directions, RFC 1122 sec 3.2.2.9 leaving the pair optional and this
+ *   library not carrying it, so there is no message to count;
+ *
+ *   and the send path. Dispatch holds this borrow and walks one frame IN, so what goes out is the
+ *   caller's, driving IcmpIn.error, the fragmenters, the forwarders, TcpOut, the ND and MLD senders
+ *   and the DMA engine - and the caller holds this same borrow, so bump is in its reach for all of
+ *   them.
+ *
+ * WHICH ids those are is not written here. A list in a comment goes stale the moment it is right,
+ * and one already had: it said "the out counters of both groups" on the IPv6 side of a library that
+ * was that way throughout, IPv4 and the interface included. Run tools/dev_env/counters.py, which
+ * computes the set from the source, holds the reason for each, and fails when the set moves.
+ *
+ * Five out counters are not on it, because this library builds those messages itself and no caller
+ * could count them without re-parsing what dispatch just handed back: tcpOutRsts for the resets
+ * dispatch sends, and icmpOutMsgs and icmpOutEchoReps with their two RFC 2466 twins for the echo
+ * replies icmp_in and icmp6_in build.
  */
 
 #ifndef IDEMIP_STATS_H

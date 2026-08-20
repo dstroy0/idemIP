@@ -1207,6 +1207,42 @@ void test_an_icmp_echo_counts_itself_by_message_and_by_type(void)
                                      "an Echo was counted as an Echo Reply");
 }
 
+// RFC 1213 sec 6.7 icmpOutMsgs is "the total number of ICMP messages which this entity attempted to
+// send" and icmpOutEchoReps is "the number of ICMP Echo Reply messages sent". The Echo Reply this
+// path builds is the one ICMPv4 message the library emits itself, so it is the one whose out
+// counters no caller could take without re-parsing what dispatch handed back at @c out: ACT_SEND
+// alone does not say whether that is an ARP reply, an echo reply or a TCP reset. Every ICMPv4 out
+// counter read zero, this one included, while tcpOutRsts was counted three functions away.
+void test_the_echo_reply_this_path_builds_takes_its_two_out_counters(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_SEND) != 0u,
+                             "the request built no reply, so this case counts nothing either way");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP4_OUT_MSGS), "icmpOutMsgs counted nothing");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP4_OUT_ECHO_REPS),
+                                     "icmpOutEchoReps counted nothing");
+
+    // An Echo Reply arriving is an ICMPv4 message this path does not answer, so the two stay where
+    // they are: the counters attach to what dispatch built and not to what it saw.
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, LOCAL_IP4, IDEMIP_ICMP_ECHO_HDR_LEN + 4u, 0u);
+    end = build_icmp_echo(g_frame, off, 4u);
+    g_frame[off + IDEMIP_ICMP_OFF_TYPE] = IDEMIP_ICMP_ECHO_REPLY;
+    idemip_wr16(g_frame + off + 2u, 0u);
+    idemip_wr16(g_frame + off + 2u, idemip_cksum(g_frame + off, IDEMIP_ICMP_ECHO_HDR_LEN + 4u));
+    idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(end - ip));
+    idemip_ip4_recksum(g_frame + ip);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP4_OUT_MSGS),
+                                     "a message that built no reply was counted as one sent");
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP4_OUT_ECHO_REPS));
+}
+
 // icmpInErrors: "The number of ICMP messages which the entity received but determined as having
 // ICMP-specific errors (bad ICMP checksums, bad length, etc.)", and icmpInMsgs counts it too.
 void test_an_icmp_message_with_a_bad_checksum_counts_as_an_error(void)
@@ -1904,6 +1940,56 @@ void test_an_icmpv6_message_of_unknown_type_is_discarded(void)
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_DISCARDS));
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_IP4_IN_DISCARDS),
                                      "an IPv6 packet was counted against the IPv4 counter");
+}
+
+// An eight-octet ICMPv6 Echo message of @p type, 128 being a Request and 129 a Reply, carrying
+// RFC 4443 sec 2.3's checksum over the pseudo-header. The message is the whole payload, so the IPv6
+// Payload Length is its own length.
+static size_t build_ip6_echo6(uint8_t *f, size_t off, uint8_t type)
+{
+    off = build_ip6(f, off, IDEMIP_IP6_NH_ICMPV6, g_remote_ip6, g_local_ip6, IDEMIP_ICMP6_ECHO_HDR_LEN);
+    f[off + IDEMIP_ICMP6_OFF_TYPE] = type;
+    f[off + IDEMIP_ICMP6_OFF_CODE] = 0u;
+    idemip_wr16(f + off + IDEMIP_ICMP6_OFF_CKSUM, 0u);
+    idemip_wr16(f + off + 4u, 0x0AAAu);
+    idemip_wr16(f + off + 6u, 0x0001u);
+    uint32_t sum = idemip_ip6_pseudo_accum(0u, g_remote_ip6, g_local_ip6, (uint32_t)IDEMIP_ICMP6_ECHO_HDR_LEN,
+                                           IDEMIP_IP6_NH_ICMPV6);
+    idemip_wr16(f + off + IDEMIP_ICMP6_OFF_CKSUM,
+                idemip_cksum_final(idemip_cksum_accum(sum, f + off, IDEMIP_ICMP6_ECHO_HDR_LEN)));
+    return off + IDEMIP_ICMP6_ECHO_HDR_LEN;
+}
+
+// The RFC 2466 sec 4 twins of the v4 case above, and not the same objects under IPv6 names:
+// ipv6IfIcmpOutMsgs is "the total number of ICMP messages which this interface attempted to send",
+// ipv6IfIcmpOutEchoReplies "the number of ICMP Echo Reply messages sent by the interface". Both are
+// entries RFC 1213 sec 6.7 has no field for at all, so before the two groups were separated there
+// was nothing here to count with.
+void test_the_icmpv6_echo_reply_this_path_builds_takes_its_two_out_counters(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t end = build_ip6_echo6(g_frame, off, IDEMIP_ICMP6_ECHO_REQUEST);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_SEND) != 0u,
+                             "the request built no reply, so this case counts nothing either way");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP6_OUT_MSGS),
+                                     "ipv6IfIcmpOutMsgs counted nothing");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP6_OUT_ECHO_REPLIES),
+                                     "ipv6IfIcmpOutEchoReplies counted nothing");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP4_OUT_MSGS),
+                                     "an ICMPv6 message was counted against the RFC 1213 group");
+
+    // An Echo Reply arriving is answered by nothing, so neither counter moves for it.
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    end = build_ip6_echo6(g_frame, off, IDEMIP_ICMP6_ECHO_REPLY);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP6_OUT_MSGS),
+                                     "a message that built no reply was counted as one sent");
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_OUT_ECHO_REPLIES));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP6_IN_ECHO_REPLIES),
+                                     "the reply that arrived is still an in count");
 }
 
 // RFC 8200 sec 8.1: "IPv6 receivers must discard UDP packets containing a zero checksum". The
