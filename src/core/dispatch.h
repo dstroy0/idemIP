@@ -498,8 +498,10 @@ void idemip_dispatch_bind(uint8_t *restrict work);
 void idemip_dispatch_if_bind(uint8_t *restrict work);
 void idemip_dispatch_if_get(uint8_t *restrict work);
 void idemip_dispatch_input(uint8_t *restrict work);
+#if IDEMIP_ENABLE_TCP
 void idemip_dispatch_tcp_deliver(uint8_t *restrict work);
 void idemip_dispatch_tcp_ack(uint8_t *restrict work);
+#endif
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.
@@ -517,8 +519,11 @@ static const DispatchNs Dispatch IDEMIP_UNUSED = {
     .if_bind = idemip_dispatch_if_bind,
     .if_get = idemip_dispatch_if_get,
     .input = idemip_dispatch_input,
+#if IDEMIP_ENABLE_TCP
     .tcp_deliver = idemip_dispatch_tcp_deliver,
-    .tcp_ack = idemip_dispatch_tcp_ack};
+    .tcp_ack = idemip_dispatch_tcp_ack,
+#endif
+};
 // RFC 6325 sec 4.1.1 reserves 0xFFF, so no membership can ever equal the sentinel.
 static_assert(IDEMIP_DISPATCH_VID_NONE > IDEMIP_VLAN_VID_LAST,
               "the sentinel must lie above the usable VLAN ID range (RFC 6325 sec 4.1.1)");

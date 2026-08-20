@@ -384,11 +384,13 @@ void idemip_netif_set_offload(uint8_t *restrict work);
 void idemip_netif_get(uint8_t *restrict work);
 void idemip_netif_find4(uint8_t *restrict work);
 void idemip_netif_local4(uint8_t *restrict work);
+#if IDEMIP_ENABLE_IPV6
 void idemip_netif_add_addr6(uint8_t *restrict work);
 void idemip_netif_remove_addr6(uint8_t *restrict work);
 void idemip_netif_find_addr6(uint8_t *restrict work);
 void idemip_netif_get_addr6(uint8_t *restrict work);
 void idemip_netif_tick(uint8_t *restrict work);
+#endif
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.
@@ -411,11 +413,14 @@ static const NetifNs Netif IDEMIP_UNUSED = {
     .get = idemip_netif_get,
     .find4 = idemip_netif_find4,
     .local4 = idemip_netif_local4,
+#if IDEMIP_ENABLE_IPV6
     .add_addr6 = idemip_netif_add_addr6,
     .remove_addr6 = idemip_netif_remove_addr6,
     .find_addr6 = idemip_netif_find_addr6,
     .get_addr6 = idemip_netif_get_addr6,
-    .tick = idemip_netif_tick};
+    .tick = idemip_netif_tick,
+#endif
+};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET

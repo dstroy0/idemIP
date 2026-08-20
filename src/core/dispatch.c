@@ -423,6 +423,9 @@ static void d_raw(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t
             const uint16_t bound = rp->index;
             rp->pcb_args.index = bound;
             RawPcb.load(ctx->raw_pcb);
+            // The option is IPv6's alone, so a build without IPv6 has no version this can hold for
+            // and IDEMIP_IP6_VERSION is not a name it defines.
+#if IDEMIP_ENABLE_IPV6
             if (rp->status == IDEMIP_OK && ip_version == IDEMIP_IP6_VERSION && rp->info.cksum_offset >= 0)
             {
                 const uint8_t *body = io->input_args.frame + io->payload_off;
@@ -437,6 +440,7 @@ static void d_raw(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t
                     return;
                 }
             }
+#endif
             io->pcb_kind = IDEMIP_DISPATCH_PCB_RAW;
             io->pcb = bound;
             io->act |= IDEMIP_DISPATCH_ACT_DELIVER;

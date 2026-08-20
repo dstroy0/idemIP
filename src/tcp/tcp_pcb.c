@@ -190,16 +190,26 @@ static uint32_t tcp_pcb_seq_from(uint32_t seq, uint32_t edge)
 
 // RFC 791 sec 3.1 addresses are four octets, RFC 8200 sec 3 addresses are sixteen. Any other version
 // number names neither, and reports zero so the caller refuses the call.
+//
+// A version this build does not carry is one of those. The capability decides what the library can
+// address, so a TCB opened on a family with no IP layer under it would hold an address nothing can
+// route: the table refuses it here, at the one place both open and listen ask how wide the pair is,
+// rather than accepting it and failing at the send.
 static uint8_t tcp_pcb_addr_bytes(uint8_t ip_version)
 {
+#if IDEMIP_ENABLE_IPV4
     if (ip_version == 4u)
     {
         return 4u;
     }
+#endif
+#if IDEMIP_ENABLE_IPV6
     if (ip_version == 6u)
     {
         return 16u;
     }
+#endif
+    (void)ip_version;
     return 0u;
 }
 
@@ -703,6 +713,7 @@ void idemip_tcp_pcb_bind(uint8_t *restrict work)
 // alone, so it is not among these.
 static idemip_bool tcp_pcb_remote_invalid(uint8_t ip_version, const uint8_t *ip)
 {
+#if IDEMIP_ENABLE_IPV4
     if (ip_version == 4u)
     {
         IdemIpIp4AddrType type = idemip_ip4_addr_type(idemip_rd32(ip));
@@ -711,10 +722,21 @@ static idemip_bool tcp_pcb_remote_invalid(uint8_t ip_version, const uint8_t *ip)
                    ? IDEMIP_TRUE
                    : IDEMIP_FALSE;
     }
+#else
+    (void)ip_version;
+#endif
+#if IDEMIP_ENABLE_IPV6
     // RFC 4291 sec 2.7: "An IPv6 multicast address ... must never be used as source addresses in IPv6
     // packets or appear in any Routing header", and sec 2.5.2 makes :: unusable as a destination.
     IdemIpIp6Type type = idemip_ip6_addr_type(ip);
     return (type == IDEMIP_IP6_TYPE_MULTICAST || type == IDEMIP_IP6_TYPE_UNSPECIFIED) ? IDEMIP_TRUE : IDEMIP_FALSE;
+#else
+    // A build without IPv6 has no address type to read here and nothing that opens a v6 connection,
+    // so the arm is unreachable rather than permissive: an address this module cannot judge is
+    // refused, not admitted.
+    (void)ip;
+    return IDEMIP_TRUE;
+#endif
 }
 
 // RFC 9293 sec 3.3.1's "remote IP address and port number" half of the four-tuple. sec 3.10.1: "if

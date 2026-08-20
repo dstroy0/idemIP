@@ -183,7 +183,9 @@ void idemip_loopif_output(uint8_t *restrict work);
 void idemip_loopif_claim(uint8_t *restrict work);
 void idemip_loopif_release(uint8_t *restrict work);
 void idemip_loopif_owns4(uint8_t *restrict work);
+#if IDEMIP_ENABLE_IPV6
 void idemip_loopif_owns6(uint8_t *restrict work);
+#endif
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.
@@ -202,7 +204,10 @@ static const LoopifNs Loopif IDEMIP_UNUSED = {
     .claim = idemip_loopif_claim,
     .release = idemip_loopif_release,
     .owns4 = idemip_loopif_owns4,
-    .owns6 = idemip_loopif_owns6};
+#if IDEMIP_ENABLE_IPV6
+    .owns6 = idemip_loopif_owns6,
+#endif
+};
 IDEMIP_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET

@@ -1,0 +1,82 @@
+# Every legal capability set, built and run.
+#
+# The options in CMakeLists.txt select translation units, and a header that names a symbol its own
+# #if removed compiles in the full build and only in the full build. Nothing caught that, because
+# nothing built anything but the full build: four namespace tables, one address-type helper and one
+# raw-socket branch were broken across the reduced sets at once, and the suites that would have said
+# so could not be linked to say it.
+#
+# ETHERNET is the root and is on throughout. IPV4 and IPV6 sit on it, TCP and UDP need at least one
+# of the two, so the sets below are the whole legal space: both families, each alone, and each
+# transport combination under each.
+name: capabilities
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  build:
+    name: ${{ matrix.tag }}
+    runs-on: ubuntu-latest
+    strategy:
+      # One failing set does not cancel the others: which sets break is the finding, so all of them
+      # run and all of them report.
+      fail-fast: false
+      matrix:
+        include:
+          - { tag: all,          ipv4: "ON",  ipv6: "ON",  tcp: "ON",  udp: "ON"  }
+          - { tag: ip4-only,     ipv4: "ON",  ipv6: "OFF", tcp: "ON",  udp: "ON"  }
+          - { tag: ip6-only,     ipv4: "OFF", ipv6: "ON",  tcp: "ON",  udp: "ON"  }
+          - { tag: no-tcp,       ipv4: "ON",  ipv6: "ON",  tcp: "OFF", udp: "ON"  }
+          - { tag: no-udp,       ipv4: "ON",  ipv6: "ON",  tcp: "ON",  udp: "OFF" }
+          - { tag: no-transport, ipv4: "ON",  ipv6: "ON",  tcp: "OFF", udp: "OFF" }
+          - { tag: ip4-tcp,      ipv4: "ON",  ipv6: "OFF", tcp: "ON",  udp: "OFF" }
+          - { tag: ip4-udp,      ipv4: "ON",  ipv6: "OFF", tcp: "OFF", udp: "ON"  }
+          - { tag: ip6-tcp,      ipv4: "OFF", ipv6: "ON",  tcp: "ON",  udp: "OFF" }
+          - { tag: ip6-udp,      ipv4: "OFF", ipv6: "ON",  tcp: "OFF", udp: "ON"  }
+          - { tag: ip4-bare,     ipv4: "ON",  ipv6: "OFF", tcp: "OFF", udp: "OFF" }
+          - { tag: ip6-bare,     ipv4: "OFF", ipv6: "ON",  tcp: "OFF", udp: "OFF" }
+          - { tag: eth-only,     ipv4: "OFF", ipv6: "OFF", tcp: "OFF", udp: "OFF" }
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      # No capability set is allowed a warning either: the ones this workflow exists to catch arrive
+      # as a warning before they arrive as an error.
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DIDEMIP_ENABLE_IPV4=${{ matrix.ipv4 }}
+          -DIDEMIP_ENABLE_IPV6=${{ matrix.ipv6 }}
+          -DIDEMIP_ENABLE_TCP=${{ matrix.tcp }}
+          -DIDEMIP_ENABLE_UDP=${{ matrix.udp }}
+
+      - name: Build
+        run: cmake --build build
+
+      # test/CMakeLists.txt names the capabilities each suite needs, so a reduced set runs fewer
+      # suites rather than none. A set that builds and then fails a suite is the other half of this:
+      # the code compiled, and what it does with the family it was left is still checked.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --timeout 120
+
+  guards:
+    name: namespace guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # The static form of the matrix above, and much faster: a member the struct declares under an
+      # #if and the table sets without one is the exact shape of four of the six defects, and it is
+      # readable without building anything.
+      - name: Check every namespace table against its struct
+        run: python3 tools/dev_env/guards.py

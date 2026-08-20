@@ -33,8 +33,28 @@ static _Alignas(8) uint8_t work_b[IDEMIP_TCP_PCB_BORROW + 16];
 #define OOSEQ_BYTES (OOSEQ_ENTRIES << IDEMIP_TCP_OOSEQ_ENTRY_SHIFT)
 #define TABLES_BYTES (TCB_BYTES + LISTEN_BYTES + SEG_BYTES + OOSEQ_BYTES)
 
+// This suite is about the connection table and not about either IP version, so it runs on whichever
+// family the build carries - IPv4 where there is one, IPv6 otherwise - and the few cases that are
+// about one version's own address rules say which, and stand aside where that version is absent.
+// The pair below is that family's documentation prefix: RFC 5737 sec 3's 192.0.2.0/24, or RFC 3849
+// sec 4's 2001:DB8::/32.
+#if IDEMIP_ENABLE_IPV4
+#define G_IP_VERSION 4u
+// The version this suite's records are NOT on, which is what a lookup uses to show that the version
+// is part of the key. It names no layer this build has to carry, which is the point.
+#define G_OTHER_VERSION 6u
+#define G_ADDR_OCTETS 4u
 static const uint8_t g_local[IDEMIP_TCP_PCB_ADDR_BYTES] = {192u, 0u, 2u, 1u};
 static const uint8_t g_remote[IDEMIP_TCP_PCB_ADDR_BYTES] = {192u, 0u, 2u, 9u};
+#else
+#define G_IP_VERSION 6u
+#define G_OTHER_VERSION 4u
+#define G_ADDR_OCTETS 16u
+static const uint8_t g_local[IDEMIP_TCP_PCB_ADDR_BYTES] = {0x20u, 0x01u, 0x0Du, 0xB8u, 0u, 0u, 0u, 0u,
+                                                           0u,    0u,    0u,    0u,    0u, 0u, 0u, 0x01u};
+static const uint8_t g_remote[IDEMIP_TCP_PCB_ADDR_BYTES] = {0x20u, 0x01u, 0x0Du, 0xB8u, 0u, 0u, 0u, 0u,
+                                                            0u,    0u,    0u,    0u,    0u, 0u, 0u, 0x09u};
+#endif
 
 static void arm(uint8_t *w, size_t cap)
 {
@@ -215,9 +235,9 @@ void test_clear_leaves_the_operands_alone(void)
 
 #define IO(w) IDEMIP_TCP_PCB_IO(w)
 
-static uint16_t open4(uint8_t *w)
+static uint16_t open_pcb(uint8_t *w)
 {
-    IO(w)->open_args.ip_version = 4u;
+    IO(w)->open_args.ip_version = G_IP_VERSION;
     TcpPcb.open(w);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(w)->status);
     TEST_ASSERT_NOT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(w)->index);
@@ -235,8 +255,8 @@ void test_two_borrows_share_no_byte(void)
     TcpPcb.clear(work_b);
 
     // The same index in each borrow is a different TCB, so both can hold the same four-tuple.
-    uint16_t a = open4(work_a);
-    uint16_t b = open4(work_b);
+    uint16_t a = open_pcb(work_a);
+    uint16_t b = open_pcb(work_b);
     TEST_ASSERT_EQUAL_UINT16(a, b);
 
     IDEMIP_TCP_PCB_IO(work_a)->pcb_args.index = a;
@@ -457,7 +477,7 @@ void test_the_out_of_order_table_holds_what_the_pin_bound_counts(void)
     size_t held = 0u;
     for (uint16_t p = 0u; p < (uint16_t)IDEMIP_TCP_PCBS; p++)
     {
-        uint16_t idx = open4(work_a);
+        uint16_t idx = open_pcb(work_a);
         TEST_ASSERT_NOT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, idx);
         for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_OOSEQ_SEGS; n++)
         {
@@ -539,7 +559,7 @@ static const uint8_t g_path_len[IDEMIP_TCP_STATES] = {0u, 1u, 1u, 1u, 2u, 3u, 4u
 static uint16_t reach(uint8_t *w, IdemIpTcpState target)
 {
     TcpPcb.clear(w);
-    uint16_t idx = open4(w);
+    uint16_t idx = open_pcb(w);
     for (uint8_t i = 0; i < g_path_len[target]; i++)
     {
         TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, put_state(w, idx, g_path[target][i]),
@@ -578,12 +598,12 @@ static const char *g_edges[IDEMIP_TCP_STATES] = {
 void test_open_creates_a_tcb_in_the_state_that_has_no_connection(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->pcb_args.index = idx;
     TcpPcb.load(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_CLOSED, IO(work_a)->state);
-    TEST_ASSERT_EQUAL_UINT8(4u, IO(work_a)->info.ip_version);
+    TEST_ASSERT_EQUAL_UINT8(G_IP_VERSION, IO(work_a)->info.ip_version);
     TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->info.unsent);
     TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->info.unacked);
     TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->info.ooseq);
@@ -611,12 +631,12 @@ void test_open_refuses_a_version_that_names_no_address_family(void)
 void test_a_full_table_is_busy_and_a_close_makes_the_same_call_succeed(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t first = open4(work_a);
+    uint16_t first = open_pcb(work_a);
     for (uint16_t i = 1u; i < IDEMIP_TCP_PCBS; i++)
     {
-        (void)open4(work_a);
+        (void)open_pcb(work_a);
     }
-    IO(work_a)->open_args.ip_version = 4u;
+    IO(work_a)->open_args.ip_version = G_IP_VERSION;
     TcpPcb.open(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->index);
@@ -624,7 +644,7 @@ void test_a_full_table_is_busy_and_a_close_makes_the_same_call_succeed(void)
     IO(work_a)->pcb_args.index = first;
     TcpPcb.close(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-    IO(work_a)->open_args.ip_version = 4u;
+    IO(work_a)->open_args.ip_version = G_IP_VERSION;
     TcpPcb.open(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT16(first, IO(work_a)->index);
@@ -637,7 +657,7 @@ void test_every_open_reports_a_different_tcb(void)
     uint16_t seen = 0u;
     for (uint16_t i = 0u; i < IDEMIP_TCP_PCBS; i++)
     {
-        uint16_t idx = open4(work_a);
+        uint16_t idx = open_pcb(work_a);
         TEST_ASSERT_TRUE_MESSAGE((seen & (uint16_t)(1u << idx)) == 0u, "open reported a TCB twice");
         seen = (uint16_t)(seen | (uint16_t)(1u << idx));
     }
@@ -674,7 +694,7 @@ void test_a_call_on_a_tcb_that_is_not_open_is_refused(void)
 void test_bind_sets_the_local_half_of_the_four_tuple(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->bind_args.index = idx;
     IO(work_a)->bind_args.ip = g_local;
     IO(work_a)->bind_args.port = 80u;
@@ -689,9 +709,10 @@ void test_bind_sets_the_local_half_of_the_four_tuple(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT16(80u, IO(work_a)->info.local_port);
     TEST_ASSERT_EQUAL_UINT8(3u, IO(work_a)->info.netif);
-    TEST_ASSERT_EQUAL_HEX8_ARRAY(g_local, IO(work_a)->info.local_ip, 4u);
-    // A version 4 bind reads four octets, so the twelve past them stay zero.
-    for (size_t i = 4u; i < IDEMIP_TCP_PCB_ADDR_BYTES; i++)
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(g_local, IO(work_a)->info.local_ip, G_ADDR_OCTETS);
+    // A bind reads its own version's address and no further: RFC 791 sec 3.1's four octets or
+    // RFC 8200 sec 3's sixteen. Whatever the version does not reach stays zero.
+    for (size_t i = G_ADDR_OCTETS; i < IDEMIP_TCP_PCB_ADDR_BYTES; i++)
     {
         TEST_ASSERT_EQUAL_HEX8(0u, IO(work_a)->info.local_ip[i]);
     }
@@ -704,8 +725,8 @@ void test_bind_sets_the_local_half_of_the_four_tuple(void)
 void test_a_bind_of_port_any_draws_from_the_ephemeral_pool(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t a = open4(work_a);
-    uint16_t b = open4(work_a);
+    uint16_t a = open_pcb(work_a);
+    uint16_t b = open_pcb(work_a);
 
     IO(work_a)->bind_args.index = a;
     IO(work_a)->bind_args.ip = g_local;
@@ -749,11 +770,11 @@ void test_the_ephemeral_draw_steps_over_a_port_a_listener_holds(void)
     IO(work_a)->listen_args.zone = 0u;
     IO(work_a)->listen_args.netif = 0u;
     IO(work_a)->listen_args.backlog = 1u;
-    IO(work_a)->listen_args.ip_version = 4u;
+    IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->bind_args.index = idx;
     IO(work_a)->bind_args.ip = g_local;
     IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
@@ -766,7 +787,7 @@ void test_the_ephemeral_draw_steps_over_a_port_a_listener_holds(void)
 
     // RFC 9293 sec 3.9.1.1 MUST-42 is the converse and still holds: a named bind of that same port
     // stands, because a LISTEN must be possible alongside a connection on the same local port.
-    uint16_t other = open4(work_a);
+    uint16_t other = open_pcb(work_a);
     IO(work_a)->bind_args.index = other;
     IO(work_a)->bind_args.ip = g_local;
     IO(work_a)->bind_args.port = served;
@@ -786,7 +807,7 @@ void test_the_ephemeral_draw_steps_over_a_port_a_listener_holds(void)
 void test_the_ephemeral_draw_follows_the_callers_random_word(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->bind_args.index = idx;
     IO(work_a)->bind_args.ip = g_local;
     IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
@@ -798,7 +819,7 @@ void test_the_ephemeral_draw_follows_the_callers_random_word(void)
 
     // The same empty table, a different word: a cursor would hand out the same next port either way.
     TcpPcb.clear(work_a);
-    idx = open4(work_a);
+    idx = open_pcb(work_a);
     IO(work_a)->bind_args.index = idx;
     IO(work_a)->bind_args.ip = g_local;
     IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
@@ -812,7 +833,7 @@ void test_the_ephemeral_draw_follows_the_callers_random_word(void)
     // And the same word twice on an empty table places it the same way, so the draw is a function of
     // the word rather than of a cursor the last call moved.
     TcpPcb.clear(work_a);
-    idx = open4(work_a);
+    idx = open_pcb(work_a);
     IO(work_a)->bind_args.index = idx;
     IO(work_a)->bind_args.ip = g_local;
     IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
@@ -829,8 +850,8 @@ void test_two_connections_share_one_local_port_and_differ_by_the_remote_socket(v
 {
     static const uint8_t peer_b[IDEMIP_TCP_PCB_ADDR_BYTES] = {192u, 0u, 2u, 10u};
     TcpPcb.clear(work_a);
-    uint16_t a = open4(work_a);
-    uint16_t b = open4(work_a);
+    uint16_t a = open_pcb(work_a);
+    uint16_t b = open_pcb(work_a);
 
     IO(work_a)->bind_args.index = a;
     IO(work_a)->bind_args.ip = g_local;
@@ -865,8 +886,8 @@ void test_two_connections_share_one_local_port_and_differ_by_the_remote_socket(v
 void test_the_same_pair_of_sockets_twice_is_busy(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t a = open4(work_a);
-    uint16_t b = open4(work_a);
+    uint16_t a = open_pcb(work_a);
+    uint16_t b = open_pcb(work_a);
     for (uint16_t idx = a; ; idx = b)
     {
         IO(work_a)->bind_args.index = idx;
@@ -907,7 +928,7 @@ void test_the_same_pair_of_sockets_twice_is_busy(void)
 void test_a_rebind_of_the_same_tcb_repeats(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     for (int i = 0; i < 2; i++)
     {
         IO(work_a)->bind_args.index = idx;
@@ -926,7 +947,7 @@ void test_a_rebind_of_the_same_tcb_repeats(void)
 void test_the_local_socket_is_fixed_once_the_connection_left_closed(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, idx, IDEMIP_TCP_STATE_SYN_SENT));
 
     IO(work_a)->bind_args.index = idx;
@@ -947,7 +968,7 @@ void test_the_local_socket_is_fixed_once_the_connection_left_closed(void)
 void test_connect_refuses_an_unspecified_remote_socket(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->connect_args.index = idx;
     IO(work_a)->connect_args.ip = g_remote;
     IO(work_a)->connect_args.port = IDEMIP_TCP_PCB_PORT_ANY;
@@ -961,6 +982,11 @@ void test_connect_refuses_an_unspecified_remote_socket(void)
 // used as a destination address".
 void test_connect_refuses_an_invalid_remote_ip_address(void)
 {
+#if !IDEMIP_ENABLE_IPV4
+    // The rule is IPv4's own, over addresses this build has no layer to carry. Its IPv6 counterpart
+    // below is the one that runs here.
+    TEST_PASS();
+#else
     static const uint8_t all_hosts[IDEMIP_TCP_PCB_ADDR_BYTES] = {224u, 0u, 0u, 1u};   // class D
     static const uint8_t limited[IDEMIP_TCP_PCB_ADDR_BYTES] = {255u, 255u, 255u, 255u}; // sec 3.2.1.3 (c)
     static const uint8_t unspec4[IDEMIP_TCP_PCB_ADDR_BYTES] = {0u, 0u, 0u, 0u};
@@ -969,7 +995,7 @@ void test_connect_refuses_an_invalid_remote_ip_address(void)
     for (size_t i = 0; i < 3u; i++)
     {
         TcpPcb.clear(work_a);
-        uint16_t idx = open4(work_a);
+        uint16_t idx = open_pcb(work_a);
         IO(work_a)->connect_args.index = idx;
         IO(work_a)->connect_args.ip = bad4[i];
         IO(work_a)->connect_args.port = 80u;
@@ -980,17 +1006,22 @@ void test_connect_refuses_an_invalid_remote_ip_address(void)
 
     // A unicast remote address at the same port is what MUST-46 leaves alone.
     TcpPcb.clear(work_a);
-    uint16_t ok = open4(work_a);
+    uint16_t ok = open_pcb(work_a);
     IO(work_a)->connect_args.index = ok;
     IO(work_a)->connect_args.ip = g_remote;
     IO(work_a)->connect_args.port = 80u;
     TcpPcb.connect(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+#endif
 }
 
 // The same rule over RFC 4291: sec 2.7's FF00::/8 multicast and sec 2.5.2's unspecified address.
 void test_connect_refuses_an_invalid_remote_ipv6_address(void)
 {
+#if !IDEMIP_ENABLE_IPV6
+    // No IPv6 layer, so no v6 TCB to open and no such address to refuse.
+    TEST_PASS();
+#else
     static const uint8_t all_nodes[IDEMIP_TCP_PCB_ADDR_BYTES] = {0xFFu, 0x02u, 0u, 0u, 0u, 0u, 0u, 0u,
                                                                  0u,    0u,    0u, 0u, 0u, 0u, 0u, 1u};
     static const uint8_t unspec6[IDEMIP_TCP_PCB_ADDR_BYTES] = {0u};
@@ -1020,6 +1051,7 @@ void test_connect_refuses_an_invalid_remote_ipv6_address(void)
     IO(work_a)->connect_args.port = 80u;
     TcpPcb.connect(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+#endif
 }
 
 // RFC 9293 sec 3.4.1: "A connection is defined by a pair of sockets." Two TCBs holding one pair are
@@ -1028,8 +1060,8 @@ void test_connect_refuses_an_invalid_remote_ipv6_address(void)
 void test_a_four_tuple_another_open_tcb_holds_is_busy(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t a = open4(work_a);
-    uint16_t b = open4(work_a);
+    uint16_t a = open_pcb(work_a);
+    uint16_t b = open_pcb(work_a);
 
     // Both are left on the unbound local socket, so the pair the connect completes is the same one.
     IO(work_a)->connect_args.index = a;
@@ -1055,7 +1087,7 @@ void test_a_four_tuple_another_open_tcb_holds_is_busy(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
     // A different remote port is a different pair, so it is not refused.
-    uint16_t c = open4(work_a);
+    uint16_t c = open_pcb(work_a);
     IO(work_a)->connect_args.index = c;
     IO(work_a)->connect_args.ip = g_remote;
     IO(work_a)->connect_args.port = 443u;
@@ -1070,7 +1102,7 @@ void test_a_four_tuple_another_open_tcb_holds_is_busy(void)
 void test_a_store_and_a_load_round_trip_every_variable(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
 
     IO(work_a)->pcb_args.index = idx;
     TcpPcb.load(work_a);
@@ -1137,7 +1169,7 @@ void test_a_store_and_a_load_round_trip_every_octet_of_the_control_state(void)
         ((uint8_t *)&want)[i] = (uint8_t)(0xA5u ^ (uint8_t)i); // distinct per octet, so a swap shows
     }
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->pcb_args.index = idx;
     TcpPcb.load(work_a);
     IO(work_a)->ctl = want;
@@ -1160,7 +1192,7 @@ void test_a_store_and_a_load_round_trip_every_octet_of_the_control_state(void)
 void test_opt_sets_the_diffserv_field_and_the_r2_thresholds(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
 
     // An open leaves R2 at the two bounds sec 3.8.3 asks for, and the Diffserv field at zero.
     IO(work_a)->pcb_args.index = idx;
@@ -1241,7 +1273,7 @@ void test_the_default_syn_r2_carries_three_minutes_of_retransmission(void)
 void test_the_send_window_carries_a_shifted_window_field(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     uint32_t shifted = (uint32_t)0xFFFFu << IDEMIP_TCP_WS_MAX;
     IO(work_a)->pcb_args.index = idx;
     TcpPcb.load(work_a);
@@ -1260,7 +1292,7 @@ void test_the_send_window_carries_a_shifted_window_field(void)
 void test_an_unnamed_state_is_refused_on_an_open_tcb(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->pcb_args.index = idx;
     IO(work_a)->state = (IdemIpTcpState)((int)IDEMIP_TCP_STATE_TIME_WAIT + 1);
     TcpPcb.store(work_a);
@@ -1330,7 +1362,7 @@ void test_a_store_that_leaves_the_state_alone_is_permitted_everywhere(void)
 void test_the_three_way_handshake_of_figure_6_from_the_active_side(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
 
     // Line 2: sec 3.10.1 "Set SND.UNA to ISS, SND.NXT to ISS+1, enter SYN-SENT state".
     IO(work_a)->pcb_args.index = idx;
@@ -1371,7 +1403,7 @@ void test_the_three_way_handshake_of_figure_6_from_the_active_side(void)
 void test_the_three_way_handshake_of_figure_6_from_the_passive_side(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
 
     IO(work_a)->pcb_args.index = idx;
     TcpPcb.load(work_a);
@@ -1413,7 +1445,7 @@ void test_the_three_way_handshake_of_figure_6_from_the_passive_side(void)
 void test_the_simultaneous_open_of_figure_7(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, idx, IDEMIP_TCP_STATE_SYN_SENT));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, idx, IDEMIP_TCP_STATE_SYN_RECEIVED));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, idx, IDEMIP_TCP_STATE_ESTABLISHED));
@@ -1424,7 +1456,7 @@ void test_the_simultaneous_open_of_figure_7(void)
 void test_the_old_duplicate_syn_recovery_of_figure_8(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->pcb_args.index = idx;
     TcpPcb.load(work_a);
     IO(work_a)->vars.irs = 90u;
@@ -1444,7 +1476,7 @@ void test_the_old_duplicate_syn_recovery_of_figure_8(void)
 void test_the_normal_close_of_figure_12_from_the_closing_side(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, idx, IDEMIP_TCP_STATE_SYN_SENT));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, idx, IDEMIP_TCP_STATE_ESTABLISHED));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, idx, IDEMIP_TCP_STATE_FIN_WAIT_1));
@@ -1463,7 +1495,7 @@ void test_the_normal_close_of_figure_12_from_the_closing_side(void)
 void test_the_normal_close_of_figure_12_from_the_closed_upon_side(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, idx, IDEMIP_TCP_STATE_SYN_RECEIVED));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, idx, IDEMIP_TCP_STATE_ESTABLISHED));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, idx, IDEMIP_TCP_STATE_CLOSE_WAIT));
@@ -1476,7 +1508,7 @@ void test_the_normal_close_of_figure_12_from_the_closed_upon_side(void)
 void test_the_simultaneous_close_of_figure_13(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, idx, IDEMIP_TCP_STATE_SYN_SENT));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, idx, IDEMIP_TCP_STATE_ESTABLISHED));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, idx, IDEMIP_TCP_STATE_FIN_WAIT_1));
@@ -1584,7 +1616,7 @@ void test_abort_reaches_closed_from_every_state(void)
 void test_find_matches_the_swapped_four_tuple_of_a_segment(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->bind_args.index = idx;
     IO(work_a)->bind_args.ip = g_local;
     IO(work_a)->bind_args.port = 1025u;
@@ -1601,7 +1633,7 @@ void test_find_matches_the_swapped_four_tuple_of_a_segment(void)
     IO(work_a)->find_args.remote_ip = g_remote;
     IO(work_a)->find_args.local_port = 1025u;
     IO(work_a)->find_args.remote_port = 80u;
-    IO(work_a)->find_args.ip_version = 4u;
+    IO(work_a)->find_args.ip_version = G_IP_VERSION;
     IO(work_a)->find_args.netif = 1u;
     TcpPcb.find(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1620,7 +1652,7 @@ void test_find_matches_the_swapped_four_tuple_of_a_segment(void)
     TcpPcb.find(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
     IO(work_a)->find_args.remote_ip = g_remote;
-    IO(work_a)->find_args.ip_version = 6u;
+    IO(work_a)->find_args.ip_version = G_OTHER_VERSION;
     TcpPcb.find(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->index);
@@ -1631,7 +1663,7 @@ void test_find_matches_the_swapped_four_tuple_of_a_segment(void)
 void test_find_honors_the_interface_a_connection_is_pinned_to(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->bind_args.index = idx;
     IO(work_a)->bind_args.ip = g_local;
     IO(work_a)->bind_args.port = 1025u;
@@ -1647,7 +1679,7 @@ void test_find_honors_the_interface_a_connection_is_pinned_to(void)
     IO(work_a)->find_args.remote_ip = g_remote;
     IO(work_a)->find_args.local_port = 1025u;
     IO(work_a)->find_args.remote_port = 80u;
-    IO(work_a)->find_args.ip_version = 4u;
+    IO(work_a)->find_args.ip_version = G_IP_VERSION;
     IO(work_a)->find_args.netif = 2u;
     TcpPcb.find(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1665,7 +1697,7 @@ void test_a_segment_that_names_no_tcb_is_the_closed_case(void)
     IO(work_a)->find_args.remote_ip = g_remote;
     IO(work_a)->find_args.local_port = 80u;
     IO(work_a)->find_args.remote_port = 1025u;
-    IO(work_a)->find_args.ip_version = 4u;
+    IO(work_a)->find_args.ip_version = G_IP_VERSION;
     TcpPcb.find(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->index);
@@ -1684,7 +1716,7 @@ void test_listen_creates_a_record_in_the_listen_state(void)
     IO(work_a)->listen_args.zone = 0u;
     IO(work_a)->listen_args.netif = 0u;
     IO(work_a)->listen_args.backlog = 4u;
-    IO(work_a)->listen_args.ip_version = 4u;
+    IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     uint16_t l = IO(work_a)->index;
@@ -1692,7 +1724,7 @@ void test_listen_creates_a_record_in_the_listen_state(void)
 
     IO(work_a)->find_args.local_ip = g_local;
     IO(work_a)->find_args.local_port = 80u;
-    IO(work_a)->find_args.ip_version = 4u;
+    IO(work_a)->find_args.ip_version = G_IP_VERSION;
     IO(work_a)->find_args.netif = 1u;
     TcpPcb.find_listener(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1714,7 +1746,7 @@ void test_a_passive_open_on_port_zero_is_refused(void)
     TcpPcb.clear(work_a);
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = IDEMIP_TCP_PCB_PORT_ANY;
-    IO(work_a)->listen_args.ip_version = 4u;
+    IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
     IO(work_a)->listen_args.port = 80u;
@@ -1730,7 +1762,7 @@ void test_a_second_passive_open_on_one_socket_is_busy(void)
     TcpPcb.clear(work_a);
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = 80u;
-    IO(work_a)->listen_args.ip_version = 4u;
+    IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     uint16_t first = IO(work_a)->index;
@@ -1742,7 +1774,7 @@ void test_a_second_passive_open_on_one_socket_is_busy(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = 80u;
-    IO(work_a)->listen_args.ip_version = 4u;
+    IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 }
@@ -1755,7 +1787,7 @@ void test_a_full_listener_table_is_busy(void)
     {
         IO(work_a)->listen_args.ip = g_local;
         IO(work_a)->listen_args.port = (uint16_t)(1000u + i);
-        IO(work_a)->listen_args.ip_version = 4u;
+        IO(work_a)->listen_args.ip_version = G_IP_VERSION;
         TcpPcb.listen(work_a);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     }
@@ -1775,21 +1807,21 @@ void test_a_bound_listener_is_matched_before_an_unspecified_one(void)
 
     IO(work_a)->listen_args.ip = any;
     IO(work_a)->listen_args.port = 80u;
-    IO(work_a)->listen_args.ip_version = 4u;
+    IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     uint16_t wild = IO(work_a)->index;
 
     IO(work_a)->find_args.local_ip = g_local;
     IO(work_a)->find_args.local_port = 80u;
-    IO(work_a)->find_args.ip_version = 4u;
+    IO(work_a)->find_args.ip_version = G_IP_VERSION;
     TcpPcb.find_listener(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT16(wild, IO(work_a)->index);
 
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = 80u;
-    IO(work_a)->listen_args.ip_version = 4u;
+    IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     uint16_t bound = IO(work_a)->index;
@@ -1797,7 +1829,7 @@ void test_a_bound_listener_is_matched_before_an_unspecified_one(void)
 
     IO(work_a)->find_args.local_ip = g_local;
     IO(work_a)->find_args.local_port = 80u;
-    IO(work_a)->find_args.ip_version = 4u;
+    IO(work_a)->find_args.ip_version = G_IP_VERSION;
     TcpPcb.find_listener(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT16(bound, IO(work_a)->index);
@@ -1817,7 +1849,7 @@ void test_the_send_queue_keeps_the_order_segments_were_queued_in(void)
 {
     static const uint8_t data[8] = {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u};
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
     uint16_t got[3];
     const uint32_t seq[3] = {101u, 601u, 1101u};
     for (int i = 0; i < 3; i++)
@@ -1860,7 +1892,7 @@ void test_a_segment_with_octets_must_name_them(void)
 {
     static const uint8_t data[4] = {1u, 2u, 3u, 4u};
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
 
     IO(work_a)->seg_args.pcb = pcb;
     IO(work_a)->seg_args.data = NULL;
@@ -1886,7 +1918,7 @@ void test_a_segment_with_octets_must_name_them(void)
 void test_a_full_segment_table_is_busy_and_a_free_makes_the_same_call_succeed(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
     uint16_t first = IDEMIP_TCP_PCB_NONE;
     for (uint16_t i = 0u; i < IDEMIP_TCP_SEGS; i++)
     {
@@ -1920,7 +1952,7 @@ void test_a_full_segment_table_is_busy_and_a_free_makes_the_same_call_succeed(vo
 void test_a_segment_freed_from_the_middle_leaves_the_queue_linked(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
     uint16_t got[3];
     for (int i = 0; i < 3; i++)
     {
@@ -1955,7 +1987,7 @@ void test_a_segment_freed_from_the_middle_leaves_the_queue_linked(void)
 void test_a_close_frees_every_segment_the_connection_queued(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
     for (uint16_t i = 0u; i < IDEMIP_TCP_SEGS; i++)
     {
         IO(work_a)->seg_args.pcb = pcb;
@@ -1969,7 +2001,7 @@ void test_a_close_frees_every_segment_the_connection_queued(void)
     TcpPcb.close(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
-    uint16_t again = open4(work_a);
+    uint16_t again = open_pcb(work_a);
     for (uint16_t i = 0u; i < IDEMIP_TCP_SEGS; i++)
     {
         IO(work_a)->seg_args.pcb = again;
@@ -1987,7 +2019,7 @@ void test_a_close_frees_every_segment_the_connection_queued(void)
 void test_held_segments_are_linked_in_seg_seq_order(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
     IO(work_a)->pcb_args.index = pcb;
     TcpPcb.load(work_a);
     IO(work_a)->vars.rcv_nxt = 1000u;
@@ -2034,7 +2066,7 @@ void test_held_segments_are_linked_in_seg_seq_order(void)
 void test_held_segments_order_across_the_sequence_space_wrap(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
     IO(work_a)->pcb_args.index = pcb;
     TcpPcb.load(work_a);
     IO(work_a)->vars.rcv_nxt = 0xFFFFFF00u;
@@ -2075,7 +2107,7 @@ void test_held_segments_order_across_the_sequence_space_wrap(void)
 void test_one_connection_holds_at_most_the_oos_bound_and_then_is_busy(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
     uint16_t first = IDEMIP_TCP_PCB_NONE;
     for (uint16_t i = 0u; i < IDEMIP_TCP_OOSEQ_SEGS; i++)
     {
@@ -2112,8 +2144,8 @@ void test_one_connection_holds_at_most_the_oos_bound_and_then_is_busy(void)
 void test_the_hold_bound_is_per_connection(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t a = open4(work_a);
-    uint16_t b = open4(work_a);
+    uint16_t a = open_pcb(work_a);
+    uint16_t b = open_pcb(work_a);
     for (uint16_t i = 0u; i < IDEMIP_TCP_OOSEQ_SEGS; i++)
     {
         IO(work_a)->oos_args.pcb = a;
@@ -2136,7 +2168,7 @@ void test_the_hold_bound_is_per_connection(void)
 void test_a_held_segment_with_no_octets_is_refused(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
     IO(work_a)->oos_args.pcb = pcb;
     IO(work_a)->oos_args.seq = 1000u;
     IO(work_a)->oos_args.len = 0u;
@@ -2150,7 +2182,7 @@ void test_a_held_segment_with_no_octets_is_refused(void)
 void test_a_close_is_busy_while_the_hold_still_names_a_pinned_descriptor(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
     for (uint16_t i = 0u; i < IDEMIP_TCP_OOSEQ_SEGS; i++)
     {
         IO(work_a)->oos_args.pcb = pcb;
@@ -2186,7 +2218,7 @@ void test_a_close_is_busy_while_the_hold_still_names_a_pinned_descriptor(void)
 void test_a_close_succeeds_once_the_hold_is_drained(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
     for (uint16_t i = 0u; i < IDEMIP_TCP_OOSEQ_SEGS; i++)
     {
         IO(work_a)->oos_args.pcb = pcb;
@@ -2232,7 +2264,7 @@ void test_a_connection_in_one_borrow_is_invisible_in_the_other(void)
     TcpPcb.clear(work_a);
     TcpPcb.clear(work_b);
 
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->bind_args.index = idx;
     IO(work_a)->bind_args.ip = g_local;
     IO(work_a)->bind_args.port = 1025u;
@@ -2247,7 +2279,7 @@ void test_a_connection_in_one_borrow_is_invisible_in_the_other(void)
     IO(work_b)->find_args.remote_ip = g_remote;
     IO(work_b)->find_args.local_port = 1025u;
     IO(work_b)->find_args.remote_port = 80u;
-    IO(work_b)->find_args.ip_version = 4u;
+    IO(work_b)->find_args.ip_version = G_IP_VERSION;
     TcpPcb.find(work_b);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_b)->status);
 
@@ -2255,13 +2287,13 @@ void test_a_connection_in_one_borrow_is_invisible_in_the_other(void)
     IO(work_a)->find_args.remote_ip = g_remote;
     IO(work_a)->find_args.local_port = 1025u;
     IO(work_a)->find_args.remote_port = 80u;
-    IO(work_a)->find_args.ip_version = 4u;
+    IO(work_a)->find_args.ip_version = G_IP_VERSION;
     TcpPcb.find(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT16(idx, IO(work_a)->index);
 
     // The same local port is free in b, so its bind is not refused by a's.
-    uint16_t other = open4(work_b);
+    uint16_t other = open_pcb(work_b);
     IO(work_b)->bind_args.index = other;
     IO(work_b)->bind_args.ip = g_local;
     IO(work_b)->bind_args.port = 1025u;
@@ -2275,6 +2307,10 @@ void test_a_connection_in_one_borrow_is_invisible_in_the_other(void)
 // RFC 4007 sec 6 zone indices qualify a non-global one.
 void test_an_ipv6_connection_keys_on_all_sixteen_octets_and_its_zone(void)
 {
+#if !IDEMIP_ENABLE_IPV6
+    // No IPv6 layer, so no sixteen-octet key and no RFC 4007 zone to carry beside it.
+    TEST_PASS();
+#else
     static const uint8_t l6[IDEMIP_TCP_PCB_ADDR_BYTES] = {0xFEu, 0x80u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01u};
     static const uint8_t r6[IDEMIP_TCP_PCB_ADDR_BYTES] = {0xFEu, 0x80u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02u};
     static const uint8_t r6b[IDEMIP_TCP_PCB_ADDR_BYTES] = {0xFEu, 0x80u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x03u};
@@ -2318,6 +2354,7 @@ void test_an_ipv6_connection_keys_on_all_sixteen_octets_and_its_zone(void)
     IO(work_a)->find_args.remote_zone = 3u;
     TcpPcb.find(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+#endif
 }
 
 // --- MAX.SND.WND, the listener writer and the sent mark ------------------------
@@ -2336,7 +2373,7 @@ void test_max_snd_wnd_is_not_one_of_the_eleven_section_3_3_1_variables(void)
 void test_max_snd_wnd_round_trips_a_scaled_window(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->pcb_args.index = idx;
     TcpPcb.load(work_a);
     IO(work_a)->ctl.max_snd_wnd = 0xFFFFu << 14; // RFC 7323 sec 2.2's largest scaled window
@@ -2358,12 +2395,12 @@ void test_accept_records_the_listener_a_connection_came_through(void)
     TcpPcb.clear(work_a);
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = 80u;
-    IO(work_a)->listen_args.ip_version = 4u;
+    IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     uint16_t lis = IO(work_a)->index;
 
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->pcb_args.index = idx;
     TcpPcb.load(work_a);
     TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->info.listener);
@@ -2390,7 +2427,7 @@ void test_accept_records_the_listener_a_connection_came_through(void)
 void test_accept_refuses_a_listener_no_passive_open_took(void)
 {
     TcpPcb.clear(work_a);
-    uint16_t idx = open4(work_a);
+    uint16_t idx = open_pcb(work_a);
     IO(work_a)->accept_args.index = idx;
     IO(work_a)->accept_args.listener = 0u;
     TcpPcb.accept(work_a);
@@ -2412,7 +2449,7 @@ void test_seg_sent_moves_the_head_of_unsent_onto_the_retransmit_queue(void)
 {
     static const uint8_t data[4] = {9u, 9u, 9u, 9u};
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
     uint16_t got[3];
     for (int i = 0; i < 3; i++)
     {
@@ -2455,7 +2492,7 @@ void test_seg_sent_refuses_a_segment_that_is_not_the_head_of_unsent(void)
 {
     static const uint8_t data[4] = {1u, 1u, 1u, 1u};
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
     uint16_t got[2];
     for (int i = 0; i < 2; i++)
     {
@@ -2490,7 +2527,7 @@ void test_a_close_frees_the_segments_on_the_retransmit_queue_too(void)
 {
     static const uint8_t data[4] = {2u, 2u, 2u, 2u};
     TcpPcb.clear(work_a);
-    uint16_t pcb = open4(work_a);
+    uint16_t pcb = open_pcb(work_a);
     for (int i = 0; i < (int)IDEMIP_TCP_SEGS; i++)
     {
         IO(work_a)->seg_args.pcb = pcb;
@@ -2511,7 +2548,7 @@ void test_a_close_frees_the_segments_on_the_retransmit_queue_too(void)
     TcpPcb.close(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
-    uint16_t again = open4(work_a);
+    uint16_t again = open_pcb(work_a);
     IO(work_a)->seg_args.pcb = again;
     IO(work_a)->seg_args.data = data;
     IO(work_a)->seg_args.seq = 900u;
