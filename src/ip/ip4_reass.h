@@ -113,6 +113,12 @@ typedef struct
  * @var Ip4ReassIo::index        the datagram row the call touched, or IDEMIP_IP4_REASS_INDEX_NONE
  * @var Ip4ReassIo::state        that row's state
  * @var Ip4ReassIo::complete     the hole descriptor list emptied on this call, RFC 815 sec 3 step 8
+ * @var Ip4ReassIo::src          the Source Address of the datagram a tick timed out, which RFC 1122
+ *                               sec 3.3.2 answers with an ICMP Time Exceeded: "the
+ *                               partially-reassembled datagram MUST be discarded and an ICMP Time
+ *                               Exceeded message sent to the source host"
+ * @var Ip4ReassIo::frag_zero    fragment zero of that datagram was among the fragments held, which is
+ *                               the condition sec 3.3.2 puts on sending it
  */
 typedef struct
 {
@@ -121,6 +127,7 @@ typedef struct
     Ip4ReassReleaseArgs release_args;
 
     uint32_t now_ms;
+    uint32_t src;
 
     uint16_t total_len;
     uint16_t off;
@@ -131,6 +138,7 @@ typedef struct
     IdemIpIp4ReassState state;
     uint8_t index;
     idemip_bool complete;
+    idemip_bool frag_zero;
 } Ip4ReassIo;
 
 // ---------------------------------------------------------------------------

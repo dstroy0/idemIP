@@ -58,12 +58,17 @@ IDEMIP_BEGIN_DECLS
  *                            to "the MTU of the associated first-hop data link", so a caller holding
  *                            that MTU passes it here rather than zero, and sec 5's correction of the
  *                            quoted Total Length then has the estimate it compares against.
+ * @var Pmtu4TooBigArgs::first_hop_mtu the MTU of the associated first-hop data link, which sec 6.2
+ *                            initializes a row with no estimate to. It stands in for
+ *                            @ref Pmtu4TooBigArgs::held when that is zero, so sec 3's non-increase
+ *                            rule has a ceiling on a path no message has been seen for yet.
  */
 typedef struct
 {
     const uint8_t *msg;
     size_t len;
     uint16_t held;
+    uint16_t first_hop_mtu;
 } Pmtu4TooBigArgs;
 
 /**
@@ -89,12 +94,17 @@ typedef struct
  * ip4_route's own @c pmtu and @c pmtu_ms.
  *
  * @var Pmtu4AgeArgs::stamp_ms      the millisecond the estimate was last decreased
+ * @var Pmtu4AgeArgs::raise_ms      the millisecond the last successful increase was attempted at,
+ *                                  which sec 3 measures its second minimum interval from, "or less
+ *                                  than 1 minute after a previous, successful attempted increase".
+ *                                  Zero names a row that has never been raised.
  * @var Pmtu4AgeArgs::pmtu          the estimate the row holds, zero for sec 6.3's "reserved"
  * @var Pmtu4AgeArgs::first_hop_mtu the MTU of the associated first hop
  */
 typedef struct
 {
     uint32_t stamp_ms;
+    uint32_t raise_ms;
     uint16_t pmtu;
     uint16_t first_hop_mtu;
 } Pmtu4AgeArgs;

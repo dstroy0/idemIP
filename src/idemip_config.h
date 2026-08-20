@@ -195,9 +195,16 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_ARP_TMR_INTERVAL_MS 1000u
 #endif
 
-/** @brief Fragments held during reassembly. Each pins a receive descriptor. */
+/**
+ * @brief Fragments held during reassembly. Each pins a receive descriptor.
+ *
+ * RFC 1122 sec 3.3.2 puts a floor under EMTU_R, "the largest datagram size that can be reassembled":
+ * it "MUST be greater than or equal to 576". RFC 791 sec 3.2 puts the smallest link an internet
+ * module must forward at 68 octets, which carries 48 data octets behind a twenty-octet header, so
+ * the 556 data octets of a 576-octet datagram arrive as at most twelve fragments.
+ */
 #ifndef IDEMIP_IP4_REASS_FRAGS
-#define IDEMIP_IP4_REASS_FRAGS 8u
+#define IDEMIP_IP4_REASS_FRAGS 12u
 #endif
 
 /** @brief lwIP MEMP_NUM_REASSDATA, datagrams reassembled at once (RFC 791 sec 3.2). */
@@ -219,9 +226,16 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_IP_TMR_INTERVAL_MS 1000u
 #endif
 
-/** @brief lwIP IP_REASS_MAXAGE, seconds a partial datagram is held (RFC 791 sec 3.2). */
+/**
+ * @brief Seconds a partial datagram is held (RFC 1122 sec 3.3.2).
+ *
+ * "There MUST be a reassembly timeout. The reassembly timeout value SHOULD be a fixed value, not set
+ * from the remaining TTL. It is recommended that the value lie between 60 seconds and 120 seconds."
+ * That supersedes RFC 791 sec 3.2 step (17)'s "TIMER <- MAX(TIMER,TTL)", which the same section
+ * rejects because "gateways generally treat TTL as a simple hop count rather than an elapsed time".
+ */
 #ifndef IDEMIP_IP_REASS_MAXAGE_S
-#define IDEMIP_IP_REASS_MAXAGE_S 15u
+#define IDEMIP_IP_REASS_MAXAGE_S 60u
 #endif
 
 /** @brief lwIP IP_DEFAULT_TTL. */
@@ -943,7 +957,7 @@ static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
 // The head region: the ip4_reass.h operand block, then the private context. sizeof(Ip4ReassIo) is 40
 // on a 64-bit host and the context is 12, so the assert in ip4_reass.c holds at 64.
 #ifndef IDEMIP_IP4_REASS_CTX_BYTES
-#define IDEMIP_IP4_REASS_CTX_BYTES 64u
+#define IDEMIP_IP4_REASS_CTX_BYTES 72u
 #endif
 #define IDEMIP_IP4_REASS_BORROW                                                                                        \
     (IDEMIP_IP4_REASS_CTX_BYTES + (IDEMIP_IP4_REASS_DATAGRAMS << IDEMIP_IP4_REASS_DATAGRAM_ENTRY_SHIFT) +              \
@@ -1503,13 +1517,25 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 #define IDEMIP_PMTU4_INCREASE_MS 600000u
 #endif
 
+/**
+ * @brief RFC 1191 sec 3: milliseconds before an estimate is raised again after a raise succeeded.
+ *
+ * The second of sec 3's two minimum intervals, "or less than 1 minute after a previous, successful
+ * attempted increase", set at the recommended twice its minimum.
+ */
+#ifndef IDEMIP_PMTU4_RAISE_MS
+#define IDEMIP_PMTU4_RAISE_MS 120000u
+#endif
+
 #ifndef IDEMIP_PMTU4_CTX_BYTES
-#define IDEMIP_PMTU4_CTX_BYTES 64u
+#define IDEMIP_PMTU4_CTX_BYTES 72u
 #endif
 #define IDEMIP_PMTU4_BORROW (IDEMIP_PMTU4_CTX_BYTES)
 
 static_assert(IDEMIP_PMTU4_INCREASE_MS >= 300000u,
               "RFC 1191 sec 3: an increase attempt MUST NOT be made less than 5 minutes after a Datagram Too Big");
+static_assert(IDEMIP_PMTU4_RAISE_MS >= 60000u,
+              "RFC 1191 sec 3: an increase attempt MUST NOT be made less than 1 minute after a previous increase");
 
 // --- pmtu6: RFC 8201, PER INTERFACE --------------------------------------------------------------
 // The estimate is the nd6 Destination Cache's, RFC 8201 sec 5.2 storing "a PMTU value ... with the

@@ -455,18 +455,50 @@ void test_a_message_never_raises_the_estimate(void)
     TEST_ASSERT_FALSE(IDEMIP_PMTU4_IO(work_a)->decreased);
 }
 
-// sec 6.2: a row carrying no estimate has never been changed, so the first message that names the
-// path decreases it.
+// sec 6.2: "The PMTU fields in these route entries should be initialized to be the MTU of the
+// associated first-hop data link", so a row carrying no estimate already has one, and the first
+// message that names the path decreases it from there.
 void test_a_path_with_no_estimate_takes_the_first_message(void)
 {
     ready(work_a);
     IDEMIP_PMTU4_IO(work_a)->too_big_args.msg = g_msg;
     IDEMIP_PMTU4_IO(work_a)->too_big_args.len = datagram_too_big(296u, 1500u);
     IDEMIP_PMTU4_IO(work_a)->too_big_args.held = 0u;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.first_hop_mtu = 1500u;
     Pmtu4.too_big(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU4_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT16(296u, IDEMIP_PMTU4_IO(work_a)->mtu);
     TEST_ASSERT_TRUE(IDEMIP_PMTU4_IO(work_a)->decreased);
+}
+
+// sec 3: "A host MUST not increase its estimate of the Path MTU in response to the contents of a
+// Datagram Too Big message." A path with no cached estimate is bounded by its first hop, so a forged
+// message naming a larger MTU cannot raise it. sec 8: "A host, however, should never raise its
+// estimate of the PMTU based on a Datagram Too Big message, so should not be vulnerable to this
+// attack."
+void test_a_path_with_no_estimate_is_still_bounded_by_the_first_hop(void)
+{
+    // A Next-Hop MTU far above the first hop.
+    ready(work_a);
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.msg = g_msg;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.len = datagram_too_big(9000u, 1500u);
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.held = 0u;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.first_hop_mtu = 1500u;
+    Pmtu4.too_big(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU4_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16(1500u, IDEMIP_PMTU4_IO(work_a)->mtu);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_PMTU4_IO(work_a)->decreased, "a raise was reported as a decrease");
+
+    // The sec 5 search path: Next-Hop MTU zero and a quoted Total Length of 65535.
+    ready(work_a);
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.msg = g_msg;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.len = datagram_too_big(0u, 65535u);
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.held = 0u;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.first_hop_mtu = 1500u;
+    Pmtu4.too_big(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU4_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_PMTU4_IO(work_a)->mtu <= 1500u, "the estimate rose above the first hop");
+    TEST_ASSERT_FALSE(IDEMIP_PMTU4_IO(work_a)->decreased);
 }
 
 // --- aging -------------------------------------------------------------------
@@ -519,7 +551,10 @@ void test_the_raise_climbs_to_the_first_hop_mtu(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU4_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT16(1492u, IDEMIP_PMTU4_IO(work_a)->mtu);
 
+    // sec 3 puts a minute between successive raises, so the next climb waits out that interval.
     IDEMIP_PMTU4_IO(work_a)->age_args.pmtu = 1492u;
+    IDEMIP_PMTU4_IO(work_a)->age_args.raise_ms = IDEMIP_PMTU4_IO(work_a)->now_ms;
+    IDEMIP_PMTU4_IO(work_a)->now_ms += (uint32_t)IDEMIP_PMTU4_RAISE_MS;
     Pmtu4.age(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU4_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT16(1500u, IDEMIP_PMTU4_IO(work_a)->mtu);
@@ -527,8 +562,40 @@ void test_the_raise_climbs_to_the_first_hop_mtu(void)
     // At the first hop's MTU there is nothing left to raise: BUSY, since a later decrease makes
     // room for another climb.
     IDEMIP_PMTU4_IO(work_a)->age_args.pmtu = 1500u;
+    IDEMIP_PMTU4_IO(work_a)->age_args.raise_ms = IDEMIP_PMTU4_IO(work_a)->now_ms;
+    IDEMIP_PMTU4_IO(work_a)->now_ms += (uint32_t)IDEMIP_PMTU4_RAISE_MS;
     Pmtu4.age(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_PMTU4_IO(work_a)->status);
+}
+
+// sec 3: "An attempt to detect an increase (by sending a datagram larger than the current estimate)
+// MUST NOT be done ... less than 1 minute after a previous, successful attempted increase."
+void test_a_second_raise_inside_the_interval_is_refused(void)
+{
+    ready(work_a);
+    IDEMIP_PMTU4_IO(work_a)->age_args.pmtu = 1006u;
+    IDEMIP_PMTU4_IO(work_a)->age_args.stamp_ms = 0u;
+    IDEMIP_PMTU4_IO(work_a)->age_args.first_hop_mtu = 1500u;
+    IDEMIP_PMTU4_IO(work_a)->now_ms = (uint32_t)IDEMIP_PMTU4_INCREASE_MS;
+    Pmtu4.age(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU4_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16(1492u, IDEMIP_PMTU4_IO(work_a)->mtu);
+
+    // One millisecond later, feeding the raised estimate back: refused.
+    IDEMIP_PMTU4_IO(work_a)->age_args.pmtu = 1492u;
+    IDEMIP_PMTU4_IO(work_a)->age_args.raise_ms = IDEMIP_PMTU4_IO(work_a)->now_ms;
+    IDEMIP_PMTU4_IO(work_a)->now_ms += 1u;
+    Pmtu4.age(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_PMTU4_IO(work_a)->status);
+
+    // One millisecond short of the interval, still refused; at it, allowed.
+    IDEMIP_PMTU4_IO(work_a)->now_ms =
+        IDEMIP_PMTU4_IO(work_a)->age_args.raise_ms + (uint32_t)IDEMIP_PMTU4_RAISE_MS - 1u;
+    Pmtu4.age(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_PMTU4_IO(work_a)->status);
+    IDEMIP_PMTU4_IO(work_a)->now_ms = IDEMIP_PMTU4_IO(work_a)->age_args.raise_ms + (uint32_t)IDEMIP_PMTU4_RAISE_MS;
+    Pmtu4.age(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU4_IO(work_a)->status);
 }
 
 // A first hop that cannot carry the 68 octets RFC 791 requires of every router is not a link an

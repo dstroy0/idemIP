@@ -29,9 +29,11 @@ extern void test_an_old_style_message_searches_the_plateau_table(void);
 extern void test_the_returned_total_length_is_corrected(void);
 extern void test_a_message_never_raises_the_estimate(void);
 extern void test_a_path_with_no_estimate_takes_the_first_message(void);
+extern void test_a_path_with_no_estimate_is_still_bounded_by_the_first_hop(void);
 extern void test_a_row_that_was_never_decreased_is_busy(void);
 extern void test_the_raise_waits_out_the_interval(void);
 extern void test_the_raise_climbs_to_the_first_hop_mtu(void);
+extern void test_a_second_raise_inside_the_interval_is_refused(void);
 extern void test_a_first_hop_below_68_is_refused(void);
 extern void test_the_interval_survives_a_clock_wrap(void);
 extern void test_the_same_message_repeats(void);
@@ -116,13 +118,15 @@ int main(void)
   run_test(test_an_old_style_message_searches_the_plateau_table, "test_an_old_style_message_searches_the_plateau_table", 398);
   run_test(test_the_returned_total_length_is_corrected, "test_the_returned_total_length_is_corrected", 416);
   run_test(test_a_message_never_raises_the_estimate, "test_a_message_never_raises_the_estimate", 438);
-  run_test(test_a_path_with_no_estimate_takes_the_first_message, "test_a_path_with_no_estimate_takes_the_first_message", 460);
-  run_test(test_a_row_that_was_never_decreased_is_busy, "test_a_row_that_was_never_decreased_is_busy", 477);
-  run_test(test_the_raise_waits_out_the_interval, "test_the_raise_waits_out_the_interval", 492);
-  run_test(test_the_raise_climbs_to_the_first_hop_mtu, "test_the_raise_climbs_to_the_first_hop_mtu", 511);
-  run_test(test_a_first_hop_below_68_is_refused, "test_a_first_hop_below_68_is_refused", 536);
-  run_test(test_the_interval_survives_a_clock_wrap, "test_the_interval_survives_a_clock_wrap", 549);
-  run_test(test_the_same_message_repeats, "test_the_same_message_repeats", 562);
+  run_test(test_a_path_with_no_estimate_takes_the_first_message, "test_a_path_with_no_estimate_takes_the_first_message", 461);
+  run_test(test_a_path_with_no_estimate_is_still_bounded_by_the_first_hop, "test_a_path_with_no_estimate_is_still_bounded_by_the_first_hop", 479);
+  run_test(test_a_row_that_was_never_decreased_is_busy, "test_a_row_that_was_never_decreased_is_busy", 509);
+  run_test(test_the_raise_waits_out_the_interval, "test_the_raise_waits_out_the_interval", 524);
+  run_test(test_the_raise_climbs_to_the_first_hop_mtu, "test_the_raise_climbs_to_the_first_hop_mtu", 543);
+  run_test(test_a_second_raise_inside_the_interval_is_refused, "test_a_second_raise_inside_the_interval_is_refused", 573);
+  run_test(test_a_first_hop_below_68_is_refused, "test_a_first_hop_below_68_is_refused", 603);
+  run_test(test_the_interval_survives_a_clock_wrap, "test_the_interval_survives_a_clock_wrap", 616);
+  run_test(test_the_same_message_repeats, "test_the_same_message_repeats", 629);
 
   return UNITY_END();
 }

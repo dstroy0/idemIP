@@ -146,6 +146,17 @@ static void ip4_frag_take(uint8_t *restrict work)
     const uint16_t total_len = idemip_ip4_total_len(dgram);
     const uint8_t hdr_len = (uint8_t)idemip_ip4_hdr_len(dgram);
 
+    // "If an internet datagram is fragmented, its data portion must be broken on 8 octet
+    // boundaries." A datagram that already carries MF is one such portion, so its own data length is
+    // a nonzero multiple of eight; the tail this would otherwise emit with MF set cannot be named by
+    // the 13-bit Fragment Offset. The reassembler refuses the same shape.
+    const uint16_t in_data_len = (uint16_t)(total_len - hdr_len);
+    if (idemip_ip4_mf(dgram) && (in_data_len == 0u || (in_data_len & (uint16_t)IP4_FRAG_UNIT_MASK) != 0u))
+    {
+        io->err = IDEMIP_IP4_FRAG_ERR_HEADER;
+        return;
+    }
+
     ctx->dgram = dgram;
     ctx->total_len = total_len;
     ctx->hdr_len = hdr_len;

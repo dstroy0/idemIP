@@ -472,6 +472,43 @@ void test_a_fragment_of_a_fragment_carries_ofo_and_omf(void)
     }
 }
 
+// RFC 791 sec 3.2: "If an internet datagram is fragmented, its data portion must be broken on 8
+// octet boundaries." A datagram already carrying MF is one such portion, so a data length off that
+// boundary is not a datagram this can have received, and splitting it would emit a fragment with MF
+// set whose successor's offset the 13-bit field cannot name.
+void test_an_unaligned_fragment_input_is_refused(void)
+{
+    make_dgram(1485u, NULL, 0u, (uint16_t)IDEMIP_IP4_FLAG_MF);
+    IDEMIP_IP4_FRAG_IO(work_a)->begin_args.dgram = g_dgram;
+    IDEMIP_IP4_FRAG_IO(work_a)->begin_args.len = g_dgram_len;
+    IDEMIP_IP4_FRAG_IO(work_a)->begin_args.mtu = 1500u;
+    Ip4Frag.begin(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP4_FRAG_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FRAG_ERR_HEADER, IDEMIP_IP4_FRAG_IO(work_a)->err);
+
+    // The same length with MF clear is a whole datagram and is taken.
+    make_dgram(1485u, NULL, 0u, 0u);
+    begin_ok(work_a, 1500u);
+}
+
+// Every emitted fragment that is not the last of the datagram ends on an 8-octet boundary, checked on
+// an input that itself carries MF so the tail inherits it.
+void test_no_emitted_fragment_carries_mf_off_the_boundary(void)
+{
+    make_dgram(400u, NULL, 0u, (uint16_t)(IDEMIP_IP4_FLAG_MF | 100u));
+    begin_ok(work_a, 200u);
+    drain(work_a);
+    for (int i = 0; i < g_frags; i++)
+    {
+        if (idemip_ip4_mf(g_frag[i]))
+        {
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u,
+                                             (uint16_t)(idemip_ip4_payload_len(g_frag[i]) % IDEMIP_IP4_FRAG_UNIT),
+                                             "a fragment carries MF with a length off the 8-octet boundary");
+        }
+    }
+}
+
 // "This format allows 2**13 = 8192 fragments of 8 octets each": a split that would run the Fragment
 // Offset past its 13 bits is refused rather than wrapped.
 void test_a_split_past_the_thirteen_bit_offset_is_refused(void)

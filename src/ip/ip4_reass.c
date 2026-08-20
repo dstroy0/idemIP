@@ -298,6 +298,28 @@ static void ip4_reass_hole_thread(uint8_t *restrict work, uint8_t index, uint8_t
 // the fragment". Reports the holes step 4 deleted, so zero means steps 2 and 3 passed over every
 // hole and the fragment covers nothing missing, and IP4_REASS_NONE means the hole table ran out.
 // Step 8 is the caller's: it reads hole_head.
+// Octets of [first,last] that no fragment of this row holds yet, summed over the hole list. A
+// fragment every octet of which is missing fills holes only; anything less overlaps octets already
+// held, which is the shape RFC 1858 sec 3 names and RFC 5722 sec 4 answers for IPv6 by discarding the
+// datagram.
+static uint32_t ip4_reass_missing(uint8_t *restrict work, uint8_t index, uint32_t first, uint32_t last)
+{
+    uint32_t missing = 0u;
+    uint8_t h = IP4_REASS_DGRAM_AT(work, index)->hole_head;
+    while (h != IP4_REASS_NONE)
+    {
+        const Ip4ReassHole *hole = IP4_REASS_HOLE_AT(work, h);
+        const uint32_t lo = (first > hole->first) ? first : hole->first;
+        const uint32_t hi = (last < hole->last) ? last : hole->last;
+        if (lo <= hi)
+        {
+            missing += (hi - lo) + 1u;
+        }
+        h = hole->next;
+    }
+    return missing;
+}
+
 static uint8_t ip4_reass_holes(uint8_t *restrict work, uint8_t index, uint32_t first, uint32_t last, idemip_bool mf)
 {
     uint8_t prev = IP4_REASS_NONE;
@@ -489,6 +511,17 @@ static void ip4_reass_take(uint8_t *restrict work)
         return;
     }
 
+    // A fragment that covers octets the row already holds, without being wholly a repeat of them, is
+    // an overlap. Which of the two sets of octets wins is what RFC 1858 sec 3's attacks turn on, so
+    // the datagram is discarded rather than assembled from a precedence no RFC fixes for IPv4. RFC
+    // 5722 sec 4 makes the same call for IPv6: "the entire datagram ... MUST be silently discarded".
+    const uint32_t missing = ip4_reass_missing(work, index, off, frag_end - 1u);
+    if (missing != 0u && missing != data_len)
+    {
+        ip4_reass_flush(work, index);
+        return;
+    }
+
     const uint8_t frag = ip4_reass_frag_alloc(work);
     if (frag == IP4_REASS_NONE)
     {
@@ -540,12 +573,9 @@ static void ip4_reass_take(uint8_t *restrict work)
     {
         row->first_frag = frag; // step (11): "IF FO = 0 THEN put header in header buffer"
     }
-    // step (17): "TIMER <- MAX(TIMER,TTL)", as a deadline on the millisecond clock.
-    const uint32_t ttl_ms = io->now_ms + ((uint32_t)idemip_ip4_ttl(hdr) * IP4_REASS_MS_PER_S);
-    if (ip4_reass_reached(ttl_ms, row->deadline_ms))
-    {
-        row->deadline_ms = ttl_ms;
-    }
+    // RFC 1122 sec 3.3.2 supersedes RFC 791 sec 3.2 step (17)'s "TIMER <- MAX(TIMER,TTL)": "The
+    // reassembly timeout value SHOULD be a fixed value, not set from the remaining TTL." The deadline
+    // is the one stamped when the row was opened, and no fragment moves it.
 
     // RFC 815 sec 3 step 8: "If the hole descriptor list is now empty, the datagram is now complete."
     // The header comes with octet zero, so step (11) has run by then.
@@ -658,15 +688,15 @@ static void ip4_reass_unpin(uint8_t *restrict work)
     io->status = IDEMIP_BUSY; // no row is waiting to hand a descriptor back
 }
 
-// RFC 791 sec 3.2 step (19), "timer expires: flush all reassembly with this BUFID". Every row the
-// clock has reached goes to reclaim, gathering and completed alike, because both pin descriptors and
-// PLAN sec 3.5 holds that "no pin outlives its unit's own bound". Reports the first row flushed.
+// RFC 791 sec 3.2 step (19), "timer expires: flush all reassembly with this BUFID". One row per call,
+// so RFC 1122 sec 3.3.2's "an ICMP Time Exceeded message sent to the source host (if fragment zero has
+// been received)" can be built for each: the source and the fragment-zero mark are read out of the
+// row before the flush clears it. BUSY once no row the clock has reached is left.
 static void ip4_reass_expire(uint8_t *restrict work)
 {
     Ip4ReassIo *io = IP4_REASS_IO(work);
     Ip4ReassCtx *ctx = IP4_REASS_CTX(work);
     ctx->tick_ms = io->now_ms;
-    uint8_t first = IP4_REASS_NONE;
     for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
     {
         Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, i);
@@ -678,20 +708,15 @@ static void ip4_reass_expire(uint8_t *restrict work)
         {
             continue;
         }
+        io->src = row->src;
+        io->frag_zero = (idemip_bool)(row->first_frag != IP4_REASS_NONE);
         ip4_reass_flush(work, (uint8_t)i);
-        if (first == IP4_REASS_NONE)
-        {
-            first = (uint8_t)i;
-            io->state = (IdemIpIp4ReassState)row->state;
-        }
-    }
-    if (first == IP4_REASS_NONE)
-    {
-        io->status = IDEMIP_BUSY; // the sweep found nothing to time out
+        io->state = (IdemIpIp4ReassState)row->state;
+        io->index = (uint8_t)i;
+        io->status = IDEMIP_OK;
         return;
     }
-    io->index = first;
-    io->status = IDEMIP_OK;
+    io->status = IDEMIP_BUSY; // the sweep found nothing to time out
 }
 
 // --- the entries -----------------------------------------------------------
@@ -795,6 +820,8 @@ static void ip4_reass_tick(uint8_t *restrict work)
     io->status = IDEMIP_ERR;
     io->index = (uint8_t)IDEMIP_IP4_REASS_INDEX_NONE;
     io->state = IDEMIP_IP4_REASS_FREE;
+    io->src = 0u;
+    io->frag_zero = IDEMIP_FALSE;
     if (!ip4_reass_ready(work))
     {
         return;

@@ -171,7 +171,14 @@ static void pmtu4_too_big(uint8_t *restrict work)
     io->tos = idemip_ip4_tos(quote);
     io->total_len = idemip_ip4_total_len(quote);
 
+    // sec 6.2: "The PMTU fields in these route entries should be initialized to be the MTU of the
+    // associated first-hop data link", so a row carrying no estimate already has one and a zero
+    // held is not the absence of a ceiling.
     uint16_t held = io->too_big_args.held;
+    if (held == 0u)
+    {
+        held = io->too_big_args.first_hop_mtu;
+    }
     uint16_t next = idemip_rd16(msg + IDEMIP_PMTU4_OFF_NEXT_HOP_MTU);
     io->next_hop_mtu = next;
     uint16_t mtu;
@@ -208,7 +215,9 @@ static void pmtu4_too_big(uint8_t *restrict work)
         mtu = held;
     }
     io->mtu = mtu;
-    io->decreased = (idemip_bool)(held == 0u || mtu < held);
+    // sec 3: "A host MUST not increase its estimate of the Path MTU in response to the contents of a
+    // Datagram Too Big message", so the estimate stands unless the message strictly lowers it.
+    io->decreased = (idemip_bool)(held != 0u && mtu < held);
     io->status = IDEMIP_OK;
 }
 
@@ -300,7 +309,16 @@ static void pmtu4_age(uint8_t *restrict work)
         io->status = IDEMIP_BUSY;
         return;
     }
+    // sec 3's two minimum intervals: "An attempt to detect an increase ... MUST NOT be done less than
+    // 5 minutes after a Datagram Too Big message has been received for the given destination, or less
+    // than 1 minute after a previous, successful attempted increase."
     if ((uint32_t)(io->now_ms - io->age_args.stamp_ms) < (uint32_t)IDEMIP_PMTU4_INCREASE_MS)
+    {
+        io->status = IDEMIP_BUSY;
+        return;
+    }
+    if (io->age_args.raise_ms != 0u &&
+        (uint32_t)(io->now_ms - io->age_args.raise_ms) < (uint32_t)IDEMIP_PMTU4_RAISE_MS)
     {
         io->status = IDEMIP_BUSY;
         return;
