@@ -133,6 +133,13 @@ typedef struct
     uint32_t irs;
 } IdemIpTcpVars;
 
+// ---------------------------------------------------------------------------
+// The bits of TcpPcbCtl::flags
+// ---------------------------------------------------------------------------
+
+/** @brief RFC 6298 (5.7), the retransmission timer expired awaiting the ACK of a SYN. */
+#define IDEMIP_TCP_CTL_SYN_RTX (1u << 0)
+
 /**
  * @brief The estimator, congestion, option and keepalive state of one TCB.
  *
@@ -158,6 +165,8 @@ typedef struct
  *                               TSecr whenever a segment is sent"
  * @var TcpPcbCtl::last_ack_sent RFC 7323 sec 3.2 Last.ACK.sent, which "holds the ACK field from the
  *                               last segment sent"
+ * @var TcpPcbCtl::last_send_ms  the millisecond data was last sent, which RFC 5681 sec 4.1 measures
+ *                               the idle interval from, zero until the first send
  * @var TcpPcbCtl::keep_idle_ms  RFC 1122 sec 4.2.3.6: keep-alives "MUST only be sent when no data or
  *                               acknowledgement packets have been received for the connection within
  *                               an interval", and that interval "MUST default to no less than two
@@ -195,6 +204,7 @@ typedef struct
     uint32_t max_snd_wnd;
     uint32_t ts_recent;
     uint32_t last_ack_sent;
+    uint32_t last_send_ms;
     uint32_t keep_idle_ms;
     uint32_t keep_intvl_ms;
     uint32_t sack_left[IDEMIP_TCP_SACK_BLOCKS_MAX];

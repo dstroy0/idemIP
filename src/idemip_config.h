@@ -637,6 +637,27 @@ static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
 /** @brief RFC 5681 sec 3.2: "the arrival of 3 duplicate ACKs" is the fast retransmit threshold. */
 #define IDEMIP_TCP_DUPACK_THRESH 3u
 
+/** @brief RFC 5681 sec 3.1: the SMSS above which the initial window IW is 2 segments. */
+#define IDEMIP_TCP_IW_SMSS_HI 2190u
+
+/** @brief RFC 5681 sec 3.1: the SMSS at or below which IW is 4 segments, 3 above it. */
+#define IDEMIP_TCP_IW_SMSS_LO 1095u
+
+/**
+ * @brief RFC 5681 sec 3.1's initial ssthresh, "set arbitrarily high (e.g., to the size of the
+ *        largest possible advertised window)".
+ *
+ * RFC 7323 sec 2.2 scales a 16-bit Window field by at most Rcv.Wind.Shift, so the largest window a
+ * peer can advertise is 0xFFFF shifted left by IDEMIP_TCP_WS_MAX.
+ */
+#define IDEMIP_TCP_SSTHRESH_INIT (0xFFFFu << IDEMIP_TCP_WS_MAX)
+
+/**
+ * @brief RFC 6298 (5.7)'s floor: "the RTO MUST be re-initialized to 3 seconds when data transmission
+ *        begins" after the timer expired awaiting the ACK of a SYN.
+ */
+#define IDEMIP_TCP_RTO_SYN_FLOOR_MS 3000u
+
 /** @brief UDP bindings. */
 #ifndef IDEMIP_UDP_PCBS
 #define IDEMIP_UDP_PCBS 8u
@@ -1228,7 +1249,7 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 #ifndef IDEMIP_TCP_OOSEQ_ENTRY_SHIFT
 #define IDEMIP_TCP_OOSEQ_ENTRY_SHIFT 4u
 #endif
-// The region also carries tcp_pcb.h's operand block, which is 368 octets, the context 8 behind it.
+// The region also carries tcp_pcb.h's operand block, which is 384 octets, the context 8 behind it.
 // The block holds one whole TCB's worth of fields, load and store copying the RFC 9293 sec 3.3.1
 // variables, the sec 3.3.2 state and the estimator and congestion state through it.
 #ifndef IDEMIP_TCP_PCB_CTX_BYTES
@@ -1244,7 +1265,7 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 // tcp_in holds no table, so this region is the whole borrow and carries the operand block of tcp_in.h
 // as well as the context. The block is one arriving segment's RFC 9293 sec 3.3.1 Table 4 variables
 // with the sec 3.1 control bits, one whole TCB's worth of sec 3.3.1 variables and control state that
-// a load fills and a store takes back, and what the call reports: 264 octets on a target with
+// a load fills and a store takes back, and what the call reports: 272 octets on a target with
 // 8-octet pointers. The context behind it is the mark clear leaves and RFC 5961 sec 7's challenge-ACK
 // counter with the millisecond its window opened at, 12 more.
 #ifndef IDEMIP_TCP_IN_CTX_BYTES
@@ -1256,7 +1277,7 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 // tcp_out holds no table either. The operand block is what a build takes (the caller's buffer, the
 // four-tuple, the sec 3.1 header fields and the sec 3.2 options), what the sec 3.8.6.2.1 send rule
 // takes, one whole TCB's worth of sec 3.3.1 variables and control state, and what the call reports:
-// 304 octets on a target with 8-octet pointers. The context behind it is the mark clear leaves.
+// 312 octets on a target with 8-octet pointers. The context behind it is the mark clear leaves.
 #ifndef IDEMIP_TCP_OUT_CTX_BYTES
 #define IDEMIP_TCP_OUT_CTX_BYTES 320u
 #endif

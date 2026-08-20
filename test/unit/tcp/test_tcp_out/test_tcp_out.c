@@ -74,9 +74,36 @@ static void call_every_entry(uint8_t *w)
     TcpOut.rtx_stop(w);
     TcpOut.rtx_restart(w);
     TcpOut.rtx_expire(w);
+    TcpOut.cc_init(w);
     TcpOut.cc_ack(w);
     TcpOut.cc_dupack(w);
     TcpOut.cc_recover(w);
+}
+
+// Every entry, with the status read between each pair. One read after the whole run would only ever
+// observe the last call's, so a regression in any of the other twelve would pass unnoticed.
+#define REFUSED(call, name)                                                                                            \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        call;                                                                                                          \
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(w)->status, name);                                                \
+    } while (0)
+
+static void every_entry_is_refused(uint8_t *w)
+{
+    REFUSED(TcpOut.build(w), "build");
+    REFUSED(TcpOut.send(w), "send");
+    REFUSED(TcpOut.ack(w), "ack");
+    REFUSED(TcpOut.rst(w), "rst");
+    REFUSED(TcpOut.rtt(w), "rtt");
+    REFUSED(TcpOut.rtx_arm(w), "rtx_arm");
+    REFUSED(TcpOut.rtx_stop(w), "rtx_stop");
+    REFUSED(TcpOut.rtx_restart(w), "rtx_restart");
+    REFUSED(TcpOut.rtx_expire(w), "rtx_expire");
+    REFUSED(TcpOut.cc_init(w), "cc_init");
+    REFUSED(TcpOut.cc_ack(w), "cc_ack");
+    REFUSED(TcpOut.cc_dupack(w), "cc_dupack");
+    REFUSED(TcpOut.cc_recover(w), "cc_recover");
 }
 
 // A build aimed at the suite's buffer over IPv4, with nothing optional set.
@@ -146,12 +173,7 @@ void test_an_uncleared_borrow_is_refused(void)
     IO(work_a)->send_args.eff_snd_mss = 536u;
     IO(work_a)->timer_args.smss = 536u;
     IO(work_a)->timer_args.sample_ms = 100u;
-    call_every_entry(work_a);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
-    TcpOut.build(work_a);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
-    TcpOut.ack(work_a);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+    every_entry_is_refused(work_a);
 }
 
 // An entry is a function of its borrow alone, so the same call on the same bytes repeats.
@@ -258,7 +280,9 @@ void test_the_options_a_syn_carries_read_back(void)
         {
             saw_ts = 1;
             TEST_ASSERT_EQUAL_UINT32(0x11223344u, idemip_tcp_opt_tsval(w.opt));
-            TEST_ASSERT_EQUAL_UINT32(0x55667788u, idemip_tcp_opt_tsecr(w.opt));
+            // RFC 7323 sec 3.2: "If the ACK bit is not set in the outgoing TCP header, the sender of
+            // that segment SHOULD set the TSecr field to zero." This segment is a SYN with no ACK.
+            TEST_ASSERT_EQUAL_UINT32(0u, idemip_tcp_opt_tsecr(w.opt));
         }
         else if (w.kind == IDEMIP_TCP_OPT_SACK_PERM)
         {
@@ -279,8 +303,11 @@ void test_the_syn_only_options_are_left_off_a_segment_without_syn(void)
                                              IDEMIP_TCP_OUT_OPT_SACK_PERM);
     IO(work_a)->build_args.mss = 1460u;
     IO(work_a)->build_args.ws = 7u;
+    IO(work_a)->build_args.tsval = 0x11223344u;
+    IO(work_a)->build_args.tsecr = 0x55667788u;
     TcpOut.build(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    int saw_ts = 0;
     IdemIpTcpOptWalk w;
     idemip_tcp_opt_walk(&w, g_buf);
     while (idemip_tcp_opt_next(&w))
@@ -288,8 +315,18 @@ void test_the_syn_only_options_are_left_off_a_segment_without_syn(void)
         TEST_ASSERT_NOT_EQUAL_UINT8(IDEMIP_TCP_OPT_MSS, w.kind);
         TEST_ASSERT_NOT_EQUAL_UINT8(IDEMIP_TCP_OPT_WS, w.kind);
         TEST_ASSERT_NOT_EQUAL_UINT8(IDEMIP_TCP_OPT_SACK_PERM, w.kind);
+        if (w.kind == IDEMIP_TCP_OPT_TS)
+        {
+            saw_ts = 1;
+            TEST_ASSERT_EQUAL_UINT32(0x11223344u, idemip_tcp_opt_tsval(w.opt));
+            // The ACK bit is set here, so RFC 7323 sec 3.2 makes TSecr valid and it carries the echo.
+            TEST_ASSERT_EQUAL_UINT32(0x55667788u, idemip_tcp_opt_tsecr(w.opt));
+        }
     }
     TEST_ASSERT_FALSE(w.bad);
+    // sec 3.2: "Once TSopt has been successfully negotiated ... the TSopt MUST be sent in every
+    // non-<RST> segment for the duration of the connection", which is the steady-state segment.
+    TEST_ASSERT_TRUE_MESSAGE(saw_ts, "kind 8 is absent from a non-SYN segment that asked for it");
 }
 
 // RFC 9293 sec 3.1: "The TCP header (even one including options) is an integer multiple of 32 bits
@@ -1015,6 +1052,195 @@ void test_a_reset_built_onto_the_wire_reads_back(void)
     TcpIn.parse(work_in);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_IN_IO(work_in)->status);
     TEST_ASSERT_EQUAL_UINT32(100u, IDEMIP_TCP_IN_IO(work_in)->seg.seq);
+}
+
+// RFC 7323 sec 3.2: "The TSecr field is valid if the ACK bit is set in the TCP header." A <SYN,ACK>
+// carries the echo the pure SYN above must leave at zero.
+void test_a_syn_ack_carries_the_timestamp_echo(void)
+{
+    aim_build(work_a, 100u, 300u, (uint8_t)(IDEMIP_TCP_SYN | IDEMIP_TCP_ACK), 0u, NULL);
+    IO(work_a)->build_args.opts = (uint16_t)IDEMIP_TCP_OUT_OPT_TS;
+    IO(work_a)->build_args.tsval = 0x11223344u;
+    IO(work_a)->build_args.tsecr = 0x55667788u;
+    TcpOut.build(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    int saw_ts = 0;
+    IdemIpTcpOptWalk w;
+    idemip_tcp_opt_walk(&w, g_buf);
+    while (idemip_tcp_opt_next(&w))
+    {
+        if (w.kind == IDEMIP_TCP_OPT_TS)
+        {
+            saw_ts = 1;
+            TEST_ASSERT_EQUAL_UINT32(0x11223344u, idemip_tcp_opt_tsval(w.opt));
+            TEST_ASSERT_EQUAL_UINT32(0x55667788u, idemip_tcp_opt_tsecr(w.opt));
+        }
+    }
+    TEST_ASSERT_FALSE(w.bad);
+    TEST_ASSERT_TRUE(saw_ts);
+}
+
+// RFC 5681 sec 3.1's table: "If SMSS > 2190 bytes: IW = 2 * SMSS", "If (SMSS > 1095 bytes) and
+// (SMSS <= 2190 bytes): IW = 3 * SMSS", "if SMSS <= 1095 bytes: IW = 4 * SMSS".
+void test_the_initial_window_takes_the_three_way_table(void)
+{
+    conn(work_a, 1000u, 1000u, 65535u);
+    IO(work_a)->timer_args.smss = 1000u;
+    TcpOut.cc_init(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32(4000u, IO(work_a)->ctl.cwnd);
+
+    IO(work_a)->timer_args.smss = 1460u;
+    TcpOut.cc_init(work_a);
+    TEST_ASSERT_EQUAL_UINT32(4380u, IO(work_a)->ctl.cwnd);
+
+    IO(work_a)->timer_args.smss = 2500u;
+    TcpOut.cc_init(work_a);
+    TEST_ASSERT_EQUAL_UINT32(5000u, IO(work_a)->ctl.cwnd);
+
+    // The boundaries the table names, which are inclusive on the low side of each band.
+    IO(work_a)->timer_args.smss = 1095u;
+    TcpOut.cc_init(work_a);
+    TEST_ASSERT_EQUAL_UINT32(4380u, IO(work_a)->ctl.cwnd);
+    IO(work_a)->timer_args.smss = 2190u;
+    TcpOut.cc_init(work_a);
+    TEST_ASSERT_EQUAL_UINT32(6570u, IO(work_a)->ctl.cwnd);
+}
+
+// RFC 5681 sec 3.1: "The initial value of ssthresh SHOULD be set arbitrarily high (e.g., to the size
+// of the largest possible advertised window)", so a new connection is in slow start, not congestion
+// avoidance, and a connection straight out of a zeroed control block can release data.
+void test_a_new_connection_starts_in_slow_start_and_can_send(void)
+{
+    conn(work_a, 1000u, 1000u, 65535u);
+    memset(&IO(work_a)->ctl, 0, sizeof IO(work_a)->ctl); // what TcpPcb.load hands over
+    IO(work_a)->timer_args.smss = 1460u;
+    TcpOut.cc_init(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->ctl.cwnd < IO(work_a)->ctl.ssthresh, "not in slow start");
+
+    IO(work_a)->send_args.eff_snd_mss = 1460u;
+    IO(work_a)->send_args.queued = 4000u;
+    TcpOut.send(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32(4380u, IO(work_a)->res.usable);
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->res.send_now, "a fresh connection sent nothing");
+    TEST_ASSERT_EQUAL_UINT32(1460u, IO(work_a)->res.send_len);
+
+    // The first ACK opens the window by a segment, which is slow start and not the byte counter.
+    uint32_t was = IO(work_a)->ctl.cwnd;
+    IO(work_a)->timer_args.acked = 1460u;
+    TcpOut.cc_ack(work_a);
+    TEST_ASSERT_EQUAL_UINT32(was + 1460u, IO(work_a)->ctl.cwnd);
+}
+
+// RFC 5681 sec 3.1: "As specified in [RFC3390], the SYN/ACK and the acknowledgment of the SYN/ACK
+// MUST NOT increase the size of the congestion window."
+void test_the_handshake_acknowledgment_does_not_open_the_window(void)
+{
+    conn(work_a, 1000u, 1000u, 65535u);
+    IO(work_a)->timer_args.smss = 1460u;
+    TcpOut.cc_init(work_a);
+    uint32_t iw = IO(work_a)->ctl.cwnd;
+
+    IO(work_a)->state = IDEMIP_TCP_STATE_SYN_RECEIVED;
+    IO(work_a)->timer_args.acked = 1u;
+    TcpOut.cc_ack(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32(iw, IO(work_a)->ctl.cwnd);
+
+    IO(work_a)->state = IDEMIP_TCP_STATE_SYN_SENT;
+    TcpOut.cc_ack(work_a);
+    TEST_ASSERT_EQUAL_UINT32(iw, IO(work_a)->ctl.cwnd);
+}
+
+// RFC 6298 (5.7): "If the timer expires awaiting the ACK of a SYN segment and the TCP implementation
+// is using an RTO less than 3 seconds, the RTO MUST be re-initialized to 3 seconds when data
+// transmission begins (i.e., after the three-way handshake completes)."
+void test_a_syn_timeout_floors_the_rto_at_three_seconds_once_data_begins(void)
+{
+    conn(work_a, 1000u, 1000u, 65535u);
+    IO(work_a)->state = IDEMIP_TCP_STATE_SYN_SENT;
+    IO(work_a)->timer_args.smss = 1460u;
+    IO(work_a)->timer_args.now_ms = 1000u;
+    TcpOut.rtx_arm(work_a);
+    TEST_ASSERT_EQUAL_UINT32(1000u, IO(work_a)->ctl.rto); // (2.1)'s initial value
+
+    TcpOut.rtx_expire(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32(2000u, IO(work_a)->ctl.rto); // (5.5)'s doubling, still under 3 s
+
+    // The handshake completes and the first data segment is armed.
+    IO(work_a)->state = IDEMIP_TCP_STATE_ESTABLISHED;
+    IO(work_a)->ctl.rtx_deadline = 0u;
+    TcpOut.rtx_arm(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32(3000u, IO(work_a)->ctl.rto);
+
+    // The floor is applied once, not on every later arm.
+    IO(work_a)->ctl.rto = 1200u;
+    IO(work_a)->ctl.rtx_deadline = 0u;
+    TcpOut.rtx_arm(work_a);
+    TEST_ASSERT_EQUAL_UINT32(1200u, IO(work_a)->ctl.rto);
+}
+
+// RFC 6298 sec 3: "RTT samples MUST NOT be made using segments that were retransmitted (and thus for
+// which it is ambiguous whether the reply was for the first instance of the packet or a later
+// instance)." The estimator resumes once an ACK of new data ends the ambiguity.
+void test_a_sample_taken_across_a_retransmission_is_refused(void)
+{
+    conn(work_a, 1000u, 1000u, 65535u);
+    IO(work_a)->timer_args.smss = 1460u;
+    IO(work_a)->timer_args.sample_ms = 1600u;
+    TcpOut.rtt(work_a);
+    TEST_ASSERT_EQUAL_UINT32(1600u, IO(work_a)->ctl.srtt); // (2.2), the clean first sample
+
+    IO(work_a)->timer_args.now_ms = 5000u;
+    TcpOut.rtx_expire(work_a);
+    TEST_ASSERT_TRUE(IO(work_a)->ctl.backoff != 0u);
+
+    uint32_t srtt = IO(work_a)->ctl.srtt;
+    uint32_t rttvar = IO(work_a)->ctl.rttvar;
+    IO(work_a)->timer_args.sample_ms = 9000u; // the ambiguous ACK of the retransmission
+    TcpOut.rtt(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32(srtt, IO(work_a)->ctl.srtt);
+    TEST_ASSERT_EQUAL_UINT32(rttvar, IO(work_a)->ctl.rttvar);
+
+    // (5.3)'s ACK of new data ends the ambiguity, and the next sample is taken again.
+    TcpOut.rtx_restart(work_a);
+    TEST_ASSERT_EQUAL_UINT32(0u, IO(work_a)->ctl.backoff);
+    IO(work_a)->timer_args.sample_ms = 3200u;
+    TcpOut.rtt(work_a);
+    // (2.3) "SRTT <- (1 - alpha) * SRTT + alpha * R'" with alpha 1/8: 1600 - 200 + 400.
+    TEST_ASSERT_EQUAL_UINT32(1800u, IO(work_a)->ctl.srtt);
+}
+
+// RFC 5681 sec 4.1: "a TCP SHOULD set cwnd to no more than RW before beginning transmission if the
+// TCP has not sent data in an interval exceeding the retransmission timeout", RW being "min(IW,cwnd)".
+void test_an_idle_connection_restarts_at_the_restart_window(void)
+{
+    conn(work_a, 1000u, 1000u, 65535u);
+    IO(work_a)->timer_args.smss = 1460u;
+    TcpOut.cc_init(work_a);
+    IO(work_a)->ctl.cwnd = 64000u; // grown by a bulk transfer
+    IO(work_a)->ctl.rto = 1000u;
+    IO(work_a)->send_args.eff_snd_mss = 1460u;
+    IO(work_a)->send_args.queued = 64000u;
+
+    IO(work_a)->send_args.now_ms = 10000u;
+    TcpOut.send(work_a);
+    TEST_ASSERT_TRUE(IO(work_a)->res.send_now);
+    TEST_ASSERT_EQUAL_UINT32(10000u, IO(work_a)->ctl.last_send_ms);
+    TEST_ASSERT_EQUAL_UINT32(64000u, IO(work_a)->res.usable); // not idle, the full window stands
+
+    // 30 seconds of silence, far beyond the 1 s retransmission timeout.
+    IO(work_a)->send_args.now_ms = 40000u;
+    TcpOut.send(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32(4380u, IO(work_a)->ctl.cwnd); // min(IW, cwnd) with SMSS 1460
+    TEST_ASSERT_EQUAL_UINT32(4380u, IO(work_a)->res.usable);
 }
 
 // An entry is a function of its borrow alone, so the same operands on two borrows decide alike.

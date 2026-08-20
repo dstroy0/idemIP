@@ -73,6 +73,23 @@ static uint32_t tcp_out_deadline(uint32_t now, uint32_t rto)
     return (at == TCP_OUT_RTX_OFF) ? (at + 1u) : at;
 }
 
+// RFC 5681 sec 3.1's three-way table for IW: "If SMSS > 2190 bytes: IW = 2 * SMSS bytes and MUST NOT
+// be more than 2 segments. If (SMSS > 1095 bytes) and (SMSS <= 2190 bytes): IW = 3 * SMSS bytes and
+// MUST NOT be more than 3 segments. if SMSS <= 1095 bytes: IW = 4 * SMSS bytes and MUST NOT be more
+// than 4 segments."
+static uint32_t tcp_out_iw(uint32_t smss)
+{
+    if (smss > (uint32_t)IDEMIP_TCP_IW_SMSS_HI)
+    {
+        return smss << 1;
+    }
+    if (smss > (uint32_t)IDEMIP_TCP_IW_SMSS_LO)
+    {
+        return smss + (smss << 1);
+    }
+    return smss << 2;
+}
+
 // --- the options -----------------------------------------------------------
 
 // Octets the requested options occupy, the NOPs that word-align them included. RFC 9293 sec 3.2 puts
@@ -129,9 +146,12 @@ static uint16_t tcp_out_put_opts(uint8_t *o, const TcpOutBuildArgs *a, const Tcp
     }
     if ((a->opts & IDEMIP_TCP_OUT_OPT_TS) != 0u)
     {
+        // RFC 7323 sec 3.2: "If the ACK bit is not set in the outgoing TCP header, the sender of that
+        // segment SHOULD set the TSecr field to zero."
+        uint32_t tsecr = ((a->flags & IDEMIP_TCP_ACK) != 0u) ? a->tsecr : 0u;
         n = (uint16_t)(n + idemip_tcp_opt_put_nop(o + n));
         n = (uint16_t)(n + idemip_tcp_opt_put_nop(o + n));
-        n = (uint16_t)(n + idemip_tcp_opt_put_ts(o + n, a->tsval, a->tsecr));
+        n = (uint16_t)(n + idemip_tcp_opt_put_ts(o + n, a->tsval, tsecr));
     }
     if ((a->opts & IDEMIP_TCP_OUT_OPT_SACK) != 0u && a->sack_blocks != 0u)
     {
@@ -290,6 +310,20 @@ static void tcp_out_send(uint8_t *restrict work)
     }
     io->status = IDEMIP_OK;
 
+    // RFC 5681 sec 4.1: "a TCP SHOULD set cwnd to no more than RW before beginning transmission if
+    // the TCP has not sent data in an interval exceeding the retransmission timeout", RW being
+    // "min(IW,cwnd)". A connection that has never sent carries a zero stamp and is not idle.
+    if (io->ctl.last_send_ms != 0u && io->ctl.rto != 0u &&
+        (io->send_args.now_ms - io->ctl.last_send_ms) > io->ctl.rto)
+    {
+        uint32_t rw = tcp_out_iw(io->send_args.eff_snd_mss);
+        if (io->ctl.cwnd < rw)
+        {
+            rw = io->ctl.cwnd;
+        }
+        io->ctl.cwnd = rw;
+    }
+
     uint32_t flight = tcp_out_from(io->vars.snd_nxt, io->vars.snd_una);
     uint32_t edge = tcp_out_from(io->vars.snd_una + io->vars.snd_wnd, io->vars.snd_nxt);
     uint32_t u = (edge < 0x80000000u) ? edge : 0u; // SND.NXT past the offered window leaves none
@@ -343,6 +377,12 @@ static void tcp_out_send(uint8_t *restrict work)
         if (io->res.send_len == 0u)
         {
             io->res.send_now = IDEMIP_FALSE;
+        }
+        else
+        {
+            // The stamp sec 4.1's idle interval is measured from. Zero names the connection that has
+            // never sent, so a now_ms of zero takes the next millisecond.
+            io->ctl.last_send_ms = (io->send_args.now_ms == 0u) ? 1u : io->send_args.now_ms;
         }
     }
 }
@@ -414,6 +454,14 @@ static void tcp_out_rtt(uint8_t *restrict work)
     {
         return;
     }
+    // sec 3: "TCP MUST use Karn's algorithm [KP87] for taking RTT samples. That is, RTT samples MUST
+    // NOT be made using segments that were retransmitted." A nonzero backoff is the retransmission
+    // that made this ACK ambiguous; rtx_stop and rtx_restart clear it, so the next sample is taken.
+    if (io->ctl.backoff != 0u)
+    {
+        io->status = IDEMIP_OK;
+        return;
+    }
     uint32_t r = io->timer_args.sample_ms;
     if (io->ctl.srtt == 0u)
     {
@@ -437,7 +485,6 @@ static void tcp_out_rtt(uint8_t *restrict work)
         k = (uint32_t)IDEMIP_TCP_RTO_G_MS; // sec 4: "the variance term MUST be rounded to G seconds"
     }
     io->ctl.rto = tcp_out_rto_bound(io->ctl.srtt + k);
-    io->ctl.backoff = 0u;
     io->status = IDEMIP_OK;
 }
 
@@ -458,6 +505,19 @@ static void tcp_out_rtx_arm(uint8_t *restrict work)
     if (io->ctl.rto == 0u)
     {
         io->ctl.rto = (uint32_t)IDEMIP_TCP_RTO_INIT_MS; // (2.1) until a measurement has been made
+    }
+    // (5.7) "If the timer expires awaiting the ACK of a SYN segment and the TCP implementation is
+    // using an RTO less than 3 seconds, the RTO MUST be re-initialized to 3 seconds when data
+    // transmission begins (i.e., after the three-way handshake completes)." rtx_expire marks the SYN
+    // timeout; this is the first arm past the handshake, so the floor lands here and the mark clears.
+    if ((io->ctl.flags & IDEMIP_TCP_CTL_SYN_RTX) != 0u && io->state != IDEMIP_TCP_STATE_SYN_SENT &&
+        io->state != IDEMIP_TCP_STATE_SYN_RECEIVED)
+    {
+        if (io->ctl.rto < (uint32_t)IDEMIP_TCP_RTO_SYN_FLOOR_MS)
+        {
+            io->ctl.rto = (uint32_t)IDEMIP_TCP_RTO_SYN_FLOOR_MS;
+        }
+        io->ctl.flags &= (uint16_t)~IDEMIP_TCP_CTL_SYN_RTX;
     }
     if (io->ctl.rtx_deadline == TCP_OUT_RTX_OFF)
     {
@@ -507,6 +567,7 @@ static void tcp_out_rtx_restart(uint8_t *restrict work)
     }
     io->ctl.rtx_deadline = tcp_out_deadline(io->timer_args.now_ms, io->ctl.rto);
     io->ctl.nrtx = 0u;
+    io->ctl.backoff = 0u; // sec 3, the transmission that ends the ambiguity Karn's algorithm names
     io->status = IDEMIP_OK;
 }
 
@@ -546,6 +607,12 @@ static void tcp_out_rtx_expire(uint8_t *restrict work)
     }
     io->ctl.rto = tcp_out_rto_bound(io->ctl.rto << 1);
     io->ctl.rtx_deadline = tcp_out_deadline(io->timer_args.now_ms, io->ctl.rto);
+    // (5.7)'s precondition, "the timer expires awaiting the ACK of a SYN segment", which rtx_arm
+    // reads once the handshake has completed.
+    if (io->state == IDEMIP_TCP_STATE_SYN_SENT || io->state == IDEMIP_TCP_STATE_SYN_RECEIVED)
+    {
+        io->ctl.flags |= (uint16_t)IDEMIP_TCP_CTL_SYN_RTX;
+    }
     if (io->ctl.nrtx < 0xFFu)
     {
         io->ctl.nrtx++;
@@ -554,6 +621,30 @@ static void tcp_out_rtx_expire(uint8_t *restrict work)
     {
         io->ctl.backoff++;
     }
+    io->status = IDEMIP_OK;
+}
+
+// RFC 5681 sec 3.1, the congestion state a transfer starts in. "IW, the initial value of cwnd, MUST
+// be set using the following guidelines as an upper bound", which tcp_out_iw applies, and "The
+// initial value of ssthresh SHOULD be set arbitrarily high (e.g., to the size of the largest possible
+// advertised window)", which puts the connection in slow start until the first loss.
+static void tcp_out_cc_init(uint8_t *restrict work)
+{
+    if (!work)
+    {
+        return;
+    }
+    TcpOutIo *io = TCP_OUT_IO(work);
+    io->status = IDEMIP_ERR;
+    if (TCP_OUT_CTX(work)->ready != TCP_OUT_READY || io->timer_args.smss == 0u)
+    {
+        return;
+    }
+    io->ctl.cwnd = tcp_out_iw(io->timer_args.smss);
+    io->ctl.ssthresh = (uint32_t)IDEMIP_TCP_SSTHRESH_INIT;
+    io->ctl.bytes_acked = 0u;
+    io->ctl.dupacks = 0u;
+    io->ctl.last_send_ms = 0u;
     io->status = IDEMIP_OK;
 }
 
@@ -582,6 +673,12 @@ static void tcp_out_cc_ack(uint8_t *restrict work)
         return;
     }
     io->status = IDEMIP_OK;
+    // RFC 5681 sec 3.1: "As specified in [RFC3390], the SYN/ACK and the acknowledgment of the SYN/ACK
+    // MUST NOT increase the size of the congestion window."
+    if (io->state == IDEMIP_TCP_STATE_SYN_SENT || io->state == IDEMIP_TCP_STATE_SYN_RECEIVED)
+    {
+        return;
+    }
     uint32_t n = io->timer_args.acked;
     if (n == 0u)
     {
@@ -671,6 +768,7 @@ const TcpOutNs TcpOut = {.clear = tcp_out_clear,
                          .rtx_stop = tcp_out_rtx_stop,
                          .rtx_restart = tcp_out_rtx_restart,
                          .rtx_expire = tcp_out_rtx_expire,
+                         .cc_init = tcp_out_cc_init,
                          .cc_ack = tcp_out_cc_ack,
                          .cc_dupack = tcp_out_cc_dupack,
                          .cc_recover = tcp_out_cc_recover};

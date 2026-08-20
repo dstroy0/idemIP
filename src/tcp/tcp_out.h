@@ -101,11 +101,14 @@ typedef struct
  * @var TcpOutSendArgs::nodelay     the Nagle algorithm is off on this connection, which sec 3.7.4
  *                                  (MUST-17) requires be possible
  * @var TcpOutSendArgs::force       "or if the override timeout occurs", rule (4)
+ * @var TcpOutSendArgs::now_ms      the caller's monotonic millisecond count, which RFC 5681 sec 4.1
+ *                                  measures the idle interval against
  */
 typedef struct
 {
     uint32_t queued;
     uint32_t eff_snd_mss;
+    uint32_t now_ms;
     idemip_bool push;
     idemip_bool nodelay;
     idemip_bool force;
@@ -260,12 +263,15 @@ typedef struct
  * @var TcpOutNs::rst         form the reset sec 3.5.2 sends for the segment in
  *                            @ref TcpOutIo::seg_args
  * @var TcpOutNs::rtt         RFC 6298 (2.2) and (2.3), the SRTT, RTTVAR and RTO update from one
- *                            measurement, with (2.4)'s floor and (2.5)'s ceiling
+ *                            measurement, with (2.4)'s floor and (2.5)'s ceiling, and sec 3's Karn
+ *                            algorithm refusing a sample taken across a retransmission
  * @var TcpOutNs::rtx_arm     RFC 6298 (5.1), start the timer if it is not running
  * @var TcpOutNs::rtx_stop    RFC 6298 (5.2), turn it off, all outstanding data being acknowledged
  * @var TcpOutNs::rtx_restart RFC 6298 (5.3), restart it, an ACK having acknowledged new data
  * @var TcpOutNs::rtx_expire  RFC 6298 (5.5) "the host MUST set RTO <- RTO * 2" and (5.6), with RFC
  *                            5681 sec 3.1's ssthresh and loss window
+ * @var TcpOutNs::cc_init     RFC 5681 sec 3.1's initial window IW from SMSS, and the ssthresh a
+ *                            transfer starts at
  * @var TcpOutNs::cc_ack      RFC 5681 sec 3.1 slow start and congestion avoidance, by RFC 3465 sec
  *                            2.1 and sec 2.2 byte counting
  * @var TcpOutNs::cc_dupack   RFC 5681 sec 3.2 steps 2, 3 and 4, fast retransmit and fast recovery
@@ -283,6 +289,7 @@ typedef struct
     void (*const rtx_stop)(uint8_t *restrict work);
     void (*const rtx_restart)(uint8_t *restrict work);
     void (*const rtx_expire)(uint8_t *restrict work);
+    void (*const cc_init)(uint8_t *restrict work);
     void (*const cc_ack)(uint8_t *restrict work);
     void (*const cc_dupack)(uint8_t *restrict work);
     void (*const cc_recover)(uint8_t *restrict work);
