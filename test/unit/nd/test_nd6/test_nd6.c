@@ -418,6 +418,92 @@ static void rtr_set(uint8_t *w, const uint8_t *addr, uint16_t life_s)
     rtr_set_ll(w, addr, NULL, life_s);
 }
 
+// RFC 4861 sec 4.6.2: "if the L flag is not set a host MUST NOT conclude that an address derived from
+// the prefix is off-link. That is, it MUST NOT update a previous indication that the address is
+// on-link." sec 6.3.4 gives the one way to cancel it: "advertise that prefix with the L-bit set and
+// the Lifetime set to zero."
+void test_an_l_clear_option_does_not_cancel_an_on_link_indication(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    pfx_set(work_a, g_pfx64, 64u, 1800u, T);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_TRUE(on_link_of(work_a, g_in64));
+
+    // The same prefix with L clear, which sec 6.3.4 calls a normal configuration.
+    pfx_set(work_a, g_pfx64, 64u, 1800u, F);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(on_link_of(work_a, g_in64),
+                             "an L=0 option cancelled a previous on-link indication");
+
+    // The way that is cancelled: L set with the Lifetime zero, which sets the entry's invalidation
+    // timer to now and the sec 6.3.5 sweep then discards it.
+    pfx_set(work_a, g_pfx64, 64u, 0u, T);
+    at(work_a, 1u);
+    Nd6.tick(work_a);
+    TEST_ASSERT_FALSE(on_link_of(work_a, g_in64));
+}
+
+// The same option must not take a Prefix List slot either, or a later L=1 option finds the list full.
+void test_an_l_clear_option_takes_no_prefix_list_slot(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    for (uint8_t i = 0u; i < IDEMIP_ND6_NUM_PREFIXES + 1u; i++)
+    {
+        uint8_t p[IDEMIP_IP6_ADDR_LEN];
+        memcpy(p, g_pfx64, IDEMIP_IP6_ADDR_LEN);
+        p[7] = (uint8_t)(0x10u + i);
+        pfx_set(work_a, p, 64u, 1800u, F);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status, "an L=0 option was refused");
+    }
+    // The list is still empty, so an L=1 option lands.
+    pfx_set(work_a, g_pfx64, 64u, 1800u, T);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status, "L=0 options filled the Prefix List");
+    TEST_ASSERT_TRUE(on_link_of(work_a, g_in64));
+}
+
+// RFC 4861 sec 4.2: "The Router Lifetime applies only to the router's usefulness as a default router;
+// it does not apply to information contained in other message fields or options." sec 6.3.4: the
+// Source Link-Layer Address "SHOULD be recorded in the Neighbor Cache entry for the router (creating
+// an entry if necessary) and the IsRouter flag in the Neighbor Cache entry MUST be set to TRUE."
+void test_a_zero_router_lifetime_still_records_the_link_layer_address(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    rtr_set_ll(work_a, g_addr_a, g_lladdr, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    IDEMIP_ND6_IO(work_a)->neighbor_args.addr = g_addr_a;
+    Nd6.neighbor_find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status,
+                                  "a zero Router Lifetime created no Neighbor Cache entry");
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(g_lladdr, IDEMIP_ND6_IO(work_a)->lladdr, IDEMIP_MAC_LEN);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_ND6_IO(work_a)->is_router, "IsRouter was not set by a valid advertisement");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ND6_STALE, IDEMIP_ND6_IO(work_a)->state);
+}
+
+// Appendix D: "when there is no host vs. router information in the ND message, the receipt of the
+// message MUST NOT cause a change to the IsRouter state." Timing a router out of the Default Router
+// List is sec 6.3.5, which asks only that the entry go and the Destination Cache be updated.
+void test_dropping_a_default_router_leaves_is_router_alone(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    rtr_set_ll(work_a, g_addr_a, g_lladdr, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    // The router steps down as a default router but stays a router on the link.
+    rtr_set_ll(work_a, g_addr_a, g_lladdr, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    IDEMIP_ND6_IO(work_a)->neighbor_args.addr = g_addr_a;
+    Nd6.neighbor_find(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_ND6_IO(work_a)->is_router,
+                             "leaving the Default Router List cleared IsRouter");
+}
+
 static void push(uint8_t *w, uint8_t neighbor, uint16_t desc, uint16_t len)
 {
     IDEMIP_ND6_IO(w)->pending_args.neighbor = neighbor;

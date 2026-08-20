@@ -106,6 +106,7 @@ typedef struct
     uint32_t now_ms;
     uint32_t base_reachable_ms;
     uint32_t reachable_ms;
+    uint32_t reachable_redraw_ms; // when sec 6.3.2's "at least every few hours" draw next comes round
     uint32_t retrans_ms;
     uint32_t link_mtu;
     uint32_t rtr_solicit_ms;
@@ -272,9 +273,19 @@ static uint32_t nd6_lifetime_ms(uint32_t lifetime_s)
 // MIN_RANDOM_FACTOR and MAX_RANDOM_FACTOR times BaseReachableTime milliseconds". sec 10 prints those
 // as .5 and 1.5, so the low end is base >> 1 and the span above it is base. The offset is the top 32
 // bits of rand times base, which lands uniformly in [0, base) without a divide.
+// The draw reaches MAX_RANDOM_FACTOR times the base, so the base is bounded at the span divided by
+// that factor rather than at the span itself: base >> 1 plus an offset below base must still land
+// inside a deadline. sec 4.2 makes Reachable Time a remote party's 32-bit word, so this is what stops
+// an advertised value from arming a deadline that reads as already passed.
+#define ND6_REACHABLE_MAX_MS (ND6_DEADLINE_MAX_MS / 3u)
+
+static_assert((uint64_t)(ND6_REACHABLE_MAX_MS >> 1) + (uint64_t)ND6_REACHABLE_MAX_MS <=
+                  (uint64_t)ND6_DEADLINE_MAX_MS,
+              "a sec 6.3.2 ReachableTime draw must fit ND6_DEADLINE_MAX_MS milliseconds");
+
 static uint32_t nd6_draw_reachable(uint32_t base_ms, uint32_t rand_word)
 {
-    uint32_t base = (base_ms > ND6_DEADLINE_MAX_MS) ? ND6_DEADLINE_MAX_MS : base_ms;
+    uint32_t base = (base_ms > ND6_REACHABLE_MAX_MS) ? (uint32_t)ND6_REACHABLE_MAX_MS : base_ms;
     uint32_t offset = (uint32_t)(((uint64_t)rand_word * (uint64_t)base) >> 32);
     return IDEMIP_ND6_MIN_RANDOM(base) + offset;
 }
@@ -285,6 +296,12 @@ static uint32_t nd6_draw_reachable(uint32_t base_ms, uint32_t rand_word)
 static uint32_t nd6_reachable_ms(const Nd6Ctx *ctx)
 {
     return (ctx->reachable_ms != 0u) ? ctx->reachable_ms : IDEMIP_ND6_REACHABLE_TIME_MS;
+}
+
+// BaseReachableTime: what an advertisement set, or sec 6.3.2's default until one does.
+static uint32_t nd6_base_reachable_ms(const Nd6Ctx *ctx)
+{
+    return (ctx->base_reachable_ms != 0u) ? ctx->base_reachable_ms : (uint32_t)IDEMIP_ND6_REACHABLE_TIME_MS;
 }
 
 // RFC 4861 sec 6.3.4: "The RetransTimer variable SHOULD be copied from the Retrans Timer field, if
@@ -501,9 +518,13 @@ static void nd6_drop_router(uint8_t *restrict work, uint8_t ri)
     {
         ctx->routers--;
     }
+    // sec 6.3.5 asks only that the entry be discarded and the Destination Cache entries through it
+    // redo next-hop determination. The neighbor's IsRouter is left alone: Appendix D says "when there
+    // is no host vs. router information in the ND message, the receipt of the message MUST NOT cause a
+    // change to the IsRouter state", and the only TRUE-to-FALSE transition the document gives is sec
+    // 7.2.5's, off the R bit of a Neighbor Advertisement.
     if (ni < ND6_NEIGHBORS)
     {
-        ND6_NEIGHBOR_AT(work, ni)->is_router = IDEMIP_FALSE;
         nd6_drop_destinations_via(work, ni);
     }
 }
@@ -926,6 +947,17 @@ static void nd6_prefix_set(uint8_t *restrict work)
         io->status = IDEMIP_OK;
         return;
     }
+    // sec 4.6.2: "if the L flag is not set a host MUST NOT conclude that an address derived from the
+    // prefix is off-link. That is, it MUST NOT update a previous indication that the address is
+    // on-link." sec 6.3.4 scopes the whole Prefix List procedure to options with the flag set and
+    // gives the one way to cancel an indication: "advertise that prefix with the L-bit set and the
+    // Lifetime set to zero". So an option with L clear carries no on-link information: it neither
+    // stores an entry, nor clears one, nor takes a slot.
+    if (!a->on_link)
+    {
+        io->status = IDEMIP_OK;
+        return;
+    }
     uint8_t i = IDEMIP_ND6_NONE;
     for (uint8_t k = 0u; k < ND6_PREFIXES; k++)
     {
@@ -1075,14 +1107,15 @@ static void nd6_router_set(uint8_t *restrict work)
             break;
         }
     }
-    if (a->lifetime_s == 0u)
+    // sec 4.2: "The Router Lifetime applies only to the router's usefulness as a default router; it
+    // does not apply to information contained in other message fields or options." A lifetime of zero
+    // therefore takes the router out of the Default Router List and nothing else; the Source
+    // Link-Layer Address recording and the IsRouter write below run for every valid advertisement.
+    const idemip_bool default_router = (idemip_bool)(a->lifetime_s != 0u);
+    if (!default_router && ri != IDEMIP_ND6_NONE)
     {
-        if (ri != IDEMIP_ND6_NONE)
-        {
-            nd6_drop_router(work, ri);
-        }
-        io->status = IDEMIP_OK;
-        return;
+        nd6_drop_router(work, ri);
+        ri = (uint8_t)IDEMIP_ND6_NONE;
     }
     if (a->lladdr != NULL)
     {
@@ -1108,28 +1141,34 @@ static void nd6_router_set(uint8_t *restrict work)
             }
         }
     }
-    if (ri == IDEMIP_ND6_NONE)
+    if (default_router)
     {
-        for (uint8_t k = 0u; k < ND6_ROUTERS; k++)
-        {
-            if (!ND6_ROUTER_AT(work, k)->used)
-            {
-                ri = k;
-                break;
-            }
-        }
         if (ri == IDEMIP_ND6_NONE)
         {
-            io->status = IDEMIP_BUSY; // a slot frees when sec 6.3.5 times an entry out
-            return;
+            for (uint8_t k = 0u; k < ND6_ROUTERS; k++)
+            {
+                if (!ND6_ROUTER_AT(work, k)->used)
+                {
+                    ri = k;
+                    break;
+                }
+            }
+            if (ri == IDEMIP_ND6_NONE)
+            {
+                io->status = IDEMIP_BUSY; // a slot frees when sec 6.3.5 times an entry out
+                return;
+            }
+            Nd6Router *r = ND6_ROUTER_AT(work, ri);
+            r->used = IDEMIP_TRUE;
+            memcpy(r->addr, a->addr, IDEMIP_IP6_ADDR_LEN);
+            ctx->routers++;
         }
-        Nd6Router *r = ND6_ROUTER_AT(work, ri);
-        r->used = IDEMIP_TRUE;
-        memcpy(r->addr, a->addr, IDEMIP_IP6_ADDR_LEN);
-        ctx->routers++;
+        ND6_ROUTER_AT(work, ri)->neighbor = ni;
+        ND6_ROUTER_AT(work, ri)->invalidate_ms = ctx->now_ms + nd6_lifetime_ms((uint32_t)a->lifetime_s);
     }
-    ND6_ROUTER_AT(work, ri)->neighbor = ni;
-    ND6_ROUTER_AT(work, ri)->invalidate_ms = ctx->now_ms + nd6_lifetime_ms((uint32_t)a->lifetime_s);
+    // sec 6.3.4: "If no Source Link-Layer Address is included, but a corresponding Neighbor Cache
+    // entry exists, its IsRouter flag MUST be set to TRUE." An advertisement is a router saying so,
+    // whatever its Router Lifetime.
     if (ni < ND6_NEIGHBORS)
     {
         ND6_NEIGHBOR_AT(work, ni)->is_router = IDEMIP_TRUE;
@@ -1380,6 +1419,16 @@ static void nd6_sweep(uint8_t *restrict work)
     uint32_t now = ctx->now_ms;
     uint32_t retrans = nd6_retrans_ms(ctx);
     uint8_t expired = 0u;
+
+    // sec 6.3.2: a new random ReachableTime "should be calculated when BaseReachableTime changes (due
+    // to Router Advertisements) or at least every few hours even if no Router Advertisements are
+    // received". A stream of identical advertisements changes nothing, so without this the first draw
+    // stands forever and a rack of identically seeded nodes keeps its NUD probes synchronized.
+    if (nd6_due(now, ctx->reachable_redraw_ms))
+    {
+        ctx->reachable_ms = nd6_draw_reachable(nd6_base_reachable_ms(ctx), io->tick_args.rand);
+        ctx->reachable_redraw_ms = now + (uint32_t)IDEMIP_ND6_REACHABLE_REDRAW_MS;
+    }
 
     // sec 6.3.5: "Whenever the invalidation timer expires for a Prefix List entry, that entry is
     // discarded." sec 5.1 exempts the entries whose timer is the "special 'infinity' timer value".

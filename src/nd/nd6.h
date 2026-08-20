@@ -198,6 +198,11 @@ typedef struct
 typedef struct
 {
     uint32_t now_ms;
+    /** A random word. RFC 4861 sec 6.3.2 asks that ReachableTime be re-computed "at least every few
+     *  hours even if no Router Advertisements are received", and sec 6.3.4 gives the reason: "Using a
+     *  random component eliminates the possibility that Neighbor Unreachability Detection messages
+     *  will synchronize with each other." The sweep draws from this when that interval comes round. */
+    uint32_t rand;
 } Nd6TickArgs;
 
 /**

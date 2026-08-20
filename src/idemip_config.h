@@ -435,6 +435,17 @@ typedef enum IDEMIP_ENUM_PACKED
 #ifndef IDEMIP_ND6_MAX_NEIGHBOR_ADVERTISEMENT
 #define IDEMIP_ND6_MAX_NEIGHBOR_ADVERTISEMENT 3u
 #endif
+/**
+ * @brief RFC 4861 sec 6.3.2: milliseconds between two draws of ReachableTime.
+ *
+ * "A new random value should be calculated when BaseReachableTime changes (due to Router
+ * Advertisements) or at least every few hours even if no Router Advertisements are received." Two
+ * hours is the low end of that.
+ */
+#ifndef IDEMIP_ND6_REACHABLE_REDRAW_MS
+#define IDEMIP_ND6_REACHABLE_REDRAW_MS 7200000u
+#endif
+
 #ifndef IDEMIP_ND6_REACHABLE_TIME_MS
 #define IDEMIP_ND6_REACHABLE_TIME_MS 30000u
 #endif
