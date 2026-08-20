@@ -1,0 +1,1246 @@
+<meta charset="utf-8">
+<title>idemIP</title>
+<meta name="description" content="A TCP/IP stack in C11 for targets that have no heap and no operating system.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+/* ---------------------------------------------------------------------------
+   Tokens. The bare :root is the complete light palette; the two blocks after it
+   redefine only the tokens, so nothing is ever declared for one theme alone.
+   --------------------------------------------------------------------------- */
+:root {
+  --ground:#F7F7F5; --surface:#FFFFFF; --sunk:#F1F1EE;
+  --ink:#17181A; --muted:#6B6E6B; --faint:#94968F;
+  --rule:#DEDEDA; --rule-hi:#C9C9C3;
+  --signal:#BF3D0A; --signal-soft:#FBE9E0; --signal-ink:#FFFFFF;
+  --pass:#1F7A3F; --pass-soft:#E3F3E8;
+  --fail:#A32020; --fail-soft:#FBE7E7;
+  --bound:#DDDCD6;
+  --shadow:none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:#131414; --surface:#1C1D1D; --sunk:#181919;
+    --ink:#E9EAE7; --muted:#9DA09A; --faint:#7C7F79;
+    --rule:#2C2E2D; --rule-hi:#3D403E;
+    --signal:#FF8A3D; --signal-soft:#3A2113; --signal-ink:#17181A;
+    --pass:#5CC97F; --pass-soft:#16301F;
+    --fail:#F07070; --fail-soft:#341A1A;
+    --bound:#2A2C2B;
+  }
+}
+:root[data-theme="dark"] {
+  --ground:#131414; --surface:#1C1D1D; --sunk:#181919;
+  --ink:#E9EAE7; --muted:#9DA09A; --faint:#7C7F79;
+  --rule:#2C2E2D; --rule-hi:#3D403E;
+  --signal:#FF8A3D; --signal-soft:#3A2113; --signal-ink:#17181A;
+  --pass:#5CC97F; --pass-soft:#16301F;
+  --fail:#F07070; --fail-soft:#341A1A;
+  --bound:#2A2C2B;
+}
+
+*,*::before,*::after { box-sizing:border-box; }
+html { scroll-behavior:smooth; scroll-padding-top:76px; }
+@media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} *{animation:none!important;transition:none!important} }
+
+body {
+  margin:0; background:var(--ground); color:var(--ink);
+  font:400 16px/1.62 "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+
+h1,h2,h3,h4 { font-family:Archivo, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  font-weight:600; line-height:1.18; text-wrap:balance; margin:0; letter-spacing:-.014em; }
+h2 { font-size:1.42rem; margin:0 0 .2em; }
+h3 { font-size:1.06rem; margin:2.1em 0 .55em; }
+p { margin:0 0 1.05em; }
+a { color:var(--signal); text-decoration:none;
+    border-bottom:1px solid color-mix(in srgb, var(--signal) 30%, transparent); }
+a:hover { border-bottom-color:var(--signal); }
+:focus-visible { outline:2px solid var(--signal); outline-offset:2px; border-radius:2px; }
+code,kbd { font-family:"IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace; }
+.n,.map,.terms td,.terms th,.suites .n { font-variant-numeric:tabular-nums; }
+
+/* ---- masthead ---- */
+.top { position:sticky; top:0; z-index:40; background:color-mix(in srgb, var(--ground) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--rule); }
+.top-in { max-width:1240px; margin:0 auto; padding:11px 24px; display:flex; align-items:center; gap:16px; }
+.brand { font-family:Archivo, sans-serif; font-weight:700; font-size:1.06rem; letter-spacing:-.02em;
+  border:0; color:var(--ink); }
+.brand b { color:var(--signal); }
+.ver { font-family:"IBM Plex Mono",monospace; font-size:.72rem; color:var(--muted);
+  border:1px solid var(--rule); border-radius:2px; padding:1px 6px; }
+.top nav { margin-left:auto; display:flex; gap:18px; align-items:center; }
+.top nav a { color:var(--muted); border:0; font-size:.86rem; }
+.top nav a:hover { color:var(--ink); }
+.tgl { background:none; border:1px solid var(--rule); border-radius:2px; color:var(--muted);
+  font:500 .74rem/1 "IBM Plex Mono",monospace; padding:6px 9px; cursor:pointer; letter-spacing:.04em; }
+.tgl:hover { color:var(--ink); border-color:var(--rule-hi); }
+@media (max-width:720px){ .top nav a[data-opt]{display:none} }
+
+/* ---- shell ---- */
+.shell { max-width:1240px; margin:0 auto; padding:0 24px 96px;
+  display:grid; grid-template-columns:minmax(0,1fr) 208px; gap:56px; align-items:start; }
+main { min-width:0; }
+.rail { position:sticky; top:76px; padding-top:44px; font-size:.82rem; }
+.rail b { display:block; font:600 .68rem/1 "IBM Plex Mono",monospace; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--faint); margin-bottom:12px; }
+.rail a { display:block; color:var(--muted); border:0; padding:4px 0 4px 11px;
+  border-left:2px solid var(--rule); }
+.rail a:hover { color:var(--ink); }
+.rail a.on { color:var(--signal); border-left-color:var(--signal); }
+@media (max-width:1000px){ .shell{grid-template-columns:1fr; gap:0} .rail{display:none} }
+
+section { padding:48px 0 8px; border-top:1px solid var(--rule); }
+section:first-of-type { border-top:0; }
+.eyebrow { font:600 .68rem/1 "IBM Plex Mono",monospace; letter-spacing:.15em; text-transform:uppercase;
+  color:var(--signal); margin:0 0 10px; }
+.lede { font-size:1.06rem; color:var(--muted); max-width:66ch; margin:.5em 0 1.6em; }
+main p, main ul, main ol { max-width:68ch; }
+.note { color:var(--muted); font-size:.9rem; }
+
+/* ---- hero ---- */
+.hero { padding:56px 0 12px; border:0; }
+.hero h1 { font-size:clamp(2.3rem,5.4vw,3.5rem); letter-spacing:-.03em; font-weight:700; }
+.hero h1 em { font-style:normal; color:var(--signal); }
+.hero .lede { font-size:1.18rem; max-width:60ch; color:var(--ink); }
+.badges { display:flex; flex-wrap:wrap; gap:7px; margin:22px 0 0; }
+/* A badge is the live image where it loads, and a chip carrying the same label where it does not.
+   The two never both show: the image is the flow element, and a failed load swaps in the chip
+   rather than leaving a broken-image glyph. The Artifact CSP blocks these hosts, so the chip is
+   what a preview shows; on Pages the images render. */
+.badge { display:inline-flex; align-items:center; height:20px; border:0; border-radius:2px;
+  overflow:hidden; }
+.badge img { display:block; height:20px; width:auto; border-radius:2px; }
+.badge > span { display:none; font:500 .68rem/18px "IBM Plex Mono",monospace; color:var(--muted);
+  padding:0 8px; white-space:nowrap; border:1px solid var(--rule); border-radius:2px; }
+.badge.failed img { display:none; }
+.badge.failed > span, .badge.static > span { display:inline-block; }
+.badge.static > span { border-color:var(--rule-hi); }
+.badge.static > span b { color:var(--signal); font-weight:600; }
+
+.claims { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--rule);
+  border:1px solid var(--rule); border-radius:2px; margin:34px 0 0; overflow:hidden; }
+.claim { background:var(--surface); padding:20px 20px 22px; }
+.claim h3 { margin:0 0 4px; font-size:.94rem; }
+.claim .big { font:600 1.9rem/1.1 Archivo,sans-serif; letter-spacing:-.03em; color:var(--signal);
+  font-variant-numeric:tabular-nums; display:block; margin:2px 0 6px; }
+.claim p { font-size:.86rem; color:var(--muted); margin:0; max-width:none; }
+@media (max-width:820px){ .claims{grid-template-columns:1fr} }
+
+/* the measure: a value drawn inside the bound that is asserted for it */
+.gauge { margin:10px 0 12px; }
+.gauge .track { height:7px; background:var(--bound); border-radius:1px; position:relative; overflow:hidden; }
+.gauge .fill { position:absolute; inset:0 auto 0 0; background:var(--signal); }
+.gauge .cap { display:flex; justify-content:space-between; font:500 .68rem/1.6 "IBM Plex Mono",monospace;
+  color:var(--faint); margin-top:5px; }
+
+/* ---- stats strip ---- */
+.stats { display:grid; grid-template-columns:repeat(6,1fr); gap:1px; background:var(--rule);
+  border:1px solid var(--rule); border-radius:2px; margin:14px 0 0; overflow:hidden; }
+.stat { background:var(--surface); padding:15px 14px 16px; }
+.stat b { display:block; font:600 1.28rem/1.1 Archivo,sans-serif; letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums; }
+.stat span { display:block; font-size:.78rem; color:var(--ink); margin-top:3px; }
+.stat em { display:block; font-style:normal; font-size:.71rem; color:var(--faint); margin-top:4px; line-height:1.45; }
+@media (max-width:980px){ .stats{grid-template-columns:repeat(3,1fr)} }
+@media (max-width:560px){ .stats{grid-template-columns:repeat(2,1fr)} }
+
+/* ---- code ---- */
+.code { position:relative; background:var(--surface); border:1px solid var(--rule);
+  border-left:2px solid var(--signal); border-radius:2px; margin:0 0 1.2em; }
+.code pre { margin:0; padding:14px 16px; overflow-x:auto; font:400 13px/1.6 "IBM Plex Mono",monospace; }
+.code .cap { display:flex; justify-content:space-between; align-items:center; gap:12px;
+  padding:7px 12px 7px 16px; border-bottom:1px solid var(--rule); background:var(--sunk);
+  font:500 .7rem/1 "IBM Plex Mono",monospace; color:var(--muted); letter-spacing:.05em; }
+.copy { background:none; border:1px solid var(--rule); border-radius:2px; color:var(--muted);
+  font:500 .66rem/1 "IBM Plex Mono",monospace; padding:5px 8px; cursor:pointer; letter-spacing:.06em; }
+.copy:hover { color:var(--ink); border-color:var(--rule-hi); }
+.copy.done { color:var(--pass); border-color:var(--pass); }
+.k { color:var(--signal); } .c { color:var(--faint); font-style:italic; } .s { color:var(--pass); }
+
+/* ---- ordered sequence: the one thing here that really is a sequence ---- */
+.steps { list-style:none; counter-reset:s; padding:0; margin:0 0 1.2em; max-width:none; }
+.steps li { counter-increment:s; position:relative; padding:0 0 18px 46px; }
+.steps li::before { content:counter(s); position:absolute; left:0; top:0;
+  width:28px; height:28px; border:1px solid var(--signal); border-radius:2px; color:var(--signal);
+  font:600 .8rem/26px "IBM Plex Mono",monospace; text-align:center; }
+.steps li::after { content:""; position:absolute; left:14px; top:30px; bottom:2px; width:1px;
+  background:var(--rule); }
+.steps li:last-child { padding-bottom:0; }
+.steps li:last-child::after { display:none; }
+.steps b { font-family:"IBM Plex Mono",monospace; font-size:.92rem; }
+.steps p { margin:.25em 0 0; color:var(--muted); font-size:.92rem; }
+
+/* ---- tables ---- */
+.wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:2px; margin:0 0 1.3em;
+  background:var(--surface); }
+table { border-collapse:collapse; width:100%; font-size:.86rem; }
+th { text-align:left; font:600 .68rem/1 "IBM Plex Mono",monospace; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); padding:10px 14px; background:var(--sunk);
+  border-bottom:1px solid var(--rule); white-space:nowrap; }
+td { padding:8px 14px; border-bottom:1px solid var(--rule); vertical-align:top; }
+tbody tr:last-child td { border-bottom:0; }
+td.n,th.n { text-align:right; }
+.terms code { font-size:.78rem; }
+.terms .grp th { background:var(--sunk); font-size:.66rem; color:var(--faint); }
+.terms .sum td, .suites .total td { font-weight:600; background:var(--sunk); }
+.terms .total td { font-weight:700; background:var(--signal-soft); color:var(--signal); }
+.terms .total code { color:inherit; }
+
+/* ---- memory map ---- */
+.map { display:flex; height:44px; border:1px solid var(--rule); border-radius:2px;
+  overflow:hidden; margin:0 0 10px; background:var(--sunk); }
+.bar { width:var(--w); min-width:1px; position:relative; border-right:1px solid var(--ground);
+  background:var(--signal); opacity:.85; }
+.bar.netif { background:var(--muted); opacity:.55; }
+.bar:hover { opacity:1; }
+.bar-l,.bar-v { display:none; }
+.legend { display:flex; gap:18px; font:500 .72rem/1 "IBM Plex Mono",monospace; color:var(--muted);
+  margin:0 0 26px; flex-wrap:wrap; }
+.legend i { display:inline-block; width:10px; height:10px; border-radius:1px; margin-right:6px;
+  vertical-align:-1px; background:var(--signal); opacity:.85; }
+.legend i.netif { background:var(--muted); opacity:.55; }
+
+/* ---- capability configurator ---- */
+.caps { display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:8px; margin:0 0 16px; }
+.cap { display:block; position:relative; padding:12px 14px 13px 38px; cursor:pointer;
+  background:var(--surface); border:1px solid var(--rule); border-radius:2px; }
+.cap:hover { border-color:var(--rule-hi); }
+.cap input { position:absolute; left:13px; top:14px; accent-color:var(--signal); width:15px; height:15px; }
+.cap-n { display:block; font:600 .78rem/1.3 "IBM Plex Mono",monospace; }
+.cap-d { display:block; font-size:.76rem; color:var(--muted); margin-top:3px; }
+.cap.off { opacity:.55; }
+.cap.refused { border-color:var(--fail); background:var(--fail-soft); }
+.cap.refused .cap-n { color:var(--fail); }
+.refusals { margin:0 0 16px; display:grid; gap:8px; }
+.refusal { border:1px solid var(--fail); border-left-width:2px; border-radius:2px;
+  background:var(--fail-soft); padding:10px 13px; font-size:.83rem; }
+.refusal b { display:block; font:600 .66rem/1 "IBM Plex Mono",monospace; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--fail); margin-bottom:5px; }
+.refusal code { font-size:.8rem; color:var(--ink); }
+.verdict { display:inline-flex; align-items:center; gap:7px; font:500 .76rem/1 "IBM Plex Mono",monospace;
+  border:1px solid var(--rule); border-radius:2px; padding:7px 10px; color:var(--muted); margin:0 0 14px; }
+.verdict.ok { border-color:var(--pass); color:var(--pass); background:var(--pass-soft); }
+.verdict.no { border-color:var(--fail); color:var(--fail); background:var(--fail-soft); }
+
+/* ---- unit cards ---- */
+h3.layer { font:600 .7rem/1 "IBM Plex Mono",monospace; letter-spacing:.15em; text-transform:uppercase;
+  color:var(--faint); margin:30px 0 12px; padding-bottom:8px; border-bottom:1px solid var(--rule); }
+.cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(268px,1fr)); gap:9px; }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:2px;
+  padding:13px 14px 11px; display:flex; flex-direction:column; }
+.card header { margin-bottom:9px; }
+.card header b { display:block; font:600 .92rem/1.2 Archivo,sans-serif; letter-spacing:-.01em; }
+.card .hdr { display:block; font:400 .7rem/1.5 "IBM Plex Mono",monospace; color:var(--faint); margin-top:1px; }
+.entries { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px; }
+.entries code { font-size:.7rem; background:var(--sunk); border:1px solid var(--rule);
+  border-radius:2px; padding:1px 5px; color:var(--muted); }
+.entries.none { font:400 .74rem/1.5 "IBM Plex Mono",monospace; color:var(--faint); display:block; }
+.card .borrow { display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+  border-top:1px dashed var(--rule); padding-top:8px; margin-top:auto; margin-bottom:9px; }
+.card .borrow code { font-size:.68rem; color:var(--muted); }
+.card .borrow span { font:600 .74rem/1 "IBM Plex Mono",monospace; color:var(--signal);
+  font-variant-numeric:tabular-nums; white-space:nowrap; }
+.card footer { display:flex; flex-wrap:wrap; gap:4px; margin-top:auto; }
+.card.plain { background:var(--sunk); }
+a.rfc { font:500 .66rem/1 "IBM Plex Mono",monospace; color:var(--muted); border:1px solid var(--rule);
+  border-radius:2px; padding:2px 5px; }
+a.rfc:hover { color:var(--signal); border-color:var(--signal); }
+
+/* ---- the law ---- */
+.law { display:grid; grid-template-columns:repeat(auto-fill,minmax(122px,1fr)); gap:5px; }
+a.lex { display:block; border:1px solid var(--rule); border-radius:2px; padding:7px 9px;
+  background:var(--surface); overflow:hidden; }
+a.lex b { display:block; font:600 .76rem/1.2 "IBM Plex Mono",monospace; color:var(--ink); }
+a.lex span { display:block; font-size:.68rem; color:var(--faint); line-height:1.35; margin-top:2px;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+a.lex:hover { border-color:var(--signal); }
+a.lex:hover b { color:var(--signal); }
+a.lex.hot { border-left:2px solid var(--signal); }
+
+/* ---- suites ---- */
+.cc { display:inline-block; font:500 .66rem/1 "IBM Plex Mono",monospace; color:var(--muted);
+  border:1px solid var(--rule); border-radius:2px; padding:2px 5px; margin:0 3px 3px 0; }
+.cc.any { color:var(--faint); border-style:dashed; }
+.suites code { font-size:.76rem; }
+
+/* ---- misc ---- */
+.two { display:grid; grid-template-columns:1fr 1fr; gap:26px; }
+@media (max-width:820px){ .two{grid-template-columns:1fr} }
+.foot { border-top:1px solid var(--rule); margin-top:60px; padding:28px 0 0; color:var(--muted);
+  font-size:.85rem; }
+.foot p { max-width:70ch; }
+dl.io { margin:0 0 1.2em; }
+dl.io dt { font:600 .8rem/1.5 "IBM Plex Mono",monospace; color:var(--signal); margin-top:12px; }
+dl.io dd { margin:2px 0 0; color:var(--muted); font-size:.9rem; }
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="#top">idem<b>IP</b></a>
+    <span class="ver">v0.1.0</span>
+    <nav>
+      <a href="#start" data-opt>Start</a>
+      <a href="#capabilities" data-opt>Capabilities</a>
+      <a href="#footprint" data-opt>Footprint</a>
+      <a href="#units" data-opt>Units</a>
+      <a href="https://github.com/dstroy0/idemIP">GitHub</a>
+      <button class="tgl" id="theme" type="button" aria-label="Switch colour theme">THEME</button>
+    </nav>
+  </div>
+</header>
+
+<div class="shell" id="top">
+<main>
+
+<!-- ===================== hero ===================== -->
+<section class="hero">
+  <h1>A TCP/IP stack that <em>allocates nothing</em>.</h1>
+  <p class="lede">idemIP is written in C11 for targets that have no heap and no operating system.
+  Every unit that holds state is handed one <code>uint8_t</code> array by the caller, sized by a
+  macro that unit publishes, and reads and writes nothing outside it.</p>
+
+  <div class="badges">
+    <a class="badge" href="https://github.com/dstroy0/idemIP/actions/workflows/capabilities.yml"><img src="https://github.com/dstroy0/idemIP/actions/workflows/capabilities.yml/badge.svg?branch=main" alt="capabilities workflow status"><span>capabilities</span></a>
+    <a class="badge" href="https://github.com/dstroy0/idemIP/actions/workflows/codeql.yml"><img src="https://github.com/dstroy0/idemIP/actions/workflows/codeql.yml/badge.svg?branch=main" alt="CodeQL workflow status"><span>CodeQL</span></a>
+    <a class="badge" href="https://github.com/dstroy0/idemIP/actions/workflows/SonarCloud.yml"><img src="https://github.com/dstroy0/idemIP/actions/workflows/SonarCloud.yml/badge.svg?branch=main" alt="SonarQube workflow status"><span>SonarQube</span></a>
+    <a class="badge" href="https://sonarcloud.io/summary/new_code?id=dstroy0_idemIP"><img src="https://sonarcloud.io/api/project_badges/measure?project=dstroy0_idemIP&amp;metric=alert_status" alt="SonarCloud quality gate"><span>quality gate</span></a>
+    <a class="badge" href="https://sonarcloud.io/summary/new_code?id=dstroy0_idemIP"><img src="https://sonarcloud.io/api/project_badges/measure?project=dstroy0_idemIP&amp;metric=coverage" alt="SonarCloud coverage"><span>coverage</span></a>
+    <span class="badge static"><span>C11 &middot; <b>no heap</b></span></span>
+    <a class="badge static" href="https://github.com/dstroy0/idemIP/blob/main/LICENSE"><span>AGPL-3.0-or-later</span></a>
+  </div>
+
+  <div class="claims">
+    <div class="claim">
+      <h3>Deterministic in space</h3>
+      <span class="big" id="hero-total">&mdash;</span>
+      <p>Every borrow is a formula over compile-time counts, and each unit's <code>.c</code> carries
+      <code>static_assert(sizeof(Ctx) &lt;= CTX_BYTES)</code>. The footprint is a number the linker
+      places, not a number you hope for.</p>
+    </div>
+    <div class="claim">
+      <h3>Deterministic in time</h3>
+      <span class="big">1&ndash;8&nbsp;&micro;s</span>
+      <div class="gauge">
+        <div class="track"><div class="fill" style="width:12.5%"></div></div>
+        <div class="cap"><span>PAD_MIN 1</span><span>PAD_MAX 8</span></div>
+      </div>
+      <p>With <code>IDEMIP_ENABLE_TIME_DETERMINISM</code>, each entry runs to a pad it tunes rather
+      than to whatever its inputs cost. The window was measured, not chosen.</p>
+    </div>
+    <div class="claim">
+      <h3>And it is checked</h3>
+      <span class="big" id="hero-cases">&mdash;</span>
+      <p>Across 13 capability sets, every one of them built and run on each push. The suites
+      outweigh the library they test.</p>
+    </div>
+  </div>
+
+  <div class="stats">
+<!-- docsgen:stats -->
+<div class="stat"><b>31,624</b><span>bytes of .bss</span><em>IDEMIP_TOTAL_BORROW, at the counts in idemip_config.h</em></div>
+<div class="stat"><b>0</b><span>heap allocations</span><em>there is no <code>&lt;stdlib.h&gt;</code> anywhere in <code>src/</code></em></div>
+<div class="stat"><b>48</b><span>translation units</span><em>59 headers, 50,052 lines</em></div>
+<div class="stat"><b>59,555</b><span>lines of test</span><em>against 50,052 lines of library</em></div>
+<div class="stat"><b>56</b><span>CTest suites</span><em>2,737 cases</em></div>
+<div class="stat"><b>100</b><span>RFCs vendored</span><em>the text every rule is written against</em></div>
+<!-- /docsgen:stats -->
+  </div>
+</section>
+
+<!-- ===================== the borrow ===================== -->
+<section id="borrow">
+  <p class="eyebrow">The idea</p>
+  <h2>The borrow is the instance</h2>
+  <p class="lede">There is no file-scope mutable anywhere in <code>src/</code>, so two instances of a
+  unit share not one byte, and the whole footprint of a build is the arrays the application
+  declared.</p>
+
+  <div class="code">
+    <div class="cap"><span>bring-up, abridged</span><button class="copy" type="button">COPY</button></div>
+<pre><span class="c">// the only header an application includes</span>
+<span class="k">#include</span> <span class="s">"src/idemip.h"</span>
+
+<span class="c">// one array per unit, all .bss, sized by the macro that unit publishes</span>
+<span class="k">static</span> _Alignas(IDEMIP_ALIGN) uint8_t netif_w[IDEMIP_NETIF_BORROW];
+<span class="k">static</span> _Alignas(IDEMIP_ALIGN) uint8_t arp_w[IDEMIP_ARP_BORROW];
+<span class="k">static</span> _Alignas(IDEMIP_ALIGN) uint8_t udp_w[IDEMIP_UDP_PCB_BORROW];</pre>
+  </div>
+
+  <p><code>src/idemip.h</code> is the only header an application includes. It adds no type, macro or
+  call of its own; it names every unit's header, what the caller allocates, and the order things run
+  in.</p>
+
+  <h3>One calling convention, everywhere</h3>
+  <p>Every entry in the library has the same signature. Arguments go into an operand block at offset
+  zero of the borrow, the call takes the borrow and nothing else, and the result is read back out of
+  the same block.</p>
+
+  <div class="code">
+    <div class="cap"><span>write &middot; call &middot; read</span><button class="copy" type="button">COPY</button></div>
+<pre><span class="c">// every entry, without exception</span>
+<span class="k">void</span> (*<span class="k">const</span> entry)(uint8_t *<span class="k">restrict</span> work);
+
+IDEMIP_ARP_IO(arp_w)-&gt;find_args.ip = 0xC0A80101u;   <span class="c">// 1. write the operands</span>
+ArpTable.find(arp_w);                               <span class="c">// 2. call</span>
+<span class="k">if</span> (IDEMIP_ARP_IO(arp_w)-&gt;status == IDEMIP_OK)      <span class="c">// 3. read the result</span>
+{
+    memcpy(dst, IDEMIP_ARP_IO(arp_w)-&gt;mac, IDEMIP_MAC_LEN);
+}</pre>
+  </div>
+
+  <dl class="io">
+    <dt>IDEMIP_OK</dt>
+    <dd>The call finished, and any result member is set.</dd>
+    <dt>IDEMIP_BUSY</dt>
+    <dd>No progress now: nothing waiting, no room, or still in flight. Call again on a later tick.</dd>
+    <dt>IDEMIP_ERR</dt>
+    <dd>Refused: a null borrow, a bad argument, or the wrong state. Do not retry.</dd>
+  </dl>
+
+  <p>That is the whole concurrency model. Nothing blocks, nothing sleeps, nothing spins, and no entry
+  holds the CPU waiting on hardware or on a peer &mdash; a caller drives progress from its own
+  millisecond timer. Three states, because three is what a timer-driven caller can act on: go on,
+  come back, or stop.</p>
+</section>
+
+<!-- ===================== the order ===================== -->
+<section id="order">
+  <p class="eyebrow">The order</p>
+  <h2>Clear, bind, tick</h2>
+  <p class="lede">This is the one genuinely ordered thing in the library, and the only place on this
+  page that is numbered.</p>
+
+  <ol class="steps">
+    <li><b>clear</b>
+      <p>Every unit that exports a <code>clear</code>, on its own borrow. Every other entry refuses a
+      borrow that <code>clear</code> has not run on, because a zeroed borrow reads a list link as
+      index zero rather than as that unit's terminator.</p></li>
+    <li><b>bind</b>
+      <p><code>Phy.bind</code> takes the driver and its Clause 22 management address;
+      <code>Dma.bind</code> the same driver and the two buffer arrays; <code>Netif.bind</code> the phy
+      borrow, the hardware address and the link MTU. <code>Dispatch</code> binds before
+      <code>Tick</code>, because Tick's own bind takes the dispatch borrow.</p></li>
+    <li><b>tick</b>
+      <p>Three stages, in order, on a millisecond clock the caller reads once per pass: drain
+      receive, run each service's timers, flush deferred transmit. A later stage consumes what an
+      earlier one produced.</p></li>
+  </ol>
+
+  <h3>The tick enforces its own phase</h3>
+  <p><code>src/core/tick.h</code> holds the phase in its own context. <code>Tick.open</code> puts it
+  at DRAIN, and an entry called out of its phase reports <code>IDEMIP_ERR</code> &mdash; so the
+  services cannot silently run before the ring is drained. Each phase reports OK per step and BUSY
+  when that phase is through.</p>
+
+  <div class="wrap">
+    <table>
+      <thead><tr><th>phase</th><th>what runs</th><th>consumes</th></tr></thead>
+      <tbody>
+        <tr><td><code>DRAIN</code></td><td>every frame the engine filled, dispatched and posted back</td><td>the receive ring</td></tr>
+        <tr><td><code>SERVICE</code></td><td>ARP, ND6, reassembly, IGMP, MLD, netif, timeouts &mdash; in dependency order</td><td>what DRAIN delivered</td></tr>
+        <tr><td><code>FLUSH</code></td><td>what reported BUSY earlier, and the engine's finished transmit descriptors</td><td>what SERVICE produced</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">The order of the <code>IdemIpTickUnit</code> constants <em>is</em> the dependency
+  order: resolution before what waits on it, reassembly before the protocols that read a completed
+  datagram.</p>
+</section>
+
+<!-- ===================== start ===================== -->
+<section id="start">
+  <p class="eyebrow">Getting started</p>
+  <h2>Build it</h2>
+
+  <div class="two">
+    <div>
+      <div class="wrap">
+        <table>
+          <thead><tr><th>needs</th><th>version</th></tr></thead>
+          <tbody>
+            <tr><td>CMake</td><td>3.20 or newer</td></tr>
+            <tr><td>C compiler</td><td>any C11; <code>-Os</code> and the warning set apply to GCC and Clang</td></tr>
+            <tr><td>Python 3</td><td>tests only &mdash; drives <code>test/harness.py</code></td></tr>
+            <tr><td>Ruby</td><td>tests only &mdash; Unity's <code>generate_test_runner.rb</code></td></tr>
+            <tr><td>Network</td><td>once, so <code>FetchContent</code> can clone Unity v2.6.1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <div class="code">
+        <div class="cap"><span>the build directory lives outside the repo</span><button class="copy" type="button">COPY</button></div>
+<pre>cmake -S . -B ../build -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release
+cmake --build ../build
+ctest --test-dir ../build --output-on-failure</pre>
+      </div>
+      <p class="note">Release takes <code>-Os</code> and link-time optimization, which is what folds
+      the namespace indirection. <code>IDEMIP_LTO=OFF</code> turns the latter off.</p>
+    </div>
+  </div>
+
+  <h3>What you supply: the driver</h3>
+  <p>idemIP never copies a frame. Frames are read where the DMA engine left them, so a consumer
+  provides an <code>IdemIpPhyDriver</code> and the library does the rest.</p>
+  <div class="code">
+    <div class="cap"><span>src/ethernet/phy.h</span><button class="copy" type="button">COPY</button></div>
+<pre>IdemIpPhyLink (*link)(<span class="k">void</span>);
+<span class="k">const</span> uint8_t *(*mac)(<span class="k">void</span>);
+size_t   (*rx_claim)(<span class="k">const</span> uint8_t **frame);
+<span class="k">void</span>     (*rx_release)(<span class="k">void</span>);
+uint8_t *(*tx_claim)(size_t len);
+idemip_bool (*tx_commit)(size_t len);
+<span class="k">void</span> (*cache_invalidate)(<span class="k">const</span> <span class="k">void</span> *p, size_t len);  <span class="c">// required, even if a no-op</span>
+<span class="k">void</span> (*cache_clean)(<span class="k">const</span> <span class="k">void</span> *p, size_t len);       <span class="c">// required, even if a no-op</span>
+idemip_bool (*mdio_read)(uint8_t phy_addr, uint8_t reg, uint16_t *out);
+idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
+  </div>
+</section>
+
+<!-- ===================== capabilities ===================== -->
+<section id="capabilities">
+  <p class="eyebrow">Capabilities</p>
+  <h2>Turn it down to what you need</h2>
+  <p class="lede">A capability is a set of translation units. CMake selects them, so a capability that
+  is off reaches the compiler as no file at all rather than as a file that compiles to nothing.
+  Toggle these and the command line below follows &mdash; including the refusal, verbatim from
+  <code>CMakeLists.txt</code>, when an edge does not hold.</p>
+
+<!-- docsgen:capabilities -->
+<div class="caps" id="caps">
+<label class="cap" data-cap="IDEMIP_ENABLE_ETHERNET" data-parents=""><input type="checkbox" checked data-name="IDEMIP_ENABLE_ETHERNET"><span class="cap-n">IDEMIP_ENABLE_ETHERNET</span><span class="cap-d">Build the ETHERNET capability</span></label>
+<label class="cap" data-cap="IDEMIP_ENABLE_IPV4" data-parents="IDEMIP_ENABLE_ETHERNET"><input type="checkbox" checked data-name="IDEMIP_ENABLE_IPV4"><span class="cap-n">IDEMIP_ENABLE_IPV4</span><span class="cap-d">Build the IPV4 capability</span></label>
+<label class="cap" data-cap="IDEMIP_ENABLE_IPV6" data-parents="IDEMIP_ENABLE_ETHERNET"><input type="checkbox" checked data-name="IDEMIP_ENABLE_IPV6"><span class="cap-n">IDEMIP_ENABLE_IPV6</span><span class="cap-d">Build the IPV6 capability</span></label>
+<label class="cap" data-cap="IDEMIP_ENABLE_TCP" data-parents="IDEMIP_ENABLE_IPV4 IDEMIP_ENABLE_IPV6"><input type="checkbox" checked data-name="IDEMIP_ENABLE_TCP"><span class="cap-n">IDEMIP_ENABLE_TCP</span><span class="cap-d">Build the TCP capability</span></label>
+<label class="cap" data-cap="IDEMIP_ENABLE_UDP" data-parents="IDEMIP_ENABLE_IPV4 IDEMIP_ENABLE_IPV6"><input type="checkbox" checked data-name="IDEMIP_ENABLE_UDP"><span class="cap-n">IDEMIP_ENABLE_UDP</span><span class="cap-d">Build the UDP capability</span></label>
+</div>
+<script type="application/json" id="cap-data">[{"name":"IDEMIP_ENABLE_ETHERNET","doc":"Build the ETHERNET capability","default":"ON","why":"","parents":[]},{"name":"IDEMIP_ENABLE_IPV4","doc":"Build the IPV4 capability","default":"ON","why":"IDEMIP_ENABLE_IPV4 needs IDEMIP_ENABLE_ETHERNET: arp.h resolves to a 48-bit Ethernet address (RFC 826)","parents":["IDEMIP_ENABLE_ETHERNET"]},{"name":"IDEMIP_ENABLE_IPV6","doc":"Build the IPV6 capability","default":"ON","why":"IDEMIP_ENABLE_IPV6 needs IDEMIP_ENABLE_ETHERNET: the link layer here is Ethernet II (RFC 2464)","parents":["IDEMIP_ENABLE_ETHERNET"]},{"name":"IDEMIP_ENABLE_TCP","doc":"Build the TCP capability","default":"ON","why":"IDEMIP_ENABLE_TCP needs IDEMIP_ENABLE_IPV4 or IDEMIP_ENABLE_IPV6: the checksum covers a pseudo-header","parents":["IDEMIP_ENABLE_IPV4","IDEMIP_ENABLE_IPV6"]},{"name":"IDEMIP_ENABLE_UDP","doc":"Build the UDP capability","default":"ON","why":"IDEMIP_ENABLE_UDP needs IDEMIP_ENABLE_IPV4 or IDEMIP_ENABLE_IPV6: the checksum covers a pseudo-header","parents":["IDEMIP_ENABLE_IPV4","IDEMIP_ENABLE_IPV6"]}]</script>
+<script type="application/json" id="matrix-data">[{"tag":"all","IDEMIP_ENABLE_ETHERNET":true,"IDEMIP_ENABLE_IPV4":true,"IDEMIP_ENABLE_IPV6":true,"IDEMIP_ENABLE_TCP":true,"IDEMIP_ENABLE_UDP":true},{"tag":"ip4-only","IDEMIP_ENABLE_ETHERNET":true,"IDEMIP_ENABLE_IPV4":true,"IDEMIP_ENABLE_IPV6":false,"IDEMIP_ENABLE_TCP":true,"IDEMIP_ENABLE_UDP":true},{"tag":"ip6-only","IDEMIP_ENABLE_ETHERNET":true,"IDEMIP_ENABLE_IPV4":false,"IDEMIP_ENABLE_IPV6":true,"IDEMIP_ENABLE_TCP":true,"IDEMIP_ENABLE_UDP":true},{"tag":"no-tcp","IDEMIP_ENABLE_ETHERNET":true,"IDEMIP_ENABLE_IPV4":true,"IDEMIP_ENABLE_IPV6":true,"IDEMIP_ENABLE_TCP":false,"IDEMIP_ENABLE_UDP":true},{"tag":"no-udp","IDEMIP_ENABLE_ETHERNET":true,"IDEMIP_ENABLE_IPV4":true,"IDEMIP_ENABLE_IPV6":true,"IDEMIP_ENABLE_TCP":true,"IDEMIP_ENABLE_UDP":false},{"tag":"no-transport","IDEMIP_ENABLE_ETHERNET":true,"IDEMIP_ENABLE_IPV4":true,"IDEMIP_ENABLE_IPV6":true,"IDEMIP_ENABLE_TCP":false,"IDEMIP_ENABLE_UDP":false},{"tag":"ip4-tcp","IDEMIP_ENABLE_ETHERNET":true,"IDEMIP_ENABLE_IPV4":true,"IDEMIP_ENABLE_IPV6":false,"IDEMIP_ENABLE_TCP":true,"IDEMIP_ENABLE_UDP":false},{"tag":"ip4-udp","IDEMIP_ENABLE_ETHERNET":true,"IDEMIP_ENABLE_IPV4":true,"IDEMIP_ENABLE_IPV6":false,"IDEMIP_ENABLE_TCP":false,"IDEMIP_ENABLE_UDP":true},{"tag":"ip6-tcp","IDEMIP_ENABLE_ETHERNET":true,"IDEMIP_ENABLE_IPV4":false,"IDEMIP_ENABLE_IPV6":true,"IDEMIP_ENABLE_TCP":true,"IDEMIP_ENABLE_UDP":false},{"tag":"ip6-udp","IDEMIP_ENABLE_ETHERNET":true,"IDEMIP_ENABLE_IPV4":false,"IDEMIP_ENABLE_IPV6":true,"IDEMIP_ENABLE_TCP":false,"IDEMIP_ENABLE_UDP":true},{"tag":"ip4-bare","IDEMIP_ENABLE_ETHERNET":true,"IDEMIP_ENABLE_IPV4":true,"IDEMIP_ENABLE_IPV6":false,"IDEMIP_ENABLE_TCP":false,"IDEMIP_ENABLE_UDP":false},{"tag":"ip6-bare","IDEMIP_ENABLE_ETHERNET":true,"IDEMIP_ENABLE_IPV4":false,"IDEMIP_ENABLE_IPV6":true,"IDEMIP_ENABLE_TCP":false,"IDEMIP_ENABLE_UDP":false},{"tag":"eth-only","IDEMIP_ENABLE_ETHERNET":true,"IDEMIP_ENABLE_IPV4":false,"IDEMIP_ENABLE_IPV6":false,"IDEMIP_ENABLE_TCP":false,"IDEMIP_ENABLE_UDP":false}]</script>
+<!-- /docsgen:capabilities -->
+
+  <div class="refusals" id="refusals"></div>
+  <div class="verdict" id="verdict">&nbsp;</div>
+
+  <div class="code">
+    <div class="cap"><span id="cap-caption">your selection</span><button class="copy" type="button">COPY</button></div>
+<pre id="cap-cmd">cmake -S . -B ../build -G Ninja</pre>
+  </div>
+
+  <p class="note">Where one unit serves both IP versions, the version arm is its own translation unit
+  and the build swaps in a stub for a version it left out: <code>src/ip/pseudo.c</code> holds the
+  transport pseudo-header branch once, <code>pseudo_v4.c</code> and <code>pseudo_v6.c</code> are the
+  two forms, and <code>pseudo_v4_off.c</code> and <code>pseudo_v6_off.c</code> answer a version this
+  build does not carry.</p>
+</section>
+
+<!-- ===================== time ===================== -->
+<section id="time">
+  <p class="eyebrow">Determinism in time</p>
+  <h2>Each entry runs to a pad, not to its inputs</h2>
+  <p class="lede">Space determinism is the borrow. Time determinism is the other half, and it is a
+  build option: <code>IDEMIP_ENABLE_TIME_DETERMINISM</code>, off unless a build asks for it.</p>
+
+  <p><code>src/clock.h</code> exposes four readings, and only the fourth costs anything:</p>
+  <dl class="io">
+    <dt>now()</dt><dd>A <code>uint32_t</code> the caller reads, which wraps at 49.7 days.</dd>
+    <dt>stamp()</dt><dd>The reading the current pass entered on, so every deadline in one tick is compared against the same instant.</dd>
+    <dt>epoch()</dt><dd><code>IdemIpMs</code>, 64-bit monotonic milliseconds. This is time.</dd>
+    <dt>determinism_pad()</dt><dd>The tuned pad, present only under the option above.</dd>
+  </dl>
+
+  <div class="wrap">
+    <table>
+      <thead><tr><th>grade</th><th>unit</th><th>cost</th><th>tunes</th></tr></thead>
+      <tbody>
+        <tr><td><code>COARSE</code></td><td>milliseconds</td><td>no reading of its own</td><td>yes</td></tr>
+        <tr><td><code>FINE</code> <span class="cc">default</span></td><td>microseconds</td><td>a second reading beside the epoch</td><td>yes</td></tr>
+        <tr><td><code>LITERAL</code></td><td>microseconds</td><td>a second reading beside the epoch</td><td>no &mdash; pinned to a measured ceiling</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>FINE is the default because every entry in this tree measures well under a millisecond, so
+  COARSE would pad each one to many times its own cost. On the host in the archive the widest entry
+  is <code>idemip_cksum</code> over 1500 octets at 0.10&nbsp;&micro;s, and <code>ip4_frag.next</code>
+  at 0.08. Every value in the pad window was measured rather than chosen, and
+  <code>tools/dev_env/padwindow.py</code> regenerates the block from a bench run &mdash; a slower
+  target moves all of it, and the entries do not slow down by the same factor.</p>
+
+  <h3>Deadlines wrap, so no comparison is a less-than</h3>
+  <p>Millisecond deadlines wrap. Every comparison against one is the signed-difference form, never a
+  plain <code>&lt;</code>:</p>
+  <div class="code">
+    <div class="cap"><span>the only safe form</span><button class="copy" type="button">COPY</button></div>
+<pre>(int32_t)(a - b) &gt;= 0</pre>
+  </div>
+</section>
+
+<!-- ===================== footprint ===================== -->
+<section id="footprint">
+  <p class="eyebrow">Footprint</p>
+  <h2>Every byte, and where it went</h2>
+  <p class="lede">This table is not written by hand. <code>tools/idemip_sizes.c</code> links the
+  library and prints every borrow and their sum as the compiler computed them, and
+  <code>tools/dev_env/docsgen.py</code> puts that output here. It is run, never remembered.</p>
+
+<!-- docsgen:footprint -->
+<div class="map" role="img" aria-label="every borrow, to scale, summing to 31624 bytes">
+<div class="bar shared" style="--w:2.6309%" title="IDEMIP_NETIF_BORROW - 832 bytes"><span class="bar-l">IDEMIP_NETIF_BORROW</span><span class="bar-v">832</span></div>
+<div class="bar shared" style="--w:13.4328%" title="IDEMIP_LOOPIF_BORROW - 4248 bytes"><span class="bar-l">IDEMIP_LOOPIF_BORROW</span><span class="bar-v">4248</span></div>
+<div class="bar shared" style="--w:1.6190%" title="IDEMIP_ARP_BORROW - 512 bytes"><span class="bar-l">IDEMIP_ARP_BORROW</span><span class="bar-v">512</span></div>
+<div class="bar shared" style="--w:0.7083%" title="IDEMIP_IP4_ROUTE_BORROW - 224 bytes"><span class="bar-l">IDEMIP_IP4_ROUTE_BORROW</span><span class="bar-v">224</span></div>
+<div class="bar shared" style="--w:0.4048%" title="IDEMIP_IP4_FORWARD_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP4_FORWARD_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar shared" style="--w:0.4048%" title="IDEMIP_IP6_FORWARD_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP6_FORWARD_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar shared" style="--w:1.7708%" title="IDEMIP_IP4_REASS_BORROW - 560 bytes"><span class="bar-l">IDEMIP_IP4_REASS_BORROW</span><span class="bar-v">560</span></div>
+<div class="bar shared" style="--w:0.4048%" title="IDEMIP_IP4_FRAG_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP4_FRAG_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar shared" style="--w:0.6071%" title="IDEMIP_IGMP_BORROW - 192 bytes"><span class="bar-l">IDEMIP_IGMP_BORROW</span><span class="bar-v">192</span></div>
+<div class="bar shared" style="--w:2.0491%" title="IDEMIP_IP6_REASS_BORROW - 648 bytes"><span class="bar-l">IDEMIP_IP6_REASS_BORROW</span><span class="bar-v">648</span></div>
+<div class="bar shared" style="--w:0.4048%" title="IDEMIP_IP6_FRAG_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP6_FRAG_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar shared" style="--w:0.7083%" title="IDEMIP_MLD6_BORROW - 224 bytes"><span class="bar-l">IDEMIP_MLD6_BORROW</span><span class="bar-v">224</span></div>
+<div class="bar shared" style="--w:0.5059%" title="IDEMIP_ICMP_IN_BORROW - 160 bytes"><span class="bar-l">IDEMIP_ICMP_IN_BORROW</span><span class="bar-v">160</span></div>
+<div class="bar shared" style="--w:0.6071%" title="IDEMIP_ICMP6_IN_BORROW - 192 bytes"><span class="bar-l">IDEMIP_ICMP6_IN_BORROW</span><span class="bar-v">192</span></div>
+<div class="bar shared" style="--w:0.9107%" title="IDEMIP_RAW_PCB_BORROW - 288 bytes"><span class="bar-l">IDEMIP_RAW_PCB_BORROW</span><span class="bar-v">288</span></div>
+<div class="bar shared" style="--w:2.2262%" title="IDEMIP_UDP_PCB_BORROW - 704 bytes"><span class="bar-l">IDEMIP_UDP_PCB_BORROW</span><span class="bar-v">704</span></div>
+<div class="bar shared" style="--w:0.4048%" title="IDEMIP_UDPLITE_BORROW - 128 bytes"><span class="bar-l">IDEMIP_UDPLITE_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar shared" style="--w:9.6635%" title="IDEMIP_TCP_PCB_BORROW - 3056 bytes"><span class="bar-l">IDEMIP_TCP_PCB_BORROW</span><span class="bar-v">3056</span></div>
+<div class="bar shared" style="--w:0.9613%" title="IDEMIP_TCP_IN_BORROW - 304 bytes"><span class="bar-l">IDEMIP_TCP_IN_BORROW</span><span class="bar-v">304</span></div>
+<div class="bar shared" style="--w:1.0625%" title="IDEMIP_TCP_OUT_BORROW - 336 bytes"><span class="bar-l">IDEMIP_TCP_OUT_BORROW</span><span class="bar-v">336</span></div>
+<div class="bar shared" style="--w:1.4166%" title="IDEMIP_TCP_ISN_BORROW - 448 bytes"><span class="bar-l">IDEMIP_TCP_ISN_BORROW</span><span class="bar-v">448</span></div>
+<div class="bar shared" style="--w:0.3036%" title="IDEMIP_IP4_ADDR_BORROW - 96 bytes"><span class="bar-l">IDEMIP_IP4_ADDR_BORROW</span><span class="bar-v">96</span></div>
+<div class="bar shared" style="--w:0.4048%" title="IDEMIP_IP6_ADDR_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP6_ADDR_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar shared" style="--w:3.8705%" title="IDEMIP_IP6_SELECT_BORROW - 1224 bytes"><span class="bar-l">IDEMIP_IP6_SELECT_BORROW</span><span class="bar-v">1224</span></div>
+<div class="bar shared" style="--w:0.2277%" title="IDEMIP_PMTU4_BORROW - 72 bytes"><span class="bar-l">IDEMIP_PMTU4_BORROW</span><span class="bar-v">72</span></div>
+<div class="bar shared" style="--w:12.2692%" title="IDEMIP_DNS_BORROW - 3880 bytes"><span class="bar-l">IDEMIP_DNS_BORROW</span><span class="bar-v">3880</span></div>
+<div class="bar shared" style="--w:0.6324%" title="IDEMIP_TIMEOUTS_BORROW - 200 bytes"><span class="bar-l">IDEMIP_TIMEOUTS_BORROW</span><span class="bar-v">200</span></div>
+<div class="bar shared" style="--w:1.0119%" title="IDEMIP_TICK_BORROW - 320 bytes"><span class="bar-l">IDEMIP_TICK_BORROW</span><span class="bar-v">320</span></div>
+<div class="bar shared" style="--w:1.8467%" title="IDEMIP_DISPATCH_BORROW - 584 bytes"><span class="bar-l">IDEMIP_DISPATCH_BORROW</span><span class="bar-v">584</span></div>
+<div class="bar shared" style="--w:2.0238%" title="IDEMIP_STATS_BORROW - 640 bytes"><span class="bar-l">IDEMIP_STATS_BORROW</span><span class="bar-v">640</span></div>
+<div class="bar shared" style="--w:0.3036%" title="IDEMIP_VLAN_BORROW - 96 bytes"><span class="bar-l">IDEMIP_VLAN_BORROW</span><span class="bar-v">96</span></div>
+<div class="bar shared" style="--w:0.2024%" title="IDEMIP_ETHIP6_BORROW - 64 bytes"><span class="bar-l">IDEMIP_ETHIP6_BORROW</span><span class="bar-v">64</span></div>
+<div class="bar netif" style="--w:0.4048%" title="IDEMIP_PHY_BORROW - 128 bytes"><span class="bar-l">IDEMIP_PHY_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar netif" style="--w:3.9464%" title="IDEMIP_DMA_BORROW - 1248 bytes"><span class="bar-l">IDEMIP_DMA_BORROW</span><span class="bar-v">1248</span></div>
+<div class="bar netif" style="--w:5.0594%" title="IDEMIP_ND6_BORROW - 1600 bytes"><span class="bar-l">IDEMIP_ND6_BORROW</span><span class="bar-v">1600</span></div>
+<div class="bar netif" style="--w:0.4048%" title="IDEMIP_ACD_BORROW - 128 bytes"><span class="bar-l">IDEMIP_ACD_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar netif" style="--w:0.3036%" title="IDEMIP_AUTOIP_BORROW - 96 bytes"><span class="bar-l">IDEMIP_AUTOIP_BORROW</span><span class="bar-v">96</span></div>
+<div class="bar netif" style="--w:1.3155%" title="IDEMIP_PMTU6_BORROW - 416 bytes"><span class="bar-l">IDEMIP_PMTU6_BORROW</span><span class="bar-v">416</span></div>
+<div class="bar netif" style="--w:0.8348%" title="IDEMIP_DHCP4_BORROW - 264 bytes"><span class="bar-l">IDEMIP_DHCP4_BORROW</span><span class="bar-v">264</span></div>
+<div class="bar netif" style="--w:1.5431%" title="IDEMIP_DHCP6_BORROW - 488 bytes"><span class="bar-l">IDEMIP_DHCP6_BORROW</span><span class="bar-v">488</span></div>
+<div class="bar netif" style="--w:1.2649%" title="IDEMIP_DAD_BORROW - 400 bytes"><span class="bar-l">IDEMIP_DAD_BORROW</span><span class="bar-v">400</span></div>
+<div class="bar netif" style="--w:1.2649%" title="IDEMIP_SLAAC_BORROW - 400 bytes"><span class="bar-l">IDEMIP_SLAAC_BORROW</span><span class="bar-v">400</span></div>
+<div class="bar netif" style="--w:0.6577%" title="IDEMIP_RDNSS_BORROW - 208 bytes"><span class="bar-l">IDEMIP_RDNSS_BORROW</span><span class="bar-v">208</span></div>
+<div class="bar netif" style="--w:0.4048%" title="IDEMIP_PHY_BORROW - 128 bytes"><span class="bar-l">IDEMIP_PHY_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar netif" style="--w:3.9464%" title="IDEMIP_DMA_BORROW - 1248 bytes"><span class="bar-l">IDEMIP_DMA_BORROW</span><span class="bar-v">1248</span></div>
+<div class="bar netif" style="--w:5.0594%" title="IDEMIP_ND6_BORROW - 1600 bytes"><span class="bar-l">IDEMIP_ND6_BORROW</span><span class="bar-v">1600</span></div>
+<div class="bar netif" style="--w:0.4048%" title="IDEMIP_ACD_BORROW - 128 bytes"><span class="bar-l">IDEMIP_ACD_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar netif" style="--w:0.3036%" title="IDEMIP_AUTOIP_BORROW - 96 bytes"><span class="bar-l">IDEMIP_AUTOIP_BORROW</span><span class="bar-v">96</span></div>
+<div class="bar netif" style="--w:1.3155%" title="IDEMIP_PMTU6_BORROW - 416 bytes"><span class="bar-l">IDEMIP_PMTU6_BORROW</span><span class="bar-v">416</span></div>
+<div class="bar netif" style="--w:0.8348%" title="IDEMIP_DHCP4_BORROW - 264 bytes"><span class="bar-l">IDEMIP_DHCP4_BORROW</span><span class="bar-v">264</span></div>
+<div class="bar netif" style="--w:1.5431%" title="IDEMIP_DHCP6_BORROW - 488 bytes"><span class="bar-l">IDEMIP_DHCP6_BORROW</span><span class="bar-v">488</span></div>
+<div class="bar netif" style="--w:1.2649%" title="IDEMIP_DAD_BORROW - 400 bytes"><span class="bar-l">IDEMIP_DAD_BORROW</span><span class="bar-v">400</span></div>
+<div class="bar netif" style="--w:1.2649%" title="IDEMIP_SLAAC_BORROW - 400 bytes"><span class="bar-l">IDEMIP_SLAAC_BORROW</span><span class="bar-v">400</span></div>
+<div class="bar netif" style="--w:0.6577%" title="IDEMIP_RDNSS_BORROW - 208 bytes"><span class="bar-l">IDEMIP_RDNSS_BORROW</span><span class="bar-v">208</span></div>
+</div>
+<table class="terms"><thead><tr><th>borrow</th><th class="n">bytes</th><th class="n">share</th></tr></thead><tbody>
+<tr class="grp"><th colspan="3">shared, one table across every interface</th></tr>
+<tr><td><code>IDEMIP_NETIF_BORROW</code></td><td class="n">832</td><td class="n">2.6%</td></tr>
+<tr><td><code>IDEMIP_LOOPIF_BORROW</code></td><td class="n">4,248</td><td class="n">13.4%</td></tr>
+<tr><td><code>IDEMIP_ARP_BORROW</code></td><td class="n">512</td><td class="n">1.6%</td></tr>
+<tr><td><code>IDEMIP_IP4_ROUTE_BORROW</code></td><td class="n">224</td><td class="n">0.7%</td></tr>
+<tr><td><code>IDEMIP_IP4_FORWARD_BORROW</code></td><td class="n">128</td><td class="n">0.4%</td></tr>
+<tr><td><code>IDEMIP_IP6_FORWARD_BORROW</code></td><td class="n">128</td><td class="n">0.4%</td></tr>
+<tr><td><code>IDEMIP_IP4_REASS_BORROW</code></td><td class="n">560</td><td class="n">1.8%</td></tr>
+<tr><td><code>IDEMIP_IP4_FRAG_BORROW</code></td><td class="n">128</td><td class="n">0.4%</td></tr>
+<tr><td><code>IDEMIP_IGMP_BORROW</code></td><td class="n">192</td><td class="n">0.6%</td></tr>
+<tr><td><code>IDEMIP_IP6_REASS_BORROW</code></td><td class="n">648</td><td class="n">2.0%</td></tr>
+<tr><td><code>IDEMIP_IP6_FRAG_BORROW</code></td><td class="n">128</td><td class="n">0.4%</td></tr>
+<tr><td><code>IDEMIP_MLD6_BORROW</code></td><td class="n">224</td><td class="n">0.7%</td></tr>
+<tr><td><code>IDEMIP_ICMP_IN_BORROW</code></td><td class="n">160</td><td class="n">0.5%</td></tr>
+<tr><td><code>IDEMIP_ICMP6_IN_BORROW</code></td><td class="n">192</td><td class="n">0.6%</td></tr>
+<tr><td><code>IDEMIP_RAW_PCB_BORROW</code></td><td class="n">288</td><td class="n">0.9%</td></tr>
+<tr><td><code>IDEMIP_UDP_PCB_BORROW</code></td><td class="n">704</td><td class="n">2.2%</td></tr>
+<tr><td><code>IDEMIP_UDPLITE_BORROW</code></td><td class="n">128</td><td class="n">0.4%</td></tr>
+<tr><td><code>IDEMIP_TCP_PCB_BORROW</code></td><td class="n">3,056</td><td class="n">9.7%</td></tr>
+<tr><td><code>IDEMIP_TCP_IN_BORROW</code></td><td class="n">304</td><td class="n">1.0%</td></tr>
+<tr><td><code>IDEMIP_TCP_OUT_BORROW</code></td><td class="n">336</td><td class="n">1.1%</td></tr>
+<tr><td><code>IDEMIP_TCP_ISN_BORROW</code></td><td class="n">448</td><td class="n">1.4%</td></tr>
+<tr><td><code>IDEMIP_IP4_ADDR_BORROW</code></td><td class="n">96</td><td class="n">0.3%</td></tr>
+<tr><td><code>IDEMIP_IP6_ADDR_BORROW</code></td><td class="n">128</td><td class="n">0.4%</td></tr>
+<tr><td><code>IDEMIP_IP6_SELECT_BORROW</code></td><td class="n">1,224</td><td class="n">3.9%</td></tr>
+<tr><td><code>IDEMIP_PMTU4_BORROW</code></td><td class="n">72</td><td class="n">0.2%</td></tr>
+<tr><td><code>IDEMIP_DNS_BORROW</code></td><td class="n">3,880</td><td class="n">12.3%</td></tr>
+<tr><td><code>IDEMIP_TIMEOUTS_BORROW</code></td><td class="n">200</td><td class="n">0.6%</td></tr>
+<tr><td><code>IDEMIP_TICK_BORROW</code></td><td class="n">320</td><td class="n">1.0%</td></tr>
+<tr><td><code>IDEMIP_DISPATCH_BORROW</code></td><td class="n">584</td><td class="n">1.8%</td></tr>
+<tr><td><code>IDEMIP_STATS_BORROW</code></td><td class="n">640</td><td class="n">2.0%</td></tr>
+<tr><td><code>IDEMIP_VLAN_BORROW</code></td><td class="n">96</td><td class="n">0.3%</td></tr>
+<tr><td><code>IDEMIP_ETHIP6_BORROW</code></td><td class="n">64</td><td class="n">0.2%</td></tr>
+<tr class="sum"><td><code>IDEMIP_SHARED_BORROW</code></td><td class="n">20,872</td><td class="n">66.0%</td></tr>
+<tr class="grp"><th colspan="3">per interface, taken IDEMIP_NETIF_COUNT (2) times</th></tr>
+<tr><td><code>IDEMIP_PHY_BORROW</code></td><td class="n">128</td><td class="n">0.8%</td></tr>
+<tr><td><code>IDEMIP_DMA_BORROW</code></td><td class="n">1,248</td><td class="n">7.9%</td></tr>
+<tr><td><code>IDEMIP_ND6_BORROW</code></td><td class="n">1,600</td><td class="n">10.1%</td></tr>
+<tr><td><code>IDEMIP_ACD_BORROW</code></td><td class="n">128</td><td class="n">0.8%</td></tr>
+<tr><td><code>IDEMIP_AUTOIP_BORROW</code></td><td class="n">96</td><td class="n">0.6%</td></tr>
+<tr><td><code>IDEMIP_PMTU6_BORROW</code></td><td class="n">416</td><td class="n">2.6%</td></tr>
+<tr><td><code>IDEMIP_DHCP4_BORROW</code></td><td class="n">264</td><td class="n">1.7%</td></tr>
+<tr><td><code>IDEMIP_DHCP6_BORROW</code></td><td class="n">488</td><td class="n">3.1%</td></tr>
+<tr><td><code>IDEMIP_DAD_BORROW</code></td><td class="n">400</td><td class="n">2.5%</td></tr>
+<tr><td><code>IDEMIP_SLAAC_BORROW</code></td><td class="n">400</td><td class="n">2.5%</td></tr>
+<tr><td><code>IDEMIP_RDNSS_BORROW</code></td><td class="n">208</td><td class="n">1.3%</td></tr>
+<tr class="sum"><td><code>IDEMIP_PER_NETIF_BORROW</code> &times; 2</td><td class="n">10,752</td><td class="n">34.0%</td></tr>
+<tr class="total"><td><code>IDEMIP_TOTAL_BORROW</code></td><td class="n">31,624</td><td class="n">100%</td></tr>
+</tbody></table>
+<!-- /docsgen:footprint -->
+
+  <div class="legend">
+    <span><i></i>shared &mdash; one table across every interface</span>
+    <span><i class="netif"></i>per interface, taken IDEMIP_NETIF_COUNT times</span>
+  </div>
+
+  <p>The driver's frame buffers are the driver's and are in no borrow, so that total does not count
+  them: <code>IDEMIP_RX_DESCRIPTORS</code> and <code>IDEMIP_TX_DESCRIPTORS</code> buffers of
+  <code>IDEMIP_DMA_BUF_STRIDE</code> octets each. Neither is the caller's stack.</p>
+
+  <h3>Turning the counts down</h3>
+  <p>Every count is an <code>#ifndef</code> in <code>src/idemip_config.h</code>, so a definition
+  reaching the compiler overrides it. These are preprocessor definitions rather than CMake options:</p>
+  <div class="code">
+    <div class="cap"><span>fewer TCP control blocks</span><button class="copy" type="button">COPY</button></div>
+<pre>cmake -S . -B ../build -G Ninja -DCMAKE_C_FLAGS=-DIDEMIP_TCP_PCBS=2</pre>
+  </div>
+  <p>Each borrow is a formula over the counts, never a number, and each unit's <code>.c</code>
+  carries <code>static_assert(sizeof(&lt;Unit&gt;Ctx) &lt;= IDEMIP_&lt;UNIT&gt;_CTX_BYTES)</code>, so a
+  context that outgrows its budget fails the build naming the macro to raise.</p>
+
+  <h3>The receive ring cannot starve</h3>
+  <p>A retained frame stays in the buffer the DMA engine wrote it to, so its descriptor is not
+  returned to the ring until the unit holding it is done. Every retention capacity is fixed at
+  compile time, so the worst case is a number rather than a risk &mdash; and it is asserted:</p>
+  <div class="code">
+    <div class="cap"><span>src/idemip_config.h</span><button class="copy" type="button">COPY</button></div>
+<pre><span class="k">static_assert</span>(IDEMIP_RX_DESCRIPTORS &gt; IDEMIP_MAX_PINNED_FRAMES,
+              <span class="s">"the receive ring starves when every retaining unit is full"</span>);</pre>
+  </div>
+</section>
+
+<!-- ===================== units ===================== -->
+<section id="units">
+  <p class="eyebrow">Reference</p>
+  <h2>The units</h2>
+  <p class="lede">Every unit, in the order <code>src/idemip.h</code> includes it. A unit with a
+  namespace publishes a <code>static const</code> table of entries, initialised in its header so a
+  call resolves to a direct call and the table costs no RAM. A header-only unit is wire format: it
+  holds no state and takes no borrow.</p>
+
+<!-- docsgen:units -->
+<h3 class="layer">base</h3><div class="cards">
+<article class="card plain"><header><b>checksum.h</b><span class="hdr">src/checksum.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc1071.txt">RFC 1071</a></footer></article>
+<article class="card plain"><header><b>common.h</b><span class="hdr">src/common.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc8200.txt">RFC 8200</a><a class="rfc" href="learn/RFC/rfc9293.txt">RFC 9293</a><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a></footer></article>
+<article class="card plain"><header><b>endian.h</b><span class="hdr">src/endian.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc826.txt">RFC 826</a><a class="rfc" href="learn/RFC/rfc791.txt">RFC 791</a></footer></article>
+</div>
+<h3 class="layer">link</h3><div class="cards">
+<article class="card plain"><header><b>ethernet.h</b><span class="hdr">src/ethernet/ethernet.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc894.txt">RFC 894</a></footer></article>
+<article class="card plain"><header><b>mii.h</b><span class="hdr">src/ethernet/mii.h</span></header><div class="entries none">header only - no state, no borrow</div><footer></footer></article>
+<article class="card"><header><b>Phy</b><span class="hdr">src/ethernet/phy.h</span></header><div class="entries"><code>bind</code><code>poll_link</code><code>rx_claim</code><code>rx_release</code><code>tx_claim</code><code>tx_commit</code><code>mdio_read</code><code>mdio_write</code></div><div class="borrow"><code>IDEMIP_PHY_BORROW</code><span>128 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc894.txt">RFC 894</a></footer></article>
+<article class="card"><header><b>Vlan</b><span class="hdr">src/ethernet/vlan.h</span></header><div class="entries"><code>clear</code><code>parse</code><code>build</code><code>pack</code><code>split</code></div><div class="borrow"><code>IDEMIP_VLAN_BORROW</code><span>96 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc6325.txt">RFC 6325</a><a class="rfc" href="learn/RFC/rfc7042.txt">RFC 7042</a><a class="rfc" href="learn/RFC/rfc5342.txt">RFC 5342</a></footer></article>
+<article class="card"><header><b>Dma</b><span class="hdr">src/netif/dma.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>rx_take</code><code>rx_post</code><code>pin</code><code>unpin</code><code>tx_take</code><code>tx_post</code><code>tx_reap</code><code>pinned</code></div><div class="borrow"><code>IDEMIP_DMA_BORROW</code><span>1,248 bytes</span></div><footer></footer></article>
+<article class="card"><header><b>Loopif</b><span class="hdr">src/netif/loopif.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>output</code><code>claim</code><code>release</code><code>owns4</code><code>owns6</code></div><div class="borrow"><code>IDEMIP_LOOPIF_BORROW</code><span>4,248 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a><a class="rfc" href="learn/RFC/rfc4291.txt">RFC 4291</a></footer></article>
+<article class="card"><header><b>Netif</b><span class="hdr">src/netif/netif.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>unbind</code><code>set_addr4</code><code>set_mtu</code><code>set_flags</code><code>set_offload</code><code>get</code><code>find4</code><code>local4</code><code>add_addr6</code><code>remove_addr6</code><code>find_addr6</code><code>get_addr6</code><code>tick</code></div><div class="borrow"><code>IDEMIP_NETIF_BORROW</code><span>832 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a><a class="rfc" href="learn/RFC/rfc4862.txt">RFC 4862</a><a class="rfc" href="learn/RFC/rfc4861.txt">RFC 4861</a></footer></article>
+</div>
+<h3 class="layer">core</h3><div class="cards">
+<article class="card"><header><b>Stats</b><span class="hdr">src/core/stats.h</span></header><div class="entries"><code>clear</code><code>bump</code><code>set</code><code>read</code><code>if_bump</code><code>if_set</code><code>if_read</code></div><div class="borrow"><code>IDEMIP_STATS_BORROW</code><span>640 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1213.txt">RFC 1213</a><a class="rfc" href="learn/RFC/rfc2465.txt">RFC 2465</a><a class="rfc" href="learn/RFC/rfc2466.txt">RFC 2466</a></footer></article>
+<article class="card"><header><b>Timeouts</b><span class="hdr">src/core/timeouts.h</span></header><div class="entries"><code>clear</code><code>arm</code><code>cancel</code><code>tick</code><code>expire</code></div><div class="borrow"><code>IDEMIP_TIMEOUTS_BORROW</code><span>200 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc6298.txt">RFC 6298</a><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a></footer></article>
+</div>
+<h3 class="layer">IPv4</h3><div class="cards">
+<article class="card"><header><b>Acd</b><span class="hdr">src/acd/acd.h</span></header><div class="entries"><code>clear</code><code>start</code><code>stop</code><code>arp_in</code><code>tick</code></div><div class="borrow"><code>IDEMIP_ACD_BORROW</code><span>128 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc5227.txt">RFC 5227</a></footer></article>
+<article class="card plain"><header><b>arp.h</b><span class="hdr">src/arp/arp.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc826.txt">RFC 826</a></footer></article>
+<article class="card"><header><b>ArpTable</b><span class="hdr">src/arp/arp_table.h</span></header><div class="entries"><code>clear</code><code>add</code><code>find</code><code>remove</code><code>input</code><code>queue</code><code>dequeue</code><code>tick</code></div><div class="borrow"><code>IDEMIP_ARP_BORROW</code><span>512 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc826.txt">RFC 826</a></footer></article>
+<article class="card"><header><b>AutoIp</b><span class="hdr">src/autoip/autoip.h</span></header><div class="entries"><code>clear</code><code>start</code><code>conflict</code><code>bound</code><code>stop</code><code>tick</code></div><div class="borrow"><code>IDEMIP_AUTOIP_BORROW</code><span>96 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc3927.txt">RFC 3927</a></footer></article>
+<article class="card"><header><b>Dhcp4</b><span class="hdr">src/dhcp/dhcp4.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>start</code><code>stop</code><code>input</code><code>build</code><code>tick</code><code>release</code><code>decline</code><code>inform</code></div><div class="borrow"><code>IDEMIP_DHCP4_BORROW</code><span>264 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc2131.txt">RFC 2131</a></footer></article>
+<article class="card plain"><header><b>icmp.h</b><span class="hdr">src/icmp/icmp.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc792.txt">RFC 792</a></footer></article>
+<article class="card"><header><b>IcmpIn</b><span class="hdr">src/icmp/icmp_in.h</span></header><div class="entries"><code>clear</code><code>recv</code><code>error</code></div><div class="borrow"><code>IDEMIP_ICMP_IN_BORROW</code><span>160 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc792.txt">RFC 792</a><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a></footer></article>
+<article class="card"><header><b>Igmp</b><span class="hdr">src/igmp/igmp.h</span></header><div class="entries"><code>clear</code><code>join</code><code>leave</code><code>find</code><code>query_in</code><code>report_in</code><code>tick</code></div><div class="borrow"><code>IDEMIP_IGMP_BORROW</code><span>192 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc2236.txt">RFC 2236</a></footer></article>
+<article class="card"><header><b>Ip4Addr</b><span class="hdr">src/ip/ip4_addr.h</span></header><div class="entries"><code>clear</code><code>classify</code><code>match</code><code>mcast_mac</code></div><div class="borrow"><code>IDEMIP_IP4_ADDR_BORROW</code><span>96 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a></footer></article>
+<article class="card"><header><b>Ip4Forward</b><span class="hdr">src/ip/ip4_forward.h</span></header><div class="entries"><code>clear</code><code>set_policy</code><code>decide</code></div><div class="borrow"><code>IDEMIP_IP4_FORWARD_BORROW</code><span>128 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1812.txt">RFC 1812</a></footer></article>
+<article class="card"><header><b>Ip4Frag</b><span class="hdr">src/ip/ip4_frag.h</span></header><div class="entries"><code>clear</code><code>begin</code><code>next</code></div><div class="borrow"><code>IDEMIP_IP4_FRAG_BORROW</code><span>128 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc791.txt">RFC 791</a></footer></article>
+<article class="card"><header><b>Ip4Reass</b><span class="hdr">src/ip/ip4_reass.h</span></header><div class="entries"><code>clear</code><code>hold</code><code>next</code><code>release</code><code>reclaim</code><code>tick</code></div><div class="borrow"><code>IDEMIP_IP4_REASS_BORROW</code><span>560 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc791.txt">RFC 791</a><a class="rfc" href="learn/RFC/rfc815.txt">RFC 815</a></footer></article>
+<article class="card"><header><b>Ip4Route</b><span class="hdr">src/ip/ip4_route.h</span></header><div class="entries"><code>clear</code><code>add</code><code>remove</code><code>lookup</code><code>redirect</code><code>set_pmtu</code><code>tick</code></div><div class="borrow"><code>IDEMIP_IP4_ROUTE_BORROW</code><span>224 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a></footer></article>
+<article class="card plain"><header><b>ipv4.h</b><span class="hdr">src/ip/ipv4.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc791.txt">RFC 791</a></footer></article>
+<article class="card"><header><b>Pmtu4</b><span class="hdr">src/pmtu/pmtu4.h</span></header><div class="entries"><code>clear</code><code>too_big</code><code>plateau_below</code><code>plateau_above</code><code>age</code></div><div class="borrow"><code>IDEMIP_PMTU4_BORROW</code><span>72 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1191.txt">RFC 1191</a></footer></article>
+</div>
+<h3 class="layer">IPv6</h3><div class="cards">
+<article class="card"><header><b>Dhcp6</b><span class="hdr">src/dhcp/dhcp6.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>start</code><code>stop</code><code>input</code><code>build</code><code>tick</code><code>confirm</code><code>release</code><code>decline</code></div><div class="borrow"><code>IDEMIP_DHCP6_BORROW</code><span>488 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc8415.txt">RFC 8415</a></footer></article>
+<article class="card"><header><b>Ethip6</b><span class="hdr">src/ethernet/ethip6.h</span></header><div class="entries"><code>clear</code><code>multicast_map</code><code>eui64</code><code>linklocal</code></div><div class="borrow"><code>IDEMIP_ETHIP6_BORROW</code><span>64 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc2464.txt">RFC 2464</a></footer></article>
+<article class="card"><header><b>Icmp6In</b><span class="hdr">src/icmp/icmp6_in.h</span></header><div class="entries"><code>clear</code><code>recv</code><code>error</code></div><div class="borrow"><code>IDEMIP_ICMP6_IN_BORROW</code><span>192 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc4443.txt">RFC 4443</a></footer></article>
+<article class="card plain"><header><b>icmpv6.h</b><span class="hdr">src/icmp/icmpv6.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc4443.txt">RFC 4443</a></footer></article>
+<article class="card"><header><b>Ip6Addr</b><span class="hdr">src/ip/ip6_addr.h</span></header><div class="entries"><code>clear</code><code>classify</code><code>solicited</code><code>zone</code><code>match</code></div><div class="borrow"><code>IDEMIP_IP6_ADDR_BORROW</code><span>128 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc4291.txt">RFC 4291</a><a class="rfc" href="learn/RFC/rfc4007.txt">RFC 4007</a></footer></article>
+<article class="card"><header><b>Ip6Forward</b><span class="hdr">src/ip/ip6_forward.h</span></header><div class="entries"><code>clear</code><code>decide</code></div><div class="borrow"><code>IDEMIP_IP6_FORWARD_BORROW</code><span>128 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc8200.txt">RFC 8200</a><a class="rfc" href="learn/RFC/rfc4861.txt">RFC 4861</a></footer></article>
+<article class="card"><header><b>Ip6Frag</b><span class="hdr">src/ip/ip6_frag.h</span></header><div class="entries"><code>clear</code><code>begin</code><code>next</code></div><div class="borrow"><code>IDEMIP_IP6_FRAG_BORROW</code><span>128 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc8200.txt">RFC 8200</a></footer></article>
+<article class="card"><header><b>Ip6Reass</b><span class="hdr">src/ip/ip6_reass.h</span></header><div class="entries"><code>clear</code><code>input</code><code>frag_at</code><code>drop</code><code>tick</code></div><div class="borrow"><code>IDEMIP_IP6_REASS_BORROW</code><span>648 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc8200.txt">RFC 8200</a></footer></article>
+<article class="card"><header><b>Ip6Select</b><span class="hdr">src/ip/ip6_select.h</span></header><div class="entries"><code>clear</code><code>policy_set</code><code>policy_lookup</code><code>scope_of</code><code>common_prefix</code><code>source_add</code><code>dest_add</code><code>source_select</code><code>dest_sort</code><code>dest_at</code></div><div class="borrow"><code>IDEMIP_IP6_SELECT_BORROW</code><span>1,224 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc6724.txt">RFC 6724</a></footer></article>
+<article class="card plain"><header><b>ipv6.h</b><span class="hdr">src/ip/ipv6.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc8200.txt">RFC 8200</a></footer></article>
+<article class="card"><header><b>Mld6</b><span class="hdr">src/mld/mld6.h</span></header><div class="entries"><code>clear</code><code>join</code><code>leave</code><code>find</code><code>query_in</code><code>report_in</code><code>tick</code></div><div class="borrow"><code>IDEMIP_MLD6_BORROW</code><span>224 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc2710.txt">RFC 2710</a></footer></article>
+<article class="card"><header><b>Dad</b><span class="hdr">src/nd/dad.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>start</code><code>stop</code><code>find</code><code>ns_in</code><code>na_in</code><code>tick</code></div><div class="borrow"><code>IDEMIP_DAD_BORROW</code><span>400 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc4862.txt">RFC 4862</a></footer></article>
+<article class="card"><header><b>Nd6</b><span class="hdr">src/nd/nd6.h</span></header><div class="entries"><code>clear</code><code>neighbor_find</code><code>neighbor_set</code><code>neighbor_confirm</code><code>neighbor_used</code><code>neighbor_remove</code><code>dest_find</code><code>dest_set</code><code>prefix_set</code><code>prefix_on_link</code><code>router_set</code><code>router_select</code><code>pending_push</code><code>pending_pop</code><code>params_set</code><code>tick</code></div><div class="borrow"><code>IDEMIP_ND6_BORROW</code><span>1,600 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc4861.txt">RFC 4861</a></footer></article>
+<article class="card"><header><b>Rdnss</b><span class="hdr">src/nd/rdnss.h</span></header><div class="entries"><code>clear</code><code>option_in</code><code>get</code><code>find</code><code>remove</code><code>tick</code></div><div class="borrow"><code>IDEMIP_RDNSS_BORROW</code><span>208 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc8106.txt">RFC 8106</a></footer></article>
+<article class="card"><header><b>Slaac</b><span class="hdr">src/nd/slaac.h</span></header><div class="entries"><code>clear</code><code>link_local</code><code>prefix_in</code><code>find</code><code>get</code><code>remove</code><code>tick</code></div><div class="borrow"><code>IDEMIP_SLAAC_BORROW</code><span>400 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc4862.txt">RFC 4862</a></footer></article>
+<article class="card"><header><b>Pmtu6</b><span class="hdr">src/pmtu/pmtu6.h</span></header><div class="entries"><code>clear</code><code>too_big</code><code>tick</code><code>forget</code></div><div class="borrow"><code>IDEMIP_PMTU6_BORROW</code><span>416 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc8201.txt">RFC 8201</a></footer></article>
+</div>
+<h3 class="layer">transport</h3><div class="cards">
+<article class="card"><header><b>RawPcb</b><span class="hdr">src/raw/raw_pcb.h</span></header><div class="entries"><code>clear</code><code>open</code><code>close</code><code>bind</code><code>connect</code><code>disconnect</code><code>set_opts</code><code>load</code><code>find</code></div><div class="borrow"><code>IDEMIP_RAW_PCB_BORROW</code><span>288 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a></footer></article>
+<article class="card plain"><header><b>tcp.h</b><span class="hdr">src/tcp/tcp.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc9293.txt">RFC 9293</a></footer></article>
+<article class="card"><header><b>TcpIn</b><span class="hdr">src/tcp/tcp_in.h</span></header><div class="entries"><code>clear</code><code>parse</code><code>acceptable</code><code>closed</code><code>listen</code><code>syn_sent</code><code>segment</code></div><div class="borrow"><code>IDEMIP_TCP_IN_BORROW</code><span>304 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc9293.txt">RFC 9293</a></footer></article>
+<article class="card"><header><b>TcpIsn</b><span class="hdr">src/tcp/tcp_isn.h</span></header><div class="entries"><code>reset</code><code>seed</code><code>generate</code></div><div class="borrow"><code>IDEMIP_TCP_ISN_BORROW</code><span>448 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc6528.txt">RFC 6528</a></footer></article>
+<article class="card"><header><b>TcpOut</b><span class="hdr">src/tcp/tcp_out.h</span></header><div class="entries"><code>clear</code><code>build</code><code>send</code><code>ack</code><code>rst</code><code>rtt</code><code>rtx_arm</code><code>rtx_stop</code><code>rtx_restart</code><code>rtx_expire</code><code>cc_init</code><code>cc_ack</code><code>cc_dupack</code><code>cc_recover</code></div><div class="borrow"><code>IDEMIP_TCP_OUT_BORROW</code><span>336 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc9293.txt">RFC 9293</a></footer></article>
+<article class="card"><header><b>TcpPcb</b><span class="hdr">src/tcp/tcp_pcb.h</span></header><div class="entries"><code>clear</code><code>open</code><code>opt</code><code>close</code><code>bind</code><code>connect</code><code>load</code><code>store</code><code>accept</code><code>listen</code><code>unlisten</code><code>find</code><code>find_listener</code><code>seg_alloc</code><code>seg_load</code><code>seg_sent</code><code>seg_free</code><code>oos_alloc</code><code>oos_load</code><code>oos_free</code></div><div class="borrow"><code>IDEMIP_TCP_PCB_BORROW</code><span>3,056 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc9293.txt">RFC 9293</a></footer></article>
+<article class="card plain"><header><b>udp.h</b><span class="hdr">src/udp/udp.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc768.txt">RFC 768</a></footer></article>
+<article class="card"><header><b>UdpPcb</b><span class="hdr">src/udp/udp_pcb.h</span></header><div class="entries"><code>clear</code><code>open</code><code>close</code><code>bind</code><code>connect</code><code>disconnect</code><code>set_opts</code><code>load</code><code>find</code></div><div class="borrow"><code>IDEMIP_UDP_PCB_BORROW</code><span>704 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc768.txt">RFC 768</a></footer></article>
+<article class="card"><header><b>UdpLite</b><span class="hdr">src/udp/udplite.h</span></header><div class="entries"><code>clear</code><code>cover</code><code>check</code><code>build</code></div><div class="borrow"><code>IDEMIP_UDPLITE_BORROW</code><span>128 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc3828.txt">RFC 3828</a></footer></article>
+</div>
+<h3 class="layer">services</h3><div class="cards">
+<article class="card"><header><b>Dns</b><span class="hdr">src/dns/dns.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>set_server</code><code>query</code><code>lookup</code><code>build</code><code>input</code><code>tick</code><code>cancel</code><code>flush</code></div><div class="borrow"><code>IDEMIP_DNS_BORROW</code><span>3,880 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1035.txt">RFC 1035</a><a class="rfc" href="learn/RFC/rfc5452.txt">RFC 5452</a></footer></article>
+</div>
+<h3 class="layer">scheduling</h3><div class="cards">
+<article class="card"><header><b>Dispatch</b><span class="hdr">src/core/dispatch.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>if_bind</code><code>if_get</code><code>input</code><code>tcp_deliver</code><code>tcp_ack</code></div><div class="borrow"><code>IDEMIP_DISPATCH_BORROW</code><span>584 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a><a class="rfc" href="learn/RFC/rfc9293.txt">RFC 9293</a><a class="rfc" href="learn/RFC/rfc6325.txt">RFC 6325</a></footer></article>
+<article class="card"><header><b>Tick</b><span class="hdr">src/core/tick.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>if_bind</code><code>open</code><code>drain</code><code>service</code><code>flush</code></div><div class="borrow"><code>IDEMIP_TICK_BORROW</code><span>320 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc791.txt">RFC 791</a><a class="rfc" href="learn/RFC/rfc8200.txt">RFC 8200</a><a class="rfc" href="learn/RFC/rfc826.txt">RFC 826</a></footer></article>
+</div>
+<!-- /docsgen:units -->
+</section>
+
+<!-- ===================== the law ===================== -->
+<section id="law">
+  <p class="eyebrow">The law</p>
+  <h2>100 RFCs, and the text itself</h2>
+  <p class="lede">The RFC text every rule in <code>src/</code> is written against, as published by the
+  RFC Editor, vendored in the repository and served from this page. A comment that cites a section is
+  quoting one of these files &mdash; so every chip below opens the document the code was written
+  against. A bar on the left marks an RFC cited ten times or more.</p>
+
+<!-- docsgen:law -->
+<div class="law">
+<a class="lex hot" href="learn/RFC/rfc768.txt" title="User Datagram Protocol"><b>768</b><span>User Datagram Protocol</span></a>
+<a class="lex hot" href="learn/RFC/rfc791.txt" title="Internet Protocol"><b>791</b><span>Internet Protocol</span></a>
+<a class="lex hot" href="learn/RFC/rfc792.txt" title="Internet Control Message Protocol"><b>792</b><span>Internet Control Message Protocol</span></a>
+<a class="lex hot" href="learn/RFC/rfc815.txt" title="IP Datagram Reassembly Algorithms"><b>815</b><span>IP Datagram Reassembly Algorithms</span></a>
+<a class="lex hot" href="learn/RFC/rfc826.txt" title="An Ethernet Address Resolution Protocol -- or -- Converting Network Protocol Addresses to 48.bit Ethernet Address for Transmission on Ethernet Hardware"><b>826</b><span>An Ethernet Address Resolution Protocol -- or -- Converting Network Protocol Addresses to…</span></a>
+<a class="lex hot" href="learn/RFC/rfc894.txt" title="A Standard for the Transmission of IP Datagrams over Ethernet Networks"><b>894</b><span>A Standard for the Transmission of IP Datagrams over Ethernet Networks</span></a>
+<a class="lex" href="learn/RFC/rfc907.txt" title="Host Access Protocol Specification"><b>907</b><span>Host Access Protocol Specification</span></a>
+<a class="lex" href="learn/RFC/rfc919.txt" title="BROADCASTING INTERNET DATAGRAMS"><b>919</b><span>BROADCASTING INTERNET DATAGRAMS</span></a>
+<a class="lex" href="learn/RFC/rfc950.txt" title="Internet Standard Subnetting Procedure"><b>950</b><span>Internet Standard Subnetting Procedure</span></a>
+<a class="lex hot" href="learn/RFC/rfc1035.txt" title="Domain Names - Implementation and Specification"><b>1035</b><span>Domain Names - Implementation and Specification</span></a>
+<a class="lex hot" href="learn/RFC/rfc1042.txt" title="A Standard for the Transmission of IP Datagrams over IEEE 802 Networks"><b>1042</b><span>A Standard for the Transmission of IP Datagrams over IEEE 802 Networks</span></a>
+<a class="lex" href="learn/RFC/rfc1044.txt" title="Internet Protocol on Network Systems HYPERchannel Protocol Specification"><b>1044</b><span>Internet Protocol on Network Systems HYPERchannel Protocol Specification</span></a>
+<a class="lex" href="learn/RFC/rfc1055.txt" title="A Nonstandard for Transmission of IP Datagrams over Serial Lines: SLIP"><b>1055</b><span>A Nonstandard for Transmission of IP Datagrams over Serial Lines: SLIP</span></a>
+<a class="lex hot" href="learn/RFC/rfc1071.txt" title="Computing the Internet Checksum"><b>1071</b><span>Computing the Internet Checksum</span></a>
+<a class="lex hot" href="learn/RFC/rfc1112.txt" title="Host Extensions for IP Multicasting"><b>1112</b><span>Host Extensions for IP Multicasting</span></a>
+<a class="lex hot" href="learn/RFC/rfc1122.txt" title="Requirements for Internet Hosts -- Communication Layers"><b>1122</b><span>Requirements for Internet Hosts -- Communication Layers</span></a>
+<a class="lex hot" href="learn/RFC/rfc1123.txt" title="Requirements for Internet Hosts -- Application and Support"><b>1123</b><span>Requirements for Internet Hosts -- Application and Support</span></a>
+<a class="lex" href="learn/RFC/rfc1144.txt" title="Compressing TCP/IP Headers for Low-Speed Serial Links"><b>1144</b><span>Compressing TCP/IP Headers for Low-Speed Serial Links</span></a>
+<a class="lex hot" href="learn/RFC/rfc1155.txt" title="Structure and Identification of Management Information for TCP/IP-based Internets"><b>1155</b><span>Structure and Identification of Management Information for TCP/IP-based Internets</span></a>
+<a class="lex" href="learn/RFC/rfc1188.txt" title="A Proposed Standard for the Transmission of IP Datagrams over FDDI Networks"><b>1188</b><span>A Proposed Standard for the Transmission of IP Datagrams over FDDI Networks</span></a>
+<a class="lex hot" href="learn/RFC/rfc1191.txt" title="Path MTU Discovery"><b>1191</b><span>Path MTU Discovery</span></a>
+<a class="lex hot" href="learn/RFC/rfc1213.txt" title="Management Information Base for Network Management of TCP/IP-based internets: MIB-II"><b>1213</b><span>Management Information Base for Network Management of TCP/IP-based internets: MIB-II</span></a>
+<a class="lex" href="learn/RFC/rfc1337.txt" title="TIME-WAIT Assassination Hazards in TCP"><b>1337</b><span>TIME-WAIT Assassination Hazards in TCP</span></a>
+<a class="lex" href="learn/RFC/rfc1533.txt" title="DHCP Options and BOOTP Vendor Extensions"><b>1533</b><span>DHCP Options and BOOTP Vendor Extensions</span></a>
+<a class="lex" href="learn/RFC/rfc1542.txt" title="Clarifications and Extensions for the Bootstrap Protocol"><b>1542</b><span>Clarifications and Extensions for the Bootstrap Protocol</span></a>
+<a class="lex hot" href="learn/RFC/rfc1812.txt" title="Requirements for IP Version 4 Routers"><b>1812</b><span>Requirements for IP Version 4 Routers</span></a>
+<a class="lex" href="learn/RFC/rfc1858.txt" title="Security Considerations for IP Fragment Filtering"><b>1858</b><span>Security Considerations for IP Fragment Filtering</span></a>
+<a class="lex" href="learn/RFC/rfc2011.txt" title="SNMPv2 Management Information Base for the Internet Protocol using SMIv2"><b>2011</b><span>SNMPv2 Management Information Base for the Internet Protocol using SMIv2</span></a>
+<a class="lex hot" href="learn/RFC/rfc2018.txt" title="TCP Selective Acknowledgment Options"><b>2018</b><span>TCP Selective Acknowledgment Options</span></a>
+<a class="lex" href="learn/RFC/rfc2113.txt" title="IP Router Alert Option"><b>2113</b><span>IP Router Alert Option</span></a>
+<a class="lex" href="learn/RFC/rfc2119.txt" title="Key words for use in RFCs to Indicate Requirement Levels"><b>2119</b><span>Key words for use in RFCs to Indicate Requirement Levels</span></a>
+<a class="lex hot" href="learn/RFC/rfc2131.txt" title="Dynamic Host Configuration Protocol"><b>2131</b><span>Dynamic Host Configuration Protocol</span></a>
+<a class="lex hot" href="learn/RFC/rfc2132.txt" title="DHCP Options and BOOTP Vendor Extensions"><b>2132</b><span>DHCP Options and BOOTP Vendor Extensions</span></a>
+<a class="lex" href="learn/RFC/rfc2181.txt" title="Clarifications to the DNS Specification"><b>2181</b><span>Clarifications to the DNS Specification</span></a>
+<a class="lex hot" href="learn/RFC/rfc2236.txt" title="Internet Group Management Protocol, Version 2"><b>2236</b><span>Internet Group Management Protocol, Version 2</span></a>
+<a class="lex hot" href="learn/RFC/rfc2464.txt" title="Transmission of IPv6 Packets over Ethernet Networks"><b>2464</b><span>Transmission of IPv6 Packets over Ethernet Networks</span></a>
+<a class="lex hot" href="learn/RFC/rfc2465.txt" title="Management Information Base for IP Version 6: Textual Conventions and General Group"><b>2465</b><span>Management Information Base for IP Version 6: Textual Conventions and General Group</span></a>
+<a class="lex hot" href="learn/RFC/rfc2466.txt" title="Management Information Base for IP Version 6: ICMPv6 Group"><b>2466</b><span>Management Information Base for IP Version 6: ICMPv6 Group</span></a>
+<a class="lex" href="learn/RFC/rfc2578.txt" title="Structure of Management Information Version 2 (SMIv2)"><b>2578</b><span>Structure of Management Information Version 2 (SMIv2)</span></a>
+<a class="lex" href="learn/RFC/rfc2579.txt" title="Textual Conventions for SMIv2"><b>2579</b><span>Textual Conventions for SMIv2</span></a>
+<a class="lex hot" href="learn/RFC/rfc2710.txt" title="Multicast Listener Discovery (MLD) for IPv6"><b>2710</b><span>Multicast Listener Discovery (MLD) for IPv6</span></a>
+<a class="lex" href="learn/RFC/rfc2827.txt" title="Network Ingress Filtering: Defeating Denial of Service Attacks which employ IP Source Address Spoofing"><b>2827</b><span>Network Ingress Filtering: Defeating Denial of Service Attacks which employ IP Source…</span></a>
+<a class="lex" href="learn/RFC/rfc3021.txt" title="Using 31-Bit Prefixes on IPv4 Point-to-Point Links"><b>3021</b><span>Using 31-Bit Prefixes on IPv4 Point-to-Point Links</span></a>
+<a class="lex" href="learn/RFC/rfc3128.txt" title="Protection Against a Variant of the Tiny Fragment Attack"><b>3128</b><span>Protection Against a Variant of the Tiny Fragment Attack</span></a>
+<a class="lex" href="learn/RFC/rfc3306.txt" title="Unicast-Prefix-based IPv6 Multicast Addresses"><b>3306</b><span>Unicast-Prefix-based IPv6 Multicast Addresses</span></a>
+<a class="lex" href="learn/RFC/rfc3376.txt" title="Internet Group Management Protocol, Version 3"><b>3376</b><span>Internet Group Management Protocol, Version 3</span></a>
+<a class="lex" href="learn/RFC/rfc3465.txt" title="TCP Congestion Control with Appropriate Byte Counting (ABC)"><b>3465</b><span>TCP Congestion Control with Appropriate Byte Counting (ABC)</span></a>
+<a class="lex hot" href="learn/RFC/rfc3542.txt" title="Advanced Sockets Application Program Interface (API) for IPv6"><b>3542</b><span>Advanced Sockets Application Program Interface (API) for IPv6</span></a>
+<a class="lex" href="learn/RFC/rfc3596.txt" title="DNS Extensions to Support IP Version 6"><b>3596</b><span>DNS Extensions to Support IP Version 6</span></a>
+<a class="lex" href="learn/RFC/rfc3646.txt" title="DNS Configuration options for Dynamic Host Configuration Protocol for IPv6 (DHCPv6)"><b>3646</b><span>DNS Configuration options for Dynamic Host Configuration Protocol for IPv6 (DHCPv6)</span></a>
+<a class="lex" href="learn/RFC/rfc3810.txt" title="Multicast Listener Discovery Version 2 (MLDv2) for IPv6"><b>3810</b><span>Multicast Listener Discovery Version 2 (MLDv2) for IPv6</span></a>
+<a class="lex hot" href="learn/RFC/rfc3828.txt" title="The Lightweight User Datagram Protocol (UDP-Lite)"><b>3828</b><span>The Lightweight User Datagram Protocol (UDP-Lite)</span></a>
+<a class="lex hot" href="learn/RFC/rfc3927.txt" title="Dynamic Configuration of IPv4 Link-Local Addresses"><b>3927</b><span>Dynamic Configuration of IPv4 Link-Local Addresses</span></a>
+<a class="lex" href="learn/RFC/rfc3956.txt" title="Embedding the Rendezvous Point (RP) Address in an IPv6 Multicast Address"><b>3956</b><span>Embedding the Rendezvous Point (RP) Address in an IPv6 Multicast Address</span></a>
+<a class="lex hot" href="learn/RFC/rfc4007.txt" title="IPv6 Scoped Address Architecture"><b>4007</b><span>IPv6 Scoped Address Architecture</span></a>
+<a class="lex" href="learn/RFC/rfc4086.txt" title="Randomness Requirements for Security"><b>4086</b><span>Randomness Requirements for Security</span></a>
+<a class="lex" href="learn/RFC/rfc4193.txt" title="Unique Local IPv6 Unicast Addresses"><b>4193</b><span>Unique Local IPv6 Unicast Addresses</span></a>
+<a class="lex hot" href="learn/RFC/rfc4291.txt" title="IP Version 6 Addressing Architecture"><b>4291</b><span>IP Version 6 Addressing Architecture</span></a>
+<a class="lex" href="learn/RFC/rfc4302.txt" title="IP Authentication Header"><b>4302</b><span>IP Authentication Header</span></a>
+<a class="lex" href="learn/RFC/rfc4303.txt" title="IP Encapsulating Security Payload (ESP)"><b>4303</b><span>IP Encapsulating Security Payload (ESP)</span></a>
+<a class="lex" href="learn/RFC/rfc4343.txt" title="Domain Name System (DNS) Case Insensitivity Clarification"><b>4343</b><span>Domain Name System (DNS) Case Insensitivity Clarification</span></a>
+<a class="lex hot" href="learn/RFC/rfc4443.txt" title="Internet Control Message Protocol (ICMPv6) for the Internet Protocol Version 6 (IPv6) Specification"><b>4443</b><span>Internet Control Message Protocol (ICMPv6) for the Internet Protocol Version 6 (IPv6)…</span></a>
+<a class="lex" href="learn/RFC/rfc4632.txt" title="Classless Inter-domain Routing (CIDR): The Internet Address Assignment and Aggregation Plan"><b>4632</b><span>Classless Inter-domain Routing (CIDR): The Internet Address Assignment and Aggregation…</span></a>
+<a class="lex hot" href="learn/RFC/rfc4861.txt" title="Neighbor Discovery for IP version 6 (IPv6)"><b>4861</b><span>Neighbor Discovery for IP version 6 (IPv6)</span></a>
+<a class="lex hot" href="learn/RFC/rfc4862.txt" title="IPv6 Stateless Address Autoconfiguration"><b>4862</b><span>IPv6 Stateless Address Autoconfiguration</span></a>
+<a class="lex" href="learn/RFC/rfc4884.txt" title="Extended ICMP to Support Multi-Part Messages"><b>4884</b><span>Extended ICMP to Support Multi-Part Messages</span></a>
+<a class="lex" href="learn/RFC/rfc4941.txt" title="Privacy Extensions for Stateless Address Autoconfiguration in IPv6"><b>4941</b><span>Privacy Extensions for Stateless Address Autoconfiguration in IPv6</span></a>
+<a class="lex hot" href="learn/RFC/rfc5227.txt" title="IPv4 Address Conflict Detection"><b>5227</b><span>IPv4 Address Conflict Detection</span></a>
+<a class="lex" href="learn/RFC/rfc5342.txt" title="IANA Considerations and IETF Protocol Usage for IEEE 802 Parameters"><b>5342</b><span>IANA Considerations and IETF Protocol Usage for IEEE 802 Parameters</span></a>
+<a class="lex hot" href="learn/RFC/rfc5452.txt" title="Measures for Making DNS More Resilient against Forged Answers"><b>5452</b><span>Measures for Making DNS More Resilient against Forged Answers</span></a>
+<a class="lex hot" href="learn/RFC/rfc5681.txt" title="TCP Congestion Control"><b>5681</b><span>TCP Congestion Control</span></a>
+<a class="lex" href="learn/RFC/rfc5722.txt" title="Handling of Overlapping IPv6 Fragments"><b>5722</b><span>Handling of Overlapping IPv6 Fragments</span></a>
+<a class="lex" href="learn/RFC/rfc5942.txt" title="IPv6 Subnet Model: The Relationship between Links and Subnet Prefixes"><b>5942</b><span>IPv6 Subnet Model: The Relationship between Links and Subnet Prefixes</span></a>
+<a class="lex" href="learn/RFC/rfc5952.txt" title="A Recommendation for IPv6 Address Text Representation"><b>5952</b><span>A Recommendation for IPv6 Address Text Representation</span></a>
+<a class="lex hot" href="learn/RFC/rfc5961.txt" title="Improving TCP&#x27;s Robustness to Blind In-Window Attacks"><b>5961</b><span>Improving TCP&#x27;s Robustness to Blind In-Window Attacks</span></a>
+<a class="lex hot" href="learn/RFC/rfc6056.txt" title="Recommendations for Transport-Protocol Port Randomization"><b>6056</b><span>Recommendations for Transport-Protocol Port Randomization</span></a>
+<a class="lex" href="learn/RFC/rfc6106.txt" title="IPv6 Router Advertisement Options for DNS Configuration"><b>6106</b><span>IPv6 Router Advertisement Options for DNS Configuration</span></a>
+<a class="lex" href="learn/RFC/rfc6274.txt" title="Security Assessment of the Internet Protocol Version 4"><b>6274</b><span>Security Assessment of the Internet Protocol Version 4</span></a>
+<a class="lex" href="learn/RFC/rfc6275.txt" title="Mobility Support in IPv6"><b>6275</b><span>Mobility Support in IPv6</span></a>
+<a class="lex hot" href="learn/RFC/rfc6298.txt" title="Computing TCP&#x27;s Retransmission Timer"><b>6298</b><span>Computing TCP&#x27;s Retransmission Timer</span></a>
+<a class="lex hot" href="learn/RFC/rfc6325.txt" title="Routing Bridges (RBridges): Base Protocol Specification"><b>6325</b><span>Routing Bridges (RBridges): Base Protocol Specification</span></a>
+<a class="lex" href="learn/RFC/rfc6335.txt" title="Internet Assigned Numbers Authority (IANA) Procedures for the Management of the Service Name and Transport Protocol Port Number Registry"><b>6335</b><span>Internet Assigned Numbers Authority (IANA) Procedures for the Management of the Service…</span></a>
+<a class="lex hot" href="learn/RFC/rfc6528.txt" title="Defending against Sequence Number Attacks"><b>6528</b><span>Defending against Sequence Number Attacks</span></a>
+<a class="lex hot" href="learn/RFC/rfc6724.txt" title="Default Address Selection for Internet Protocol Version 6 (IPv6)"><b>6724</b><span>Default Address Selection for Internet Protocol Version 6 (IPv6)</span></a>
+<a class="lex" href="learn/RFC/rfc6890.txt" title="Special-Purpose IP Address Registries"><b>6890</b><span>Special-Purpose IP Address Registries</span></a>
+<a class="lex" href="learn/RFC/rfc6980.txt" title="Security Implications of IPv6 Fragmentation with IPv6 Neighbor Discovery"><b>6980</b><span>Security Implications of IPv6 Fragmentation with IPv6 Neighbor Discovery</span></a>
+<a class="lex" href="learn/RFC/rfc7042.txt" title="IANA Considerations and IETF Protocol and Documentation Usage for IEEE 802 Parameters"><b>7042</b><span>IANA Considerations and IETF Protocol and Documentation Usage for IEEE 802 Parameters</span></a>
+<a class="lex" href="learn/RFC/rfc7112.txt" title="Implications of Oversized IPv6 Header Chains"><b>7112</b><span>Implications of Oversized IPv6 Header Chains</span></a>
+<a class="lex hot" href="learn/RFC/rfc7323.txt" title="TCP Extensions for High Performance"><b>7323</b><span>TCP Extensions for High Performance</span></a>
+<a class="lex" href="learn/RFC/rfc7527.txt" title="Enhanced Duplicate Address Detection"><b>7527</b><span>Enhanced Duplicate Address Detection</span></a>
+<a class="lex hot" href="learn/RFC/rfc8106.txt" title="IPv6 Router Advertisement Options for DNS Configuration"><b>8106</b><span>IPv6 Router Advertisement Options for DNS Configuration</span></a>
+<a class="lex" href="learn/RFC/rfc8174.txt" title="Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"><b>8174</b><span>Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words</span></a>
+<a class="lex hot" href="learn/RFC/rfc8200.txt" title="Internet Protocol, Version 6 (IPv6) Specification"><b>8200</b><span>Internet Protocol, Version 6 (IPv6) Specification</span></a>
+<a class="lex hot" href="learn/RFC/rfc8201.txt" title="Path MTU Discovery for IP version 6"><b>8201</b><span>Path MTU Discovery for IP version 6</span></a>
+<a class="lex hot" href="learn/RFC/rfc8415.txt" title="Dynamic Host Configuration Protocol for IPv6 (DHCPv6)"><b>8415</b><span>Dynamic Host Configuration Protocol for IPv6 (DHCPv6)</span></a>
+<a class="lex" href="learn/RFC/rfc8504.txt" title="IPv6 Node Requirements"><b>8504</b><span>IPv6 Node Requirements</span></a>
+<a class="lex" href="learn/RFC/rfc8900.txt" title="IP Fragmentation Considered Fragile"><b>8900</b><span>IP Fragmentation Considered Fragile</span></a>
+<a class="lex" href="learn/RFC/rfc8981.txt" title="Temporary Address Extensions for Stateless Address Autoconfiguration in IPv6"><b>8981</b><span>Temporary Address Extensions for Stateless Address Autoconfiguration in IPv6</span></a>
+<a class="lex" href="learn/RFC/rfc9260.txt" title="Stream Control Transmission Protocol"><b>9260</b><span>Stream Control Transmission Protocol</span></a>
+<a class="lex hot" href="learn/RFC/rfc9293.txt" title="Transmission Control Protocol (TCP)"><b>9293</b><span>Transmission Control Protocol (TCP)</span></a>
+</div>
+<!-- /docsgen:law -->
+
+  <p class="note" style="margin-top:18px">Read the section, do not recall it.
+  <code>tools/dev_env/quotes.py</code> checks every quotation in <code>src/</code> against these
+  files and reports the ones whose words differ.</p>
+</section>
+
+<!-- ===================== tests ===================== -->
+<section id="tests">
+  <p class="eyebrow">Proof</p>
+  <h2>Tests, and the things a green run cannot see</h2>
+  <p class="lede">One CTest target per suite. A suite is a directory holding exactly one
+  <code>.c</code> of file-scope <code>void test_&lt;name&gt;(void)</code> cases;
+  <code>harness.py</code> turns it into <code>unity_runner.c</code> through Unity's own generator,
+  and says so when the generator would walk past a case.</p>
+
+  <p><code>test/CMakeLists.txt</code> maps each suite to the capabilities it drives. A suite whose
+  capabilities are off is skipped <em>loudly</em>, because silently dropping it would leave a passing
+  run that tested less than it looks like.</p>
+
+  <h3>What CI proves</h3>
+  <div class="wrap">
+    <table>
+      <thead><tr><th>workflow</th><th>what it actually proves</th></tr></thead>
+      <tbody>
+        <tr><td><code>capabilities.yml</code></td><td>All 13 legal capability sets configure, build and pass ctest &mdash; not just the full one. Plus three source guards.</td></tr>
+        <tr><td><code>codeql.yml</code></td><td>C/C++, Actions and Python, weekly. Build mode is <em>manual</em>: buildless extraction would scan an empty library, since every unit sits behind <code>#if IDEMIP_ENABLE_ETHERNET</code>.</td></tr>
+        <tr><td><code>SonarCloud.yml</code></td><td>A coverage build via <code>gcovr</code>, scanned against the quality gate.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The audits</h3>
+  <p>These are not pass/fail gates. They exist because a requirement encoded in a header and never
+  wired to a caller is invisible to a green test run.</p>
+  <div class="wrap">
+    <table>
+      <thead><tr><th>tool</th><th>the question it answers</th></tr></thead>
+      <tbody>
+        <tr><td><code>harness.py deps --strict</code></td><td>Dependencies a suite binds that no case asserts on.</td></tr>
+        <tr><td><code>unwired.py</code></td><td>Identifiers a header defines that no library <code>.c</code> names.</td></tr>
+        <tr><td><code>guards.py</code></td><td>Namespace struct against its initializer against the front door.</td></tr>
+        <tr><td><code>counters.py</code></td><td>Which MIB counters the library reaches, and which it carries without reaching.</td></tr>
+        <tr><td><code>deadstate.py</code></td><td>Fields written and never read.</td></tr>
+        <tr><td><code>quotes.py</code></td><td>Every RFC quotation, against the vendored RFC text.</td></tr>
+        <tr><td><code>version.py</code></td><td>The version in every manifest, macro and file banner.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Every suite</h3>
+<!-- docsgen:suites -->
+<table class="suites"><thead><tr><th>suite</th><th class="n">cases</th><th>capabilities it drives</th></tr></thead><tbody>
+<tr><td><code>test/integration/test_loopback</code></td><td class="n">49</td><td><span class="cc">IPV4</span><span class="cc">TCP</span><span class="cc">UDP</span></td></tr>
+<tr><td><code>test/unit/acd/test_acd</code></td><td class="n">70</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/arp/test_arp</code></td><td class="n">18</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/arp/test_arp_table</code></td><td class="n">52</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/autoip/test_autoip</code></td><td class="n">47</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/base/test_checksum</code></td><td class="n">9</td><td><span class="cc any">any build</span></td></tr>
+<tr><td><code>test/unit/base/test_clock</code></td><td class="n">27</td><td><span class="cc any">any build</span></td></tr>
+<tr><td><code>test/unit/base/test_span</code></td><td class="n">5</td><td><span class="cc any">any build</span></td></tr>
+<tr><td><code>test/unit/core/test_dispatch</code></td><td class="n">131</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span><span class="cc">TCP</span><span class="cc">UDP</span></td></tr>
+<tr><td><code>test/unit/core/test_stats</code></td><td class="n">52</td><td><span class="cc">ETHERNET</span></td></tr>
+<tr><td><code>test/unit/core/test_tick</code></td><td class="n">37</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/core/test_timeouts</code></td><td class="n">51</td><td><span class="cc">ETHERNET</span></td></tr>
+<tr><td><code>test/unit/dhcp/test_dhcp4</code></td><td class="n">69</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/dhcp/test_dhcp6</code></td><td class="n">72</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/dns/test_dns</code></td><td class="n">87</td><td><span class="cc">UDP</span></td></tr>
+<tr><td><code>test/unit/ethernet/test_ethernet</code></td><td class="n">15</td><td><span class="cc">ETHERNET</span></td></tr>
+<tr><td><code>test/unit/ethernet/test_ethip6</code></td><td class="n">36</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/ethernet/test_mii</code></td><td class="n">34</td><td><span class="cc">ETHERNET</span></td></tr>
+<tr><td><code>test/unit/ethernet/test_phy</code></td><td class="n">22</td><td><span class="cc">ETHERNET</span></td></tr>
+<tr><td><code>test/unit/ethernet/test_vlan</code></td><td class="n">49</td><td><span class="cc">ETHERNET</span></td></tr>
+<tr><td><code>test/unit/icmp/test_icmp</code></td><td class="n">27</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/icmp/test_icmp6_in</code></td><td class="n">60</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/icmp/test_icmp_in</code></td><td class="n">58</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/icmp/test_icmpv6</code></td><td class="n">34</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/igmp/test_igmp</code></td><td class="n">67</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip4_addr</code></td><td class="n">28</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip4_forward</code></td><td class="n">57</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip4_frag</code></td><td class="n">36</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip4_reass</code></td><td class="n">55</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip4_route</code></td><td class="n">65</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip6_addr</code></td><td class="n">33</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip6_forward</code></td><td class="n">49</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip6_frag</code></td><td class="n">37</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip6_reass</code></td><td class="n">74</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip6_select</code></td><td class="n">47</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/ip/test_ipv4</code></td><td class="n">39</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/ip/test_ipv6</code></td><td class="n">45</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/mld/test_mld6</code></td><td class="n">64</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/nd/test_dad</code></td><td class="n">51</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/nd/test_nd6</code></td><td class="n">81</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/nd/test_rdnss</code></td><td class="n">41</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/nd/test_slaac</code></td><td class="n">53</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/netif/test_dma</code></td><td class="n">49</td><td><span class="cc">ETHERNET</span></td></tr>
+<tr><td><code>test/unit/netif/test_loopif</code></td><td class="n">49</td><td><span class="cc">ETHERNET</span><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/netif/test_netif</code></td><td class="n">72</td><td><span class="cc">ETHERNET</span><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/pmtu/test_pmtu4</code></td><td class="n">29</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/pmtu/test_pmtu6</code></td><td class="n">25</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/raw/test_raw_pcb</code></td><td class="n">48</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/tcp/test_tcp</code></td><td class="n">30</td><td><span class="cc">TCP</span></td></tr>
+<tr><td><code>test/unit/tcp/test_tcp_in</code></td><td class="n">92</td><td><span class="cc">TCP</span><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/tcp/test_tcp_isn</code></td><td class="n">34</td><td><span class="cc">TCP</span></td></tr>
+<tr><td><code>test/unit/tcp/test_tcp_out</code></td><td class="n">57</td><td><span class="cc">TCP</span><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/tcp/test_tcp_pcb</code></td><td class="n">88</td><td><span class="cc">TCP</span></td></tr>
+<tr><td><code>test/unit/udp/test_udp</code></td><td class="n">43</td><td><span class="cc">UDP</span></td></tr>
+<tr><td><code>test/unit/udp/test_udp_pcb</code></td><td class="n">54</td><td><span class="cc">UDP</span></td></tr>
+<tr><td><code>test/unit/udp/test_udplite</code></td><td class="n">34</td><td><span class="cc">UDP</span><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
+<tr class="total"><td>56 suites</td><td class="n">2,737</td><td></td></tr>
+</tbody></table>
+<!-- /docsgen:suites -->
+</section>
+
+<!-- ===================== style ===================== -->
+<section id="style">
+  <p class="eyebrow">Constraints</p>
+  <h2>What the code may not do</h2>
+  <div class="two">
+    <div>
+      <p><code>src/</code> is C11 with no heap, no <code>auto</code>, and no array with automatic
+      storage duration. The only system headers it takes are <code>&lt;assert.h&gt;</code> for
+      <code>static_assert</code>, <code>&lt;stddef.h&gt;</code>, <code>&lt;stdint.h&gt;</code> for the
+      fixed widths, and <code>&lt;string.h&gt;</code> for <code>memcpy</code>, <code>memset</code> and
+      <code>memcmp</code>. There is no <code>&lt;stdlib.h&gt;</code>, and nothing is parsed by the
+      library.</p>
+      <p>Names are flat <code>idemip_snake_case</code> in one namespace. Sizes are powers of two so an
+      index is a shift, because hardware divide is not on every target in the list. Word width is
+      taken from <code>UINTPTR_MAX</code>, and 16-bit targets are supported. Wire fields are never
+      read through a cast &mdash; always byte-assembled &mdash; because unaligned casts fault on
+      strict-alignment targets. <code>test/</code> and <code>tools/</code> are exempt and read as
+      plain host C.</p>
+    </div>
+    <div>
+      <p>Warnings are attached to an INTERFACE target so they reach the suites as well as the
+      library:</p>
+      <div class="code">
+        <div class="cap"><span>every translation unit</span><button class="copy" type="button">COPY</button></div>
+<pre>-Wall -Wextra -Wpedantic -Wshadow
+-Wconversion -Wsign-conversion
+-Wcast-align -Wundef</pre>
+      </div>
+      <div class="code">
+        <div class="cap"><span>the library on top of those</span><button class="copy" type="button">COPY</button></div>
+<pre>-Wstrict-prototypes -Wmissing-prototypes</pre>
+      </div>
+      <p class="note">Attached PRIVATE to the library, the warning set never compiled most of the
+      tree: no <code>.c</code> in <code>src/</code> includes <code>tcp.h</code> or
+      <code>ipv6.h</code>, so those headers were built only by a test translation unit, which had no
+      warning flags at all.</p>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <p><b>idemIP</b> &mdash; Copyright &copy; 2026 Douglas Quigg (dstroy0).
+  <a href="https://github.com/dstroy0/idemIP/blob/main/LICENSE">AGPL-3.0-or-later</a>; every file
+  carries the SPDX identifier.
+  <a href="https://github.com/dstroy0/idemIP">Source on GitHub</a>.</p>
+  <p class="note">The tables, cards, memory map, capability tree and RFC index on this page are
+  generated from the tree by <code>tools/dev_env/docsgen.py</code>, so they cannot go stale while the
+  prose around them stays hand-written.</p>
+</footer>
+
+</main>
+
+<aside class="rail">
+  <b>On this page</b>
+  <a href="#borrow">The borrow</a>
+  <a href="#order">Clear, bind, tick</a>
+  <a href="#start">Getting started</a>
+  <a href="#capabilities">Capabilities</a>
+  <a href="#time">Determinism in time</a>
+  <a href="#footprint">Footprint</a>
+  <a href="#units">The units</a>
+  <a href="#law">The law</a>
+  <a href="#tests">Tests</a>
+  <a href="#style">Constraints</a>
+</aside>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---- theme: explicit choice wins over the OS in both directions ---- */
+  var root = document.documentElement, btn = document.getElementById("theme");
+  try {
+    var saved = localStorage.getItem("idemip-theme");
+    if (saved === "dark" || saved === "light") { root.setAttribute("data-theme", saved); }
+  } catch (e) { /* private window, blocked storage: the OS preference still applies */ }
+  btn.addEventListener("click", function () {
+    var dark = root.getAttribute("data-theme") === "dark" ||
+               (!root.hasAttribute("data-theme") &&
+                window.matchMedia("(prefers-color-scheme: dark)").matches);
+    var next = dark ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("idemip-theme", next); } catch (e) {}
+  });
+
+  /* ---- badges: fall back to the chip where the image host is unreachable ---- */
+  Array.prototype.forEach.call(document.querySelectorAll(".badge img"), function (img) {
+    var fail = function () { img.parentNode.classList.add("failed"); };
+    img.addEventListener("error", fail);
+    if (img.complete && img.naturalWidth === 0) { fail(); }
+  });
+
+  /* ---- copy buttons ---- */
+  Array.prototype.forEach.call(document.querySelectorAll(".copy"), function (b) {
+    b.addEventListener("click", function () {
+      var pre = b.closest(".code").querySelector("pre");
+      var done = function () {
+        b.textContent = "COPIED"; b.classList.add("done");
+        setTimeout(function () { b.textContent = "COPY"; b.classList.remove("done"); }, 1400);
+      };
+      if (navigator.clipboard) { navigator.clipboard.writeText(pre.innerText).then(done, done); }
+      else { done(); }
+    });
+  });
+
+  /* ---- scroll-spy on the right rail ---- */
+  var links = {}, spy = [];
+  Array.prototype.forEach.call(document.querySelectorAll(".rail a"), function (a) {
+    var el = document.getElementById(a.getAttribute("href").slice(1));
+    if (el) { links[el.id] = a; spy.push(el); }
+  });
+  /* The section the reader is in is the LAST one whose heading has passed the masthead, not the
+     first one still touching the viewport - an observer answering "is it visible" keeps the
+     previous section lit for as long as its tail is on screen, which is most of a long section. */
+  if (spy.length) {
+    var current = null;
+    var mark = function () {
+      var line = 96, found = spy[0];
+      for (var i = 0; i < spy.length; i++) {
+        if (spy[i].getBoundingClientRect().top <= line) { found = spy[i]; }
+      }
+      if (found === current) { return; }
+      current = found;
+      Object.keys(links).forEach(function (id) {
+        links[id].classList.toggle("on", id === found.id);
+      });
+    };
+    var ticking = false;
+    window.addEventListener("scroll", function () {
+      if (ticking) { return; }
+      ticking = true;
+      window.requestAnimationFrame(function () { mark(); ticking = false; });
+    }, { passive: true });
+    mark();
+  }
+
+  /* ---- hero numbers, read out of the generated table so they cannot disagree ---- */
+  var totalCell = document.querySelector(".terms .total .n");
+  if (totalCell) { document.getElementById("hero-total").textContent = totalCell.textContent + " B"; }
+  var caseCell = document.querySelector(".suites .total .n");
+  if (caseCell) { document.getElementById("hero-cases").textContent = caseCell.textContent + " cases"; }
+
+  /* ---- the capability configurator ---- */
+  var capEl = document.getElementById("cap-data");
+  var mtxEl = document.getElementById("matrix-data");
+  if (!capEl) { return; }
+  var caps = JSON.parse(capEl.textContent);
+  var matrix = mtxEl ? JSON.parse(mtxEl.textContent) : [];
+  var boxes = {};
+  Array.prototype.forEach.call(document.querySelectorAll(".cap input"), function (i) {
+    boxes[i.dataset.name] = i;
+    i.addEventListener("change", render);
+  });
+
+  function render() {
+    var on = {};
+    caps.forEach(function (c) { on[c.name] = boxes[c.name].checked; });
+
+    /* A child needs one of its parents. CMake refuses the build otherwise, with this reason. */
+    var refused = caps.filter(function (c) {
+      return on[c.name] && c.parents.length &&
+             !c.parents.some(function (p) { return on[p]; });
+    });
+
+    caps.forEach(function (c) {
+      var label = boxes[c.name].closest(".cap");
+      label.classList.toggle("off", !on[c.name]);
+      label.classList.toggle("refused", refused.indexOf(c) !== -1);
+    });
+
+    var box = document.getElementById("refusals");
+    box.innerHTML = "";
+    refused.forEach(function (c) {
+      var d = document.createElement("div");
+      d.className = "refusal";
+      d.innerHTML = "<b>CMake refuses this build</b><code></code>";
+      d.querySelector("code").textContent = c.why;
+      box.appendChild(d);
+    });
+
+    var flags = caps.filter(function (c) { return c.name !== "IDEMIP_ENABLE_ETHERNET"; })
+                    .map(function (c) { return "-D" + c.name + "=" + (on[c.name] ? "ON" : "OFF"); });
+    if (!on.IDEMIP_ENABLE_ETHERNET) { flags.unshift("-DIDEMIP_ENABLE_ETHERNET=OFF"); }
+    document.getElementById("cap-cmd").textContent =
+      "cmake -S . -B ../build -G Ninja \\\n      " + flags.join(" \\\n      ");
+
+    var v = document.getElementById("verdict");
+    if (refused.length) {
+      v.className = "verdict no";
+      v.textContent = "REFUSED — " + refused.length + " edge" +
+                      (refused.length > 1 ? "s do" : " does") + " not hold";
+    } else {
+      var hit = matrix.filter(function (m) {
+        return caps.every(function (c) { return !!m[c.name] === !!on[c.name]; });
+      })[0];
+      v.className = "verdict ok";
+      v.textContent = hit
+        ? "LEGAL — CI builds this set as “" + hit.tag + "”"
+        : "LEGAL — not one of the 13 sets CI builds";
+    }
+  }
+  render();
+})();
+</script>

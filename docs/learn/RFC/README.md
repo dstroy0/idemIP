@@ -46,8 +46,8 @@ sed -n '3500,3530p' docs/learn/RFC/rfc9293.txt
 | [2018](rfc2018.txt) | TCP Selective Acknowledgment Options |
 | [2113](rfc2113.txt) | IP Router Alert Option |
 | [2119](rfc2119.txt) | Key words for use in RFCs to Indicate Requirement Levels |
-| [2131](rfc2131.txt) | This document specifies an Internet standards track protocol for the Internet community, and requests discussion and suggestions for improvements.  Please refer to the current edition of the "Internet Official Protocol Standards" (STD 1) for the standardization state and status of this protocol.  Distribution of this memo is unlimited. |
-| [2132](rfc2132.txt) | This document specifies an Internet standards track protocol for the Internet community, and requests discussion and suggestions for improvements.  Please refer to the current edition of the "Internet Official Protocol Standards" (STD 1) for the standardization state and status of this protocol.  Distribution of this memo is unlimited. |
+| [2131](rfc2131.txt) | Dynamic Host Configuration Protocol |
+| [2132](rfc2132.txt) | DHCP Options and BOOTP Vendor Extensions |
 | [2181](rfc2181.txt) | Clarifications to the DNS Specification |
 | [2236](rfc2236.txt) | Internet Group Management Protocol, Version 2 |
 | [2464](rfc2464.txt) | Transmission of IPv6 Packets over Ethernet Networks |
