@@ -498,9 +498,12 @@ static int owes_at(const uint8_t *w, uint32_t now, uint32_t rand)
 }
 
 // The smallest clock value at which the client owes its next message, by bisection over copies.
-static uint32_t due_at(const uint8_t *w, uint32_t hi, uint32_t rand)
+//
+// The search runs forward from the millisecond the borrow was last ticked at. A probe before that is
+// a clock going backwards, which the module reads as the caller's 32-bit clock having wrapped, and it
+// is meaningless besides: the past is not when the next message is owed.
+static uint32_t due_at_from(const uint8_t *w, uint32_t lo, uint32_t hi, uint32_t rand)
 {
-    uint32_t lo = 0u;
     while (lo < hi)
     {
         uint32_t mid = lo + ((hi - lo) >> 1);
@@ -514,6 +517,12 @@ static uint32_t due_at(const uint8_t *w, uint32_t hi, uint32_t rand)
         }
     }
     return lo;
+}
+
+// From the epoch, for a borrow whose clock has not been advanced yet.
+static uint32_t due_at(const uint8_t *w, uint32_t hi, uint32_t rand)
+{
+    return due_at_from(w, 0u, hi, rand);
 }
 
 // The sec 15 RAND bound as this unit quantizes it: the term never passes k_max/1024 of x.
@@ -800,7 +809,7 @@ void test_each_later_rt_doubles_inside_the_sec_15_bound(void)
         now += prev;
         tick(work_a, now, rand);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP6_IO(work_a)->status);
-        uint32_t next = due_at(work_a, now + (8u * prev), rand) - now;
+        uint32_t next = due_at_from(work_a, now, now + (8u * prev), rand) - now;
         TEST_ASSERT_TRUE_MESSAGE(next >= (2u * prev) - rand_bound(prev), "RT fell under 2*RTprev minus RAND*RTprev");
         TEST_ASSERT_TRUE_MESSAGE(next <= (2u * prev) + rand_bound(prev), "RT rose past 2*RTprev plus RAND*RTprev");
         prev = next;
@@ -818,7 +827,7 @@ void test_the_retransmission_timeout_stops_at_mrt(void)
         uint32_t rand = 0x2468ACE0u + (step * 0x11111111u);
         now += rt;
         tick(work_a, now, rand);
-        rt = due_at(work_a, now + (4u * IDEMIP_DHCP6_SOL_MAX_RT_MS), rand) - now;
+        rt = due_at_from(work_a, now, now + (4u * IDEMIP_DHCP6_SOL_MAX_RT_MS), rand) - now;
         TEST_ASSERT_TRUE_MESSAGE(rt <= IDEMIP_DHCP6_SOL_MAX_RT_MS + rand_bound(IDEMIP_DHCP6_SOL_MAX_RT_MS),
                                  "RT rose past MRT plus RAND*MRT");
     }
@@ -1072,7 +1081,7 @@ void test_sol_max_rt_is_taken_from_a_discarded_advertise(void)
     {
         now += rt;
         tick(work_a, now, 0u);
-        rt = due_at(work_a, now + (4u * IDEMIP_DHCP6_SOL_MAX_RT_MS), 0u) - now;
+        rt = due_at_from(work_a, now, now + (4u * IDEMIP_DHCP6_SOL_MAX_RT_MS), 0u) - now;
     }
     TEST_ASSERT_TRUE_MESSAGE(rt <= bound + rand_bound(bound),
                              "the sec 21.24 override was not applied to the Solicit MRT");
@@ -1095,7 +1104,7 @@ void test_a_sol_max_rt_outside_its_range_is_ignored(void)
     {
         now += rt;
         tick(work_a, now, 0u);
-        rt = due_at(work_a, now + (4u * IDEMIP_DHCP6_SOL_MAX_RT_MS), 0u) - now;
+        rt = due_at_from(work_a, now, now + (4u * IDEMIP_DHCP6_SOL_MAX_RT_MS), 0u) - now;
     }
     TEST_ASSERT_TRUE_MESSAGE(rt > IDEMIP_DHCP6_MAX_RT_MIN_S * 1000u,
                              "a SOL_MAX_RT under sec 21.24's floor of 60 seconds was applied");
@@ -1303,7 +1312,7 @@ void test_the_request_gives_up_after_req_max_rc_transmissions(void)
         {
             break;
         }
-        now = due_at(work_a, now + (4u * IDEMIP_DHCP6_REQ_MAX_RT_MS), 0u);
+        now = due_at_from(work_a, now, now + (4u * IDEMIP_DHCP6_REQ_MAX_RT_MS), 0u);
     }
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(IDEMIP_DHCP6_REQ_MAX_RC, sent,
                                      "the Request exchange did not stop at sec 7.6's REQ_MAX_RC");
@@ -1574,7 +1583,7 @@ void test_release_and_decline_stop_at_their_retry_counts(void)
         {
             break;
         }
-        now = due_at(work_a, now + (64u * IDEMIP_DHCP6_REL_TIMEOUT_MS), 0u);
+        now = due_at_from(work_a, now, now + (64u * IDEMIP_DHCP6_REL_TIMEOUT_MS), 0u);
     }
     TEST_ASSERT_EQUAL_UINT32(IDEMIP_DHCP6_REL_MAX_RC, sent);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_IDLE, IDEMIP_DHCP6_IO(work_a)->state);
@@ -1594,7 +1603,7 @@ void test_release_and_decline_stop_at_their_retry_counts(void)
         {
             break;
         }
-        now = due_at(work_b, now + (64u * IDEMIP_DHCP6_DEC_TIMEOUT_MS), 0u);
+        now = due_at_from(work_b, now, now + (64u * IDEMIP_DHCP6_DEC_TIMEOUT_MS), 0u);
     }
     TEST_ASSERT_EQUAL_UINT32(IDEMIP_DHCP6_DEC_MAX_RC, sent);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_IDLE, IDEMIP_DHCP6_IO(work_b)->state);
@@ -1704,7 +1713,7 @@ void test_inf_max_rt_is_taken_only_inside_its_range(void)
     {
         now += rt;
         tick(work_b, now, 0u);
-        rt = due_at(work_b, now + (4u * IDEMIP_DHCP6_INF_MAX_RT_MS), 0u) - now;
+        rt = due_at_from(work_b, now, now + (4u * IDEMIP_DHCP6_INF_MAX_RT_MS), 0u) - now;
     }
     TEST_ASSERT_TRUE_MESSAGE(rt <= IDEMIP_DHCP6_INF_MAX_RT_MS + rand_bound(IDEMIP_DHCP6_INF_MAX_RT_MS),
                              "an INF_MAX_RT past sec 21.25's ceiling of 86400 was applied");

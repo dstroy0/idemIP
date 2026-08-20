@@ -1334,7 +1334,7 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 // dhcp4 holds no table, so this region is the whole borrow and carries the operand block of dhcp4.h
 // as well as the context: 144 and 72 octets on a target with 8-octet pointers.
 #ifndef IDEMIP_DHCP4_CTX_BYTES
-#define IDEMIP_DHCP4_CTX_BYTES 232u
+#define IDEMIP_DHCP4_CTX_BYTES 264u
 #endif
 #define IDEMIP_DHCP4_BORROW (IDEMIP_DHCP4_CTX_BYTES)
 
@@ -1347,7 +1347,7 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 // This region carries the operand block of dhcp6.h as well as the context, the DUID region following
 // both: 168 and 104 octets on a target with 8-octet pointers.
 #ifndef IDEMIP_DHCP6_CTX_BYTES
-#define IDEMIP_DHCP6_CTX_BYTES 288u
+#define IDEMIP_DHCP6_CTX_BYTES 352u
 #endif
 #define IDEMIP_DHCP6_BORROW (IDEMIP_DHCP6_CTX_BYTES + IDEMIP_ROUND_UP(IDEMIP_DHCP6_DUID_MAX, IDEMIP_ALIGN))
 

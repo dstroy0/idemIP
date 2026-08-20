@@ -39,13 +39,15 @@ typedef struct
     uint16_t status_code;        ///< sec 21.13, what the last Reply carried
     uint32_t xid;                ///< sec 8, the low 24 bits
     uint32_t iaid;
-    uint32_t now_ms;
+    IdemIpMs now_ms;
+    uint32_t tick_ms;      ///< the last reading of the caller's 32-bit millisecond clock
+    uint32_t tick_hi;      ///< its high word, raised each time that reading wraps
     uint32_t rt_ms;        ///< sec 15 RT, the current retransmission timeout
-    uint32_t retry_ms;     ///< when the message goes out again
-    uint32_t started_ms;   ///< when the first message went out, which sec 21.9 elapsed-time counts from
-    uint32_t t1_ms;        ///< the deadline RENEWING starts at
-    uint32_t t2_ms;        ///< the deadline REBINDING starts at
-    uint32_t valid_ms;     ///< the deadline the address stops being valid at
+    IdemIpMs retry_ms;     ///< when the message goes out again
+    IdemIpMs started_ms;   ///< when the first message went out, which sec 21.9 elapsed-time counts from
+    IdemIpMs t1_ms;        ///< the deadline RENEWING starts at
+    IdemIpMs t2_ms;        ///< the deadline REBINDING starts at
+    IdemIpMs valid_ms;     ///< the deadline the address stops being valid at
     uint32_t max_rt_ms;    ///< the sec 21.24 or sec 21.25 MRT this client runs with
     uint32_t t1_s;
     uint32_t t2_s;
@@ -111,21 +113,31 @@ static uint32_t dhcp6_draw(uint32_t rand, uint32_t limit)
     return limit >> 1;
 }
 
+// The largest x whose product with the widest draw still fits one word.
+#define DHCP6_RAND_X_MAX (0xFFFFFFFFu / IDEMIP_DHCP6_RAND_K_MAX)
+
 // The sec 15 RAND magnitude for @p x: (x * k) >> 10 with k drawn over 0 through
 // IDEMIP_DHCP6_RAND_K_MAX, so it never passes 102/1024 of x and stays inside sec 15's tenth.
 static uint32_t dhcp6_rand_mag(uint32_t x, uint32_t rand)
 {
-    return (x * dhcp6_draw(rand >> 1, IDEMIP_DHCP6_RAND_K_MAX)) >> IDEMIP_DHCP6_RAND_SHIFT;
+    // The product passes 32 bits once x is above about 42107 seconds, which a server may set through
+    // SOL_MAX_RT or INF_MAX_RT, and a wrapped product is neither uniform nor inside sec 15's tenth.
+    // x is held at the largest value the multiply carries, so the magnitude saturates there instead
+    // and the arithmetic stays one word wide. The sign is applied after, by dhcp6_rand_apply.
+    uint32_t capped = (x > DHCP6_RAND_X_MAX) ? (uint32_t)DHCP6_RAND_X_MAX : x;
+    return (capped * dhcp6_draw(rand >> 1, IDEMIP_DHCP6_RAND_K_MAX)) >> IDEMIP_DHCP6_RAND_SHIFT;
 }
 
-// sec 15 puts RAND uniformly over -0.1 to +0.1, so the low bit of the word picks the side.
+// sec 15 puts RAND uniformly over -0.1 to +0.1, so the low bit of the word picks the side. Both sides
+// saturate: a sum past the word or a difference below zero would wrap the interval to the far end of
+// the range, which reads as a timer already due or one that never fires.
 static uint32_t dhcp6_rand_apply(uint32_t base, uint32_t mag, uint32_t rand)
 {
     if ((rand & 1u) != 0u)
     {
-        return base + mag;
+        return (mag > (0xFFFFFFFFu - base)) ? 0xFFFFFFFFu : (base + mag);
     }
-    return base - mag;
+    return (mag > base) ? 0u : (base - mag);
 }
 
 // sec 15: RT for the first transmission is IRT + RAND*IRT. @p positive forces a magnitude of at least
@@ -156,32 +168,28 @@ static uint32_t dhcp6_next_rt(uint32_t prev_ms, uint32_t mrt_ms, uint32_t rand)
 // sec 21.9: elapsed-time is "expressed in hundredths of a second", and "The client uses the value
 // 0xffff to represent any elapsed-time values greater than the largest time value that can be
 // represented". floor(ms/100) is the reciprocal multiply and shift below over that whole range.
-static uint16_t dhcp6_elapsed_cs(uint32_t now_ms, uint32_t started_ms)
+static uint16_t dhcp6_elapsed_cs(IdemIpMs now, IdemIpMs started)
 {
-    uint32_t ms = now_ms - started_ms;
-    if (ms >= IDEMIP_DHCP6_ELAPSED_MAX_MS)
+    IdemIpMs ms = now - started;
+    if (ms >= (IdemIpMs)IDEMIP_DHCP6_ELAPSED_MAX_MS)
     {
         return 0xFFFFu;
     }
     return (uint16_t)(((uint64_t)ms * (uint64_t)IDEMIP_DHCP6_CS_RECIP) >> IDEMIP_DHCP6_CS_SHIFT);
 }
 
-// A sec 7.7 lifetime in seconds as a millisecond deadline, held at IDEMIP_DHCP6_MAX_DEADLINE_S so the
-// span stays inside half the clock.
-static uint32_t dhcp6_deadline(uint32_t now_ms, uint32_t seconds)
+// A sec 7.7 lifetime in seconds as a millisecond deadline on the 64-bit clock, so the whole 32-bit
+// second range the field can name is representable and T1, T2 and the valid lifetime never collapse
+// onto one instant.
+static IdemIpMs dhcp6_deadline(IdemIpMs now, uint32_t seconds)
 {
-    uint32_t s = seconds;
-    if (s > IDEMIP_DHCP6_MAX_DEADLINE_S)
-    {
-        s = IDEMIP_DHCP6_MAX_DEADLINE_S;
-    }
-    return now_ms + (s * 1000u);
+    return now + idemip_ms_from_s(seconds);
 }
 
 // The millisecond clock wraps, so a deadline is reached when the signed difference is not negative.
-static idemip_bool dhcp6_reached(uint32_t now_ms, uint32_t deadline_ms)
+static idemip_bool dhcp6_reached(IdemIpMs now, IdemIpMs deadline)
 {
-    return ((int32_t)(now_ms - deadline_ms) >= 0) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (now >= deadline) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
 // RFC 8415 sec 7.1: "All_DHCP_Relay_Agents_and_Servers (ff02::1:2)".
@@ -535,9 +543,9 @@ static void dhcp6_forget_lease(uint8_t *restrict work)
     ctx->valid_s = 0u;
     ctx->t1_s = 0u;
     ctx->t2_s = 0u;
-    ctx->t1_ms = 0u;
-    ctx->t2_ms = 0u;
-    ctx->valid_ms = 0u;
+    ctx->t1_ms = 0;
+    ctx->t2_ms = 0;
+    ctx->valid_ms = 0;
     ctx->inf = 0u;
     ctx->pref = 0u;
     ctx->have_adv = IDEMIP_FALSE;
@@ -881,7 +889,7 @@ static void dhcp6_start(uint8_t *restrict work)
         io->status = IDEMIP_ERR;
         return;
     }
-    ctx->now_ms = io->start_args.now_ms;
+    ctx->now_ms = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->start_args.now_ms);
     uint8_t state = ctx->cfg->stateless ? (uint8_t)IDEMIP_DHCP6_INFO_REQUESTING : (uint8_t)IDEMIP_DHCP6_SOLICITING;
     dhcp6_begin(ctx, state);
     // sec 16.1: "A client SHOULD generate a random number that cannot easily be guessed or predicted
@@ -1284,7 +1292,7 @@ static void dhcp6_tick(uint8_t *restrict work)
         io->status = IDEMIP_ERR;
         return;
     }
-    ctx->now_ms = io->tick_args.now_ms;
+    ctx->now_ms = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->tick_args.now_ms);
     uint32_t rand = io->tick_args.rand;
 
     if (ctx->state == IDEMIP_DHCP6_IDLE)
