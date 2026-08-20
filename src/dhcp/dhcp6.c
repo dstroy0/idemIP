@@ -49,6 +49,8 @@ typedef struct
     IdemIpMs t2_ms;        ///< the deadline REBINDING starts at
     IdemIpMs valid_ms;     ///< the deadline the address stops being valid at
     uint32_t max_rt_ms;    ///< the sec 21.24 or sec 21.25 MRT this client runs with
+    uint32_t max_rt_seen_s; ///< the first value this exchange carried, 0 when none has
+    idemip_bool max_rt_split; ///< two of them disagreed, so sec 18.2.9 holds the default
     uint32_t t1_s;
     uint32_t t2_s;
     uint32_t preferred_s;
@@ -616,6 +618,21 @@ static void dhcp6_take_max_rt(Dhcp6Ctx *ctx, const uint8_t *opts, size_t olen)
     {
         return;
     }
+    // sec 18.2.9: "A client SHOULD only update its SOL_MAX_RT and INF_MAX_RT values if all received
+    // Advertise messages that contained the corresponding option specified the same value; otherwise,
+    // it should use the default value." The first value this exchange carried is remembered, and a
+    // later one that differs puts the default back for the rest of it.
+    if (ctx->max_rt_split)
+    {
+        return;
+    }
+    if (ctx->max_rt_seen_s != 0u && ctx->max_rt_seen_s != s)
+    {
+        ctx->max_rt_split = IDEMIP_TRUE;
+        ctx->max_rt_ms = ctx->cfg->stateless ? IDEMIP_DHCP6_INF_MAX_RT_MS : IDEMIP_DHCP6_SOL_MAX_RT_MS;
+        return;
+    }
+    ctx->max_rt_seen_s = s;
     ctx->max_rt_ms = s * 1000u;
 }
 
@@ -925,6 +942,8 @@ static void dhcp6_stop(uint8_t *restrict work)
     ctx->retries = 0u;
     ctx->rt_ms = 0u;
     ctx->status_code = 0u;
+    ctx->max_rt_seen_s = 0u;
+    ctx->max_rt_split = IDEMIP_FALSE;
     ctx->max_rt_ms = ctx->cfg->stateless ? IDEMIP_DHCP6_INF_MAX_RT_MS : IDEMIP_DHCP6_SOL_MAX_RT_MS;
     io->msg_type = 0u;
     io->len = 0u;
@@ -1101,6 +1120,17 @@ static void dhcp6_input(uint8_t *restrict work)
         }
         if (!dhcp6_take_lease(work, opts, olen))
         {
+            // sec 18.2.10.1: the client "Sends a Request message to the server that responded if any
+            // of the IAs in the Reply message contain the NoBinding status code." Without this the
+            // Renew or Rebind just keeps retransmitting until its MRD is spent, taking minutes to
+            // hours to recover a binding one Request would have restored.
+            if ((ctx->status_code == (uint16_t)IDEMIP_DHCP6_STATUS_NO_BINDING) &&
+                (ctx->state == IDEMIP_DHCP6_RENEWING || ctx->state == IDEMIP_DHCP6_REBINDING) &&
+                dhcp6_take_server_duid(work, opts, olen))
+            {
+                dhcp6_begin(ctx, (uint8_t)IDEMIP_DHCP6_REQUESTING);
+                io->status = IDEMIP_OK;
+            }
             dhcp6_publish(work);
             return;
         }
