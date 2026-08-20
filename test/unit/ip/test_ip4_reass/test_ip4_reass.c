@@ -474,19 +474,72 @@ void test_a_duplicate_fragment_is_refused_and_pins_nothing(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
 }
 
-// RFC 815 sec 3: a fragment "may leave some remaining space at either the beginning or the end of an
-// existing hole". Partial overlap is ordinary in IPv4 - a retransmitted datagram refragmented along
-// another path produces it - so one that overlaps a held fragment still fills the hole and is held.
-// No IPv4 RFC makes overlap a discard; RFC 1858 is Informational and states no MUST.
-void test_a_partially_overlapping_fragment_fills_the_hole(void)
+// A fragment that fills some of a hole and rewrites octets the row already holds is RFC 1858 sec 3.2's
+// overlapping fragment. A sender that fragmented one datagram produces disjoint pieces, so two pieces
+// that disagree about an octet did not come from one datagram, and there is no reading of the pair
+// that IS the datagram - the caller walks the fragments in ascending offset, so the one that arrived
+// last would decide the octets both name, up to and including the transport header at offset zero.
+// The row is abandoned instead. RFC 8200 sec 4.5 reaches the same disposition for the IPv6 twin.
+void test_a_partially_overlapping_fragment_abandons_the_datagram(void)
 {
     Ip4Reass.clear(work_a);
     // The last fragment first: octets 8 through 15, so TDL is 16 and hole 0 through 7 remains.
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 1u, 8u, 0), 71u));
-    // Octets 0 through 15, overlapping the held fragment and filling the hole.
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 0u, 16u, 1), 72u));
-    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
-    TEST_ASSERT_EQUAL_UINT16(16u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+    const uint8_t row = IDEMIP_IP4_REASS_IO(work_a)->index;
+
+    // Octets 0 through 15: eight of them fill the hole and eight rewrite what is held.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, hold_frag(work_a, fr(1, 0u, 16u, 1), 72u),
+                                  "an overlapping fragment must not be held");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_REASS_ABANDONED, IDEMIP_IP4_REASS_IO(work_a)->state);
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+
+    // Nothing of it is reassembled, however the missing octets arrive afterwards.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(2, 0u, 8u, 1), 73u));
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_REASS_ABANDONED, IDEMIP_IP4_REASS_IO(work_a)->state,
+                                  "the abandoned row must keep its buffer identifier");
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, next_one(work_a, row),
+                                  "an abandoned row must hand on no datagram, and no retry changes it");
+
+    // The one descriptor it did pin comes back, and only that one: neither overlapping fragment took
+    // a slot.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, release_row(work_a, row));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+}
+
+// The other order, which is the one an attacker has: the row is gathering, and the fragment that
+// arrives reaches back over octets already held. Same answer.
+void test_an_overlap_reaching_back_over_held_octets_abandons_the_datagram(void)
+{
+    Ip4Reass.clear(work_a);
+    // Octets 8 through 15, more to come, so the holes are 0 through 7 and 16 to infinity.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 1u, 8u, 1), 74u));
+    // Octets 8 through 23: half of it is held already and half is new.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(1, 1u, 16u, 1), 75u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_REASS_ABANDONED, IDEMIP_IP4_REASS_IO(work_a)->state);
+}
+
+// The abandoned row is retired by its own deadline, and RFC 1122 sec 3.3.2's Time Exceeded is not
+// owed for it: the section conditions the message on reassembly failing "due to missing fragments",
+// and this datagram was not missing any - it was told two different things about the same octets.
+void test_an_abandoned_row_times_out_without_an_icmp_answer(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 1u, 8u, 1), 76u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(1, 1u, 16u, 1), 77u));
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, tick_at(work_a, MAXAGE_MS - 1u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tick_at(work_a, MAXAGE_MS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, IDEMIP_IP4_REASS_IO(work_a)->src,
+                                     "an abandoned row owes no Time Exceeded, so it names no source");
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP4_REASS_IO(work_a)->frag_zero,
+                              "an abandoned row owes no Time Exceeded, so fragment zero is not reported");
+
+    // Its descriptor still comes back, and the key it held is free again.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_at(work_a, fr(2, 0u, 8u, 1), 78u, MAXAGE_MS));
 }
 
 // A fragment that repeats octets already held exactly, filling no hole, is neither an overlap nor an

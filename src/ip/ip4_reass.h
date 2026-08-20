@@ -24,6 +24,18 @@
  * The deadline on a row is RFC 791 sec 3.2's timer: step (17) "TIMER <- MAX(TIMER,TTL)", step (19)
  * "timer expires: flush all reassembly with this BUFID", with IDEMIP_IP_REASS_MAXAGE_S as the "lower
  * bound on the reassembly waiting time" that section sets at 15 seconds.
+ *
+ * FRAGMENTS DO NOT OVERLAP HERE. A sender that fragmented one datagram produced disjoint pieces, so
+ * two pieces claiming the same octet did not come from one datagram, and no reading of the pair is
+ * the datagram. RFC 791 and RFC 815 both describe the arithmetic of filling holes and neither says
+ * what to believe when two fragments disagree, which leaves a receiver to pick one - and picking is
+ * RFC 1858 sec 3.2's overlapping fragment attack, where the piece that arrives second rewrites what
+ * the first said, transport header included. This picks neither: a fragment wholly inside the holes
+ * is taken, one that fills no hole is a duplicate and is dropped, and one that would do both
+ * abandons the datagram. RFC 8200 sec 4.5 reaches the same disposition for IPv6, "reassembly of that
+ * packet must be abandoned and all the fragments that have been received for that packet must be
+ * discarded", and this holds the buffer identifier afterwards for the reason RFC 5722 sec 4 gives:
+ * the discard covers "any constituent fragments, including those not yet received".
  */
 
 #ifndef IDEMIP_IP4_REASS_H
@@ -51,15 +63,23 @@ IDEMIP_BEGIN_DECLS
  * @brief What a datagram row is.
  *
  * RFC 791 sec 3.2 has three ends for a row: the fragments complete it and it goes on, the timer runs
- * out, or a whole datagram flushes it. COMPLETE and RECLAIM both still pin receive descriptors, so a
- * row is not free until they are handed back.
+ * out, or a whole datagram flushes it. This adds a fourth, ABANDONED, for a datagram whose fragments
+ * disagree about what its octets are. COMPLETE, ABANDONED and RECLAIM all still pin receive
+ * descriptors, so a row is not free until they are handed back.
  */
 typedef enum IDEMIP_ENUM_PACKED
 {
-    IDEMIP_IP4_REASS_FREE = 0,  ///< no datagram in this row
-    IDEMIP_IP4_REASS_HOLDING,   ///< fragments are held and the hole list is not empty
-    IDEMIP_IP4_REASS_COMPLETE,  ///< the hole list emptied, RFC 815 sec 3 step 8
-    IDEMIP_IP4_REASS_RECLAIM,   ///< done with, and its descriptors are waiting to be handed back
+    IDEMIP_IP4_REASS_FREE = 0, ///< no datagram in this row
+    IDEMIP_IP4_REASS_HOLDING,  ///< fragments are held and the hole list is not empty
+    IDEMIP_IP4_REASS_COMPLETE, ///< the hole list emptied, RFC 815 sec 3 step 8
+    /**
+     * A fragment overlapped octets the row already held, so nothing more of this datagram is
+     * reassembled. The row keeps its buffer identifier until its deadline, so a further fragment of
+     * the same datagram cannot open a fresh one, and its pinned descriptors go back through release
+     * and reclaim like any other row's.
+     */
+    IDEMIP_IP4_REASS_ABANDONED,
+    IDEMIP_IP4_REASS_RECLAIM, ///< done with, and its descriptors are waiting to be handed back
 } IdemIpIp4ReassState;
 
 /**
@@ -116,9 +136,13 @@ typedef struct
  * @var Ip4ReassIo::src          the Source Address of the datagram a tick timed out, which RFC 1122
  *                               sec 3.3.2 answers with an ICMP Time Exceeded: "the
  *                               partially-reassembled datagram MUST be discarded and an ICMP Time
- *                               Exceeded message sent to the source host"
+ *                               Exceeded message sent to the source host". Zero for a row the sweep
+ *                               retired that was abandoned rather than timed out: sec 3.3.2 owes the
+ *                               message to reassembly that failed "due to missing fragments", and an
+ *                               abandoned datagram was missing none.
  * @var Ip4ReassIo::frag_zero    fragment zero of that datagram was among the fragments held, which is
- *                               the condition sec 3.3.2 puts on sending it
+ *                               the condition sec 3.3.2 puts on sending it. Clear for an abandoned
+ *                               row, for the same reason.
  */
 typedef struct
 {
@@ -209,15 +233,23 @@ static_assert(IDEMIP_IP4_REASS_INFINITY >= IDEMIP_IP4_TOTAL_LEN_MAX - 1u,
  * @var Ip4ReassNs::hold    take one fragment into its datagram's row, running the RFC 815 sec 3
  *                          eight steps over the hole list, and raising the row's deadline the way
  *                          RFC 791 sec 3.2 step (17) does, "TIMER <- MAX(TIMER,TTL)". BUSY when no
- *                          row or no fragment slot is free, which the timeout sweep frees.
- * @var Ip4ReassNs::next    the next held fragment of a row, in ascending fragment offset. BUSY once
- *                          the row's fragments have all been reported.
+ *                          row or no fragment slot is free, which the timeout sweep frees. ERR when
+ *                          the fragment is not taken: it is octets the row already holds, it
+ *                          contradicts the last fragment's total length, or it overlaps - see
+ *                          IDEMIP_IP4_REASS_ABANDONED, whose state @ref Ip4ReassIo::state reports.
+ *                          The caller unpins the descriptor in every ERR case, since nothing here
+ *                          took it.
+ * @var Ip4ReassNs::next    the next held fragment of a row, in ascending fragment offset. Fragments
+ *                          never overlap, because hold refuses one that would, so the octets the
+ *                          walk reports are each named exactly once. BUSY once the row's fragments
+ *                          have all been reported, ERR for a row that carries no datagram to hand on.
  * @var Ip4ReassNs::release be done with a row, RFC 791 sec 3.2 step (16), leaving its descriptors to
- *                          be reclaimed
+ *                          be reclaimed. A row that was abandoned is released the same way.
  * @var Ip4ReassNs::reclaim one pinned descriptor of a released or timed-out row, to hand back to the
  *                          ring. BUSY when none is waiting.
  * @var Ip4ReassNs::tick    time out rows older than IDEMIP_IP_REASS_MAXAGE_S, RFC 791 sec 3.2 step
- *                          (19). BUSY when the sweep found nothing.
+ *                          (19), which is also what retires an abandoned row and frees the buffer
+ *                          identifier it held. BUSY when the sweep found nothing.
  */
 typedef struct
 {

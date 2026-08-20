@@ -159,8 +159,11 @@ static uint8_t ip4_reass_find(uint8_t *restrict work, uint32_t src, uint32_t dst
     for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
     {
         const Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, i);
-        if (row->state == (uint8_t)IDEMIP_IP4_REASS_HOLDING && row->src == src && row->dst == dst &&
-            row->proto == proto && row->id == id)
+        // An abandoned row is matched as well as a gathering one: it holds its buffer identifier so
+        // a later fragment of the datagram it gave up on cannot start the reassembly over.
+        if ((row->state == (uint8_t)IDEMIP_IP4_REASS_HOLDING ||
+             row->state == (uint8_t)IDEMIP_IP4_REASS_ABANDONED) &&
+            row->src == src && row->dst == dst && row->proto == proto && row->id == id)
         {
             return (uint8_t)i;
         }
@@ -222,9 +225,8 @@ static uint8_t ip4_reass_hole_alloc(uint8_t *restrict work, uint32_t first, uint
 
 // RFC 791 sec 3.2 step (16), "free all reassembly resources for this BUFID": the hole list goes back
 // to the table, and the row waits on reclaim while its fragments still pin receive descriptors.
-static void ip4_reass_flush(uint8_t *restrict work, uint8_t index)
+static void ip4_reass_free_holes(uint8_t *restrict work, Ip4ReassDatagram *row)
 {
-    Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, index);
     uint8_t h = row->hole_head;
     while (h != IP4_REASS_NONE)
     {
@@ -236,8 +238,47 @@ static void ip4_reass_flush(uint8_t *restrict work, uint8_t index)
     }
     row->hole_head = IP4_REASS_NONE;
     row->cursor = IP4_REASS_NONE;
+}
+
+static void ip4_reass_flush(uint8_t *restrict work, uint8_t index)
+{
+    Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, index);
+    ip4_reass_free_holes(work, row);
     row->state = (row->frag_head == IP4_REASS_NONE) ? (uint8_t)IDEMIP_IP4_REASS_FREE
                                                     : (uint8_t)IDEMIP_IP4_REASS_RECLAIM;
+}
+
+// Give up on a datagram without giving up its buffer identifier. The hole list goes back, because
+// nothing can complete a row whose fragments disagree, but the row keeps its key so a further
+// fragment of the same datagram lands on the dead row rather than opening a fresh one - which is the
+// disposition RFC 5722 sec 4 states for the IPv6 twin, "any constituent fragments, including those
+// not yet received". The fragments stay pinned until release and reclaim hand their descriptors back.
+static void ip4_reass_abandon(uint8_t *restrict work, uint8_t index)
+{
+    Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, index);
+    ip4_reass_free_holes(work, row);
+    row->state = (uint8_t)IDEMIP_IP4_REASS_ABANDONED;
+}
+
+// Octets of [first, last] that lie in a hole, which is what this fragment would contribute. RFC 815
+// sec 2 keeps the holes disjoint and ascending, so summing the intersections counts every octet once
+// and the answer is between zero and the fragment's own length.
+static uint32_t ip4_reass_fills(uint8_t *restrict work, uint8_t index, uint32_t first, uint32_t last)
+{
+    uint32_t fills = 0u;
+    uint8_t h = IP4_REASS_DGRAM_AT(work, index)->hole_head;
+    while (h != IP4_REASS_NONE)
+    {
+        const Ip4ReassHole *hole = IP4_REASS_HOLE_AT(work, h);
+        const uint32_t lo = (first > hole->first) ? first : hole->first;
+        const uint32_t hi = (last < hole->last) ? last : (uint32_t)hole->last;
+        if (lo <= hi)
+        {
+            fills += (hi - lo) + 1u;
+        }
+        h = hole->next;
+    }
+    return fills;
 }
 
 // The fragment list in ascending fragment offset, which is the order next reports it in.
@@ -477,6 +518,15 @@ static void ip4_reass_take(uint8_t *restrict work)
     Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, index);
     const uint32_t frag_end = off + data_len;
 
+    // The row gave up on this datagram. Its buffer identifier is held until the deadline retires it,
+    // so this fragment goes no further and opens nothing.
+    if (row->state == (uint8_t)IDEMIP_IP4_REASS_ABANDONED)
+    {
+        io->index = index;
+        io->state = IDEMIP_IP4_REASS_ABANDONED;
+        return;
+    }
+
     // RFC 791 sec 3.2 step (10) fixes TDL, so no octet of this datagram lies at or past it, and a
     // second last fragment naming a different TDL contradicts the first. A last fragment also cannot
     // name a TDL below what is already held. None of the three changes on a retry.
@@ -488,6 +538,42 @@ static void ip4_reass_take(uint8_t *restrict work)
         {
             ip4_reass_flush(work, index);
         }
+        return;
+    }
+
+    // What this fragment contributes, against what it would rewrite. The hole list is what the row
+    // is missing, so octets of the fragment that fall in a hole are new and the rest are octets the
+    // row already holds and would be written over.
+    //
+    // Nothing new is a duplicate: a network that duplicates a packet delivers the same fragment
+    // twice, and RFC 815 sec 3 steps 2 and 3 pass over every hole for it. It is dropped and the row
+    // stands, which is what RFC 8200 sec 4.5 permits its IPv6 twin as "drop exact duplicate
+    // fragments while keeping the other fragments".
+    //
+    // Some new and the rest a rewrite is the RFC 1858 sec 3.2 overlapping fragment: a sender that
+    // fragmented one datagram produces disjoint pieces, so two pieces that disagree about an octet
+    // did not come from one datagram, and there is no reading of the pair that is the datagram. The
+    // row is abandoned rather than reassembled from whichever piece the walk reports last. RFC 5722
+    // sec 4 reaches the same disposition for IPv6 and RFC 8200 sec 4.5 carries it: "reassembly of
+    // that packet must be abandoned and all the fragments that have been received for that packet
+    // must be discarded". No IPv4 RFC requires it, and none forbids it either; what an IPv4 receiver
+    // is left to choose is which of two contradicting fragments to believe, and this believes
+    // neither.
+    //
+    // A row opened by this fragment holds one hole spanning the whole datagram, so it always takes
+    // the first branch below and neither of the other two can be its first fragment's answer.
+    const uint32_t fills = ip4_reass_fills(work, index, off, frag_end - 1u);
+    if (fills == 0u)
+    {
+        io->index = index;
+        io->state = (IdemIpIp4ReassState)row->state;
+        return;
+    }
+    if (fills != data_len)
+    {
+        ip4_reass_abandon(work, index);
+        io->index = index;
+        io->state = IDEMIP_IP4_REASS_ABANDONED;
         return;
     }
 
@@ -513,17 +599,8 @@ static void ip4_reass_take(uint8_t *restrict work)
         io->status = IDEMIP_BUSY;
         return;
     }
-    if (deleted == 0u)
-    {
-        // RFC 815 sec 3 steps 2 and 3 passed over every hole, so this fragment is octets the row
-        // already holds. Nothing is pinned for it, and a repeat of it fills nothing either.
-        IP4_REASS_FRAG_AT(work, frag)->state = (uint8_t)IDEMIP_IP4_REASS_FREE;
-        if (opened)
-        {
-            ip4_reass_flush(work, index);
-        }
-        return;
-    }
+    // A fragment reaching here fills a hole, because the measure above admitted only fragments
+    // wholly inside them and no fragment is zero octets long, so at least one hole was reached.
 
     Ip4ReassFrag *held = IP4_REASS_FRAG_AT(work, frag);
     held->desc = io->hold_args.desc;
@@ -580,7 +657,9 @@ static void ip4_reass_report(uint8_t *restrict work)
     }
     if (row->state != (uint8_t)IDEMIP_IP4_REASS_COMPLETE)
     {
-        return; // a free row and a row waiting on reclaim carry no datagram to hand on
+        // A free row, an abandoned one and one waiting on reclaim carry no datagram to hand on, and
+        // none of the three becomes a datagram on a retry.
+        return;
     }
     const uint8_t frag = row->cursor;
     if (frag == IP4_REASS_NONE)
@@ -609,7 +688,8 @@ static void ip4_reass_done(uint8_t *restrict work)
         return;
     }
     Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, index);
-    if (row->state != (uint8_t)IDEMIP_IP4_REASS_HOLDING && row->state != (uint8_t)IDEMIP_IP4_REASS_COMPLETE)
+    if (row->state != (uint8_t)IDEMIP_IP4_REASS_HOLDING && row->state != (uint8_t)IDEMIP_IP4_REASS_COMPLETE &&
+        row->state != (uint8_t)IDEMIP_IP4_REASS_ABANDONED)
     {
         return; // a free row holds nothing, and one already released is on its way back
     }
@@ -666,7 +746,9 @@ static void ip4_reass_expire(uint8_t *restrict work)
     for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
     {
         Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, i);
-        if (row->state != (uint8_t)IDEMIP_IP4_REASS_HOLDING && row->state != (uint8_t)IDEMIP_IP4_REASS_COMPLETE)
+        const idemip_bool abandoned = (idemip_bool)(row->state == (uint8_t)IDEMIP_IP4_REASS_ABANDONED);
+        if (row->state != (uint8_t)IDEMIP_IP4_REASS_HOLDING && row->state != (uint8_t)IDEMIP_IP4_REASS_COMPLETE &&
+            !abandoned)
         {
             continue;
         }
@@ -674,8 +756,14 @@ static void ip4_reass_expire(uint8_t *restrict work)
         {
             continue;
         }
-        io->src = row->src;
-        io->frag_zero = (idemip_bool)(row->first_frag != IP4_REASS_NONE);
+        // RFC 1122 sec 3.3.2 owes the Time Exceeded to a datagram the timer ran out on: "If a host
+        // reassembling a fragmented datagram cannot complete the reassembly due to missing
+        // fragments within its time limit". An abandoned row is not missing fragments - it was told
+        // two different things about the same octets - so it is retired without an answer, which is
+        // the disposition RFC 8200 sec 4.5 states for its IPv6 twin: "no ICMP error messages should
+        // be sent". Its buffer identifier goes back here, and only here.
+        io->src = abandoned ? 0u : row->src;
+        io->frag_zero = (idemip_bool)(!abandoned && row->first_frag != IP4_REASS_NONE);
         ip4_reass_flush(work, (uint8_t)i);
         io->state = (IdemIpIp4ReassState)row->state;
         io->index = (uint8_t)i;
