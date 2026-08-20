@@ -157,6 +157,18 @@ def generate_runner(suite_dir, unity_rb):
     src = os.path.join(suite_dir, sources[0])
     out = os.path.join(suite_dir, GENERATED_RUNNER)
     subprocess.run([ruby, unity_rb, src, out], check=True)
+    # Unity's generator opens its output in text mode, so on Windows every line lands CRLF while
+    # .gitattributes holds this tree at "LF in the repository and LF in the working copy". The runner
+    # is tracked, so that difference shows as a modified file after every build that regenerates one.
+    # git normalizes the content it stores either way, so nothing was ever committed wrong; rewriting
+    # the bytes here is what leaves the working copy as the build found it, on every platform. A
+    # no-op where the generator already wrote LF.
+    with open(out, "rb") as fh:
+        written = fh.read()
+    lf = written.replace(b"\r\n", b"\n")
+    if lf != written:
+        with open(out, "wb") as fh:
+            fh.write(lf)
     # Report the near misses even on success: the runner is written, and these still never ran.
     _, missed = runner_cases(src)
     if missed:
