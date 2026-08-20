@@ -312,6 +312,85 @@ void test_parse_of_an_untagged_frame_reports_its_own_type(void)
     TEST_ASSERT_EQUAL_PTR(frame + IDEMIP_ETH_OFF_PAYLOAD, IDEMIP_VLAN_IO(work_a)->payload);
 }
 
+// RFC 1122 sec 2.3.3: "A receiver can distinguish Ethernet and 802.3 frames by the value of the
+// 802.3 Length field ... the 802.3 Length field must be less than or equal to 1500, while all valid
+// Ether-Type values are greater than 1500." RFC 1042 puts the EtherType in the SNAP header behind it.
+static void make_llc_snap(size_t at, uint16_t len, uint16_t type)
+{
+    put16(frame + at, len);
+    frame[at + 2u + IDEMIP_LLC_OFF_DSAP] = (uint8_t)IDEMIP_LLC_SAP_SNAP;
+    frame[at + 2u + IDEMIP_LLC_OFF_SSAP] = (uint8_t)IDEMIP_LLC_SAP_SNAP;
+    frame[at + 2u + IDEMIP_LLC_OFF_CONTROL] = (uint8_t)IDEMIP_LLC_CONTROL_UI;
+    frame[at + 2u + IDEMIP_LLC_OFF_ORG] = 0u;
+    frame[at + 2u + IDEMIP_LLC_OFF_ORG + 1u] = 0u;
+    frame[at + 2u + IDEMIP_LLC_OFF_ORG + 2u] = 0u;
+    put16(frame + at + 2u + IDEMIP_LLC_OFF_TYPE, type);
+}
+
+void test_parse_of_an_802_3_frame_takes_the_snap_ethertype(void)
+{
+    ready(work_a);
+    make_llc_snap(IDEMIP_ETH_OFF_TYPE, 46u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    parse_frame(work_a, FRAME_BYTES);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_VLAN_IO(work_a)->status);
+    TEST_ASSERT_FALSE(IDEMIP_VLAN_IO(work_a)->tagged);
+    TEST_ASSERT_TRUE(IDEMIP_VLAN_IO(work_a)->llc);
+    TEST_ASSERT_EQUAL_HEX16_MESSAGE((uint16_t)IDEMIP_ETHERTYPE_IPV4, IDEMIP_VLAN_IO(work_a)->type,
+                                    "the 802.3 Length was reported as the type code");
+    TEST_ASSERT_EQUAL_size_t((size_t)IDEMIP_ETH_HDR_LEN + IDEMIP_LLC_SNAP_LEN, IDEMIP_VLAN_IO(work_a)->payload_off);
+    TEST_ASSERT_EQUAL_PTR(frame + IDEMIP_ETH_HDR_LEN + IDEMIP_LLC_SNAP_LEN, IDEMIP_VLAN_IO(work_a)->payload);
+}
+
+// The boundary the discriminator names: 1500 is a Length, 1501 is an EtherType.
+void test_the_length_and_ethertype_boundary_is_1500(void)
+{
+    ready(work_a);
+    make_llc_snap(IDEMIP_ETH_OFF_TYPE, 1500u, (uint16_t)IDEMIP_ETHERTYPE_ARP);
+    parse_frame(work_a, FRAME_BYTES);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_VLAN_IO(work_a)->status);
+    TEST_ASSERT_TRUE(IDEMIP_VLAN_IO(work_a)->llc);
+    TEST_ASSERT_EQUAL_HEX16((uint16_t)IDEMIP_ETHERTYPE_ARP, IDEMIP_VLAN_IO(work_a)->type);
+
+    ready(work_a);
+    make_untagged(1501u);
+    parse_frame(work_a, FRAME_BYTES);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_VLAN_IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_VLAN_IO(work_a)->llc, "1501 is an EtherType, not a Length");
+    TEST_ASSERT_EQUAL_HEX16(1501u, IDEMIP_VLAN_IO(work_a)->type);
+}
+
+// A Length whose eight octets are not the RFC 1042 LLC and SNAP headers is an encapsulation this
+// decodes none of, and no retry over the same octets reaches further.
+void test_an_802_3_frame_that_is_not_snap_is_refused(void)
+{
+    ready(work_a);
+    make_llc_snap(IDEMIP_ETH_OFF_TYPE, 46u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    frame[IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_LLC_OFF_DSAP] = 0x42u; // not the SNAP SAP
+    parse_frame(work_a, FRAME_BYTES);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status);
+
+    ready(work_a);
+    make_llc_snap(IDEMIP_ETH_OFF_TYPE, 46u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    frame[IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_LLC_OFF_ORG] = 0x01u; // a non-zero Organization Code
+    parse_frame(work_a, FRAME_BYTES);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status);
+}
+
+// The same discriminator behind a C-Tag, where the field sits at IDEMIP_VLAN_OFF_TYPE.
+void test_a_tagged_802_3_frame_takes_the_snap_ethertype(void)
+{
+    ready(work_a);
+    make_tagged(0x0064u, 0u);
+    make_llc_snap(IDEMIP_VLAN_OFF_TYPE, 46u, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    parse_frame(work_a, FRAME_BYTES);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_VLAN_IO(work_a)->status);
+    TEST_ASSERT_TRUE(IDEMIP_VLAN_IO(work_a)->tagged);
+    TEST_ASSERT_TRUE(IDEMIP_VLAN_IO(work_a)->llc);
+    TEST_ASSERT_EQUAL_HEX16((uint16_t)IDEMIP_ETHERTYPE_IPV6, IDEMIP_VLAN_IO(work_a)->type);
+    TEST_ASSERT_EQUAL_size_t((size_t)IDEMIP_VLAN_OFF_PAYLOAD + IDEMIP_LLC_SNAP_LEN,
+                             IDEMIP_VLAN_IO(work_a)->payload_off);
+}
+
 // An untagged frame carries no tag fields, so none are reported.
 void test_parse_of_an_untagged_frame_reports_no_tag_fields(void)
 {

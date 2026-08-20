@@ -182,7 +182,11 @@ typedef struct
  * @var VlanIo::payload_off  how far in that is: IDEMIP_VLAN_OFF_PAYLOAD tagged, IDEMIP_ETH_HDR_LEN
  *                           untagged
  * @var VlanIo::tci          the whole 16-bit Tag Control Information
- * @var VlanIo::type         the type code the payload is, tag or no tag
+ * @var VlanIo::type         the type code the payload is, tag or no tag. On an 802.3 frame it is the
+ *                           EtherType RFC 1042 puts in the SNAP header, not the 802.3 Length field
+ * @var VlanIo::llc          the frame was in the RFC 1042 802.3 framing, so RFC 1122 sec 2.3.3's
+ *                           discriminator found a Length at or below 1500 and the payload starts
+ *                           past the eight LLC and SNAP octets
  * @var VlanIo::vid          the 12-bit VLAN ID
  * @var VlanIo::pcp          the 3-bit Priority
  * @var VlanIo::dei          the "C" bit
@@ -207,6 +211,7 @@ typedef struct
     uint8_t pcp;
     idemip_bool dei;
     idemip_bool tagged;
+    idemip_bool llc;
     idemip_bool vid_null;
     idemip_bool vid_reserved;
 } VlanIo;

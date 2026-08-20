@@ -24,6 +24,7 @@ extern void test_release_without_claim_is_refused(void);
 extern void test_claims_on_two_borrows_are_independent(void);
 extern void test_commit_cleans_before_handing_over(void);
 extern void test_tx_claim_refuses_a_length_no_frame_can_carry(void);
+extern void test_tx_claim_admits_a_full_length_frame(void);
 extern void test_full_ring_is_busy_and_the_retry_succeeds(void);
 extern void test_commit_that_could_not_queue_is_busy(void);
 extern void test_commit_without_claim_is_refused(void);
@@ -90,27 +91,28 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/ethernet/test_phy\\test_phy.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 187);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 202);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 224);
-  run_test(test_unbound_borrow_refuses_work, "test_unbound_borrow_refuses_work", 244);
-  run_test(test_bind_refuses_null_driver, "test_bind_refuses_null_driver", 257);
-  run_test(test_bind_refuses_out_of_range_address, "test_bind_refuses_out_of_range_address", 265);
-  run_test(test_bind_refuses_an_incomplete_driver, "test_bind_refuses_an_incomplete_driver", 275);
-  run_test(test_bind_accepts_a_complete_driver, "test_bind_accepts_a_complete_driver", 291);
-  run_test(test_empty_ring_is_busy, "test_empty_ring_is_busy", 305);
-  run_test(test_claim_invalidates_before_the_frame_is_readable, "test_claim_invalidates_before_the_frame_is_readable", 317);
-  run_test(test_claim_and_release_round_trip, "test_claim_and_release_round_trip", 332);
-  run_test(test_double_claim_is_refused, "test_double_claim_is_refused", 346);
-  run_test(test_release_without_claim_is_refused, "test_release_without_claim_is_refused", 357);
-  run_test(test_claims_on_two_borrows_are_independent, "test_claims_on_two_borrows_are_independent", 367);
-  run_test(test_commit_cleans_before_handing_over, "test_commit_cleans_before_handing_over", 389);
-  run_test(test_tx_claim_refuses_a_length_no_frame_can_carry, "test_tx_claim_refuses_a_length_no_frame_can_carry", 408);
-  run_test(test_full_ring_is_busy_and_the_retry_succeeds, "test_full_ring_is_busy_and_the_retry_succeeds", 419);
-  run_test(test_commit_that_could_not_queue_is_busy, "test_commit_that_could_not_queue_is_busy", 435);
-  run_test(test_commit_without_claim_is_refused, "test_commit_without_claim_is_refused", 446);
-  run_test(test_mdio_refuses_an_out_of_range_register, "test_mdio_refuses_an_out_of_range_register", 459);
-  run_test(test_mdio_write_then_read, "test_mdio_write_then_read", 469);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 189);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 204);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 226);
+  run_test(test_unbound_borrow_refuses_work, "test_unbound_borrow_refuses_work", 246);
+  run_test(test_bind_refuses_null_driver, "test_bind_refuses_null_driver", 259);
+  run_test(test_bind_refuses_out_of_range_address, "test_bind_refuses_out_of_range_address", 267);
+  run_test(test_bind_refuses_an_incomplete_driver, "test_bind_refuses_an_incomplete_driver", 277);
+  run_test(test_bind_accepts_a_complete_driver, "test_bind_accepts_a_complete_driver", 293);
+  run_test(test_empty_ring_is_busy, "test_empty_ring_is_busy", 307);
+  run_test(test_claim_invalidates_before_the_frame_is_readable, "test_claim_invalidates_before_the_frame_is_readable", 319);
+  run_test(test_claim_and_release_round_trip, "test_claim_and_release_round_trip", 334);
+  run_test(test_double_claim_is_refused, "test_double_claim_is_refused", 348);
+  run_test(test_release_without_claim_is_refused, "test_release_without_claim_is_refused", 359);
+  run_test(test_claims_on_two_borrows_are_independent, "test_claims_on_two_borrows_are_independent", 369);
+  run_test(test_commit_cleans_before_handing_over, "test_commit_cleans_before_handing_over", 391);
+  run_test(test_tx_claim_refuses_a_length_no_frame_can_carry, "test_tx_claim_refuses_a_length_no_frame_can_carry", 410);
+  run_test(test_tx_claim_admits_a_full_length_frame, "test_tx_claim_admits_a_full_length_frame", 422);
+  run_test(test_full_ring_is_busy_and_the_retry_succeeds, "test_full_ring_is_busy_and_the_retry_succeeds", 434);
+  run_test(test_commit_that_could_not_queue_is_busy, "test_commit_that_could_not_queue_is_busy", 450);
+  run_test(test_commit_without_claim_is_refused, "test_commit_without_claim_is_refused", 461);
+  run_test(test_mdio_refuses_an_out_of_range_register, "test_mdio_refuses_an_out_of_range_register", 474);
+  run_test(test_mdio_write_then_read, "test_mdio_write_then_read", 484);
 
   return UNITY_END();
 }

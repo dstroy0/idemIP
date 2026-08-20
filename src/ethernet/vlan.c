@@ -75,6 +75,7 @@ static void vlan_reset(VlanIo *io)
     io->status = IDEMIP_ERR;
     io->payload = NULL;
     io->payload_off = 0u;
+    io->llc = IDEMIP_FALSE;
     io->tci = 0u;
     io->type = 0u;
     io->vid = 0u;
@@ -118,6 +119,23 @@ static void vlan_parse(uint8_t *restrict work)
     uint16_t tpid = idemip_rd16(frame + IDEMIP_VLAN_OFF_TPID);
     if (tpid != IDEMIP_VLAN_TPID)
     {
+        // RFC 1122 sec 2.3.3: "the 802.3 Length field must be less than or equal to 1500, while all
+        // valid Ether-Type values are greater than 1500." A Length names an 802.3 frame, whose IP is
+        // behind the RFC 1042 LLC and SNAP headers, and the EtherType is the last two octets of them.
+        if (tpid <= (uint16_t)IDEMIP_ETH_MAX_PAYLOAD)
+        {
+            const size_t need = (size_t)IDEMIP_ETH_HDR_LEN + IDEMIP_LLC_SNAP_LEN;
+            if (io->parse_args.len < need || !idemip_llc_is_snap(frame + IDEMIP_ETH_OFF_PAYLOAD))
+            {
+                return; // not an encapsulation this decodes, and no retry over the same octets does
+            }
+            io->type = idemip_rd16(frame + IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_LLC_OFF_TYPE);
+            io->payload_off = (uint16_t)need;
+            io->payload = frame + need;
+            io->llc = IDEMIP_TRUE;
+            io->status = IDEMIP_OK;
+            return;
+        }
         io->type = tpid;
         io->payload_off = IDEMIP_ETH_OFF_PAYLOAD;
         io->payload = frame + IDEMIP_ETH_OFF_PAYLOAD;
@@ -129,10 +147,28 @@ static void vlan_parse(uint8_t *restrict work)
         return;
     }
     vlan_split_tci(io, idemip_rd16(frame + IDEMIP_VLAN_OFF_TCI));
-    io->type = idemip_rd16(frame + IDEMIP_VLAN_OFF_TYPE);
+    uint16_t type = idemip_rd16(frame + IDEMIP_VLAN_OFF_TYPE);
+    io->tagged = IDEMIP_TRUE;
+    // The same sec 2.3.3 discriminator behind the tag, where the field sits at
+    // IDEMIP_VLAN_OFF_TYPE rather than at IDEMIP_VLAN_OFF_TPID.
+    if (type <= (uint16_t)IDEMIP_ETH_MAX_PAYLOAD)
+    {
+        const size_t need = (size_t)IDEMIP_VLAN_OFF_PAYLOAD + IDEMIP_LLC_SNAP_LEN;
+        if (io->parse_args.len < need || !idemip_llc_is_snap(frame + IDEMIP_VLAN_OFF_PAYLOAD))
+        {
+            io->tagged = IDEMIP_FALSE;
+            return;
+        }
+        io->type = idemip_rd16(frame + IDEMIP_VLAN_OFF_PAYLOAD + IDEMIP_LLC_OFF_TYPE);
+        io->payload_off = (uint16_t)need;
+        io->payload = frame + need;
+        io->llc = IDEMIP_TRUE;
+        io->status = IDEMIP_OK;
+        return;
+    }
+    io->type = type;
     io->payload_off = IDEMIP_VLAN_OFF_PAYLOAD;
     io->payload = frame + IDEMIP_VLAN_OFF_PAYLOAD;
-    io->tagged = IDEMIP_TRUE;
     io->status = IDEMIP_OK;
 }
 

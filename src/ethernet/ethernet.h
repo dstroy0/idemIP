@@ -73,6 +73,37 @@ typedef enum IDEMIP_ENUM_PACKED
  */
 #define IDEMIP_ETH_MAX_PAYLOAD 1500u
 
+/**
+ * @brief RFC 1042's LLC and SNAP headers, the eight octets an 802.3 frame carries IP behind.
+ *
+ * "IP datagrams and ARP requests and replies are transmitted in standard 802.2 LLC Type 1
+ * Unnumbered Information format, control code 3, with the DSAP and the SSAP fields of the 802.2
+ * header set to 170, the assigned global SAP value for SNAP", and "The 24-bit Organization Code in
+ * the SNAP is zero, and the remaining 16 bits are the EtherType from Assigned Numbers".
+ *
+ * RFC 1122 sec 2.3.3 is the discriminator that says which framing a frame is in: "the 802.3 Length
+ * field must be less than or equal to 1500, while all valid Ether-Type values are greater than 1500."
+ */
+#define IDEMIP_LLC_SNAP_LEN 8u          ///< DSAP, SSAP, control, three Organization octets, EtherType
+#define IDEMIP_LLC_OFF_DSAP 0u          ///< 8-bit Destination Service Access Point
+#define IDEMIP_LLC_OFF_SSAP 1u          ///< 8-bit Source Service Access Point
+#define IDEMIP_LLC_OFF_CONTROL 2u       ///< 8-bit control code
+#define IDEMIP_LLC_OFF_ORG 3u           ///< 24-bit Organization Code
+#define IDEMIP_LLC_OFF_TYPE 6u          ///< the 16-bit EtherType behind it
+#define IDEMIP_LLC_SAP_SNAP 170u        ///< "the assigned global SAP value for SNAP"
+#define IDEMIP_LLC_CONTROL_UI 3u        ///< "Unnumbered Information format, control code 3"
+
+/** @brief True for the eight octets RFC 1042 puts an EtherType behind. @p p is the LLC header. */
+IDEMIP_INLINE idemip_bool idemip_llc_is_snap(const uint8_t *p)
+{
+    return (p[IDEMIP_LLC_OFF_DSAP] == (uint8_t)IDEMIP_LLC_SAP_SNAP &&
+            p[IDEMIP_LLC_OFF_SSAP] == (uint8_t)IDEMIP_LLC_SAP_SNAP &&
+            p[IDEMIP_LLC_OFF_CONTROL] == (uint8_t)IDEMIP_LLC_CONTROL_UI && p[IDEMIP_LLC_OFF_ORG] == 0u &&
+            p[IDEMIP_LLC_OFF_ORG + 1u] == 0u && p[IDEMIP_LLC_OFF_ORG + 2u] == 0u)
+               ? IDEMIP_TRUE
+               : IDEMIP_FALSE;
+}
+
 /** @brief Whole frame on the wire, header included. The FCS is added and checked by the MAC. */
 #define IDEMIP_ETH_FRAME_MAX (IDEMIP_ETH_HDR_LEN + IDEMIP_ETH_MAX_PAYLOAD)
 

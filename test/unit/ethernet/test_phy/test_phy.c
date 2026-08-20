@@ -21,7 +21,9 @@
 
 static uint8_t g_frame[64];
 static size_t g_frame_len;
-static uint8_t g_txbuf[64];
+// Wide enough for the full-length RFC 894 frame phy_tx_claim must admit, so the bound can be driven
+// from the accepting side and not only from the rejecting one.
+static uint8_t g_txbuf[IDEMIP_ETH_FRAME_MAX];
 static int g_released;
 static int g_committed;
 static size_t g_commit_len;
@@ -412,6 +414,19 @@ void test_tx_claim_refuses_a_length_no_frame_can_carry(void)
     Phy.tx_claim(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_PHY_IO(work_a)->status);
     TEST_ASSERT_NULL(IDEMIP_PHY_IO(work_a)->tx);
+}
+
+// The other side of the same bound. RFC 894: "thus the maximum length of an IP datagram sent over an
+// Ethernet is 1500 octets. Implementations are encouraged to support full-length packets." The wire
+// length of that datagram is IDEMIP_ETH_FRAME_MAX, which must be admitted.
+void test_tx_claim_admits_a_full_length_frame(void)
+{
+    bind_ok(work_a);
+    IDEMIP_PHY_IO(work_a)->tx_args.len = (size_t)IDEMIP_ETH_FRAME_MAX;
+    Phy.tx_claim(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_PHY_IO(work_a)->status,
+                                  "a full-length RFC 894 frame was refused");
+    TEST_ASSERT_NOT_NULL(IDEMIP_PHY_IO(work_a)->tx);
 }
 
 // A ring with no room is BUSY, because retrying will succeed once a descriptor frees. The service
