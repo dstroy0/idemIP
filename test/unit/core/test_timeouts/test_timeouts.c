@@ -540,9 +540,9 @@ void test_arm_accepts_every_unit_the_enum_names(void)
 {
     clear_ok(work_a);
     unsigned n = (unsigned)IDEMIP_TIMEOUT_UNIT_COUNT - 1u;
-    if (n > (unsigned)(IDEMIP_TIMEOUTS))
+    if (n > (IDEMIP_TIMEOUTS))
     {
-        n = (unsigned)(IDEMIP_TIMEOUTS);
+        n = (IDEMIP_TIMEOUTS);
     }
     for (unsigned u = 1u; u <= n; u++)
     {
@@ -563,7 +563,7 @@ void test_arm_accepts_every_unit_the_enum_names(void)
 void test_a_full_list_is_busy_and_the_retry_succeeds(void)
 {
     clear_ok(work_a);
-    for (unsigned i = 0u; i < (unsigned)(IDEMIP_TIMEOUTS); i++)
+    for (unsigned i = 0u; i < (IDEMIP_TIMEOUTS); i++)
     {
         arm_ok(work_a, IDEMIP_TIMEOUT_UNIT_ARP, (uint8_t)i, (uint32_t)(1000u + i));
     }
@@ -581,7 +581,7 @@ void test_a_full_list_is_busy_and_the_retry_succeeds(void)
 void test_a_full_list_still_rearms_a_pair_it_holds(void)
 {
     clear_ok(work_a);
-    for (unsigned i = 0u; i < (unsigned)(IDEMIP_TIMEOUTS); i++)
+    for (unsigned i = 0u; i < (IDEMIP_TIMEOUTS); i++)
     {
         arm_ok(work_a, IDEMIP_TIMEOUT_UNIT_ARP, (uint8_t)i, (uint32_t)(1000u + i));
     }
@@ -678,12 +678,12 @@ void test_slots_are_reused_across_cancel_and_arm(void)
     clear_ok(work_a);
     for (unsigned round = 0u; round < 4u; round++)
     {
-        for (unsigned i = 0u; i < (unsigned)(IDEMIP_TIMEOUTS); i++)
+        for (unsigned i = 0u; i < (IDEMIP_TIMEOUTS); i++)
         {
             arm_ok(work_a, IDEMIP_TIMEOUT_UNIT_ARP, (uint8_t)i, (uint32_t)(100u + i));
         }
         TEST_ASSERT_EQUAL_UINT8((uint8_t)(IDEMIP_TIMEOUTS), IDEMIP_TIMEOUTS_IO(work_a)->armed);
-        for (unsigned i = 0u; i < (unsigned)(IDEMIP_TIMEOUTS); i++)
+        for (unsigned i = 0u; i < (IDEMIP_TIMEOUTS); i++)
         {
             TEST_ASSERT_EQUAL_INT(IDEMIP_OK, cancel_try(work_a, IDEMIP_TIMEOUT_UNIT_ARP, (uint8_t)i));
         }

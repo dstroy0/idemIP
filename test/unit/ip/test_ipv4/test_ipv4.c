@@ -109,9 +109,11 @@ static void build_figure8(uint8_t *h)
 
 void setUp(void)
 {
+    // Nothing to arrange: every case builds the state it needs.
 }
 void tearDown(void)
 {
+    // Nothing to release: this suite holds no allocation, only file-scope storage.
 }
 
 // --- the field map, RFC 791 sec 3.1 Figure 4 ---------------------------------

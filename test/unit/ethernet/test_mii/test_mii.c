@@ -24,9 +24,11 @@
 
 void setUp(void)
 {
+    // Nothing to arrange: every case builds the state it needs.
 }
 void tearDown(void)
 {
+    // Nothing to release: this suite holds no allocation, only file-scope storage.
 }
 
 // --- register addresses ------------------------------------------------------

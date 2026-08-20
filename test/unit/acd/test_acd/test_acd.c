@@ -433,8 +433,9 @@ static void arp_at(uint8_t *w, uint32_t now)
 static void drive_to(uint8_t *w, IdemIpAcdState want)
 {
     int guard = 4 * (int)(IDEMIP_ACD_PROBE_NUM + IDEMIP_ACD_ANNOUNCE_NUM) + 8;
-    while (IDEMIP_ACD_IO(w)->state != want && guard-- > 0)
+    while (IDEMIP_ACD_IO(w)->state != want && guard > 0)
     {
+        guard--;
         tick_due(w, 0u);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ACD_IO(w)->status);
     }

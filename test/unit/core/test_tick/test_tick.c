@@ -261,7 +261,7 @@ static void bind_tick(uint8_t *w)
 // Runs one phase to exhaustion, capped. False when it kept reporting steps past any real count,
 // which is a phase whose cursor never advances.
 #define TICK_PHASE_STEP_MAX 64
-static idemip_bool run_phase(uint8_t *w, void (*const phase)(uint8_t *restrict work))
+static idemip_bool run_phase(uint8_t *w, void (*const phase)(uint8_t *work))
 {
     for (int i = 0; i < TICK_PHASE_STEP_MAX; i++)
     {
@@ -410,7 +410,7 @@ void test_if_bind_refuses_an_index_past_the_table(void)
 
 // --- the order, which is enforced and not described --------------------------
 
-// PLAN.md sec 3.4b fixes the order because a later phase consumes what an earlier one produced, so a
+// The order is fixed because a later phase consumes what an earlier one produced, so a
 // phase entry called before its turn is refused rather than quietly running early.
 void test_a_phase_entry_before_its_turn_is_refused(void)
 {
@@ -428,6 +428,7 @@ void test_a_phase_entry_after_its_turn_is_refused(void)
     open_tick(work_a, 1000u);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
     TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_SERVICE, IDEMIP_TICK_IO(work_a)->phase);
     Tick.drain(work_a);
@@ -452,15 +453,18 @@ void test_the_three_phases_run_in_order_to_done(void)
     open_tick(work_a, 1000u);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_TICK_IO(work_a)->status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_SERVICE, IDEMIP_TICK_IO(work_a)->phase);
     while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: service runs one unit per call and reports OK while one was due, so the loop runs it dry.
     }
     TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_FLUSH, IDEMIP_TICK_IO(work_a)->phase);
     while (Tick.flush(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: flush posts one deferred transmit per call and reports OK while one went out, so the loop runs it dry.
     }
     TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_DONE, IDEMIP_TICK_IO(work_a)->phase);
 }
@@ -471,12 +475,15 @@ void test_opening_again_starts_the_order_over(void)
     open_tick(work_a, 1000u);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
     while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: service runs one unit per call and reports OK while one was due, so the loop runs it dry.
     }
     while (Tick.flush(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: flush posts one deferred transmit per call and reports OK while one went out, so the loop runs it dry.
     }
     open_tick(work_a, 2000u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_DRAIN, IDEMIP_TICK_IO(work_a)->phase);
@@ -501,6 +508,7 @@ void test_the_service_phase_reports_its_units_in_dependency_order(void)
     open_tick(work_a, 100000u);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
     int last = 0;
     int steps = 0;
@@ -558,6 +566,7 @@ void test_an_expired_deadline_is_reported_with_its_unit(void)
     open_tick(work_a, 1000u);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
     int found = 0;
     while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
@@ -751,6 +760,7 @@ void test_a_completed_datagram_still_holds_its_descriptors(void)
     open_tick(work_a, 1000u);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
     TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(dispatch_mem)->act & IDEMIP_DISPATCH_ACT_REASSEMBLED) != 0u,
                              "the last fragment did not complete the datagram");
@@ -861,6 +871,7 @@ void test_a_completed_ipv6_datagram_still_holds_its_descriptors(void)
     open_tick(work_a, 1000u);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
     TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(dispatch_mem)->act & IDEMIP_DISPATCH_ACT_REASSEMBLED) != 0u,
                              "the last fragment did not complete the datagram");
@@ -993,7 +1004,7 @@ void test_the_drain_reads_a_tagged_frame_behind_its_tag(void)
     open_tick(work_a, 1000u);
     Tick.drain(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
-    DispatchIo *di = IDEMIP_DISPATCH_IO(dispatch_mem);
+    const DispatchIo *di = IDEMIP_DISPATCH_IO(dispatch_mem);
     TEST_ASSERT_TRUE_MESSAGE(di->tagged, "the tag was not seen");
     TEST_ASSERT_EQUAL_UINT16(100u, di->vid);
     TEST_ASSERT_EQUAL_UINT16((uint16_t)IDEMIP_ETHERTYPE_IPV4, di->type);
@@ -1087,9 +1098,11 @@ void test_a_resolved_hold_is_reported_and_unpinned_one_step_later(void)
     open_tick(work_a, 1000u);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
     while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: service runs one unit per call and reports OK while one was due, so the loop runs it dry.
     }
     Tick.flush(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
@@ -1124,6 +1137,7 @@ void test_the_flush_phase_reports_its_units_in_order(void)
     open_tick(work_a, 1000u);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
 
     // Past both fixed bounds, so both rows are reached by one sweep.
@@ -1131,9 +1145,11 @@ void test_the_flush_phase_reports_its_units_in_order(void)
     open_tick(work_a, at);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
     while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: service runs one unit per call and reports OK while one was due, so the loop runs it dry.
     }
     int last = 0;
     int steps = 0;
@@ -1145,11 +1161,11 @@ void test_the_flush_phase_reports_its_units_in_order(void)
         TEST_ASSERT_TRUE_MESSAGE(unit >= last, "a flush step ran out of the fixed order");
         last = unit;
         steps++;
-        if (unit == (int)IDEMIP_TICK_UNIT_IP4_RECLAIM)
+        if (unit == IDEMIP_TICK_UNIT_IP4_RECLAIM)
         {
             saw_ip4++;
         }
-        if (unit == (int)IDEMIP_TICK_UNIT_IP6_DROP)
+        if (unit == IDEMIP_TICK_UNIT_IP6_DROP)
         {
             saw_ip6++;
         }
@@ -1178,11 +1194,13 @@ void test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded(void)
     open_tick(work_a, 1000u);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
 
     open_tick(work_a, 1000u + TICK_REASS_MS);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
     // The sweep reports the source the message goes to and the fragment-zero mark it is gated on.
     int saw_sweep = 0;
@@ -1232,14 +1250,17 @@ void test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded(void)
     open_tick(work_a, 1000u);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
 
     open_tick(work_a, 1000u + (uint32_t)IDEMIP_IP6_REASS_MAXAGE_MS);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
     }
     while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
+        // The condition is the body: service runs one unit per call and reports OK while one was due, so the loop runs it dry.
     }
     int saw = 0;
     while (Tick.flush(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
@@ -1347,11 +1368,17 @@ void test_a_descriptor_from_the_second_interface_goes_back_to_it(void)
     // Run whole ticks until the service phase reports the timed-out hold, then one more step so the
     // deferred unpin lands (tick.h: the descriptor stays pinned until the step after the report).
     idemip_bool reported = IDEMIP_FALSE;
-    for (uint32_t t = 1000u; t <= 1000u + (IDEMIP_ARP_MAXPENDING_S * 2000u) && !reported; t += 1000u)
+    for (uint32_t t = 1000u; t <= 1000u + (IDEMIP_ARP_MAXPENDING_S * 2000u); t += 1000u)
     {
+        if (reported) // the answer is in hand; the counter above only bounds a corrupt list
+        {
+            break;
+        }
+
         open_tick(work_a, t);
         while (Tick.drain(work_a), io->status == IDEMIP_OK)
         {
+            // The condition is the body: drain takes one frame per call and reports OK while it took one, so the loop runs it dry.
         }
         while (Tick.service(work_a), io->status == IDEMIP_OK)
         {
@@ -1363,6 +1390,7 @@ void test_a_descriptor_from_the_second_interface_goes_back_to_it(void)
         }
         while (Tick.flush(work_a), io->status == IDEMIP_OK)
         {
+            // The condition is the body: flush posts one deferred transmit per call and reports OK while one went out, so the loop runs it dry.
         }
     }
     TEST_ASSERT_TRUE_MESSAGE(reported, "the ARP hold was never reported at all");

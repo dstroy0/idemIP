@@ -74,11 +74,11 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/base/test_span\\test_span.c");
-  run_test(test_a_zeroed_span_reads_zero_at_every_length_and_alignment, "test_a_zeroed_span_reads_zero_at_every_length_and_alignment", 75);
-  run_test(test_one_set_octet_anywhere_makes_a_span_not_zero, "test_one_set_octet_anywhere_makes_a_span_not_zero", 88);
-  run_test(test_equality_matches_the_definition_at_every_length_and_alignment, "test_equality_matches_the_definition_at_every_length_and_alignment", 111);
-  run_test(test_an_empty_span_is_zero_and_equal, "test_an_empty_span_is_zero_and_equal", 142);
-  run_test(test_the_address_widths_the_call_sites_use, "test_the_address_widths_the_call_sites_use", 152);
+  run_test(test_a_zeroed_span_reads_zero_at_every_length_and_alignment, "test_a_zeroed_span_reads_zero_at_every_length_and_alignment", 76);
+  run_test(test_one_set_octet_anywhere_makes_a_span_not_zero, "test_one_set_octet_anywhere_makes_a_span_not_zero", 89);
+  run_test(test_equality_matches_the_definition_at_every_length_and_alignment, "test_equality_matches_the_definition_at_every_length_and_alignment", 112);
+  run_test(test_an_empty_span_is_zero_and_equal, "test_an_empty_span_is_zero_and_equal", 143);
+  run_test(test_the_address_widths_the_call_sites_use, "test_the_address_widths_the_call_sites_use", 153);
 
   return UNITY_END();
 }

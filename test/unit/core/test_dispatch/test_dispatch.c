@@ -368,6 +368,22 @@ static size_t build_icmp_echo(uint8_t *f, size_t off, size_t data_len)
     return off + len;
 }
 
+// One RFC 792 error message: the eight-octet header the five error types share, then the "Internet
+// Header + 64 bits of Original Data Datagram" that RFC 1122 sec 3.2.2's demux reads out of it.
+// @p gateway is the Redirect's own field, and is the unused word for the other four.
+static size_t build_icmp_error(uint8_t *f, size_t off, uint8_t type, uint32_t gateway)
+{
+    memset(f + off, 0, IDEMIP_ICMP_ERR_HDR_LEN);
+    f[off + IDEMIP_ICMP_OFF_TYPE] = type;
+    idemip_wr32(f + off + 4u, gateway);
+    const size_t quoted =
+        build_ip4(f, off + IDEMIP_ICMP_OFF_QUOTE, IDEMIP_IP4_PROTO_UDP, LOCAL_IP4, REMOTE_IP4, 8u, 0u);
+    memset(f + quoted, 0, 8u);
+    const size_t len = (quoted + 8u) - off;
+    idemip_wr16(f + off + 2u, idemip_cksum(f + off, len));
+    return off + len;
+}
+
 static size_t build_ip4_echo(uint8_t *f, size_t off, uint32_t src, uint32_t dst)
 {
     size_t ip = off;
@@ -1286,6 +1302,50 @@ void test_an_icmp_echo_counts_itself_by_message_and_by_type(void)
                                      "an Echo was counted as an Echo Reply");
 }
 
+// RFC 2011 gives each Type its own counter, and dispatch counts the type of every message icmp_in
+// accepted. The five RFC 1122 sec 3.2.2 groups as errors reach that count: sec 3.2.2.1 Destination
+// Unreachable, sec 3.2.2.3 Source Quench, sec 3.2.2.2 Redirect, sec 3.2.2.4 Time Exceeded and
+// sec 3.2.2.5 Parameter Problem. Each is counted once, as itself, and as an icmpInMsgs.
+//
+// The Redirect names REMOTE_IP4 as its gateway because sec 3.2.2.2 discards one whose gateway is not
+// "on the same connected (sub-) net through which the Redirect arrived", and that address is.
+void test_each_icmp_error_type_counts_itself_by_type(void)
+{
+    static const struct
+    {
+        uint8_t type;
+        IdemIpStatsCounter id;
+        const char *name;
+    } rows[] = {
+        {(uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_STAT_ICMP4_IN_DEST_UNREACHS, "icmpInDestUnreachs"},
+        {(uint8_t)IDEMIP_ICMP_SOURCE_QUENCH, IDEMIP_STAT_ICMP4_IN_SRC_QUENCHS, "icmpInSrcQuenchs"},
+        {(uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_STAT_ICMP4_IN_REDIRECTS, "icmpInRedirects"},
+        {(uint8_t)IDEMIP_ICMP_TIME_EXCEEDED, IDEMIP_STAT_ICMP4_IN_TIME_EXCDS, "icmpInTimeExcds"},
+        {(uint8_t)IDEMIP_ICMP_PARAMETER_PROBLEM, IDEMIP_STAT_ICMP4_IN_PARM_PROBS, "icmpInParmProbs"},
+    };
+
+    for (size_t r = 0; r < sizeof rows / sizeof rows[0]; r++)
+    {
+        // Each row starts from the state setUp built, so the counts below are this message's alone.
+        wire_units();
+        Dispatch.clear(work_a);
+        bind_all(work_a);
+        if_untagged(work_a, 0u);
+        memset(g_frame, 0, sizeof g_frame);
+
+        size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+        const size_t ip = off;
+        off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, LOCAL_IP4, 0u, 0u);
+        const size_t end = build_icmp_error(g_frame, off, rows[r].type, REMOTE_IP4);
+        idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(end - ip));
+        idemip_ip4_recksum(g_frame + ip);
+        input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP4_IN_MSGS), rows[r].name);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(rows[r].id), rows[r].name);
+    }
+}
+
 // RFC 1213 sec 6.7 icmpOutMsgs is "the total number of ICMP messages which this entity attempted to
 // send" and icmpOutEchoReps is "the number of ICMP Echo Reply messages sent". The Echo Reply this
 // path builds is the one ICMPv4 message the library emits itself, so it is the one whose out
@@ -1388,7 +1448,7 @@ void test_an_icmp_message_too_short_for_its_type_is_an_error(void)
     idemip_ip4_recksum(g_frame + ip);
     input(work_a, off + len, 0u, IDEMIP_DISPATCH_DESC_NONE);
 
-    IcmpInIo *ic = IDEMIP_ICMP_IN_IO(icmp_in_mem);
+    const IcmpInIo *ic = IDEMIP_ICMP_IN_IO(icmp_in_mem);
     TEST_ASSERT_TRUE_MESSAGE(ic->cksum_ok, "this case is about a bad length, so its checksum must hold");
     TEST_ASSERT_TRUE((ic->act & IDEMIP_ICMP_IN_ACT_DISCARD) != 0u);
     TEST_ASSERT_FALSE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
@@ -1535,7 +1595,7 @@ void test_an_echo_request_builds_a_reply(void)
 
     // The unit's own decision, which is what dispatch turned into ACT_SEND. RFC 792: an Echo Reply
     // carries back the Identifier and Sequence Number of the request.
-    IcmpInIo *ic = IDEMIP_ICMP_IN_IO(icmp_in_mem);
+    const IcmpInIo *ic = IDEMIP_ICMP_IN_IO(icmp_in_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ic->status);
     TEST_ASSERT_TRUE(ic->cksum_ok);
     TEST_ASSERT_TRUE((ic->act & IDEMIP_ICMP_IN_ACT_REPLY) != 0u);
@@ -2006,7 +2066,7 @@ void test_an_icmpv6_message_of_unknown_type_is_discarded(void)
 
     // The unit's own decision, which is the flag dispatch read. A checksum that holds is what tells
     // sec 2.4 (b)'s unknown type from a corrupted message, and they take different drop paths.
-    Icmp6InIo *ic = IDEMIP_ICMP6_IN_IO(icmp6_in_mem);
+    const Icmp6InIo *ic = IDEMIP_ICMP6_IN_IO(icmp6_in_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ic->status);
     TEST_ASSERT_TRUE_MESSAGE(ic->cksum_ok, "the sec 2.3 checksum this case built must hold");
     TEST_ASSERT_TRUE((ic->act & IDEMIP_ICMP6_IN_ACT_DISCARD) != 0u);
@@ -2483,6 +2543,51 @@ void test_a_packet_too_big_takes_the_rfc_2466_counter_of_its_own(void)
     TEST_ASSERT_EQUAL_UINT32(0u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS));
 }
 
+// The other two RFC 4443 error types, sec 3.3 Time Exceeded and sec 3.4 Parameter Problem. Each
+// carries an RFC 2466 counter of its own, and each is an ipv6IfIcmpInMsgs as well, that counter
+// including "all those counted by ipv6IfIcmpInErrors" and every other type besides.
+//
+// sec 2.4 (d) has the upper-layer type "extracted from the original packet", so each message quotes
+// a whole datagram this node sent; a quote too short to walk is discarded before the count, which is
+// what the length cases elsewhere in this suite hold.
+void test_the_remaining_icmp6_error_types_take_their_own_counters(void)
+{
+    static const struct
+    {
+        uint8_t type;
+        IdemIpStatsCounter id;
+        const char *name;
+    } rows[] = {
+        {(uint8_t)IDEMIP_ICMP6_TIME_EXCEEDED, IDEMIP_STAT_ICMP6_IN_TIME_EXCDS, "ipv6IfIcmpInTimeExcds"},
+        {(uint8_t)IDEMIP_ICMP6_PARAMETER_PROBLEM, IDEMIP_STAT_ICMP6_IN_PARM_PROBLEMS, "ipv6IfIcmpInParmProblems"},
+    };
+
+    for (size_t r = 0; r < sizeof rows / sizeof rows[0]; r++)
+    {
+        // Each row starts from the state setUp built, so the counts below are this message's alone.
+        wire_units();
+        Dispatch.clear(work_a);
+        bind_all(work_a);
+        if_untagged(work_a, 0u);
+        memset(g_frame, 0, sizeof g_frame);
+
+        const size_t quoted = (size_t)IDEMIP_IPV6_HDR_LEN + (size_t)IDEMIP_UDP_HDR_LEN;
+        const size_t msg_len = (size_t)IDEMIP_ICMP6_ERR_HDR_LEN + quoted;
+        const size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+        const size_t msg = build_icmp6_msg(g_frame, off, rows[r].type, g_remote_ip6, g_local_ip6, msg_len);
+        const size_t q = build_ip6(g_frame, msg + IDEMIP_ICMP6_ERR_HDR_LEN, IDEMIP_IP6_NH_UDP, g_local_ip6,
+                                   g_remote_ip6, IDEMIP_UDP_HDR_LEN);
+        (void)build_udp(g_frame, q, 4000u, 4001u, 0u);
+        seal_icmp6(g_frame, msg, msg_len, g_remote_ip6, g_local_ip6);
+        input(work_a, msg + msg_len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+        TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(rows[r].id), rows[r].name);
+        TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_MSGS));
+        TEST_ASSERT_EQUAL_UINT32(0u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS));
+    }
+}
+
 // RFC 2466 counts one Code as well as its Type. ipv6IfIcmpInAdminProhibs is "the number of ICMP
 // destination unreachable/communication administratively prohibited messages received", RFC 4443
 // sec 3.1's Code 1 - and such a message is a Destination Unreachable, so it is counted in both.
@@ -2587,7 +2692,7 @@ void test_an_icmpv6_message_too_short_for_its_type_is_an_error(void)
     seal_icmp6(g_frame, msg, len, g_remote_ip6, g_local_ip6);
     input(work_a, msg + len, 0u, IDEMIP_DISPATCH_DESC_NONE);
 
-    Icmp6InIo *ic = IDEMIP_ICMP6_IN_IO(icmp6_in_mem);
+    const Icmp6InIo *ic = IDEMIP_ICMP6_IN_IO(icmp6_in_mem);
     TEST_ASSERT_TRUE_MESSAGE(ic->cksum_ok, "this case is about a bad length, so its checksum must hold");
     TEST_ASSERT_TRUE(ic->bad_len);
     TEST_ASSERT_TRUE((ic->act & IDEMIP_ICMP6_IN_ACT_DISCARD) != 0u);
@@ -2837,14 +2942,32 @@ void test_an_nd_option_running_past_the_message_discards_the_packet(void)
 
 // One fragment: an IPv6 header whose Next Header is 44, the eight-octet Fragment header, then this
 // fragment's part of the Fragmentable Part.
-static size_t build_ip6_fragment(uint8_t *f, size_t off, const uint8_t *src, const uint8_t *dst, uint8_t next_hdr,
-                                 uint16_t frag_off, idemip_bool more, uint32_t ident, size_t data_len)
+typedef struct
 {
-    off = build_ip6(f, off, IDEMIP_IP6_NH_FRAGMENT, src, dst, (size_t)IDEMIP_IP6_FRAG_HDR_LEN + data_len);
-    idemip_ip6_frag_build(f + off, next_hdr, frag_off, more, ident);
-    memset(f + off + IDEMIP_IP6_FRAG_HDR_LEN, 0x5C, data_len);
-    return off + IDEMIP_IP6_FRAG_HDR_LEN + data_len;
+    uint8_t *f;
+    size_t off;
+    const uint8_t *src;
+    const uint8_t *dst;
+    uint8_t next_hdr;
+    uint16_t frag_off;
+    idemip_bool more;
+    uint32_t ident;
+    size_t data_len;
+} BuildIp6FragmentArgs;
+
+static size_t build_ip6_fragment_ctx(const BuildIp6FragmentArgs *args)
+{
+    // The operand block is read-only, so where the flat form advanced its own `off` parameter this
+    // walks a local from it.
+    const size_t off =
+        build_ip6(args->f, args->off, IDEMIP_IP6_NH_FRAGMENT, args->src, args->dst,
+                  (size_t)IDEMIP_IP6_FRAG_HDR_LEN + args->data_len);
+    idemip_ip6_frag_build(args->f + off, args->next_hdr, args->frag_off, args->more, args->ident);
+    memset(args->f + off + IDEMIP_IP6_FRAG_HDR_LEN, 0x5C, args->data_len);
+    return off + IDEMIP_IP6_FRAG_HDR_LEN + args->data_len;
 }
+
+#define build_ip6_fragment(...) IDEMIP_CALL(build_ip6_fragment_ctx, BuildIp6FragmentArgs, __VA_ARGS__)
 
 #define FRAG_DESC 3u
 #define FRAG_IDENT 0xA5A50001u
@@ -3131,7 +3254,7 @@ void test_a_segment_with_no_tcb_reaches_the_closed_state(void)
     // no ACK field "the reset has sequence number zero and the ACK field is set to the sum of the
     // sequence number and segment length of the incoming segment", and sec 3.4 counts SEG.LEN
     // "counting SYN and FIN", so a bare SYN at 100 is answered at 101.
-    TcpInIo *ti = IDEMIP_TCP_IN_IO(tcp_in_mem);
+    const TcpInIo *ti = IDEMIP_TCP_IN_IO(tcp_in_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ti->status);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_TCP_SYN, ti->seg.flags);
     TEST_ASSERT_EQUAL_UINT32(100u, ti->seg.seq);
@@ -3221,7 +3344,7 @@ void test_an_ordinary_acknowledgment_is_aggregated_and_not_reported(void)
 
     size_t end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, (uint8_t)(IDEMIP_TCP_ACK | IDEMIP_TCP_PSH), 4u);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
-    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    const DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
     TEST_ASSERT_TRUE((io->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
     TEST_ASSERT_TRUE((io->act & IDEMIP_DISPATCH_ACT_ACK_OWED) != 0u);
     TEST_ASSERT_TRUE_MESSAGE((io->tcp_act & IDEMIP_TCP_IN_ACT_ACK) == 0u,
@@ -3249,7 +3372,7 @@ void test_two_segments_earn_one_acknowledgment(void)
     TEST_ASSERT_EQUAL_UINT32(109u, rcv_nxt);
 
     Dispatch.tcp_ack(work_a);
-    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    const DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
     TEST_ASSERT_EQUAL_UINT16(pcb, io->pcb);
     TEST_ASSERT_EQUAL_UINT32(rcv_nxt, io->reply.ack);
@@ -3281,7 +3404,7 @@ void test_a_segment_ahead_of_the_window_is_held(void)
     // Sequence 105 with RCV.NXT at 101 leaves a four-octet gap in front of it.
     size_t end = build_tcp4(g_frame, 5000u, 5001u, 105u, iss + 1u, IDEMIP_TCP_ACK, 4u);
     input(work_a, end, 0u, 3u);
-    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    const DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
     TEST_ASSERT_TRUE_MESSAGE((io->tcp_act & IDEMIP_TCP_IN_ACT_HOLD) != 0u,
                              "a segment above RCV.NXT was not reported as one to hold");
 
@@ -3336,7 +3459,7 @@ void test_a_held_segment_is_redelivered_once_the_gap_is_filled(void)
 
     IDEMIP_DISPATCH_IO(work_a)->tcp_args.pcb = pcb;
     Dispatch.tcp_deliver(work_a);
-    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    const DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
     TEST_ASSERT_TRUE((io->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
     TEST_ASSERT_EQUAL_UINT32(105u, io->text_seq);
@@ -3415,7 +3538,7 @@ void test_a_challenge_acknowledgment_is_not_aggregated(void)
 
     size_t end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, (uint8_t)(IDEMIP_TCP_SYN | IDEMIP_TCP_ACK), 0u);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
-    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    const DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
     TEST_ASSERT_TRUE_MESSAGE((io->tcp_act & IDEMIP_TCP_IN_ACT_CHALLENGE) != 0u,
                              "RFC 5961 sec 4.2's challenge was not reported for a SYN in the window");
     TEST_ASSERT_TRUE_MESSAGE((io->tcp_act & IDEMIP_TCP_IN_ACT_ACK) != 0u,

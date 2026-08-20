@@ -287,19 +287,32 @@ void test_the_published_flags_fit_one_octet(void)
 #define SWEEP_MS IDEMIP_IP4_ROUTE_PMTU_SWEEP_MS
 #define AGE_MS IDEMIP_IP4_ROUTE_PMTU_TIMEOUT_MS
 
-static uint8_t add_row(uint8_t *w, uint32_t dst, uint32_t mask, uint32_t gw, uint8_t flags, uint8_t netif, uint8_t tos,
-                       uint16_t metric)
+typedef struct
 {
-    IDEMIP_IP4_ROUTE_IO(w)->add_args.dst = dst;
-    IDEMIP_IP4_ROUTE_IO(w)->add_args.mask = mask;
-    IDEMIP_IP4_ROUTE_IO(w)->add_args.gw = gw;
-    IDEMIP_IP4_ROUTE_IO(w)->add_args.flags = flags;
-    IDEMIP_IP4_ROUTE_IO(w)->add_args.netif = netif;
-    IDEMIP_IP4_ROUTE_IO(w)->add_args.tos = tos;
-    IDEMIP_IP4_ROUTE_IO(w)->add_args.metric = metric;
-    Ip4Route.add(w);
-    return IDEMIP_IP4_ROUTE_IO(w)->index;
+    uint8_t *w;
+    uint32_t dst;
+    uint32_t mask;
+    uint32_t gw;
+    uint8_t flags;
+    uint8_t netif;
+    uint8_t tos;
+    uint16_t metric;
+} AddRowArgs;
+
+static uint8_t add_row_ctx(const AddRowArgs *args)
+{
+    IDEMIP_IP4_ROUTE_IO(args->w)->add_args.dst = args->dst;
+    IDEMIP_IP4_ROUTE_IO(args->w)->add_args.mask = args->mask;
+    IDEMIP_IP4_ROUTE_IO(args->w)->add_args.gw = args->gw;
+    IDEMIP_IP4_ROUTE_IO(args->w)->add_args.flags = args->flags;
+    IDEMIP_IP4_ROUTE_IO(args->w)->add_args.netif = args->netif;
+    IDEMIP_IP4_ROUTE_IO(args->w)->add_args.tos = args->tos;
+    IDEMIP_IP4_ROUTE_IO(args->w)->add_args.metric = args->metric;
+    Ip4Route.add(args->w);
+    return IDEMIP_IP4_ROUTE_IO(args->w)->index;
 }
+
+#define add_row(...) IDEMIP_CALL(add_row_ctx, AddRowArgs, __VA_ARGS__)
 
 static uint8_t add_net(uint8_t *w, uint32_t dst, uint32_t mask)
 {

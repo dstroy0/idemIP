@@ -339,20 +339,33 @@ static void load_ok(uint8_t *w, uint16_t index)
 
 // The datagram a find matches: destination address and RFC 768 Destination Port, source address and
 // Source Port, the RFC 3828 Checksum Coverage it arrived with, and the interface it arrived on.
-static void set_datagram(uint8_t *w, uint8_t version, const uint8_t *local_ip, uint16_t local_port,
-                         const uint8_t *remote_ip, uint16_t remote_port, uint16_t cksum_len, uint8_t netif)
+typedef struct
 {
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(w);
-    io->find_args.ip_version = version;
-    io->find_args.local_ip = local_ip;
-    io->find_args.local_port = local_port;
-    io->find_args.remote_ip = remote_ip;
-    io->find_args.remote_port = remote_port;
-    io->find_args.cksum_len = cksum_len;
+    uint8_t *w;
+    uint8_t version;
+    const uint8_t *local_ip;
+    uint16_t local_port;
+    const uint8_t *remote_ip;
+    uint16_t remote_port;
+    uint16_t cksum_len;
+    uint8_t netif;
+} SetDatagramArgs;
+
+static void set_datagram_ctx(const SetDatagramArgs *args)
+{
+    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(args->w);
+    io->find_args.ip_version = args->version;
+    io->find_args.local_ip = args->local_ip;
+    io->find_args.local_port = args->local_port;
+    io->find_args.remote_ip = args->remote_ip;
+    io->find_args.remote_port = args->remote_port;
+    io->find_args.cksum_len = args->cksum_len;
     io->find_args.local_zone = 0u;
     io->find_args.remote_zone = 0u;
-    io->find_args.netif = netif;
+    io->find_args.netif = args->netif;
 }
+
+#define set_datagram(...) IDEMIP_CALL(set_datagram_ctx, SetDatagramArgs, __VA_ARGS__)
 
 // --- open and close ----------------------------------------------------------
 
@@ -396,7 +409,7 @@ void test_open_stamps_the_rfc1112_multicast_ttl_default_of_one(void)
     UdpPcb.clear(work_a);
     uint16_t i = open_binding(work_a, 4u, IDEMIP_TRUE);
     load_ok(work_a, i);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     TEST_ASSERT_EQUAL_UINT8(1u, io->info.mcast_ttl);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_IP_DEFAULT_TTL, io->info.ttl);
     TEST_ASSERT_EQUAL_UINT16(0u, io->info.cksum_len_tx);
@@ -486,7 +499,7 @@ void test_an_entry_that_is_not_open_is_refused(void)
 void test_bind_reports_the_port_it_was_given(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, i, g_local, 69u, 0u, 3u);
     TEST_ASSERT_EQUAL_UINT16(69u, io->port);
@@ -502,7 +515,7 @@ void test_bind_reports_the_port_it_was_given(void)
 void test_bind_of_port_any_settles_in_the_rfc6335_dynamic_range(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, i, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u);
     TEST_ASSERT_GREATER_OR_EQUAL_UINT16((uint16_t)IDEMIP_UDP_PCB_PORT_FIRST, io->port);
@@ -516,7 +529,7 @@ void test_bind_of_port_any_settles_in_the_rfc6335_dynamic_range(void)
 void test_two_binds_of_port_any_settle_on_different_ports(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t a = open_binding(work_a, 4u, IDEMIP_FALSE);
     uint16_t b = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, a, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u);
@@ -535,7 +548,7 @@ void test_two_binds_of_port_any_settle_on_different_ports(void)
 void test_the_ephemeral_draw_follows_the_callers_random_word(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_rand(work_a, i, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u, 0x0F0F0F0Fu);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
@@ -677,7 +690,7 @@ void test_two_versions_do_not_conflict_on_one_port(void)
 void test_connect_sets_the_remote_pair(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, i, g_local, 1024u, 0u, 0u);
     connect_ok(work_a, i, g_remote, 53u);
@@ -885,7 +898,7 @@ void test_set_opts_refuses_a_coverage_on_a_binding_that_is_not_lite(void)
 void test_find_delivers_to_the_only_binding(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, i, g_local, 69u, 0u, 0u);
 
@@ -900,7 +913,7 @@ void test_find_delivers_to_the_only_binding(void)
 void test_find_prefers_a_specific_local_address_over_the_wildcard(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t wild = open_binding(work_a, 4u, IDEMIP_FALSE);
     uint16_t spec = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, wild, g_any, 123u, 0u, 0u);
@@ -923,7 +936,7 @@ void test_find_prefers_a_specific_local_address_over_the_wildcard(void)
 void test_find_prefers_a_connected_binding_over_an_unconnected_one(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t open_pcb = open_binding(work_a, 4u, IDEMIP_FALSE);
     uint16_t conn_pcb = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, conn_pcb, g_local, 500u, 0u, 0u);
@@ -941,7 +954,7 @@ void test_find_prefers_a_connected_binding_over_an_unconnected_one(void)
 void test_find_passes_over_a_connected_binding_whose_remote_pair_differs(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t open_pcb = open_binding(work_a, 4u, IDEMIP_FALSE);
     uint16_t conn_pcb = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, conn_pcb, g_local, 500u, 0u, 0u);
@@ -966,7 +979,7 @@ void test_find_passes_over_a_connected_binding_whose_remote_pair_differs(void)
 void test_find_reports_no_binding_when_the_port_is_unbound(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, i, g_local, 69u, 0u, 0u);
 
@@ -981,7 +994,7 @@ void test_find_reports_no_binding_when_the_port_is_unbound(void)
 void test_find_passes_over_an_open_entry_that_was_never_bound(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     (void)open_binding(work_a, 4u, IDEMIP_FALSE);
 
     set_datagram(work_a, 4u, g_local, IDEMIP_UDP_PCB_PORT_ANY, g_remote, 32000u, 0u, 1u);
@@ -994,7 +1007,7 @@ void test_find_passes_over_an_open_entry_that_was_never_bound(void)
 void test_find_honors_the_interface_a_binding_is_pinned_to(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, i, g_any, 68u, 0u, 2u);
 
@@ -1100,7 +1113,7 @@ void test_find_blocks_a_coverage_under_the_bindings_minimum(void)
 void test_find_keeps_a_partial_coverage_off_a_binding_that_is_not_lite(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, i, g_any, 5008u, 0u, 0u);
 
@@ -1119,7 +1132,7 @@ void test_find_keeps_a_partial_coverage_off_a_binding_that_is_not_lite(void)
 void test_find_compares_four_octets_for_version_4(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, i, g_local_tail, 7u, 0u, 0u);
 
@@ -1140,7 +1153,7 @@ void test_find_compares_four_octets_for_version_4(void)
 void test_find_compares_sixteen_octets_for_version_6(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t i = open_binding(work_a, 6u, IDEMIP_FALSE);
     bind_ok(work_a, i, g_v6_a, 546u, 0u, 0u);
 
@@ -1185,7 +1198,7 @@ void test_find_separates_two_zones_of_one_address(void)
 void test_find_refuses_a_version_the_binding_does_not_carry(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, i, g_any, 5060u, 0u, 0u);
 
@@ -1204,7 +1217,7 @@ void test_find_refuses_a_version_the_binding_does_not_carry(void)
 void test_find_repeats(void)
 {
     UdpPcb.clear(work_a);
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
     bind_ok(work_a, i, g_local, 161u, 0u, 0u);
 

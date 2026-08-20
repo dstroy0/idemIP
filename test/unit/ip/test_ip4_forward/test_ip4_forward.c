@@ -246,7 +246,7 @@ void test_a_routed_datagram_is_forwarded(void)
     args_default(work_a, len);
     Ip4Forward.decide(work_a);
 
-    Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
+    const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_SEND, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_OK, io->reason);
@@ -280,7 +280,7 @@ void test_a_ttl_of_one_expires_with_time_exceeded(void)
     args_default(work_a, len);
     Ip4Forward.decide(work_a);
 
-    Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
+    const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_TTL, io->reason);
@@ -298,7 +298,7 @@ void test_a_ttl_of_zero_is_never_forwarded(void)
     args_default(work_a, len);
     Ip4Forward.decide(work_a);
 
-    Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
+    const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_TTL, io->reason);
     TEST_ASSERT_EQUAL_UINT8(0u, io->ttl);
@@ -315,7 +315,7 @@ void test_a_multicast_destination_gets_no_time_exceeded(void)
     args_default(work_a, len);
     Ip4Forward.decide(work_a);
 
-    Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
+    const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_TTL, io->reason);
     TEST_ASSERT_FALSE(io->icmp);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP4_FORWARD_ICMP_NONE, io->icmp_type);
@@ -332,7 +332,7 @@ void test_no_route_answers_network_unreachable(void)
     IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.routed = IDEMIP_FALSE;
     Ip4Forward.decide(work_a);
 
-    Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
+    const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_NO_ROUTE, io->reason);
@@ -353,7 +353,7 @@ void test_oversize_with_df_answers_fragmentation_needed_and_the_next_hop_mtu(voi
     IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_mtu = 1280u;
     Ip4Forward.decide(work_a);
 
-    Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
+    const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_DF, io->reason);
     TEST_ASSERT_TRUE(io->icmp);
@@ -373,7 +373,7 @@ void test_oversize_without_df_asks_for_fragmentation(void)
     IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_mtu = 1280u;
     Ip4Forward.decide(work_a);
 
-    Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
+    const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_SEND, io->action);
     TEST_ASSERT_TRUE(io->fragment);
     TEST_ASSERT_FALSE(io->icmp);
@@ -404,7 +404,7 @@ void test_a_wrong_version_is_silently_discarded(void)
     args_default(work_a, len);
     Ip4Forward.decide(work_a);
 
-    Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
+    const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_HEADER, io->reason);
@@ -446,7 +446,7 @@ void test_a_link_layer_broadcast_is_not_forwarded(void)
     IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.ll_broadcast = IDEMIP_TRUE;
     Ip4Forward.decide(work_a);
 
-    Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
+    const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_LINK_BCAST, io->reason);
     TEST_ASSERT_FALSE(io->icmp);
@@ -584,7 +584,7 @@ void test_the_limited_broadcast_is_not_forwarded(void)
     args_default(work_a, len);
     Ip4Forward.decide(work_a);
 
-    Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
+    const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_LIMITED, io->reason);
     TEST_ASSERT_FALSE(io->icmp);
@@ -625,7 +625,7 @@ void test_the_directed_broadcast_switch_stops_it(void)
     a->out_mask = MASK24;
     Ip4Forward.decide(work_a);
 
-    Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
+    const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_DIRECTED, io->reason);
     TEST_ASSERT_FALSE(io->icmp);
@@ -905,7 +905,7 @@ void test_a_strict_source_route_answers_parameter_problem(void)
     args_default(work_a, len);
     Ip4Forward.decide(work_a);
 
-    Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
+    const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_STRICT, io->reason);
     TEST_ASSERT_TRUE(io->icmp);
@@ -949,7 +949,7 @@ void test_a_redirect_is_owed_when_the_next_hop_shares_the_source_subnet(void)
     a->next_hop = TEST_NET_1_GW;
     Ip4Forward.decide(work_a);
 
-    Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
+    const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_SEND, io->action);
     TEST_ASSERT_TRUE(io->redirect);
     TEST_ASSERT_EQUAL_HEX32(TEST_NET_1_GW, io->redirect_gw);

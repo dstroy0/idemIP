@@ -511,12 +511,14 @@ void test_the_delay_holds_the_first_solicitation_back(void)
 {
     bind_cfg(work_a, &g_cfg_one);
     start_at(work_a, g_global, 0u, IDEMIP_TRUE, IDEMIP_FALSE, 1000u, 0xFFFFu);
+    // The deadline is a 64-bit stamp; tick takes the 32-bit clock the API is stated in, and this
+    // one was computed from a 32-bit now_ms, so the narrowing is exact and is spelled out.
     IdemIpMs due = IO(work_a)->deadline;
     TEST_ASSERT_TRUE(due > 0u);
-    tick_at(work_a, due - 1u);
+    tick_at(work_a, (uint32_t)(due - 1u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
     TEST_ASSERT_FALSE(IO(work_a)->send_ns);
-    tick_at(work_a, due);
+    tick_at(work_a, (uint32_t)due);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_TRUE(IO(work_a)->send_ns);
 }

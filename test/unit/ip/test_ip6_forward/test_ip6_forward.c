@@ -243,7 +243,7 @@ void test_a_routed_packet_is_forwarded(void)
     args_default(work_a, len);
     Ip6Forward.decide(work_a);
 
-    Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
+    const Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_SEND, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_R_OK, io->reason);
@@ -276,7 +276,7 @@ void test_a_hop_limit_of_one_expires_with_time_exceeded(void)
     args_default(work_a, len);
     Ip6Forward.decide(work_a);
 
-    Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
+    const Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_DISCARD, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_R_HOP_LIMIT, io->reason);
@@ -295,7 +295,7 @@ void test_a_hop_limit_of_zero_expires_too(void)
     args_default(work_a, len);
     Ip6Forward.decide(work_a);
 
-    Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
+    const Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_R_HOP_LIMIT, io->reason);
     TEST_ASSERT_EQUAL_UINT8(0u, io->hop_limit);
     TEST_ASSERT_TRUE(io->icmp);
@@ -310,7 +310,7 @@ void test_no_route_answers_destination_unreachable_code_zero(void)
     IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.routed = IDEMIP_FALSE;
     Ip6Forward.decide(work_a);
 
-    Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
+    const Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_DISCARD, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_R_NO_ROUTE, io->reason);
@@ -333,7 +333,7 @@ void test_a_packet_larger_than_the_link_answers_packet_too_big(void)
     IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.out_mtu = (uint16_t)IDEMIP_IPV6_MIN_MTU;
     Ip6Forward.decide(work_a);
 
-    Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
+    const Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_DISCARD, io->action);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_R_TOO_BIG, io->reason);
     TEST_ASSERT_TRUE(io->icmp);
@@ -367,7 +367,7 @@ void test_packet_too_big_is_sent_even_to_a_multicast_destination(void)
     IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.ll_multicast = IDEMIP_TRUE;
     Ip6Forward.decide(work_a);
 
-    Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
+    const Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_R_TOO_BIG, io->reason);
     TEST_ASSERT_TRUE(io->icmp);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_ICMP6_PACKET_TOO_BIG, io->icmp_type);
@@ -381,7 +381,7 @@ void test_a_multicast_destination_gets_no_time_exceeded(void)
     args_default(work_a, len);
     Ip6Forward.decide(work_a);
 
-    Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
+    const Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_R_HOP_LIMIT, io->reason);
     TEST_ASSERT_FALSE(io->icmp);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP6_FORWARD_ICMP_NONE, io->icmp_type);
@@ -666,7 +666,7 @@ void test_a_redirect_is_owed_when_the_source_is_a_neighbor_on_the_same_link(void
     a->next_hop = LINK_LOCAL_B;
     Ip6Forward.decide(work_a);
 
-    Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
+    const Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_SEND, io->action);
     TEST_ASSERT_TRUE(io->redirect);
     TEST_ASSERT_EQUAL_PTR(LINK_LOCAL_B, io->redirect_target);
@@ -686,7 +686,7 @@ void test_no_redirect_to_a_next_hop_that_is_not_link_local(void)
     a->next_hop = DOC_ROUTER; // a second router on the link, named by its global address
     Ip6Forward.decide(work_a);
 
-    Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
+    const Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_SEND, io->action);
     TEST_ASSERT_FALSE_MESSAGE(io->redirect, "a redirect named a global-scope router address");
 }
@@ -705,7 +705,7 @@ void test_a_redirect_to_the_destination_itself_is_owed(void)
     a->next_hop = DOC_HOST_B; // the destination is on-link, so the next hop is the destination
     Ip6Forward.decide(work_a);
 
-    Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
+    const Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_SEND, io->action);
     TEST_ASSERT_TRUE(io->redirect);
     TEST_ASSERT_EQUAL_PTR(DOC_HOST_B, io->redirect_target);

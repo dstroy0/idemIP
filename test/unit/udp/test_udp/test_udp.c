@@ -71,6 +71,7 @@ void setUp(void)
 
 void tearDown(void)
 {
+    // Nothing to release: this suite holds no allocation, only file-scope storage.
 }
 
 // --- the field map -----------------------------------------------------------

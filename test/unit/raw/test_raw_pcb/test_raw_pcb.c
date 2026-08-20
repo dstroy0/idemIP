@@ -360,19 +360,32 @@ static IdemIpStatus do_load(uint8_t *w, uint16_t idx)
 }
 
 // The RFC 1122 sec 3.4 RECV parameters of one received datagram: dst, src, prot, and the interface.
-static IdemIpStatus do_find(uint8_t *w, uint8_t proto, uint8_t ver, const uint8_t *dst, const uint8_t *src,
-                            uint8_t lzone, uint8_t rzone, uint8_t nif)
+typedef struct
 {
-    IDEMIP_RAW_PCB_IO(w)->find_args.proto = proto;
-    IDEMIP_RAW_PCB_IO(w)->find_args.ip_version = ver;
-    IDEMIP_RAW_PCB_IO(w)->find_args.local_ip = dst;
-    IDEMIP_RAW_PCB_IO(w)->find_args.remote_ip = src;
-    IDEMIP_RAW_PCB_IO(w)->find_args.local_zone = lzone;
-    IDEMIP_RAW_PCB_IO(w)->find_args.remote_zone = rzone;
-    IDEMIP_RAW_PCB_IO(w)->find_args.netif = nif;
-    RawPcb.find(w);
-    return IDEMIP_RAW_PCB_IO(w)->status;
+    uint8_t *w;
+    uint8_t proto;
+    uint8_t ver;
+    const uint8_t *dst;
+    const uint8_t *src;
+    uint8_t lzone;
+    uint8_t rzone;
+    uint8_t nif;
+} DoFindArgs;
+
+static IdemIpStatus do_find_ctx(const DoFindArgs *args)
+{
+    IDEMIP_RAW_PCB_IO(args->w)->find_args.proto = args->proto;
+    IDEMIP_RAW_PCB_IO(args->w)->find_args.ip_version = args->ver;
+    IDEMIP_RAW_PCB_IO(args->w)->find_args.local_ip = args->dst;
+    IDEMIP_RAW_PCB_IO(args->w)->find_args.remote_ip = args->src;
+    IDEMIP_RAW_PCB_IO(args->w)->find_args.local_zone = args->lzone;
+    IDEMIP_RAW_PCB_IO(args->w)->find_args.remote_zone = args->rzone;
+    IDEMIP_RAW_PCB_IO(args->w)->find_args.netif = args->nif;
+    RawPcb.find(args->w);
+    return IDEMIP_RAW_PCB_IO(args->w)->status;
 }
+
+#define do_find(...) IDEMIP_CALL(do_find_ctx, DoFindArgs, __VA_ARGS__)
 
 // A v4 datagram addressed to this host from its peer, on no particular interface.
 static IdemIpStatus find4(uint8_t *w, uint8_t proto, const uint8_t *dst, const uint8_t *src)

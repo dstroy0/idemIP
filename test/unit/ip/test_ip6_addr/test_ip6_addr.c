@@ -23,16 +23,30 @@
 #include <unity.h>
 
 // Eight 16-bit pieces, the "preferred form" of RFC 4291 sec 2.2.
-static void a6(uint8_t *out, uint16_t g0, uint16_t g1, uint16_t g2, uint16_t g3, uint16_t g4, uint16_t g5, uint16_t g6,
-               uint16_t g7)
+typedef struct
 {
-    const uint16_t g[8] = {g0, g1, g2, g3, g4, g5, g6, g7};
+    uint8_t *out;
+    uint16_t g0;
+    uint16_t g1;
+    uint16_t g2;
+    uint16_t g3;
+    uint16_t g4;
+    uint16_t g5;
+    uint16_t g6;
+    uint16_t g7;
+} A6Args;
+
+static void a6_ctx(const A6Args *args)
+{
+    const uint16_t g[8] = {args->g0, args->g1, args->g2, args->g3, args->g4, args->g5, args->g6, args->g7};
     for (int i = 0; i < 8; i++)
     {
-        out[i * 2] = (uint8_t)(g[i] >> 8);
-        out[i * 2 + 1] = (uint8_t)(g[i] & 0xFFu);
+        args->out[i * 2] = (uint8_t)(g[i] >> 8);
+        args->out[i * 2 + 1] = (uint8_t)(g[i] & 0xFFu);
     }
 }
+
+#define a6(...) IDEMIP_CALL(a6_ctx, A6Args, __VA_ARGS__)
 
 static uint8_t addr_a[IDEMIP_IP6_ADDR_LEN];
 static uint8_t addr_b[IDEMIP_IP6_ADDR_LEN];

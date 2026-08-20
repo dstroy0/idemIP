@@ -423,12 +423,12 @@ static uint32_t if_read_ctr(uint8_t *w, uint8_t netif, IdemIpStatsIfCounter id)
 
 static int group_is_gauge(int id)
 {
-    return id == (int)GROUP_GAUGE;
+    return id == GROUP_GAUGE;
 }
 
 static int if_is_gauge(int id)
 {
-    return id == (int)IDEMIP_STAT_IF_SPEED || id == (int)IDEMIP_STAT_IF_OUT_QLEN;
+    return id == IDEMIP_STAT_IF_SPEED || id == IDEMIP_STAT_IF_OUT_QLEN;
 }
 
 // --- the group Counters ------------------------------------------------------
@@ -545,7 +545,7 @@ void test_a_wrap_carries_the_remainder_and_keeps_counting(void)
 void test_every_group_counter_wraps_at_the_ceiling(void)
 {
     Stats.clear(work_a);
-    for (int id = 0; id < (int)IDEMIP_STAT_COUNT; id++)
+    for (int id = 0; id < IDEMIP_STAT_COUNT; id++)
     {
         if (group_is_gauge(id))
         {
@@ -682,7 +682,7 @@ void test_set_refuses_a_group_counter(void)
 void test_bump_and_set_split_the_group_ids_by_syntax(void)
 {
     Stats.clear(work_a);
-    for (int id = 0; id < (int)IDEMIP_STAT_COUNT; id++)
+    for (int id = 0; id < IDEMIP_STAT_COUNT; id++)
     {
         bump_by(work_a, (IdemIpStatsCounter)id, 1u);
         IdemIpStatus bumped = IDEMIP_STATS_IO(work_a)->status;
@@ -707,7 +707,7 @@ void test_bump_and_set_split_the_group_ids_by_syntax(void)
 void test_if_bump_and_if_set_split_the_interface_ids_by_syntax(void)
 {
     Stats.clear(work_a);
-    for (int id = 0; id < (int)IDEMIP_STAT_IF_COUNT; id++)
+    for (int id = 0; id < IDEMIP_STAT_IF_COUNT; id++)
     {
         if_bump_by(work_a, 0u, (IdemIpStatsIfCounter)id, 1u);
         IdemIpStatus bumped = IDEMIP_STATS_IO(work_a)->status;
@@ -734,7 +734,7 @@ void test_if_bump_and_if_set_split_the_interface_ids_by_syntax(void)
 void test_every_group_object_is_its_own_cell(void)
 {
     Stats.clear(work_a);
-    for (int id = 0; id < (int)IDEMIP_STAT_COUNT; id++)
+    for (int id = 0; id < IDEMIP_STAT_COUNT; id++)
     {
         uint32_t v = 0x01000000u + (uint32_t)id;
         if (group_is_gauge(id))
@@ -747,7 +747,7 @@ void test_every_group_object_is_its_own_cell(void)
         }
         TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_STATS_IO(work_a)->status, "an id the map carries was refused");
     }
-    for (int id = 0; id < (int)IDEMIP_STAT_COUNT; id++)
+    for (int id = 0; id < IDEMIP_STAT_COUNT; id++)
     {
         TEST_ASSERT_EQUAL_HEX32_MESSAGE(0x01000000u + (uint32_t)id, read_ctr(work_a, (IdemIpStatsCounter)id),
                                         "a group object aliased another");
@@ -759,7 +759,7 @@ void test_every_interface_object_is_its_own_cell(void)
     Stats.clear(work_a);
     for (uint8_t netif = 0u; netif < (uint8_t)IDEMIP_NETIF_COUNT; netif++)
     {
-        for (int id = 0; id < (int)IDEMIP_STAT_IF_COUNT; id++)
+        for (int id = 0; id < IDEMIP_STAT_IF_COUNT; id++)
         {
             uint32_t v = 0x02000000u + ((uint32_t)netif << 8) + (uint32_t)id;
             if (if_is_gauge(id))
@@ -776,7 +776,7 @@ void test_every_interface_object_is_its_own_cell(void)
     }
     for (uint8_t netif = 0u; netif < (uint8_t)IDEMIP_NETIF_COUNT; netif++)
     {
-        for (int id = 0; id < (int)IDEMIP_STAT_IF_COUNT; id++)
+        for (int id = 0; id < IDEMIP_STAT_IF_COUNT; id++)
         {
             TEST_ASSERT_EQUAL_HEX32_MESSAGE(0x02000000u + ((uint32_t)netif << 8) + (uint32_t)id,
                                             if_read_ctr(work_a, netif, (IdemIpStatsIfCounter)id),
@@ -848,7 +848,7 @@ static uint32_t raw_ctr(const uint8_t *w, size_t off)
 void test_a_group_object_lands_at_its_published_offset(void)
 {
     Stats.clear(work_a);
-    for (int id = 0; id < (int)IDEMIP_STAT_COUNT; id++)
+    for (int id = 0; id < IDEMIP_STAT_COUNT; id++)
     {
         uint32_t v = 0x11000000u + (uint32_t)id;
         if (group_is_gauge(id))
@@ -860,9 +860,9 @@ void test_a_group_object_lands_at_its_published_offset(void)
             bump_by(work_a, (IdemIpStatsCounter)id, v);
         }
     }
-    for (int id = 0; id < (int)IDEMIP_STAT_COUNT; id++)
+    for (int id = 0; id < IDEMIP_STAT_COUNT; id++)
     {
-        size_t off = (size_t)IDEMIP_STATS_OFF_CTR + ((size_t)id << IDEMIP_STATS_CTR_SHIFT);
+        size_t off = IDEMIP_STATS_OFF_CTR + ((size_t)id << IDEMIP_STATS_CTR_SHIFT);
         TEST_ASSERT_EQUAL_HEX32_MESSAGE(0x11000000u + (uint32_t)id, raw_ctr(work_a, off),
                                         "a group object is not at its published offset");
     }
@@ -875,7 +875,7 @@ void test_ip_in_receives_is_the_first_four_octets_of_the_block(void)
     Stats.clear(work_a);
     bump_by(work_a, IDEMIP_STAT_IP4_IN_RECEIVES, 0x0000002Au);
     TEST_ASSERT_EQUAL_HEX32(0x0000002Au, raw_ctr(work_a, IDEMIP_STATS_OFF_CTR));
-    TEST_ASSERT_EQUAL_HEX32(0u, raw_ctr(work_a, (size_t)IDEMIP_STATS_OFF_CTR + sizeof(uint32_t)));
+    TEST_ASSERT_EQUAL_HEX32(0u, raw_ctr(work_a, IDEMIP_STATS_OFF_CTR + sizeof(uint32_t)));
 
     // ipInHdrErrors ::= { ip 4 } is the next four, and counting it does not move ipInReceives.
     bump_by(work_a, IDEMIP_STAT_IP4_IN_HDR_ERRORS, 0x0000000Bu);
@@ -890,7 +890,7 @@ void test_an_interface_object_lands_at_its_published_offset(void)
     Stats.clear(work_a);
     for (uint8_t netif = 0u; netif < (uint8_t)IDEMIP_NETIF_COUNT; netif++)
     {
-        for (int id = 0; id < (int)IDEMIP_STAT_IF_COUNT; id++)
+        for (int id = 0; id < IDEMIP_STAT_IF_COUNT; id++)
         {
             uint32_t v = 0x22000000u + ((uint32_t)netif << 8) + (uint32_t)id;
             if (if_is_gauge(id))
@@ -905,7 +905,7 @@ void test_an_interface_object_lands_at_its_published_offset(void)
     }
     for (uint8_t netif = 0u; netif < (uint8_t)IDEMIP_NETIF_COUNT; netif++)
     {
-        for (int id = 0; id < (int)IDEMIP_STAT_IF_COUNT; id++)
+        for (int id = 0; id < IDEMIP_STAT_IF_COUNT; id++)
         {
             size_t off = (size_t)IDEMIP_STATS_OFF_IF + ((size_t)netif << IDEMIP_STATS_IF_ENTRY_SHIFT) +
                          ((size_t)id << IDEMIP_STATS_CTR_SHIFT);
@@ -925,7 +925,7 @@ void test_counting_never_reaches_the_context(void)
     TEST_ASSERT_NOT_EQUAL_UINT32(0u, magic);
 
     // The last group object and the last object of the last interface row, both at the ceiling.
-    bump_by(work_a, (IdemIpStatsCounter)((int)IDEMIP_STAT_COUNT - 1), RFC1155_MAX);
+    bump_by(work_a, (IdemIpStatsCounter)(IDEMIP_STAT_COUNT - 1), RFC1155_MAX);
     if_set_to(work_a, (uint8_t)((int)IDEMIP_NETIF_COUNT - 1), IDEMIP_STAT_IF_OUT_QLEN, RFC1155_MAX);
     TEST_ASSERT_EQUAL_HEX32_MESSAGE(magic, raw_ctr(work_a, IDEMIP_STATS_OFF_CTX), "a count reached the context");
 
@@ -970,7 +970,7 @@ void test_the_ip_group_ids_follow_the_rfc_1213_oid_order(void)
 // tcpInErrs ::= { tcp 14 } and tcpOutRsts ::= { tcp 15 } after the tcpConnTable.
 void test_the_tcp_group_ids_follow_the_rfc_1213_oid_order(void)
 {
-    const int base = (int)IDEMIP_STAT_TCP_ACTIVE_OPENS;
+    const int base = IDEMIP_STAT_TCP_ACTIVE_OPENS;
     TEST_ASSERT_EQUAL_INT(base + (5 - 5), IDEMIP_STAT_TCP_ACTIVE_OPENS);  // { tcp 5 }
     TEST_ASSERT_EQUAL_INT(base + (6 - 5), IDEMIP_STAT_TCP_PASSIVE_OPENS); // { tcp 6 }
     TEST_ASSERT_EQUAL_INT(base + (7 - 5), IDEMIP_STAT_TCP_ATTEMPT_FAILS); // { tcp 7 }
@@ -1054,7 +1054,7 @@ void test_an_id_far_past_the_count_is_refused(void)
     Stats.clear(work_a);
     bump_by(work_a, IDEMIP_STAT_IP4_IN_RECEIVES, 5u);
 
-    for (int bad = (int)IDEMIP_STAT_COUNT; bad <= 255; bad++)
+    for (int bad = IDEMIP_STAT_COUNT; bad <= 255; bad++)
     {
         bump_by(work_a, (IdemIpStatsCounter)bad, 1u);
         TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_STATS_IO(work_a)->status, "a bump past the count was accepted");
@@ -1073,7 +1073,7 @@ void test_an_interface_id_far_past_the_count_is_refused(void)
     Stats.clear(work_a);
     if_bump_by(work_a, 0u, IDEMIP_STAT_IF_IN_OCTETS, 5u);
 
-    for (int bad = (int)IDEMIP_STAT_IF_COUNT; bad <= 255; bad++)
+    for (int bad = IDEMIP_STAT_IF_COUNT; bad <= 255; bad++)
     {
         if_bump_by(work_a, 0u, (IdemIpStatsIfCounter)bad, 1u);
         TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_STATS_IO(work_a)->status,
@@ -1110,7 +1110,7 @@ void test_no_entry_ever_reports_busy(void)
     Stats.clear(work_a);
     TEST_ASSERT_NOT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_STATS_IO(work_a)->status);
 
-    for (int id = 0; id < (int)IDEMIP_STAT_COUNT + 8; id++)
+    for (int id = 0; id < IDEMIP_STAT_COUNT + 8; id++)
     {
         bump_by(work_a, (IdemIpStatsCounter)id, 1u);
         TEST_ASSERT_NOT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_STATS_IO(work_a)->status, "bump reported BUSY");
@@ -1122,7 +1122,7 @@ void test_no_entry_ever_reports_busy(void)
     }
     for (int netif = 0; netif < (int)IDEMIP_NETIF_COUNT + 2; netif++)
     {
-        for (int id = 0; id < (int)IDEMIP_STAT_IF_COUNT + 2; id++)
+        for (int id = 0; id < IDEMIP_STAT_IF_COUNT + 2; id++)
         {
             if_bump_by(work_a, (uint8_t)netif, (IdemIpStatsIfCounter)id, 1u);
             TEST_ASSERT_NOT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_STATS_IO(work_a)->status, "if_bump reported BUSY");

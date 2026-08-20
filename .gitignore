@@ -19,3 +19,6 @@ __pycache__/
 
 # ctest scratch, written into the working directory by a bare `ctest` run outside a build tree.
 Testing/
+
+# The bench build directory, which test/bench/README.md names. Measurement output, not the tree.
+build-bench/

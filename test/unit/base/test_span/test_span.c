@@ -41,6 +41,7 @@ void setUp(void)
 
 void tearDown(void)
 {
+    // Nothing to release: this suite holds no allocation, only file-scope storage.
 }
 
 // The definition each helper is meant to compute, written out on its own terms so nothing is shared

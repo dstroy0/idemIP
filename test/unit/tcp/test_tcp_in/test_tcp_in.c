@@ -114,33 +114,46 @@ static void seg(uint8_t *w, uint32_t s, uint32_t a, uint32_t len, uint16_t data,
 // A segment on the wire, its checksum over the RFC 9293 sec 3.1 pseudo-header, in the caller's bytes.
 static uint8_t g_wire[128];
 
-static uint16_t wire(uint32_t s, uint32_t a, uint8_t flags, uint16_t win, const uint8_t *opts, uint16_t opts_len,
-                     const uint8_t *data, uint16_t data_len)
+typedef struct
+{
+    uint32_t s;
+    uint32_t a;
+    uint8_t flags;
+    uint16_t win;
+    const uint8_t *opts;
+    uint16_t opts_len;
+    const uint8_t *data;
+    uint16_t data_len;
+} WireArgs;
+
+static uint16_t wire_ctx(const WireArgs *args)
 {
     memset(g_wire, 0, sizeof g_wire);
-    uint16_t hdr = (uint16_t)(IDEMIP_TCP_HDR_LEN + opts_len);
+    uint16_t hdr = (uint16_t)(IDEMIP_TCP_HDR_LEN + args->opts_len);
     idemip_wr16(g_wire + IDEMIP_TCP_OFF_SRC_PORT, 40000u);
     idemip_wr16(g_wire + IDEMIP_TCP_OFF_DST_PORT, 80u);
-    idemip_wr32(g_wire + IDEMIP_TCP_OFF_SEQ, s);
-    idemip_wr32(g_wire + IDEMIP_TCP_OFF_ACK, a);
+    idemip_wr32(g_wire + IDEMIP_TCP_OFF_SEQ, args->s);
+    idemip_wr32(g_wire + IDEMIP_TCP_OFF_ACK, args->a);
     idemip_wr16(g_wire + IDEMIP_TCP_OFF_OFFS_FLAGS,
-                (uint16_t)(((uint16_t)IDEMIP_TCP_DOFF_FROM_BYTES(hdr) << IDEMIP_TCP_DOFF_SHIFT) | flags));
-    idemip_wr16(g_wire + IDEMIP_TCP_OFF_WINDOW, win);
+                (uint16_t)(((uint16_t)IDEMIP_TCP_DOFF_FROM_BYTES(hdr) << IDEMIP_TCP_DOFF_SHIFT) | args->flags));
+    idemip_wr16(g_wire + IDEMIP_TCP_OFF_WINDOW, args->win);
     idemip_wr16(g_wire + IDEMIP_TCP_OFF_CKSUM, 0u);
     idemip_wr16(g_wire + IDEMIP_TCP_OFF_URGENT, 0u);
-    if (opts_len != 0)
+    if (args->opts_len != 0)
     {
-        memcpy(g_wire + IDEMIP_TCP_OFF_OPTIONS, opts, opts_len);
+        memcpy(g_wire + IDEMIP_TCP_OFF_OPTIONS, args->opts, args->opts_len);
     }
-    if (data_len != 0)
+    if (args->data_len != 0)
     {
-        memcpy(g_wire + hdr, data, data_len);
+        memcpy(g_wire + hdr, args->data, args->data_len);
     }
-    uint16_t total = (uint16_t)(hdr + data_len);
+    uint16_t total = (uint16_t)(hdr + args->data_len);
     idemip_wr16(g_wire + IDEMIP_TCP_OFF_CKSUM,
                 idemip_tcp_cksum_compute(g_wire, total, idemip_rd32(g_remote), idemip_rd32(g_local)));
     return total;
 }
+
+#define wire(...) IDEMIP_CALL(wire_ctx, WireArgs, __VA_ARGS__)
 
 static void aim_parse(uint8_t *w, uint16_t total, uint8_t scale)
 {
@@ -1719,7 +1732,7 @@ void test_segment_refuses_the_three_states_the_other_sections_hold(void)
     TcpIn.segment(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
 
-    IO(work_a)->state = (IdemIpTcpState)((int)IDEMIP_TCP_STATE_TIME_WAIT + 1);
+    IO(work_a)->state = (IdemIpTcpState)(IDEMIP_TCP_STATE_TIME_WAIT + 1);
     TcpIn.segment(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
 }

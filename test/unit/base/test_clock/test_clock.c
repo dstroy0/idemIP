@@ -13,9 +13,11 @@
 // call once it has: it is checked by compiling against the header with the macro either way.
 //
 // test/ is exempt from the src/ style rules, so this reads as plain host C.
-
-#undef IDEMIP_ENABLE_TIME_DETERMINISM
-#define IDEMIP_ENABLE_TIME_DETERMINISM 1
+//
+// IDEMIP_ENABLE_TIME_DETERMINISM arrives as 1 for this suite whatever the build selected, and it
+// arrives from test/CMakeLists.txt rather than from a #undef here: the value is a PUBLIC definition
+// of the idemip target, so undefining it in the source would be a source file reaching around the
+// build system for a value the build system owns.
 
 #include "src/common.h"
 
@@ -29,7 +31,10 @@ void setUp(void)
     memset(&c, 0, sizeof c);
 }
 
-void tearDown(void) {}
+void tearDown(void)
+{
+    // Nothing to release: this suite holds no allocation, only file-scope storage.
+}
 
 // --- the epoch -------------------------------------------------------------
 
@@ -351,9 +356,16 @@ void test_the_pad_converges_and_stays(void)
     uint32_t w = 3u;
     for (unsigned i = 0; i < 200u; i++)
     {
-        const IdemIpClockPad state = (idemip_determinism_pad_ticks(w) < cost)   ? IDEMIP_CLOCK_PAD_OVER
-                                     : (idemip_determinism_pad_ticks(w) > cost) ? IDEMIP_CLOCK_PAD_EARLY
-                                                                                : IDEMIP_CLOCK_PAD_MET;
+        const uint32_t ticks = idemip_determinism_pad_ticks(w);
+        IdemIpClockPad state = IDEMIP_CLOCK_PAD_MET;
+        if (ticks < cost)
+        {
+            state = IDEMIP_CLOCK_PAD_OVER;
+        }
+        else if (ticks > cost)
+        {
+            state = IDEMIP_CLOCK_PAD_EARLY;
+        }
         w = idemip_determinism_tune(w, state, 1u, 100u);
     }
 #if IDEMIP_TIME_DETERMINISM_GRADE == IDEMIP_DETERMINISM_LITERAL

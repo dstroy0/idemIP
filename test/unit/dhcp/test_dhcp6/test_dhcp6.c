@@ -398,40 +398,53 @@ static void msg_status(uint16_t code)
 
 // RFC 8415 sec 21.4, Figure 15, with the sec 21.6 Figure 17 IA Address inside it when @p addr is
 // given, and an optional IA_NA-options Status Code when @p status is not Success.
-static void msg_ia_na(uint32_t iaid, uint32_t t1, uint32_t t2, const uint8_t *addr, uint32_t preferred,
-                      uint32_t valid, int with_status, uint16_t status)
+typedef struct
+{
+    uint32_t iaid;
+    uint32_t t1;
+    uint32_t t2;
+    const uint8_t *addr;
+    uint32_t preferred;
+    uint32_t valid;
+    int with_status;
+    uint16_t status;
+} MsgIaNaArgs;
+
+static void msg_ia_na_ctx(const MsgIaNaArgs *args)
 {
     uint16_t body = IDEMIP_DHCP6_IA_NA_FIXED_LEN;
-    if (addr != NULL)
+    if (args->addr != NULL)
     {
         body = (uint16_t)(body + IDEMIP_DHCP6_OPT_HDR_LEN + IDEMIP_DHCP6_IAADDR_FIXED_LEN);
     }
-    if (with_status)
+    if (args->with_status)
     {
         body = (uint16_t)(body + IDEMIP_DHCP6_OPT_HDR_LEN + IDEMIP_DHCP6_STATUS_LEN);
     }
     uint8_t *ia = msg_opt(IDEMIP_DHCP6_OPT_IA_NA, body);
-    put32(ia, iaid);
-    put32(ia + 4u, t1);
-    put32(ia + 8u, t2);
+    put32(ia, args->iaid);
+    put32(ia + 4u, args->t1);
+    put32(ia + 8u, args->t2);
     uint8_t *sub = ia + IDEMIP_DHCP6_IA_NA_FIXED_LEN;
-    if (with_status)
+    if (args->with_status)
     {
         put16(sub, IDEMIP_DHCP6_OPT_STATUS_CODE);
         put16(sub + 2u, IDEMIP_DHCP6_STATUS_LEN);
-        put16(sub + IDEMIP_DHCP6_OPT_HDR_LEN, status);
+        put16(sub + IDEMIP_DHCP6_OPT_HDR_LEN, args->status);
         sub += IDEMIP_DHCP6_OPT_HDR_LEN + IDEMIP_DHCP6_STATUS_LEN;
     }
-    if (addr != NULL)
+    if (args->addr != NULL)
     {
         put16(sub, IDEMIP_DHCP6_OPT_IAADDR);
         put16(sub + 2u, IDEMIP_DHCP6_IAADDR_FIXED_LEN);
         uint8_t *a = sub + IDEMIP_DHCP6_OPT_HDR_LEN;
-        memcpy(a, addr, IDEMIP_IP6_ADDR_LEN);
-        put32(a + IDEMIP_IP6_ADDR_LEN, preferred);
-        put32(a + IDEMIP_IP6_ADDR_LEN + 4u, valid);
+        memcpy(a, args->addr, IDEMIP_IP6_ADDR_LEN);
+        put32(a + IDEMIP_IP6_ADDR_LEN, args->preferred);
+        put32(a + IDEMIP_IP6_ADDR_LEN + 4u, args->valid);
     }
 }
+
+#define msg_ia_na(...) IDEMIP_CALL(msg_ia_na_ctx, MsgIaNaArgs, __VA_ARGS__)
 
 static void feed(uint8_t *w)
 {

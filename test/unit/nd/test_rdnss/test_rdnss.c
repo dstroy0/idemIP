@@ -188,11 +188,11 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
     Rdnss.clear(work_b);
     feed(work_a, 100u, 0u, one, 1u);
     find_addr(work_a, g_a);
-    uint32_t first = IO(work_a)->expire_at;
+    IdemIpMs first = IO(work_a)->expire_at;
 
     feed(work_b, 5u, 9000u, one, 1u);
     find_addr(work_a, g_a);
-    TEST_ASSERT_EQUAL_UINT32(first, IO(work_a)->expire_at);
+    TEST_ASSERT_EQUAL_UINT64(first, IO(work_a)->expire_at);
 }
 
 // --- the published map -------------------------------------------------------

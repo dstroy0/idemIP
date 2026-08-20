@@ -106,18 +106,31 @@ static void leave_at(uint8_t *w, uint32_t group, uint8_t netif)
     Igmp.leave(w);
 }
 
-static void query_at(uint8_t *w, uint8_t netif, idemip_bool general, uint32_t group, uint32_t max_resp_ms,
-                     uint32_t now_ms, uint32_t rand, idemip_bool v1)
+typedef struct
 {
-    IDEMIP_IGMP_IO(w)->query_args.netif = netif;
-    IDEMIP_IGMP_IO(w)->query_args.general = general;
-    IDEMIP_IGMP_IO(w)->query_args.group = group;
-    IDEMIP_IGMP_IO(w)->query_args.max_resp_ms = max_resp_ms;
-    IDEMIP_IGMP_IO(w)->query_args.now_ms = now_ms;
-    IDEMIP_IGMP_IO(w)->query_args.rand = rand;
-    IDEMIP_IGMP_IO(w)->query_args.v1 = v1;
-    Igmp.query_in(w);
+    uint8_t *w;
+    uint8_t netif;
+    idemip_bool general;
+    uint32_t group;
+    uint32_t max_resp_ms;
+    uint32_t now_ms;
+    uint32_t rand;
+    idemip_bool v1;
+} QueryAtArgs;
+
+static void query_at_ctx(const QueryAtArgs *args)
+{
+    IDEMIP_IGMP_IO(args->w)->query_args.netif = args->netif;
+    IDEMIP_IGMP_IO(args->w)->query_args.general = args->general;
+    IDEMIP_IGMP_IO(args->w)->query_args.group = args->group;
+    IDEMIP_IGMP_IO(args->w)->query_args.max_resp_ms = args->max_resp_ms;
+    IDEMIP_IGMP_IO(args->w)->query_args.now_ms = args->now_ms;
+    IDEMIP_IGMP_IO(args->w)->query_args.rand = args->rand;
+    IDEMIP_IGMP_IO(args->w)->query_args.v1 = args->v1;
+    Igmp.query_in(args->w);
 }
+
+#define query_at(...) IDEMIP_CALL(query_at_ctx, QueryAtArgs, __VA_ARGS__)
 
 static void report_at(uint8_t *w, uint32_t group, uint8_t netif)
 {

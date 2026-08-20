@@ -864,7 +864,7 @@ void test_a_pinned_frame_survives_the_ring_wrapping_past_it(void)
     engine_fill(held, 100u, 0x5Au);
     Dma.rx_take(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
-    uint8_t *pinned_buf = IDEMIP_DMA_IO(work_a)->buf;
+    const uint8_t *pinned_buf = IDEMIP_DMA_IO(work_a)->buf;
     pin_rx(work_a, (uint8_t)held);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
     post_rx(work_a, (uint8_t)held);

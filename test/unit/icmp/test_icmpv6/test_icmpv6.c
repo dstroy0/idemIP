@@ -36,6 +36,7 @@ void setUp(void)
 }
 void tearDown(void)
 {
+    // Nothing to release: this suite holds no allocation, only file-scope storage.
 }
 
 // The 16-bit one's complement sum of the pseudo-header and the whole message, folded. RFC 1071

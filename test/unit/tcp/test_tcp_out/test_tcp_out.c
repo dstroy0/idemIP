@@ -261,7 +261,10 @@ void test_the_options_a_syn_carries_read_back(void)
     TcpOut.build(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
-    int saw_mss = 0, saw_ws = 0, saw_ts = 0, saw_perm = 0;
+    int saw_mss = 0;
+    int saw_ws = 0;
+    int saw_ts = 0;
+    int saw_perm = 0;
     IdemIpTcpOptWalk w;
     idemip_tcp_opt_walk(&w, g_buf);
     while (idemip_tcp_opt_next(&w))

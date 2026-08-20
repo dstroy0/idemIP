@@ -15,7 +15,7 @@
 // and writes every frame that crossed the wire to a .pcap through test/support/pcap.h.
 //
 // THE TICK LOOP IS THIS SUITE'S. src/core/tick.h and src/core/dispatch.h are not in this
-// checkout, so the three stages PLAN.md sec 3.4b names are written here by hand: drain receive,
+// checkout, so the three stages are written here by hand: drain receive,
 // run each service's timers, flush deferred transmit. With those two units present the loop moves
 // into them and this file calls them instead.
 //
@@ -249,21 +249,34 @@ static idemip_bool node_send_frame(Node *n, uint8_t *frame, uint8_t desc, const 
 
 // One RFC 791 datagram carrying @p plen octets of transport already at
 // @p frame + IDEMIP_ETH_HDR_LEN + IDEMIP_IPV4_HDR_LEN.
-static idemip_bool node_send_ip4(Node *n, uint8_t *frame, uint8_t desc, const uint8_t *dst_mac, uint32_t dst_ip,
-                                 uint8_t proto, uint16_t id, size_t plen)
+typedef struct
+{
+    Node *n;
+    uint8_t *frame;
+    uint8_t desc;
+    const uint8_t *dst_mac;
+    uint32_t dst_ip;
+    uint8_t proto;
+    uint16_t id;
+    size_t plen;
+} NodeSendIp4Args;
+
+static idemip_bool node_send_ip4_ctx(const NodeSendIp4Args *args)
 {
     IdemIpIp4Fields f;
 
     memset(&f, 0, sizeof f);
-    f.total_len = (uint16_t)(IDEMIP_IPV4_HDR_LEN + plen);
-    f.id = id;
+    f.total_len = (uint16_t)(IDEMIP_IPV4_HDR_LEN + args->plen);
+    f.id = args->id;
     f.ttl = (uint8_t)IDEMIP_IP_DEFAULT_TTL;
-    f.proto = proto;
-    f.src = n->ip;
-    f.dst = dst_ip;
-    idemip_ip4_build(frame + IDEMIP_ETH_HDR_LEN, &f);
-    return node_send_frame(n, frame, desc, dst_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4, IDEMIP_IPV4_HDR_LEN + plen);
+    f.proto = args->proto;
+    f.src = args->n->ip;
+    f.dst = args->dst_ip;
+    idemip_ip4_build(args->frame + IDEMIP_ETH_HDR_LEN, &f);
+    return node_send_frame(args->n, args->frame, args->desc, args->dst_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4, IDEMIP_IPV4_HDR_LEN + args->plen);
 }
+
+#define node_send_ip4(...) IDEMIP_CALL(node_send_ip4_ctx, NodeSendIp4Args, __VA_ARGS__)
 
 // The RFC 826 REQUEST for @p tpa, broadcast, which "Packet Generation" sends when the pair is
 // missing from the translation table.
@@ -426,13 +439,24 @@ static void node_udp_in(Node *n, const uint8_t *ip, size_t len)
 
 // One segment, built into a transmit descriptor and framed. @p data may be null for a segment
 // carrying only control bits.
-static idemip_bool node_tcp_send(Node *n, uint32_t seq, uint32_t ack, uint8_t flags, uint16_t opts, uint32_t wnd,
-                                 const uint8_t *data, uint16_t data_len)
+typedef struct
+{
+    Node *n;
+    uint32_t seq;
+    uint32_t ack;
+    uint8_t flags;
+    uint16_t opts;
+    uint32_t wnd;
+    const uint8_t *data;
+    uint16_t data_len;
+} NodeTcpSendArgs;
+
+static idemip_bool node_tcp_send_ctx(const NodeTcpSendArgs *args)
 {
     uint8_t local16[IDEMIP_TCP_PCB_ADDR_BYTES];
     uint8_t remote16[IDEMIP_TCP_PCB_ADDR_BYTES];
     uint8_t desc = 0;
-    const uint8_t *dst_mac = node_resolve(n, n->tcp.remote_ip);
+    const uint8_t *dst_mac = node_resolve(args->n, args->n->tcp.remote_ip);
 
     if (dst_mac == NULL)
     {
@@ -440,40 +464,42 @@ static idemip_bool node_tcp_send(Node *n, uint32_t seq, uint32_t ack, uint8_t fl
     }
     memset(local16, 0, sizeof local16);
     memset(remote16, 0, sizeof remote16);
-    idemip_wr32(local16, n->ip);
-    idemip_wr32(remote16, n->tcp.remote_ip);
+    idemip_wr32(local16, args->n->ip);
+    idemip_wr32(remote16, args->n->tcp.remote_ip);
 
-    TcpOutIo *io = IDEMIP_TCP_OUT_IO(n->b.tout);
+    TcpOutIo *io = IDEMIP_TCP_OUT_IO(args->n->b.tout);
     memset(&io->build_args, 0, sizeof io->build_args);
-    io->build_args.buf = n->scratch;
+    io->build_args.buf = args->n->scratch;
     io->build_args.cap = (uint16_t)(IDEMIP_ETH_MAX_PAYLOAD - IDEMIP_IPV4_HDR_LEN);
-    io->build_args.data = data;
-    io->build_args.len = data_len;
+    io->build_args.data = args->data;
+    io->build_args.len = args->data_len;
     io->build_args.local_ip = local16;
     io->build_args.remote_ip = remote16;
-    io->build_args.local_port = n->tcp.local_port;
-    io->build_args.remote_port = n->tcp.remote_port;
-    io->build_args.seq = seq;
-    io->build_args.ack = ack;
-    io->build_args.wnd = wnd;
+    io->build_args.local_port = args->n->tcp.local_port;
+    io->build_args.remote_port = args->n->tcp.remote_port;
+    io->build_args.seq = args->seq;
+    io->build_args.ack = args->ack;
+    io->build_args.wnd = args->wnd;
     io->build_args.mss = (uint16_t)IDEMIP_TCP_MSS;
-    io->build_args.opts = opts;
-    io->build_args.flags = flags;
+    io->build_args.opts = args->opts;
+    io->build_args.flags = args->flags;
     io->build_args.ip_version = 4u;
-    TcpOut.build(n->b.tout);
+    TcpOut.build(args->n->b.tout);
     if (io->status != IDEMIP_OK)
     {
         return IDEMIP_FALSE;
     }
     uint16_t built = io->res.built;
-    uint8_t *frame = node_tx_claim(n, &desc);
+    uint8_t *frame = node_tx_claim(args->n, &desc);
     if (frame == NULL)
     {
         return IDEMIP_FALSE;
     }
-    memcpy(frame + IDEMIP_ETH_HDR_LEN + IDEMIP_IPV4_HDR_LEN, n->scratch, built);
-    return node_send_ip4(n, frame, desc, dst_mac, n->tcp.remote_ip, (uint8_t)IDEMIP_IP4_PROTO_TCP, 0x2000u, built);
+    memcpy(frame + IDEMIP_ETH_HDR_LEN + IDEMIP_IPV4_HDR_LEN, args->n->scratch, built);
+    return node_send_ip4(args->n, frame, desc, dst_mac, args->n->tcp.remote_ip, (uint8_t)IDEMIP_IP4_PROTO_TCP, 0x2000u, built);
 }
+
+#define node_tcp_send(...) IDEMIP_CALL(node_tcp_send_ctx, NodeTcpSendArgs, __VA_ARGS__)
 
 // The ISS RFC 6528 sec 3 draws for this four-tuple.
 static uint32_t node_isn(Node *n, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port)
@@ -506,7 +532,7 @@ static const uint8_t *node_rx_buf(const Node *n, uint16_t desc)
 
 // RFC 9293 sec 3.10.7.4 seventh, the segment that "begins past RCV.NXT": its octets stay in the
 // receive buffer the engine wrote them to, so the descriptor is pinned and the queue entry names it.
-static void node_tcp_hold(Node *n, uint16_t index, const uint8_t *ip, const uint8_t *seg, uint16_t desc, TcpInIo *ti)
+static void node_tcp_hold(Node *n, uint16_t index, const uint8_t *ip, const uint8_t *seg, uint16_t desc, const TcpInIo *ti)
 {
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
 
@@ -539,27 +565,45 @@ static void node_tcp_hold(Node *n, uint16_t index, const uint8_t *ip, const uint
 // RCV.NXT advanced, so the head of the out-of-order queue may now be in order. Each one that is gets
 // delivered, RCV.NXT advances over it, its entry is freed and its descriptor unpinned, and the walk
 // looks again. Bounded by IDEMIP_TCP_OOSEQ_SEGS, which is what one TCB can hold.
+// The head of @p index's out-of-order queue when it is the segment RCV.NXT now wants, and
+// IDEMIP_TCP_PCB_NONE when the queue is empty, could not be read, or still begins ahead of RCV.NXT.
+// The TCB it read comes back through @p vars, @p ctl and @p state, which the caller writes back.
+static uint16_t node_tcp_oos_head_in_order(Node *n, uint16_t index, IdemIpTcpVars *vars, TcpPcbCtl *ctl,
+                                           IdemIpTcpState *state)
+{
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
+    tp->pcb_args.index = index;
+    TcpPcb.load(n->b.tpcb);
+    if (tp->status != IDEMIP_OK || tp->info.ooseq == IDEMIP_TCP_PCB_NONE)
+    {
+        return IDEMIP_TCP_PCB_NONE;
+    }
+    const uint16_t at = tp->info.ooseq;
+    *vars = tp->vars;
+    *ctl = tp->ctl;
+    *state = tp->state;
+
+    tp->oos_args.index = at;
+    TcpPcb.oos_load(n->b.tpcb);
+    if (tp->status != IDEMIP_OK || tp->oos.seq != vars->rcv_nxt)
+    {
+        return IDEMIP_TCP_PCB_NONE;
+    }
+    return at;
+}
+
 static int node_tcp_deliver_oos(Node *n, uint16_t index)
 {
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
     int moved = 0;
 
-    for (unsigned guard = 0u; guard < (unsigned)IDEMIP_TCP_OOSEQ_SEGS; guard++)
+    for (unsigned guard = 0u; guard < IDEMIP_TCP_OOSEQ_SEGS; guard++)
     {
-        tp->pcb_args.index = index;
-        TcpPcb.load(n->b.tpcb);
-        if (tp->status != IDEMIP_OK || tp->info.ooseq == IDEMIP_TCP_PCB_NONE)
-        {
-            break;
-        }
-        uint16_t at = tp->info.ooseq;
-        IdemIpTcpVars vars = tp->vars;
-        TcpPcbCtl ctl = tp->ctl;
-        IdemIpTcpState state = tp->state;
-
-        tp->oos_args.index = at;
-        TcpPcb.oos_load(n->b.tpcb);
-        if (tp->status != IDEMIP_OK || tp->oos.seq != vars.rcv_nxt)
+        IdemIpTcpVars vars;
+        TcpPcbCtl ctl;
+        IdemIpTcpState state;
+        const uint16_t at = node_tcp_oos_head_in_order(n, index, &vars, &ctl, &state);
+        if (at == IDEMIP_TCP_PCB_NONE)
         {
             break;
         }
@@ -713,7 +757,7 @@ static void node_tcp_in(Node *n, const uint8_t *ip, size_t len, uint16_t desc)
     idemip_bool advanced = IDEMIP_FALSE;
     if ((ti->res.act & IDEMIP_TCP_IN_ACT_TEXT) != 0u && ti->res.text_len > 0u)
     {
-        size_t off = (size_t)idemip_tcp_hdr_len(seg) + ti->res.text_off;
+        size_t off = idemip_tcp_hdr_len(seg) + ti->res.text_off;
         size_t take = ti->res.text_len;
         if (n->tcp.rx_len + take > sizeof n->tcp.rx)
         {
@@ -982,7 +1026,7 @@ static void node_flush_ack(Node *n)
     }
 }
 
-// Stage 1 of PLAN.md sec 3.4b: every frame the engine filled, dispatched and posted back. A frame a
+// Stage 1, DRAIN: every frame the engine filled, dispatched and posted back. A frame a
 // retaining unit pinned stays out of the ring until that unit drops its pin, which rx_post honors.
 // The one acknowledgment the whole drain owes goes out once the loop is done, never inside it.
 static void node_drain(Node *n)
@@ -1115,66 +1159,79 @@ static void pump(unsigned n)
 
 // --- setup -------------------------------------------------------------------
 
-static void node_setup(Node *n, IdemIpFakePhy *rig, const IdemIpPhyDriver *drv, const uint8_t *mac, uint32_t ip,
-                       uint8_t *rx_base, uint8_t *tx_base, const uint8_t *isn_secret)
+typedef struct
 {
-    memset(n, 0, sizeof *n);
-    n->rig = rig;
-    n->drv = drv;
-    memcpy(n->mac, mac, IDEMIP_MAC_LEN);
-    n->ip = ip;
-    n->mask = IP_MASK;
-    n->tcp.tcb = IDEMIP_TCP_PCB_NONE;
-    n->tcp.listener = IDEMIP_TCP_PCB_NONE;
-    n->ack_tcb = IDEMIP_TCP_PCB_NONE;
-    arm_canaries(&n->b);
+    Node *n;
+    IdemIpFakePhy *rig;
+    const IdemIpPhyDriver *drv;
+    const uint8_t *mac;
+    uint32_t ip;
+    uint8_t *rx_base;
+    uint8_t *tx_base;
+    const uint8_t *isn_secret;
+} NodeSetupArgs;
 
-    idemip_fake_phy_attach(rig, rx_base, tx_base, mac);
+static void node_setup_ctx(const NodeSetupArgs *args)
+{
+    memset(args->n, 0, sizeof *args->n);
+    args->n->rig = args->rig;
+    args->n->drv = args->drv;
+    memcpy(args->n->mac, args->mac, IDEMIP_MAC_LEN);
+    args->n->ip = args->ip;
+    args->n->mask = IP_MASK;
+    args->n->tcp.tcb = IDEMIP_TCP_PCB_NONE;
+    args->n->tcp.listener = IDEMIP_TCP_PCB_NONE;
+    args->n->ack_tcb = IDEMIP_TCP_PCB_NONE;
+    arm_canaries(&args->n->b);
 
-    Dma.clear(n->b.dma);
-    Netif.clear(n->b.netif);
-    ArpTable.clear(n->b.arp);
-    Ip4Reass.clear(n->b.reass);
-    Ip4Frag.clear(n->b.frag);
-    IcmpIn.clear(n->b.icmp);
-    UdpPcb.clear(n->b.udp);
-    TcpPcb.clear(n->b.tpcb);
-    TcpIn.clear(n->b.tin);
-    TcpOut.clear(n->b.tout);
-    TcpIsn.reset(n->b.isn);
-    Stats.clear(n->b.stats);
+    idemip_fake_phy_attach(args->rig, args->rx_base, args->tx_base, args->mac);
 
-    IDEMIP_PHY_IO(n->b.phy)->bind_args.drv = drv;
-    IDEMIP_PHY_IO(n->b.phy)->bind_args.addr = 1u;
-    Phy.bind(n->b.phy);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PHY_IO(n->b.phy)->status);
+    Dma.clear(args->n->b.dma);
+    Netif.clear(args->n->b.netif);
+    ArpTable.clear(args->n->b.arp);
+    Ip4Reass.clear(args->n->b.reass);
+    Ip4Frag.clear(args->n->b.frag);
+    IcmpIn.clear(args->n->b.icmp);
+    UdpPcb.clear(args->n->b.udp);
+    TcpPcb.clear(args->n->b.tpcb);
+    TcpIn.clear(args->n->b.tin);
+    TcpOut.clear(args->n->b.tout);
+    TcpIsn.reset(args->n->b.isn);
+    Stats.clear(args->n->b.stats);
 
-    IDEMIP_DMA_IO(n->b.dma)->bind_args.drv = drv;
-    IDEMIP_DMA_IO(n->b.dma)->bind_args.rx_base = rx_base;
-    IDEMIP_DMA_IO(n->b.dma)->bind_args.tx_base = tx_base;
-    Dma.bind(n->b.dma);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(n->b.dma)->status);
+    IDEMIP_PHY_IO(args->n->b.phy)->bind_args.drv = args->drv;
+    IDEMIP_PHY_IO(args->n->b.phy)->bind_args.addr = 1u;
+    Phy.bind(args->n->b.phy);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PHY_IO(args->n->b.phy)->status);
 
-    IDEMIP_NETIF_IO(n->b.netif)->bind_args.index = 0u;
-    IDEMIP_NETIF_IO(n->b.netif)->bind_args.phy = n->b.phy;
-    IDEMIP_NETIF_IO(n->b.netif)->bind_args.hwaddr = n->mac;
-    IDEMIP_NETIF_IO(n->b.netif)->bind_args.mtu = (uint16_t)IDEMIP_ETH_MAX_PAYLOAD;
-    Netif.bind(n->b.netif);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(n->b.netif)->status);
+    IDEMIP_DMA_IO(args->n->b.dma)->bind_args.drv = args->drv;
+    IDEMIP_DMA_IO(args->n->b.dma)->bind_args.rx_base = args->rx_base;
+    IDEMIP_DMA_IO(args->n->b.dma)->bind_args.tx_base = args->tx_base;
+    Dma.bind(args->n->b.dma);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(args->n->b.dma)->status);
 
-    IDEMIP_NETIF_IO(n->b.netif)->addr4_args.index = 0u;
-    IDEMIP_NETIF_IO(n->b.netif)->addr4_args.addr = ip;
-    IDEMIP_NETIF_IO(n->b.netif)->addr4_args.mask = IP_MASK;
-    IDEMIP_NETIF_IO(n->b.netif)->addr4_args.gw = 0u;
-    Netif.set_addr4(n->b.netif);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(n->b.netif)->status);
+    IDEMIP_NETIF_IO(args->n->b.netif)->bind_args.index = 0u;
+    IDEMIP_NETIF_IO(args->n->b.netif)->bind_args.phy = args->n->b.phy;
+    IDEMIP_NETIF_IO(args->n->b.netif)->bind_args.hwaddr = args->n->mac;
+    IDEMIP_NETIF_IO(args->n->b.netif)->bind_args.mtu = (uint16_t)IDEMIP_ETH_MAX_PAYLOAD;
+    Netif.bind(args->n->b.netif);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(args->n->b.netif)->status);
 
-    IDEMIP_TCP_ISN_IO(n->b.isn)->seed_args.key = isn_secret;
-    IDEMIP_TCP_ISN_IO(n->b.isn)->seed_args.key_len = IDEMIP_TCP_ISN_SECRET_BYTES;
-    IDEMIP_TCP_ISN_IO(n->b.isn)->seed_args.base = 0u;
-    TcpIsn.seed(n->b.isn);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_ISN_IO(n->b.isn)->status);
+    IDEMIP_NETIF_IO(args->n->b.netif)->addr4_args.index = 0u;
+    IDEMIP_NETIF_IO(args->n->b.netif)->addr4_args.addr = args->ip;
+    IDEMIP_NETIF_IO(args->n->b.netif)->addr4_args.mask = IP_MASK;
+    IDEMIP_NETIF_IO(args->n->b.netif)->addr4_args.gw = 0u;
+    Netif.set_addr4(args->n->b.netif);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(args->n->b.netif)->status);
+
+    IDEMIP_TCP_ISN_IO(args->n->b.isn)->seed_args.key = args->isn_secret;
+    IDEMIP_TCP_ISN_IO(args->n->b.isn)->seed_args.key_len = IDEMIP_TCP_ISN_SECRET_BYTES;
+    IDEMIP_TCP_ISN_IO(args->n->b.isn)->seed_args.base = 0u;
+    TcpIsn.seed(args->n->b.isn);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_ISN_IO(args->n->b.isn)->status);
 }
+
+#define node_setup(...) IDEMIP_CALL(node_setup_ctx, NodeSetupArgs, __VA_ARGS__)
 
 // One RFC 768 binding per node, so a datagram each way has somewhere to land.
 static void node_open_udp(Node *n, uint16_t port)
@@ -1748,7 +1805,7 @@ void test_the_two_translation_tables_are_two_borrows(void)
 }
 
 // =============================================================================
-// what a drop is counted as (RFC 1213, PLAN.md sec 3.4b)
+// what a drop is counted as (RFC 1213)
 // =============================================================================
 
 // RFC 1213 sec 6.4 ifInUnknownProtos: "packets received via the interface which were discarded
@@ -2298,6 +2355,21 @@ void test_the_two_tcb_tables_are_two_borrows(void)
 // Build one datagram larger than the MTU, cut it, and put every fragment on the wire.
 static uint16_t g_frag_payload_len;
 
+// One built fragment, framed and put on the wire. False when there was no transmit descriptor to
+// claim or the MAC refused the frame; either one ends the run with the fragments already sent.
+static idemip_bool node_send_one_fragment(Node *n, const uint8_t *dst_mac, uint16_t frag_len)
+{
+    uint8_t desc = 0;
+    uint8_t *frame = node_tx_claim(n, &desc);
+
+    if (frame == NULL)
+    {
+        return IDEMIP_FALSE;
+    }
+    memcpy(frame + IDEMIP_ETH_HDR_LEN, n->scratch, frag_len);
+    return node_send_frame(n, frame, desc, dst_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4, frag_len);
+}
+
 static int send_fragmented(Node *n, uint32_t dst_ip, uint16_t mtu, uint16_t payload_len)
 {
     static uint8_t dgram[2048];
@@ -2338,23 +2410,12 @@ static int send_fragmented(Node *n, uint32_t dst_ip, uint16_t mtu, uint16_t payl
     }
     for (;;)
     {
-        uint8_t desc = 0;
-
         io->next_args.out = n->scratch;
         io->next_args.cap = IDEMIP_ETH_MAX_PAYLOAD;
         Ip4Frag.next(n->b.frag);
-        if (io->status != IDEMIP_OK)
-        {
-            break;
-        }
-        uint16_t frag_len = io->len;
-        uint8_t *frame = node_tx_claim(n, &desc);
-        if (frame == NULL)
-        {
-            break;
-        }
-        memcpy(frame + IDEMIP_ETH_HDR_LEN, n->scratch, frag_len);
-        if (!node_send_frame(n, frame, desc, dst_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4, frag_len))
+        // Three ways to stop, and they are one thing: the builder has no fragment left, or the one
+        // it built could not be sent. The length is read only once the status says there is one.
+        if (io->status != IDEMIP_OK || !node_send_one_fragment(n, dst_mac, io->len))
         {
             break;
         }

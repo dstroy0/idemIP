@@ -32,13 +32,25 @@
 static uint8_t pool[POOL][IDEMIP_IP6_ADDR_LEN];
 static int pool_n;
 
-// Eight 16-bit pieces, the "preferred form" of RFC 4291 sec 2.2.
-static uint8_t *A(uint16_t g0, uint16_t g1, uint16_t g2, uint16_t g3, uint16_t g4, uint16_t g5, uint16_t g6,
-                  uint16_t g7)
+// Eight 16-bit pieces, the "preferred form" of RFC 4291 sec 2.2. One block in, not eight arguments,
+// so every A(...) below is one pointer at the call.
+typedef struct
+{
+    uint16_t g0;
+    uint16_t g1;
+    uint16_t g2;
+    uint16_t g3;
+    uint16_t g4;
+    uint16_t g5;
+    uint16_t g6;
+    uint16_t g7;
+} A6Groups;
+
+static uint8_t *a6_ctx(const A6Groups *a)
 {
     TEST_ASSERT_LESS_THAN_INT(POOL, pool_n);
     uint8_t *out = pool[pool_n++];
-    const uint16_t g[8] = {g0, g1, g2, g3, g4, g5, g6, g7};
+    const uint16_t g[8] = {a->g0, a->g1, a->g2, a->g3, a->g4, a->g5, a->g6, a->g7};
     for (int i = 0; i < 8; i++)
     {
         out[i * 2] = (uint8_t)(g[i] >> 8);
@@ -46,6 +58,8 @@ static uint8_t *A(uint16_t g0, uint16_t g1, uint16_t g2, uint16_t g3, uint16_t g
     }
     return out;
 }
+
+#define A(...) IDEMIP_CALL(a6_ctx, A6Groups, __VA_ARGS__)
 
 // RFC 6724 sec 3.2: "IPv4 addresses MUST be represented as IPv4-mapped addresses", which is
 // RFC 4291 sec 2.5.5.2's ::FFFF:a.b.c.d.
@@ -90,21 +104,34 @@ void tearDown(void)
 
 // --- adding, in the shape the operand block takes ----------------------------
 
-static void src_add(uint8_t *w, const uint8_t *addr, uint8_t netif, int deprecated, int temporary, int home,
-                    int care_of, int next_hop)
+typedef struct
 {
-    Ip6SelectSourceArgs *s = &IDEMIP_IP6_SELECT_IO(w)->source_args;
-    s->addr = addr;
+    uint8_t *w;
+    const uint8_t *addr;
+    uint8_t netif;
+    int deprecated;
+    int temporary;
+    int home;
+    int care_of;
+    int next_hop;
+} SrcAddArgs;
+
+static void src_add_ctx(const SrcAddArgs *a)
+{
+    Ip6SelectSourceArgs *s = &IDEMIP_IP6_SELECT_IO(a->w)->source_args;
+    s->addr = a->addr;
     s->zone = 0u;
-    s->netif = netif;
-    s->deprecated = (idemip_bool)(deprecated ? 1 : 0);
-    s->temporary = (idemip_bool)(temporary ? 1 : 0);
-    s->home = (idemip_bool)(home ? 1 : 0);
-    s->care_of = (idemip_bool)(care_of ? 1 : 0);
-    s->next_hop = (idemip_bool)(next_hop ? 1 : 0);
-    Ip6Select.source_add(w);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(w)->status);
+    s->netif = a->netif;
+    s->deprecated = (idemip_bool)(a->deprecated ? 1 : 0);
+    s->temporary = (idemip_bool)(a->temporary ? 1 : 0);
+    s->home = (idemip_bool)(a->home ? 1 : 0);
+    s->care_of = (idemip_bool)(a->care_of ? 1 : 0);
+    s->next_hop = (idemip_bool)(a->next_hop ? 1 : 0);
+    Ip6Select.source_add(a->w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(a->w)->status);
 }
+
+#define src_add(...) IDEMIP_CALL(src_add_ctx, SrcAddArgs, __VA_ARGS__)
 
 static void src(uint8_t *w, const uint8_t *addr)
 {
@@ -163,6 +190,15 @@ static void lookup(uint8_t *w, const uint8_t *addr)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(w)->status);
 }
 
+// The same lookup in a named RFC 4007 sec 6 zone rather than the default one.
+static void lookup_in(uint8_t *w, const uint8_t *addr, uint32_t zone)
+{
+    IDEMIP_IP6_SELECT_IO(w)->query_args.addr = addr;
+    IDEMIP_IP6_SELECT_IO(w)->query_args.zone = zone;
+    Ip6Select.policy_lookup(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(w)->status);
+}
+
 // --- the borrow --------------------------------------------------------------
 
 void test_every_entry_survives_a_null_borrow(void)
@@ -185,15 +221,15 @@ void test_two_borrows_share_no_byte(void)
 {
     Ip6Select.clear(work_a);
     Ip6Select.clear(work_b);
-    uint8_t *global = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *ll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    const uint8_t *global = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *ll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
 
     src(work_a, global);
     src(work_b, ll);
     TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_IP6_SELECT_IO(work_a)->sources);
     TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_IP6_SELECT_IO(work_b)->sources);
 
-    uint8_t *d = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *d = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
     IDEMIP_IP6_SELECT_IO(work_a)->query_args.addr = d;
     Ip6Select.source_select(work_a);
     TEST_ASSERT_TRUE(IDEMIP_IP6_SELECT_IO(work_a)->found);
@@ -214,12 +250,12 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
 {
     Ip6Select.clear(work_a);
     Ip6Select.clear(work_b);
-    uint8_t *a1 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *b1 = A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 2u);
+    const uint8_t *a1 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *b1 = A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 2u);
     src(work_a, a1);
     src(work_b, b1);
 
-    uint8_t *d = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *d = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
     IDEMIP_IP6_SELECT_IO(work_a)->query_args.addr = d;
     IDEMIP_IP6_SELECT_IO(work_b)->query_args.addr = d;
 
@@ -235,7 +271,7 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
 // the borrow for the caller.
 void test_uncleared_borrow_refuses_work(void)
 {
-    uint8_t *a1 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *a1 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
     IDEMIP_IP6_SELECT_IO(work_a)->source_args.addr = a1;
     IDEMIP_IP6_SELECT_IO(work_a)->dest_args.addr = a1;
     IDEMIP_IP6_SELECT_IO(work_a)->policy_args.prefix = a1;
@@ -329,6 +365,37 @@ void test_sec2_1_lookup_takes_the_longest_matching_prefix(void)
     TEST_ASSERT_EQUAL_UINT8(96u, IDEMIP_IP6_SELECT_IO(work_a)->prefix_len);
     TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_IP6_SELECT_IO(work_a)->precedence);
     TEST_ASSERT_EQUAL_UINT8(3u, IDEMIP_IP6_SELECT_IO(work_a)->label);
+}
+
+// sec 2.1: "Policy table entries for address prefixes that are not of global scope MAY be qualified
+// with an optional zone index." A qualified row answers a lookup made in its own zone, and a lookup
+// in any other zone passes it over and falls back to whatever unqualified row still matches - here
+// the default table's ::/0, which sec 2.1 gives precedence 40.
+void test_sec2_1_a_zone_qualified_row_answers_only_its_own_zone(void)
+{
+    Ip6Select.clear(work_a);
+    Ip6SelectPolicyArgs *p = &IDEMIP_IP6_SELECT_IO(work_a)->policy_args;
+    p->prefix = A(0xFE80u, 0, 0, 0, 0, 0, 0, 0);
+    p->zone = 2u;
+    p->prefix_len = 10u;
+    p->precedence = 55u;
+    p->label = 9u;
+    Ip6Select.policy_set(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+
+    uint8_t *ll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+
+    // In its own zone the qualified row wins, and it wins on length: ::/0 matches this address too,
+    // and sec 2.1 takes "the entry that has the longest matching prefix".
+    lookup_in(work_a, ll, 2u);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(55u, IDEMIP_IP6_SELECT_IO(work_a)->precedence,
+                                    "a row qualified with the queried zone did not answer it");
+    TEST_ASSERT_EQUAL_UINT8(9u, IDEMIP_IP6_SELECT_IO(work_a)->label);
+
+    // In another zone it is not a candidate at all, so the longest remaining match answers.
+    lookup_in(work_a, ll, 3u);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(40u, IDEMIP_IP6_SELECT_IO(work_a)->precedence,
+                                    "a row qualified with another zone answered this one");
 }
 
 // sec 2.1 makes the table configurable, "It is important that implementations provide a way to
@@ -481,12 +548,12 @@ void test_sec4_refuses_multicast_and_the_unspecified_address(void)
 void test_sec4_link_local_destination_keeps_to_the_outgoing_interface(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *near = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
-    uint8_t *far = A(0xFE80u, 0, 0, 0, 0, 0, 0, 3u);
+    const uint8_t *near = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
+    const uint8_t *far = A(0xFE80u, 0, 0, 0, 0, 0, 0, 3u);
     src_add(work_a, far, 1u, 0, 0, 0, 0, 0);
     src_add(work_a, near, 0u, 0, 0, 0, 0, 0);
 
-    uint8_t *d = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    const uint8_t *d = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
     IDEMIP_IP6_SELECT_IO(work_a)->query_args.addr = d;
     IDEMIP_IP6_SELECT_IO(work_a)->query_args.netif = 0u;
     Ip6Select.source_select(work_a);
@@ -530,8 +597,8 @@ void test_a_full_candidate_set_is_err_not_busy(void)
 void test_rule1_prefer_same_address(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *same = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
-    uint8_t *other = A(0x2001u, 0x0DB8u, 2u, 0, 0, 0, 0, 1u);
+    const uint8_t *same = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *other = A(0x2001u, 0x0DB8u, 2u, 0, 0, 0, 0, 1u);
     src_add(work_a, same, 0u, 1, 0, 0, 0, 0);
     src(work_a, other);
     select_is(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), same, 1u);
@@ -543,8 +610,8 @@ void test_rule1_prefer_same_address(void)
 void test_rule2_prefer_appropriate_scope_for_a_global_destination(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *global = A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 1u);
-    uint8_t *ll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    const uint8_t *global = A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 1u);
+    const uint8_t *ll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
     src(work_a, global);
     src(work_a, ll);
     select_is(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), global, 2u);
@@ -556,8 +623,8 @@ void test_rule2_prefer_appropriate_scope_for_a_global_destination(void)
 void test_rule2_prefer_appropriate_scope_for_a_multicast_destination(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *global = A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 1u);
-    uint8_t *ll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    const uint8_t *global = A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 1u);
+    const uint8_t *ll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
     src(work_a, global);
     src(work_a, ll);
     select_is(work_a, A(0xFF05u, 0, 0, 0, 0, 0, 0, 1u), global, 2u);
@@ -569,8 +636,8 @@ void test_rule2_prefer_appropriate_scope_for_a_multicast_destination(void)
 void test_rule2_beats_rule3_for_a_link_local_destination(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *ll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
-    uint8_t *global = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *ll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
+    const uint8_t *global = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
     src_add(work_a, ll, 0u, 1, 0, 0, 0, 0);
     src(work_a, global);
     select_is(work_a, A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u), ll, 2u);
@@ -581,8 +648,8 @@ void test_rule2_beats_rule3_for_a_link_local_destination(void)
 void test_rule3_avoid_deprecated_addresses(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *old = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *fresh = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u);
+    const uint8_t *old = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *fresh = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u);
     src_add(work_a, old, 0u, 1, 0, 0, 0, 0);
     src(work_a, fresh);
     select_is(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), fresh, 3u);
@@ -594,8 +661,8 @@ void test_rule3_avoid_deprecated_addresses(void)
 void test_rule4_prefer_home_addresses(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *care_of = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *home = A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 2u);
+    const uint8_t *care_of = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *home = A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 2u);
     src_add(work_a, care_of, 0u, 0, 0, 0, 1, 0);
     src_add(work_a, home, 0u, 0, 0, 1, 0, 0);
     select_is(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), home, 4u);
@@ -606,8 +673,8 @@ void test_rule4_prefer_home_addresses(void)
 void test_rule4_prefers_an_address_that_is_both(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *home_only = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *both = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u);
+    const uint8_t *home_only = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *both = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u);
     src_add(work_a, home_only, 0u, 0, 0, 1, 0, 0);
     src_add(work_a, both, 0u, 0, 0, 1, 1, 0);
     select_is(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), both, 4u);
@@ -618,8 +685,8 @@ void test_rule4_prefers_an_address_that_is_both(void)
 void test_rule5_prefer_the_outgoing_interface(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *other_if = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *out_if = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u);
+    const uint8_t *other_if = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *out_if = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u);
     src_add(work_a, other_if, 1u, 0, 0, 0, 0, 0);
     src_add(work_a, out_if, 0u, 0, 0, 0, 0, 0);
     select_is(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), out_if, 5u);
@@ -630,8 +697,8 @@ void test_rule5_prefer_the_outgoing_interface(void)
 void test_rule5_5_prefer_a_prefix_from_the_next_hop(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *elsewhere = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *from_hop = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u);
+    const uint8_t *elsewhere = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *from_hop = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u);
     src_add(work_a, elsewhere, 0u, 0, 0, 0, 0, 0);
     src_add(work_a, from_hop, 0u, 0, 0, 0, 0, 1);
     select_is(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), from_hop, IDEMIP_IP6_SELECT_RULE_5_5);
@@ -644,8 +711,8 @@ void test_rule5_5_prefer_a_prefix_from_the_next_hop(void)
 void test_rule6_prefer_matching_label(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *sixtofour = A(0x2002u, 0xC633u, 0x6401u, 0, 0xD5E3u, 0x7953u, 0x13EBu, 0x22E8u);
-    uint8_t *native = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *sixtofour = A(0x2002u, 0xC633u, 0x6401u, 0, 0xD5E3u, 0x7953u, 0x13EBu, 0x22E8u);
+    const uint8_t *native = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
     src_add(work_a, sixtofour, 0u, 0, 1, 0, 0, 0);
     src(work_a, native);
     select_is(work_a, A(0x2002u, 0xC633u, 0x6401u, 0, 0, 0, 0, 1u), sixtofour, 6u);
@@ -657,8 +724,8 @@ void test_rule6_prefer_matching_label(void)
 void test_rule7_prefer_temporary_addresses(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *public_addr = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *temp = A(0x2001u, 0x0DB8u, 1u, 0, 0xD5E3u, 0x7953u, 0x13EBu, 0x22E8u);
+    const uint8_t *public_addr = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *temp = A(0x2001u, 0x0DB8u, 1u, 0, 0xD5E3u, 0x7953u, 0x13EBu, 0x22E8u);
     src(work_a, public_addr);
     src_add(work_a, temp, 0u, 0, 1, 0, 0, 0);
     select_is(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0xD5E3u, 0, 0, 1u), temp, 7u);
@@ -670,8 +737,8 @@ void test_rule7_prefer_temporary_addresses(void)
 void test_rule8_use_longest_matching_prefix(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *near = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *far = A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 2u);
+    const uint8_t *near = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *far = A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 2u);
     src(work_a, far);
     src(work_a, near);
     select_is(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), near, 8u);
@@ -682,8 +749,8 @@ void test_rule8_use_longest_matching_prefix(void)
 void test_a_tie_keeps_the_candidate_that_was_added_first(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *first = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *second = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u);
+    const uint8_t *first = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *second = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u);
     src(work_a, first);
     src(work_a, second);
     IDEMIP_IP6_SELECT_IO(work_a)->query_args.addr = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 9u);
@@ -702,15 +769,15 @@ void test_a_tie_keeps_the_candidate_that_was_added_first(void)
 void test_sec10_2_first_prefer_matching_scope(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *sll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
-    uint8_t *s4 = V4(169u, 254u, 13u, 78u);
+    const uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *sll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    const uint8_t *s4 = V4(169u, 254u, 13u, 78u);
     src(work_a, s6);
     src(work_a, sll);
     src(work_a, s4);
 
-    uint8_t *d6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
-    uint8_t *d4 = V4(198u, 51u, 100u, 121u);
+    const uint8_t *d6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *d4 = V4(198u, 51u, 100u, 121u);
     dst(work_a, d6);
     dst(work_a, d4);
 
@@ -726,13 +793,13 @@ void test_sec10_2_first_prefer_matching_scope(void)
 void test_sec10_2_second_matching_scope_reverses_the_list(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *sll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
-    uint8_t *s4 = V4(198u, 51u, 100u, 117u);
+    const uint8_t *sll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    const uint8_t *s4 = V4(198u, 51u, 100u, 117u);
     src(work_a, sll);
     src(work_a, s4);
 
-    uint8_t *d6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
-    uint8_t *d4 = V4(198u, 51u, 100u, 121u);
+    const uint8_t *d6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *d4 = V4(198u, 51u, 100u, 121u);
     dst(work_a, d6);
     dst(work_a, d4);
 
@@ -748,15 +815,15 @@ void test_sec10_2_second_matching_scope_reverses_the_list(void)
 void test_sec10_2_third_prefer_higher_precedence(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *sll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
-    uint8_t *s4 = V4(10u, 1u, 2u, 4u);
+    const uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *sll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    const uint8_t *s4 = V4(10u, 1u, 2u, 4u);
     src(work_a, s6);
     src(work_a, sll);
     src(work_a, s4);
 
-    uint8_t *d6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
-    uint8_t *d4 = V4(10u, 1u, 2u, 3u);
+    const uint8_t *d6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *d4 = V4(10u, 1u, 2u, 3u);
     dst(work_a, d6);
     dst(work_a, d4);
 
@@ -771,13 +838,13 @@ void test_sec10_2_third_prefer_higher_precedence(void)
 void test_sec10_2_fourth_prefer_smaller_scope(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *sll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
+    const uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *sll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
     src(work_a, s6);
     src(work_a, sll);
 
-    uint8_t *d6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
-    uint8_t *dll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    const uint8_t *d6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *dll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
     dst(work_a, d6);
     dst(work_a, dll);
 
@@ -792,15 +859,15 @@ void test_sec10_2_fourth_prefer_smaller_scope(void)
 void test_sec10_2_fifth_prefer_home_address(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *care = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
-    uint8_t *home = A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 1u);
-    uint8_t *ll_care = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
+    const uint8_t *care = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *home = A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 1u);
+    const uint8_t *ll_care = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
     src_add(work_a, care, 0u, 0, 0, 0, 1, 0);
     src_add(work_a, home, 0u, 0, 0, 1, 0, 0);
     src_add(work_a, ll_care, 0u, 0, 0, 0, 1, 0);
 
-    uint8_t *d6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
-    uint8_t *dll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    const uint8_t *d6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *dll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
     dst(work_a, d6);
     dst(work_a, dll);
 
@@ -813,11 +880,11 @@ void test_sec10_2_fifth_prefer_home_address(void)
 void test_dest_rule1_avoid_unusable_destinations(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
     src(work_a, s6);
 
-    uint8_t *dead = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
-    uint8_t *live = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 5u);
+    const uint8_t *dead = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *live = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 5u);
     dst_add(work_a, dead, 0u, 1, 0);
     dst_add(work_a, live, 0u, 0, 0);
 
@@ -834,11 +901,11 @@ void test_dest_rule1_avoid_unusable_destinations(void)
 void test_dest_rule1_ties_and_rule2_breaks_it(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *site_src = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 2u);
+    const uint8_t *site_src = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 2u);
     src(work_a, site_src);
 
-    uint8_t *site_dst = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 9u);              // Scope(DA) = site-local
-    uint8_t *global_dst = A(0x2001u, 0x0DB8u, 9u, 0, 0, 0, 0, 1u);     // Scope(DB) = global
+    const uint8_t *site_dst = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 9u);              // Scope(DA) = site-local
+    const uint8_t *global_dst = A(0x2001u, 0x0DB8u, 9u, 0, 0, 0, 0, 1u);     // Scope(DB) = global
     dst_add(work_a, site_dst, 0u, 1, 0);                               // both unreachable, so Rule 1 ties
     dst_add(work_a, global_dst, 0u, 1, 0);
 
@@ -855,13 +922,13 @@ void test_dest_rule3_avoids_a_deprecated_source(void)
     Ip6Select.clear(work_a);
     // sec 4 confines a link-local destination's candidates to its own link, so each destination has
     // exactly one source and sec 5's own Rule 3 cannot pick the other one first.
-    uint8_t *old = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
-    uint8_t *fresh = A(0xFE80u, 0, 0, 0, 0, 0, 0, 3u);
+    const uint8_t *old = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
+    const uint8_t *fresh = A(0xFE80u, 0, 0, 0, 0, 0, 0, 3u);
     src_add(work_a, old, 1u, 1, 0, 0, 0, 0); // deprecated, on interface 1
     src_add(work_a, fresh, 0u, 0, 0, 0, 0, 0);
 
-    uint8_t *da = A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u);  // on interface 1, so Source(DA) is deprecated
-    uint8_t *db = A(0xFE80u, 0, 0, 0, 0, 0, 0, 0xAu); // on interface 0
+    const uint8_t *da = A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u);  // on interface 1, so Source(DA) is deprecated
+    const uint8_t *db = A(0xFE80u, 0, 0, 0, 0, 0, 0, 0xAu); // on interface 0
     dst_add(work_a, da, 1u, 0, 0);
     dst_add(work_a, db, 0u, 0, 0);
 
@@ -892,11 +959,11 @@ void test_dest_rule5_prefers_a_matching_label(void)
     Ip6Select.policy_set(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
 
-    uint8_t *s_lab11 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *s_lab11 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
     src(work_a, s_lab11);
 
-    uint8_t *da = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 9u); // Label(DA) = 11 = Label(Source(DA))
-    uint8_t *db = A(0x2001u, 0x0DB8u, 2u, 0, 0, 0, 0, 9u); // Label(DB) = 12 <> 11
+    const uint8_t *da = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 9u); // Label(DA) = 11 = Label(Source(DA))
+    const uint8_t *db = A(0x2001u, 0x0DB8u, 2u, 0, 0, 0, 0, 9u); // Label(DB) = 12 <> 11
     dst(work_a, db);
     dst(work_a, da);
 
@@ -912,8 +979,8 @@ void test_dest_rule5_prefers_a_matching_label(void)
 void test_sec4_a_site_local_destination_only_takes_a_source_from_its_own_site(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *near_site = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 2u);
-    uint8_t *far_site = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 3u);
+    const uint8_t *near_site = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 2u);
+    const uint8_t *far_site = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 3u);
     Ip6SelectSourceArgs *s = &IDEMIP_IP6_SELECT_IO(work_a)->source_args;
 
     s->addr = far_site;
@@ -966,11 +1033,11 @@ void test_sec4_a_site_local_destination_only_takes_a_source_from_its_own_site(vo
 void test_dest_rule7_prefer_native_transport(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
     src(work_a, s6);
 
-    uint8_t *tunneled = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
-    uint8_t *native = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 5u);
+    const uint8_t *tunneled = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *native = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 5u);
     dst_add(work_a, tunneled, 0u, 0, 1);
     dst_add(work_a, native, 0u, 0, 0);
 
@@ -984,11 +1051,11 @@ void test_dest_rule7_prefer_native_transport(void)
 void test_dest_rule9_use_longest_matching_prefix(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
     src(work_a, s6);
 
-    uint8_t *far = A(0x2001u, 0x0DB8u, 9u, 0, 0, 0, 0, 1u);
-    uint8_t *near = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *far = A(0x2001u, 0x0DB8u, 9u, 0, 0, 0, 0, 1u);
+    const uint8_t *near = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
     dst(work_a, far);
     dst(work_a, near);
 
@@ -1002,11 +1069,11 @@ void test_dest_rule9_use_longest_matching_prefix(void)
 void test_dest_rule10_leaves_the_order_unchanged(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
     src(work_a, s6);
 
-    uint8_t *first = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
-    uint8_t *second = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *first = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *second = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
     dst(work_a, first);
     dst(work_a, second);
 
@@ -1023,12 +1090,12 @@ void test_dest_rule10_leaves_the_order_unchanged(void)
 void test_a_destination_with_no_source_sorts_last(void)
 {
     Ip6Select.clear(work_a);
-    uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+    const uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
     src_add(work_a, s6, 0u, 0, 0, 0, 0, 0);
 
     // A link-local destination on another interface has no candidate sec 4 admits.
-    uint8_t *orphan = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
-    uint8_t *reachable = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    const uint8_t *orphan = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    const uint8_t *reachable = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
     dst_add(work_a, orphan, 1u, 0, 0);
     dst_add(work_a, reachable, 0u, 0, 0);
 

@@ -139,6 +139,17 @@ foreach(suite_src ${IDEMIP_SUITE_SOURCES})
         "${CMAKE_CURRENT_SOURCE_DIR}"
     )
     target_link_libraries(${suite_name} PRIVATE idemip idemip_warnings)
+
+    # test_clock measures determinism_pad(), which the header gates out unless the capability is on,
+    # so this one suite is compiled with it on however the build was configured. The value reaches
+    # every target as a PUBLIC definition of idemip, so it is unset and re-set as compile OPTIONS,
+    # not as a second definition: CMake writes definitions before flags, so -U then -D lands after
+    # the inherited -D and the command line carries no redefinition for the compiler to warn about.
+    if(suite_name STREQUAL "test_clock")
+        target_compile_options(${suite_name} PRIVATE
+            $<$<C_COMPILER_ID:GNU,Clang>:-UIDEMIP_ENABLE_TIME_DETERMINISM;-DIDEMIP_ENABLE_TIME_DETERMINISM=1>)
+    endif()
+
     set_target_properties(${suite_name} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test")
 
     add_test(NAME ${suite_name} COMMAND ${suite_name})

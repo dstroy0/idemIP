@@ -320,7 +320,7 @@ void test_the_eleven_states_of_section_3_3_2(void)
     TEST_ASSERT_EQUAL_INT(7, (int)IDEMIP_TCP_STATE_CLOSE_WAIT);
     TEST_ASSERT_EQUAL_INT(8, (int)IDEMIP_TCP_STATE_CLOSING);
     TEST_ASSERT_EQUAL_INT(9, (int)IDEMIP_TCP_STATE_LAST_ACK);
-    TEST_ASSERT_EQUAL_INT(10, (int)IDEMIP_TCP_STATE_TIME_WAIT);
+    TEST_ASSERT_EQUAL_INT(10, IDEMIP_TCP_STATE_TIME_WAIT);
     TEST_ASSERT_EQUAL_INT((int)IDEMIP_TCP_STATES, (int)IDEMIP_TCP_STATE_TIME_WAIT + 1);
 }
 
@@ -329,7 +329,7 @@ void test_a_state_section_3_3_2_does_not_name_is_refused(void)
 {
     TcpPcb.clear(work_a);
     IDEMIP_TCP_PCB_IO(work_a)->pcb_args.index = 0u;
-    IDEMIP_TCP_PCB_IO(work_a)->state = (IdemIpTcpState)((int)IDEMIP_TCP_STATE_TIME_WAIT + 1);
+    IDEMIP_TCP_PCB_IO(work_a)->state = (IdemIpTcpState)(IDEMIP_TCP_STATE_TIME_WAIT + 1);
     TcpPcb.store(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TCP_PCB_IO(work_a)->status);
 }
@@ -339,7 +339,7 @@ void test_a_state_section_3_3_2_does_not_name_is_refused(void)
 void test_the_section_3_3_1_variables_are_each_a_sequence_space_wide(void)
 {
     TEST_ASSERT_EQUAL_size_t(11u * sizeof(uint32_t), sizeof(IdemIpTcpVars));
-    IdemIpTcpVars *v = &IDEMIP_TCP_PCB_IO(work_a)->vars;
+    const IdemIpTcpVars *v = &IDEMIP_TCP_PCB_IO(work_a)->vars;
     TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->snd_una);
     TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->snd_nxt);
     TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->snd_wnd);
@@ -1294,7 +1294,7 @@ void test_an_unnamed_state_is_refused_on_an_open_tcb(void)
     TcpPcb.clear(work_a);
     uint16_t idx = open_pcb(work_a);
     IO(work_a)->pcb_args.index = idx;
-    IO(work_a)->state = (IdemIpTcpState)((int)IDEMIP_TCP_STATE_TIME_WAIT + 1);
+    IO(work_a)->state = (IdemIpTcpState)(IDEMIP_TCP_STATE_TIME_WAIT + 1);
     TcpPcb.store(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_CLOSED, (int)get_state(work_a, idx));
@@ -1561,7 +1561,7 @@ void test_time_wait_leaves_only_for_closed(void)
     {
         uint16_t idx = reach(work_a, IDEMIP_TCP_STATE_TIME_WAIT);
         IdemIpStatus got = put_state(work_a, idx, (IdemIpTcpState)to);
-        if (to == (int)IDEMIP_TCP_STATE_TIME_WAIT || to == (int)IDEMIP_TCP_STATE_CLOSED)
+        if (to == IDEMIP_TCP_STATE_TIME_WAIT || to == IDEMIP_TCP_STATE_CLOSED)
         {
             TEST_ASSERT_EQUAL_INT(IDEMIP_OK, got);
         }
@@ -1582,8 +1582,8 @@ void test_only_syn_received_returns_to_listen(void)
     {
         uint16_t idx = reach(work_a, (IdemIpTcpState)from);
         IdemIpStatus got = put_state(work_a, idx, IDEMIP_TCP_STATE_LISTEN);
-        if (from == (int)IDEMIP_TCP_STATE_SYN_RECEIVED || from == (int)IDEMIP_TCP_STATE_LISTEN ||
-            from == (int)IDEMIP_TCP_STATE_CLOSED)
+        if (from == IDEMIP_TCP_STATE_SYN_RECEIVED || from == IDEMIP_TCP_STATE_LISTEN ||
+            from == IDEMIP_TCP_STATE_CLOSED)
         {
             TEST_ASSERT_EQUAL_INT(IDEMIP_OK, got);
         }

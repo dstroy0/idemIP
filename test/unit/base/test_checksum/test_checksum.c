@@ -12,9 +12,11 @@
 
 void setUp(void)
 {
+    // Nothing to arrange: every case builds the state it needs.
 }
 void tearDown(void)
 {
+    // Nothing to release: this suite holds no allocation, only file-scope storage.
 }
 
 // The octets RFC 1071 sec 3 tabulates.
@@ -100,13 +102,13 @@ static uint16_t reference_sum(const uint8_t *p, size_t len)
     size_t i = 0u;
     while (i + 1u < len)
     {
-        sum += (uint32_t)(((uint32_t)p[i] << 8) | (uint32_t)p[i + 1u]);
+        sum += (((uint32_t)p[i] << 8) | (uint32_t)p[i + 1u]);
         sum = (sum & 0xFFFFu) + (sum >> 16);
         i += 2u;
     }
     if (i < len)
     {
-        sum += (uint32_t)((uint32_t)p[i] << 8);
+        sum += ((uint32_t)p[i] << 8);
         sum = (sum & 0xFFFFu) + (sum >> 16);
     }
     return (uint16_t)sum;

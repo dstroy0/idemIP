@@ -241,29 +241,44 @@ static uint8_t g_frags[FRAG_SLOTS][FRAG_BUF];
 
 // One fragment header. ihl is in 32-bit words, so 5 is the option-free header of RFC 791 sec 3.1 and
 // 6 carries one word of options, which RFC 815 sec 6 says only the first fragment need carry.
-static uint8_t *frag_full(int slot, uint32_t src, uint32_t dst, uint8_t proto, uint16_t id, uint16_t off_units,
-                          uint16_t data_len, int mf, uint8_t ttl, uint8_t ihl)
+typedef struct
 {
-    uint8_t *h = g_frags[slot];
+    int slot;
+    uint32_t src;
+    uint32_t dst;
+    uint8_t proto;
+    uint16_t id;
+    uint16_t off_units;
+    uint16_t data_len;
+    int mf;
+    uint8_t ttl;
+    uint8_t ihl;
+} FragFullArgs;
+
+static uint8_t * frag_full_ctx(const FragFullArgs *args)
+{
+    uint8_t *h = g_frags[args->slot];
     IdemIpIp4Fields f;
     memset(h, 0, FRAG_BUF);
     memset(&f, 0, sizeof f);
     f.tos = 0u;
-    f.total_len = (uint16_t)((uint16_t)(ihl * 4u) + data_len);
-    f.id = id;
-    f.flags_frag = (uint16_t)((mf ? IDEMIP_IP4_FLAG_MF : 0u) | off_units);
-    f.ttl = ttl;
-    f.proto = proto;
-    f.src = src;
-    f.dst = dst;
+    f.total_len = (uint16_t)((uint16_t)(args->ihl * 4u) + args->data_len);
+    f.id = args->id;
+    f.flags_frag = (uint16_t)((args->mf ? IDEMIP_IP4_FLAG_MF : 0u) | args->off_units);
+    f.ttl = args->ttl;
+    f.proto = args->proto;
+    f.src = args->src;
+    f.dst = args->dst;
     idemip_ip4_build(h, &f);
-    if (ihl != IDEMIP_IP4_IHL_MIN)
+    if (args->ihl != IDEMIP_IP4_IHL_MIN)
     {
-        idemip_ip4_set_ver_ihl(h, ihl);
+        idemip_ip4_set_ver_ihl(h, args->ihl);
         idemip_ip4_recksum(h);
     }
     return h;
 }
+
+#define frag_full(...) IDEMIP_CALL(frag_full_ctx, FragFullArgs, __VA_ARGS__)
 
 // A fragment of the suite's buffer identifier, offset in RFC 791 sec 3.1's eight-octet units.
 static uint8_t *fr(int slot, uint16_t off_units, uint16_t data_len, int mf)
@@ -927,7 +942,7 @@ void test_a_full_datagram_table_is_busy_and_the_retry_succeeds(void)
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr_id((int)i, (uint16_t)(0x400u + i), 0u, 8u, 1),
                                                    (uint16_t)(240u + i)));
     }
-    uint8_t *extra = fr_id(FRAG_SLOTS - 1, 0x4FFu, 0u, 8u, 1);
+    const uint8_t *extra = fr_id(FRAG_SLOTS - 1, 0x4FFu, 0u, 8u, 1);
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, hold_frag(work_a, extra, 249u));
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP4_REASS_INDEX_NONE, IDEMIP_IP4_REASS_IO(work_a)->index);
 
@@ -951,7 +966,7 @@ void test_a_full_fragment_table_is_busy_and_the_retry_succeeds(void)
     {
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr((int)i, (uint16_t)i, 8u, 1), (uint16_t)(250u + i)));
     }
-    uint8_t *extra = fr(FRAG_SLOTS - 1, (uint16_t)IDEMIP_IP4_REASS_FRAGS, 8u, 1);
+    const uint8_t *extra = fr(FRAG_SLOTS - 1, (uint16_t)IDEMIP_IP4_REASS_FRAGS, 8u, 1);
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, hold_frag(work_a, extra, 259u));
 
     const uint8_t row = 0u;

@@ -284,31 +284,44 @@ static void fill_addr(uint8_t *a, uint8_t tag)
 
 // An IPv6 header, ext octets of per-fragment Destination Options, a sec 4.5 Fragment header, and data
 // octets of fragment data. Returns the octets written; the Fragment header sits at 40 + ext.
-static size_t build(const uint8_t *src, const uint8_t *dst, uint32_t ident, uint16_t off, int more, uint8_t nh,
-                    size_t ext, size_t data)
+typedef struct
+{
+    const uint8_t *src;
+    const uint8_t *dst;
+    uint32_t ident;
+    uint16_t off;
+    int more;
+    uint8_t nh;
+    size_t ext;
+    size_t data;
+} BuildFragArgs;
+
+static size_t build_frag_ctx(const BuildFragArgs *args)
 {
     memset(pkt, 0, PKT_CAP);
     IdemIpIp6BuildArgs a;
-    a.src = src;
-    a.dst = dst;
+    a.src = args->src;
+    a.dst = args->dst;
     a.flow_label = 0u;
     a.traffic_class = 0u;
     a.hop_limit = 64u;
-    a.payload_len = (uint16_t)(ext + IDEMIP_IP6_FRAG_HDR_LEN + data);
-    a.next_hdr = (ext != 0u) ? IDEMIP_IP6_NH_DSTOPTS : IDEMIP_IP6_NH_FRAGMENT;
+    a.payload_len = (uint16_t)(args->ext + IDEMIP_IP6_FRAG_HDR_LEN + args->data);
+    a.next_hdr = (args->ext != 0u) ? IDEMIP_IP6_NH_DSTOPTS : IDEMIP_IP6_NH_FRAGMENT;
     idemip_ip6_build(pkt, &a);
-    if (ext != 0u)
+    if (args->ext != 0u)
     {
         pkt[IDEMIP_IPV6_HDR_LEN + IDEMIP_IP6_EXT_OFF_NEXT_HDR] = IDEMIP_IP6_NH_FRAGMENT;
-        pkt[IDEMIP_IPV6_HDR_LEN + IDEMIP_IP6_EXT_OFF_LEN] = (uint8_t)((ext >> 3) - 1u);
+        pkt[IDEMIP_IPV6_HDR_LEN + IDEMIP_IP6_EXT_OFF_LEN] = (uint8_t)((args->ext >> 3) - 1u);
     }
-    idemip_ip6_frag_build(pkt + IDEMIP_IPV6_HDR_LEN + ext, nh, off, more ? IDEMIP_TRUE : IDEMIP_FALSE, ident);
-    for (size_t i = 0; i < data; i++)
+    idemip_ip6_frag_build(pkt + IDEMIP_IPV6_HDR_LEN + args->ext, args->nh, args->off, args->more ? IDEMIP_TRUE : IDEMIP_FALSE, args->ident);
+    for (size_t i = 0; i < args->data; i++)
     {
-        pkt[IDEMIP_IPV6_HDR_LEN + ext + IDEMIP_IP6_FRAG_HDR_LEN + i] = (uint8_t)(0xA0u + i);
+        pkt[IDEMIP_IPV6_HDR_LEN + args->ext + IDEMIP_IP6_FRAG_HDR_LEN + i] = (uint8_t)(0xA0u + i);
     }
-    return IDEMIP_IPV6_HDR_LEN + ext + IDEMIP_IP6_FRAG_HDR_LEN + data;
+    return IDEMIP_IPV6_HDR_LEN + args->ext + IDEMIP_IP6_FRAG_HDR_LEN + args->data;
 }
+
+#define build_frag(...) IDEMIP_CALL(build_frag_ctx, BuildFragArgs, __VA_ARGS__)
 
 static void feed(uint8_t *w, size_t len, size_t frag_hdr, uint32_t now, uint16_t desc)
 {
@@ -321,12 +334,25 @@ static void feed(uint8_t *w, size_t len, size_t frag_hdr, uint32_t now, uint16_t
 }
 
 // A fragment with no per-fragment extension headers, which is where the Fragment header then sits.
-static void feed_plain(uint8_t *w, uint32_t ident, uint16_t off, int more, uint8_t nh, size_t data, uint32_t now,
-                       uint16_t desc)
+typedef struct
 {
-    size_t len = build(addr_a_src, addr_a_dst, ident, off, more, nh, 0u, data);
-    feed(w, len, IDEMIP_IPV6_HDR_LEN, now, desc);
+    uint8_t *w;
+    uint32_t ident;
+    uint16_t off;
+    int more;
+    uint8_t nh;
+    size_t data;
+    uint32_t now;
+    uint16_t desc;
+} FeedPlainArgs;
+
+static void feed_plain_ctx(const FeedPlainArgs *args)
+{
+    size_t len = build_frag(addr_a_src, addr_a_dst, args->ident, args->off, args->more, args->nh, 0u, args->data);
+    feed(args->w, len, IDEMIP_IPV6_HDR_LEN, args->now, args->desc);
 }
+
+#define feed_plain(...) IDEMIP_CALL(feed_plain_ctx, FeedPlainArgs, __VA_ARGS__)
 
 static void ready(void)
 {
@@ -475,7 +501,7 @@ void test_a_zero_length_last_fragment_closes_the_datagram(void)
 void test_the_reassembled_payload_length_is_the_sec_4_5_formula(void)
 {
     ready();
-    size_t len = build(addr_a_src, addr_a_dst, 8u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 8u);
+    size_t len = build_frag(addr_a_src, addr_a_dst, 8u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 8u);
     uint16_t pl_first = idemip_ip6_payload_len(pkt);
     uint16_t fl_first = 8u;
     feed(work_a, len, IDEMIP_IPV6_HDR_LEN + 8u, 1000u, 1u);
@@ -549,7 +575,7 @@ void test_an_offset_and_length_past_the_payload_field_is_a_fragment_offset_probl
 void test_the_per_fragment_headers_count_toward_the_sixty_five_thousand_bound(void)
 {
     ready();
-    size_t len = build(addr_a_src, addr_a_dst, 13u, 0u, 1, IDEMIP_IP6_NH_UDP, 16u, 8u);
+    size_t len = build_frag(addr_a_src, addr_a_dst, 13u, 0u, 1, IDEMIP_IP6_NH_UDP, 16u, 8u);
     feed(work_a, len, IDEMIP_IPV6_HDR_LEN + 16u, 1000u, 1u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
     feed_plain(work_a, 13u, 65520u, 0, IDEMIP_IP6_NH_UDP, 8u, 1001u, 2u);
@@ -580,7 +606,7 @@ void test_a_completed_packet_past_the_payload_field_is_a_fragment_offset_problem
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
     uint8_t d = IDEMIP_IP6_REASS_IO(work_a)->datagram;
 
-    size_t len = build(addr_a_src, addr_a_dst, 34u, 0u, 1, IDEMIP_IP6_NH_UDP, 24u, 65496u);
+    size_t len = build_frag(addr_a_src, addr_a_dst, 34u, 0u, 1, IDEMIP_IP6_NH_UDP, 24u, 65496u);
     feed(work_a, len, IDEMIP_IPV6_HDR_LEN + 24u, 1001u, 2u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
     TEST_ASSERT_FALSE(IDEMIP_IP6_REASS_IO(work_a)->complete);
@@ -599,7 +625,7 @@ void test_a_completed_packet_at_the_payload_field_is_taken(void)
 {
     ready();
     feed_plain(work_a, 35u, 65504u, 0, IDEMIP_IP6_NH_UDP, 8u, 1000u, 1u);
-    size_t len = build(addr_a_src, addr_a_dst, 35u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 65496u);
+    size_t len = build_frag(addr_a_src, addr_a_dst, 35u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 65496u);
     feed(work_a, len, IDEMIP_IPV6_HDR_LEN + 8u, 1001u, 2u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
     feed_plain(work_a, 35u, 65496u, 1, IDEMIP_IP6_NH_UDP, 8u, 1002u, 3u);
@@ -625,7 +651,7 @@ void test_a_first_fragment_without_its_upper_layer_header_is_a_header_chain_prob
 void test_a_first_fragment_whose_chain_runs_off_the_end_is_a_header_chain_problem(void)
 {
     ready();
-    size_t len = build(addr_a_src, addr_a_dst, 15u, 0u, 1, IDEMIP_IP6_NH_DSTOPTS, 0u, 8u);
+    size_t len = build_frag(addr_a_src, addr_a_dst, 15u, 0u, 1, IDEMIP_IP6_NH_DSTOPTS, 0u, 8u);
     pkt[IDEMIP_IPV6_HDR_LEN + IDEMIP_IP6_FRAG_HDR_LEN + IDEMIP_IP6_EXT_OFF_NEXT_HDR] = IDEMIP_IP6_NH_TCP;
     pkt[IDEMIP_IPV6_HDR_LEN + IDEMIP_IP6_FRAG_HDR_LEN + IDEMIP_IP6_EXT_OFF_LEN] = 3u; // 32 octets
     feed(work_a, len, IDEMIP_IPV6_HDR_LEN, 1000u, 1u);
@@ -858,7 +884,7 @@ void test_a_different_source_address_is_a_different_packet(void)
     ready();
     feed_plain(work_a, 25u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 1000u, 1u);
     uint8_t d = IDEMIP_IP6_REASS_IO(work_a)->datagram;
-    size_t len = build(addr_b_src, addr_a_dst, 25u, 8u, 0, IDEMIP_IP6_NH_UDP, 0u, 8u);
+    size_t len = build_frag(addr_b_src, addr_a_dst, 25u, 8u, 0, IDEMIP_IP6_NH_UDP, 0u, 8u);
     feed(work_a, len, IDEMIP_IPV6_HDR_LEN, 1001u, 2u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
     TEST_ASSERT_NOT_EQUAL_UINT8(d, IDEMIP_IP6_REASS_IO(work_a)->datagram);
@@ -870,7 +896,7 @@ void test_a_different_destination_address_is_a_different_packet(void)
     ready();
     feed_plain(work_a, 26u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 1000u, 1u);
     uint8_t d = IDEMIP_IP6_REASS_IO(work_a)->datagram;
-    size_t len = build(addr_a_src, addr_b_src, 26u, 8u, 0, IDEMIP_IP6_NH_UDP, 0u, 8u);
+    size_t len = build_frag(addr_a_src, addr_b_src, 26u, 8u, 0, IDEMIP_IP6_NH_UDP, 0u, 8u);
     feed(work_a, len, IDEMIP_IPV6_HDR_LEN, 1001u, 2u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
     TEST_ASSERT_NOT_EQUAL_UINT8(d, IDEMIP_IP6_REASS_IO(work_a)->datagram);
@@ -944,7 +970,7 @@ void test_the_walk_refuses_a_datagram_no_entry_holds(void)
 void test_the_walk_reports_each_fragments_own_header_length(void)
 {
     ready();
-    size_t len = build(addr_a_src, addr_a_dst, 30u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 8u);
+    size_t len = build_frag(addr_a_src, addr_a_dst, 30u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 8u);
     feed(work_a, len, IDEMIP_IPV6_HDR_LEN + 8u, 1000u, 1u);
     uint8_t d = IDEMIP_IP6_REASS_IO(work_a)->datagram;
     feed_plain(work_a, 30u, 8u, 0, IDEMIP_IP6_NH_UDP, 8u, 1001u, 2u);
@@ -1204,7 +1230,7 @@ void test_a_busy_input_leaks_no_fragment_entry(void)
 void test_a_fragment_header_outside_the_packet_is_refused(void)
 {
     ready();
-    size_t len = build(addr_a_src, addr_a_dst, 60u, 0u, 1, IDEMIP_IP6_NH_UDP, 0u, 8u);
+    size_t len = build_frag(addr_a_src, addr_a_dst, 60u, 0u, 1, IDEMIP_IP6_NH_UDP, 0u, 8u);
     feed(work_a, len, len - 4u, 1000u, 1u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP6_REASS_IO(work_a)->status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_REASS_ERR_NONE, IDEMIP_IP6_REASS_IO(work_a)->err);
@@ -1217,7 +1243,7 @@ void test_a_fragment_header_outside_the_packet_is_refused(void)
 void test_a_payload_length_past_the_buffer_is_refused(void)
 {
     ready();
-    size_t len = build(addr_a_src, addr_a_dst, 61u, 0u, 1, IDEMIP_IP6_NH_UDP, 0u, 8u);
+    size_t len = build_frag(addr_a_src, addr_a_dst, 61u, 0u, 1, IDEMIP_IP6_NH_UDP, 0u, 8u);
     idemip_ip6_set_payload_len(pkt, (uint16_t)(len - IDEMIP_IPV6_HDR_LEN + 8u));
     feed(work_a, len, IDEMIP_IPV6_HDR_LEN, 1000u, 1u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP6_REASS_IO(work_a)->status);
@@ -1228,7 +1254,7 @@ void test_a_payload_length_past_the_buffer_is_refused(void)
 void test_a_packet_shorter_than_the_fixed_header_is_refused(void)
 {
     ready();
-    size_t len = build(addr_a_src, addr_a_dst, 62u, 0u, 1, IDEMIP_IP6_NH_UDP, 0u, 8u);
+    size_t len = build_frag(addr_a_src, addr_a_dst, 62u, 0u, 1, IDEMIP_IP6_NH_UDP, 0u, 8u);
     (void)len;
     feed(work_a, IDEMIP_IPV6_HDR_LEN - 1u, IDEMIP_IPV6_HDR_LEN, 1000u, 1u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP6_REASS_IO(work_a)->status);
@@ -1257,7 +1283,7 @@ void test_two_borrows_reassemble_independently(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
     TEST_ASSERT_FALSE(IDEMIP_IP6_REASS_IO(work_a)->complete);
 
-    size_t len = build(addr_a_src, addr_a_dst, 70u, 8u, 0, IDEMIP_IP6_NH_UDP, 0u, 8u);
+    size_t len = build_frag(addr_a_src, addr_a_dst, 70u, 8u, 0, IDEMIP_IP6_NH_UDP, 0u, 8u);
     feed(work_b, len, IDEMIP_IPV6_HDR_LEN, 1000u, 2u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_b)->status);
     TEST_ASSERT_FALSE(IDEMIP_IP6_REASS_IO(work_b)->complete);
