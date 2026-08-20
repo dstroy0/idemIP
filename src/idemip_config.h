@@ -1143,14 +1143,16 @@ static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
 // advertised prefix against, what sec 2 makes it (preferred or deprecated), and the two sec 5.5.4
 // deadlines with the flag each carries for RFC 4861 sec 4.6.2's all-ones infinity: 16, 1, 1, 4, 4 and
 // 2 octets, at a power of two.
+// The entry carries the two RFC 4862 sec 5.5.4 deadlines on the 64-bit millisecond clock, which is
+// what lets a lifetime the RFC states in 32-bit seconds be held without a bound.
 #ifndef IDEMIP_SLAAC_ENTRY_SHIFT
-#define IDEMIP_SLAAC_ENTRY_SHIFT 5u
+#define IDEMIP_SLAAC_ENTRY_SHIFT 6u
 #endif
 // Spans the operand block and the context together: slaac.h puts SlaacIo at offset zero and the
 // context behind it, which is the mark clear leaves. sizeof(SlaacIo) is 112 on a target with 8-octet
 // pointers and the context is 4, so the assert in slaac.c holds at 128.
 #ifndef IDEMIP_SLAAC_CTX_BYTES
-#define IDEMIP_SLAAC_CTX_BYTES 128u
+#define IDEMIP_SLAAC_CTX_BYTES 144u
 #endif
 #define IDEMIP_SLAAC_BORROW (IDEMIP_SLAAC_CTX_BYTES + (IDEMIP_IP6_ADDRESSES << IDEMIP_SLAAC_ENTRY_SHIFT))
 
@@ -1166,7 +1168,7 @@ static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
 // context behind it, which is the mark clear leaves. sizeof(RdnssIo) is 80 on a target with 8-octet
 // pointers and the context is 4, so the assert in rdnss.c holds at 96.
 #ifndef IDEMIP_RDNSS_CTX_BYTES
-#define IDEMIP_RDNSS_CTX_BYTES 96u
+#define IDEMIP_RDNSS_CTX_BYTES 112u
 #endif
 #define IDEMIP_RDNSS_BORROW (IDEMIP_RDNSS_CTX_BYTES + (IDEMIP_RDNSS_SERVERS << IDEMIP_RDNSS_ENTRY_SHIFT))
 

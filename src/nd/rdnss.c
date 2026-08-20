@@ -26,17 +26,21 @@ IDEMIP_BEGIN_DECLS
 // One entry of the sec 6.1 DNS Server List: "a pair of an RDNSS address ... and Expiration-time".
 typedef struct
 {
-    uint32_t expire_ms;
+    IdemIpMs expire_at;
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     idemip_bool infinite;
     idemip_bool used;
-    uint8_t pad[10];
+    uint8_t pad[(1u << IDEMIP_RDNSS_ENTRY_SHIFT) -
+                (sizeof(IdemIpMs) + IDEMIP_IP6_ADDR_LEN + (2u * sizeof(idemip_bool)))];
 } RdnssEntry;
 
-// The running context: the mark clear leaves.
+// The running context: the mark clear leaves, and the two readings that carry the caller's 32-bit
+// millisecond clock across its wrap onto the one every deadline sits on.
 typedef struct
 {
     uint32_t ready;
+    uint32_t tick_ms;
+    uint32_t tick_hi;
 } RdnssCtx;
 
 // An index is (i << SHIFT), so each entry is exactly its width.
@@ -66,10 +70,8 @@ static_assert(IDEMIP_RDNSS_OFF_END <= IDEMIP_RDNSS_BORROW,
 // A deadline is one absolute millisecond stamp compared as a signed difference, so the span it
 // carries is half the clock's period. sec 5.1 states the Lifetime in seconds, and a finite one longer
 // than this is held at the bound.
-#define RDNSS_DEADLINE_MAX_MS 0x7FFFFFFFu
-#define RDNSS_LIFETIME_S_MAX 2147483u
-static_assert((uint64_t)RDNSS_LIFETIME_S_MAX * 1000u <= (uint64_t)RDNSS_DEADLINE_MAX_MS,
-              "RDNSS_LIFETIME_S_MAX seconds must fit RDNSS_DEADLINE_MAX_MS milliseconds");
+// A deadline is one absolute millisecond on the 64-bit clock, so every finite value RFC 8106 sec
+// 5.1's 32-bit Lifetime field can name is representable and none is held at a bound.
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
 static idemip_bool rdnss_ready(uint8_t *restrict work)
@@ -107,17 +109,16 @@ static idemip_bool rdnss_is_unicast(const uint8_t *addr)
 // Expiration-time, this entry is regarded as expired". The difference is taken in 32 unsigned bits
 // and read as a span below half the range, so an expiration the millisecond clock has passed stays
 // passed across its wrap at 2^32.
-static idemip_bool rdnss_due(uint32_t now, uint32_t deadline)
+static idemip_bool rdnss_due(IdemIpMs now, IdemIpMs deadline)
 {
     return (idemip_bool)((uint32_t)(now - deadline) < 0x80000000u);
 }
 
 // sec 6.1: "Expiration-time is set to the value of the Lifetime field of the RDNSS option ... plus the
 // current time." A finite lifetime longer than the deadline span is held at the bound.
-static uint32_t rdnss_expiration(uint32_t now_ms, uint32_t lifetime_s)
+static IdemIpMs rdnss_expiration(IdemIpMs now, uint32_t lifetime_s)
 {
-    uint32_t seconds = (lifetime_s > RDNSS_LIFETIME_S_MAX) ? RDNSS_LIFETIME_S_MAX : lifetime_s;
-    return now_ms + (seconds * 1000u);
+    return now + idemip_ms_from_s(lifetime_s);
 }
 
 // --- the list --------------------------------------------------------------
@@ -174,7 +175,7 @@ static uint8_t rdnss_soonest(uint8_t *restrict work, uint32_t now_ms)
     for (uint8_t i = 0; i < count; i++)
     {
         const RdnssEntry *e = RDNSS_AT(work, i);
-        uint32_t left = rdnss_due(now_ms, e->expire_ms) ? 0u : (uint32_t)(e->expire_ms - now_ms);
+        uint32_t left = rdnss_due(now_ms, e->expire_at) ? 0u : (uint32_t)(e->expire_at - now_ms);
         idemip_bool take;
         if (best == (uint8_t)IDEMIP_RDNSS_NONE)
         {
@@ -211,7 +212,7 @@ static void rdnss_insert_at(uint8_t *restrict work, uint8_t index, const uint8_t
     RdnssEntry *e = RDNSS_AT(work, index);
     memcpy(e->addr, addr, IDEMIP_IP6_ADDR_LEN);
     e->infinite = (idemip_bool)(lifetime_s == IDEMIP_RDNSS_LIFETIME_INFINITE);
-    e->expire_ms = e->infinite ? 0u : rdnss_expiration(now_ms, lifetime_s);
+    e->expire_at = e->infinite ? 0u : rdnss_expiration(now_ms, lifetime_s);
     e->used = IDEMIP_TRUE;
 }
 
@@ -220,7 +221,7 @@ static void rdnss_insert_at(uint8_t *restrict work, uint8_t index, const uint8_t
 static void rdnss_clear_results(RdnssIo *io)
 {
     memset(io->addr, 0, sizeof io->addr);
-    io->expire_ms = 0u;
+    io->expire_at = 0u;
     io->lifetime_s = 0u;
     io->entry = (uint8_t)IDEMIP_RDNSS_NONE;
     io->servers = 0u;
@@ -241,7 +242,7 @@ static void rdnss_publish(uint8_t *restrict work, uint8_t index)
     const RdnssEntry *e = RDNSS_AT(work, index);
     io->entry = index;
     memcpy(io->addr, e->addr, IDEMIP_IP6_ADDR_LEN);
-    io->expire_ms = e->expire_ms;
+    io->expire_at = e->expire_at;
     io->infinite = e->infinite;
 }
 
@@ -284,7 +285,7 @@ static void rdnss_apply(uint8_t *restrict work, const uint8_t *addr, uint32_t li
         }
         RdnssEntry *e = RDNSS_AT(work, index);
         e->infinite = (idemip_bool)(lifetime_s == IDEMIP_RDNSS_LIFETIME_INFINITE);
-        e->expire_ms = e->infinite ? 0u : rdnss_expiration(now_ms, lifetime_s);
+        e->expire_at = e->infinite ? 0u : rdnss_expiration(now_ms, lifetime_s);
         io->updated++;
         return;
     }
@@ -484,7 +485,7 @@ static void rdnss_tick(uint8_t *restrict work)
     for (uint8_t i = 0; i < count; i++)
     {
         const RdnssEntry *e = RDNSS_AT(work, i);
-        if (!e->infinite && rdnss_due(io->tick_args.now_ms, e->expire_ms))
+        if (!e->infinite && rdnss_due(io->tick_args.now_ms, e->expire_at))
         {
             rdnss_publish(work, i);
             rdnss_delete_at(work, i);

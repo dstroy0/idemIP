@@ -188,11 +188,11 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
     Rdnss.clear(work_b);
     feed(work_a, 100u, 0u, one, 1u);
     find_addr(work_a, g_a);
-    uint32_t first = IO(work_a)->expire_ms;
+    uint32_t first = IO(work_a)->expire_at;
 
     feed(work_b, 5u, 9000u, one, 1u);
     find_addr(work_a, g_a);
-    TEST_ASSERT_EQUAL_UINT32(first, IO(work_a)->expire_ms);
+    TEST_ASSERT_EQUAL_UINT32(first, IO(work_a)->expire_at);
 }
 
 // --- the published map -------------------------------------------------------
@@ -396,7 +396,7 @@ void test_the_expiration_is_the_lifetime_plus_the_current_time(void)
     feed(work_a, 30u, 5000u, one, 1u);
     find_addr(work_a, g_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-    TEST_ASSERT_EQUAL_UINT32(5000u + (30u * 1000u), IO(work_a)->expire_ms);
+    TEST_ASSERT_EQUAL_UINT32(5000u + (30u * 1000u), IO(work_a)->expire_at);
     TEST_ASSERT_FALSE(IO(work_a)->infinite);
 }
 
@@ -427,7 +427,7 @@ void test_a_repeated_address_updates_the_expiration(void)
     TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->added);
     TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, IO(work_a)->servers, "an update must not add a second entry");
     find_addr(work_a, g_a);
-    TEST_ASSERT_EQUAL_UINT32(1000u + (60u * 1000u), IO(work_a)->expire_ms);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (60u * 1000u), IO(work_a)->expire_at);
 }
 
 // sec 6.2 step (b): an address already held with a zero Lifetime is deleted "in order to prevent the

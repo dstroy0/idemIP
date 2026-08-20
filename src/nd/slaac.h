@@ -144,13 +144,15 @@ typedef struct
  * @var SlaacIo::addr            the address the call formed, matched or aged, IDEMIP_IP6_ADDR_LEN
  *                               octets. Copied rather than pointed at, so an invalidated address is
  *                               still readable after its slot is freed.
- * @var SlaacIo::valid_ms        when the valid lifetime expires and the address becomes invalid
- * @var SlaacIo::preferred_ms    when the preferred lifetime expires and the address is deprecated
+ * @var SlaacIo::valid_at        the millisecond on the 64-bit clock the valid lifetime expires at,
+ *                               after which the address is invalid
+ * @var SlaacIo::preferred_at    the millisecond the preferred lifetime expires at, after which the
+ *                               address is deprecated
  * @var SlaacIo::entry           the table slot the call touched, or IDEMIP_SLAAC_NONE
  * @var SlaacIo::state           what that address is: preferred or deprecated
  * @var SlaacIo::prefix_len      the prefix length it was formed with
  * @var SlaacIo::addresses       addresses the list holds
- * @var SlaacIo::valid_infinite  the valid lifetime is the all-ones infinity, so @ref SlaacIo::valid_ms
+ * @var SlaacIo::valid_infinite  the valid lifetime is the all-ones infinity, so @ref SlaacIo::valid_at
  *                               is not a deadline
  * @var SlaacIo::preferred_infinite the preferred lifetime is that infinity
  * @var SlaacIo::created         sec 5.5.3 (d) formed an address and added it to the list
@@ -171,8 +173,8 @@ typedef struct
     SlaacAddrArgs addr_args;
     SlaacTickArgs tick_args;
 
-    uint32_t valid_ms;
-    uint32_t preferred_ms;
+    IdemIpMs valid_at;
+    IdemIpMs preferred_at;
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     IdemIpStatus status;
     uint8_t entry;

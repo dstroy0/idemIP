@@ -113,7 +113,7 @@ typedef struct
  * @var RdnssIo::addr         the server the call reported or expired, IDEMIP_IP6_ADDR_LEN octets.
  *                            Copied rather than pointed at, so an expired one is still readable after
  *                            its slot is freed.
- * @var RdnssIo::expire_ms    sec 6.1's Expiration-time, "the time when this entry becomes invalid"
+ * @var RdnssIo::expire_at    sec 6.1's Expiration-time, "the time when this entry becomes invalid"
  * @var RdnssIo::lifetime_s   the Lifetime the option carried, in seconds
  * @var RdnssIo::entry        the slot the call touched, or IDEMIP_RDNSS_NONE
  * @var RdnssIo::servers      entries the DNS Server List holds
@@ -126,7 +126,7 @@ typedef struct
  *                            the DNS Server List" (sec 6.2)
  * @var RdnssIo::ignored      the option failed sec 5.3.1's validity check, so it is discarded whole
  * @var RdnssIo::infinite     the reported entry's Lifetime was the all-ones infinity, so
- *                            @ref RdnssIo::expire_ms is not a deadline
+ *                            @ref RdnssIo::expire_at is not a deadline
  */
 typedef struct
 {
@@ -134,7 +134,7 @@ typedef struct
     RdnssAddrArgs addr_args;
     RdnssTickArgs tick_args;
 
-    uint32_t expire_ms;
+    IdemIpMs expire_at;
     uint32_t lifetime_s;
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     IdemIpStatus status;

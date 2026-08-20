@@ -27,21 +27,25 @@ IDEMIP_BEGIN_DECLS
 // identical".
 typedef struct
 {
-    uint32_t valid_ms;
-    uint32_t preferred_ms;
+    IdemIpMs valid_at;
+    IdemIpMs preferred_at;
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     uint8_t prefix_len;
     IdemIpSlaacAddrState state;
     idemip_bool valid_infinite;
     idemip_bool preferred_infinite;
     idemip_bool used;
-    uint8_t pad[3];
+    uint8_t pad[(1u << IDEMIP_SLAAC_ENTRY_SHIFT) -
+                ((2u * sizeof(IdemIpMs)) + IDEMIP_IP6_ADDR_LEN + 2u + (3u * sizeof(idemip_bool)))];
 } SlaacEntry;
 
-// The running context: the mark clear leaves.
+// The running context: the mark clear leaves, and the two readings that carry the caller's 32-bit
+// millisecond clock across its wrap onto the one every deadline sits on.
 typedef struct
 {
     uint32_t ready;
+    uint32_t tick_ms;
+    uint32_t tick_hi;
 } SlaacCtx;
 
 // An index is (i << SHIFT), so each entry is exactly its width.
@@ -71,13 +75,8 @@ static_assert(IDEMIP_SLAAC_ADDR_FREE == 0, "IDEMIP_SLAAC_ADDR_FREE must be zero:
 // The count as the octet an index is compared against.
 #define SLAAC_ENTRIES ((uint8_t)IDEMIP_IP6_ADDRESSES)
 
-// A deadline is one absolute millisecond stamp compared as a signed difference, so the span it
-// carries is half the clock's period. RFC 4861 sec 4.6.2 states both lifetimes in seconds, and a
-// finite one longer than this is held at the bound.
-#define SLAAC_DEADLINE_MAX_MS 0x7FFFFFFFu
-#define SLAAC_LIFETIME_S_MAX 2147483u
-static_assert((uint64_t)SLAAC_LIFETIME_S_MAX * 1000u <= (uint64_t)SLAAC_DEADLINE_MAX_MS,
-              "SLAAC_LIFETIME_S_MAX seconds must fit SLAAC_DEADLINE_MAX_MS milliseconds");
+// A deadline is one absolute millisecond on the 64-bit clock, so every finite value RFC 4861 sec
+// 4.6.2's 32-bit seconds fields can name is representable and none is held at a bound.
 
 // RFC 4291 sec 2.5.6 gives the link-local prefix FE80::/10, which sec 5.3 forms an address on and
 // sec 5.5.3 (b) refuses to autoconfigure from.
@@ -169,25 +168,17 @@ static idemip_bool slaac_iid_ok(const uint8_t *iid, uint8_t iid_bits, uint8_t pr
 
 // --- the clock -------------------------------------------------------------
 
-// True once @p now has reached @p deadline. The difference is taken in 32 unsigned bits and read as a
-// span below half the range, so a deadline the millisecond clock has passed stays passed across its
-// wrap at 2^32.
-static idemip_bool slaac_due(uint32_t now, uint32_t deadline)
+// True once @p now has reached @p deadline. Both sit on the same 64-bit millisecond clock, so this is
+// one comparison and nothing wraps under it.
+static idemip_bool slaac_due(IdemIpMs now, IdemIpMs deadline)
 {
-    return (idemip_bool)((uint32_t)(now - deadline) < 0x80000000u);
+    return (now >= deadline) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
 // Milliseconds still to run on a deadline, and zero once it is due.
-static uint32_t slaac_remaining(uint32_t now, uint32_t deadline)
+static IdemIpMs slaac_remaining(IdemIpMs now, IdemIpMs deadline)
 {
-    return slaac_due(now, deadline) ? 0u : (uint32_t)(deadline - now);
-}
-
-// RFC 4861 sec 4.6.2 states a lifetime in seconds; a finite one longer than the deadline span is held
-// at the bound.
-static uint32_t slaac_lifetime_ms(uint32_t seconds)
-{
-    return ((seconds > SLAAC_LIFETIME_S_MAX) ? SLAAC_LIFETIME_S_MAX : seconds) * 1000u;
+    return slaac_due(now, deadline) ? (IdemIpMs)0 : (deadline - now);
 }
 
 // --- the list --------------------------------------------------------------
@@ -250,8 +241,8 @@ static uint8_t slaac_count(uint8_t *restrict work)
 static void slaac_clear_results(SlaacIo *io)
 {
     memset(io->addr, 0, sizeof io->addr);
-    io->valid_ms = 0u;
-    io->preferred_ms = 0u;
+    io->valid_at = 0;
+    io->preferred_at = 0;
     io->entry = (uint8_t)IDEMIP_SLAAC_NONE;
     io->state = IDEMIP_SLAAC_ADDR_FREE;
     io->prefix_len = 0u;
@@ -274,8 +265,8 @@ static void slaac_publish(uint8_t *restrict work, uint8_t index)
     const SlaacEntry *e = SLAAC_AT(work, index);
     io->entry = index;
     memcpy(io->addr, e->addr, IDEMIP_IP6_ADDR_LEN);
-    io->valid_ms = e->valid_ms;
-    io->preferred_ms = e->preferred_ms;
+    io->valid_at = e->valid_at;
+    io->preferred_at = e->preferred_at;
     io->state = e->state;
     io->prefix_len = e->prefix_len;
     io->valid_infinite = e->valid_infinite;
@@ -289,17 +280,17 @@ static void slaac_publish(uint8_t *restrict work, uint8_t index)
 // Lifetime in the received Prefix Information option, regardless of whether the valid lifetime is also
 // reset or ignored". A preferred lifetime of zero deprecates the address at once, sec 5.5.4 making an
 // address deprecated "when its preferred lifetime expires".
-static void slaac_set_preferred(SlaacEntry *e, uint32_t now_ms, uint32_t preferred_s)
+static void slaac_set_preferred(SlaacEntry *e, IdemIpMs now, uint32_t preferred_s)
 {
     e->preferred_infinite = (idemip_bool)(preferred_s == IDEMIP_SLAAC_LIFETIME_INFINITE);
-    e->preferred_ms = e->preferred_infinite ? 0u : now_ms + slaac_lifetime_ms(preferred_s);
+    e->preferred_at = e->preferred_infinite ? (IdemIpMs)0 : (now + idemip_ms_from_s(preferred_s));
     e->state = (preferred_s != 0u) ? IDEMIP_SLAAC_ADDR_PREFERRED : IDEMIP_SLAAC_ADDR_DEPRECATED;
 }
 
-static void slaac_set_valid(SlaacEntry *e, uint32_t now_ms, uint32_t valid_s)
+static void slaac_set_valid(SlaacEntry *e, IdemIpMs now, uint32_t valid_s)
 {
     e->valid_infinite = (idemip_bool)(valid_s == IDEMIP_SLAAC_LIFETIME_INFINITE);
-    e->valid_ms = e->valid_infinite ? 0u : now_ms + slaac_lifetime_ms(valid_s);
+    e->valid_at = e->valid_infinite ? (IdemIpMs)0 : (now + idemip_ms_from_s(valid_s));
 }
 
 /*
@@ -319,25 +310,25 @@ static void slaac_set_valid(SlaacEntry *e, uint32_t now_ms, uint32_t valid_s)
  * RemainingLifetime is neither less than the received lifetime nor at or under 2 hours, so it takes
  * rule 1 or rule 3.
  */
-static void slaac_two_hour_rule(uint8_t *restrict work, SlaacEntry *e, uint32_t now_ms, uint32_t valid_s,
+static void slaac_two_hour_rule(uint8_t *restrict work, SlaacEntry *e, IdemIpMs now, uint32_t valid_s,
                                 idemip_bool authenticated)
 {
     SlaacIo *io = SLAAC_IO(work);
     idemip_bool received_infinite = (idemip_bool)(valid_s == IDEMIP_SLAAC_LIFETIME_INFINITE);
-    uint32_t received_ms = slaac_lifetime_ms(valid_s);
-    uint32_t remaining_ms = e->valid_infinite ? 0u : slaac_remaining(now_ms, e->valid_ms);
+    IdemIpMs received_ms = idemip_ms_from_s(valid_s);
+    IdemIpMs remaining_ms = e->valid_infinite ? (IdemIpMs)0 : slaac_remaining(now, e->valid_at);
 
-    if (received_infinite || received_ms > (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS ||
+    if (received_infinite || received_ms > (IdemIpMs)IDEMIP_SLAAC_TWO_HOURS_MS ||
         (!e->valid_infinite && received_ms > remaining_ms))
     {
-        slaac_set_valid(e, now_ms, valid_s);
+        slaac_set_valid(e, now, valid_s);
         return;
     }
-    if (!e->valid_infinite && remaining_ms <= (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS)
+    if (!e->valid_infinite && remaining_ms <= (IdemIpMs)IDEMIP_SLAAC_TWO_HOURS_MS)
     {
         if (authenticated)
         {
-            slaac_set_valid(e, now_ms, valid_s);
+            slaac_set_valid(e, now, valid_s);
         }
         else
         {
@@ -346,7 +337,7 @@ static void slaac_two_hour_rule(uint8_t *restrict work, SlaacEntry *e, uint32_t 
         return;
     }
     e->valid_infinite = IDEMIP_FALSE;
-    e->valid_ms = now_ms + (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS;
+    e->valid_at = now + (IdemIpMs)IDEMIP_SLAAC_TWO_HOURS_MS;
     io->two_hour = IDEMIP_TRUE;
 }
 
@@ -419,6 +410,8 @@ static void slaac_prefix_in(uint8_t *restrict work)
     io->status = IDEMIP_ERR;
     slaac_clear_results(io);
     const SlaacPrefixArgs *a = &io->prefix_args;
+    // The caller's 32-bit reading, on the one clock every deadline this sets sits on.
+    const IdemIpMs now = idemip_ms_extend(&SLAAC_CTX(work)->tick_ms, &SLAAC_CTX(work)->tick_hi, a->now_ms);
     // RFC 4861 sec 4.6.2 puts Prefix Length "from 0 to 128", so anything above is not a field this
     // unit can match or form on.
     if (!slaac_ready(work) || a->prefix == NULL || a->prefix_len > SLAAC_ADDR_BITS)
@@ -478,8 +471,8 @@ static void slaac_prefix_in(uint8_t *restrict work)
         e->prefix_len = a->prefix_len;
         e->used = IDEMIP_TRUE;
         // "initializing its preferred and valid lifetime values from the Prefix Information option"
-        slaac_set_preferred(e, a->now_ms, a->preferred_s);
-        slaac_set_valid(e, a->now_ms, a->valid_s);
+        slaac_set_preferred(e, now, a->preferred_s);
+        slaac_set_valid(e, now, a->valid_s);
         slaac_publish(work, slot);
         io->created = IDEMIP_TRUE;
         io->status = IDEMIP_OK;
@@ -488,8 +481,8 @@ static void slaac_prefix_in(uint8_t *restrict work)
 
     // (e) the prefix is one an address in the list was configured from.
     SlaacEntry *e = SLAAC_AT(work, index);
-    slaac_two_hour_rule(work, e, a->now_ms, a->valid_s, a->authenticated);
-    slaac_set_preferred(e, a->now_ms, a->preferred_s);
+    slaac_two_hour_rule(work, e, now, a->valid_s, a->authenticated);
+    slaac_set_preferred(e, now, a->preferred_s);
     slaac_publish(work, index);
     io->updated = IDEMIP_TRUE;
     io->status = IDEMIP_OK;
@@ -578,7 +571,7 @@ static void slaac_tick(uint8_t *restrict work)
     {
         return;
     }
-    uint32_t now_ms = io->tick_args.now_ms;
+    const IdemIpMs now = idemip_ms_extend(&SLAAC_CTX(work)->tick_ms, &SLAAC_CTX(work)->tick_hi, io->tick_args.now_ms);
     for (uint8_t i = 0; i < SLAAC_ENTRIES; i++)
     {
         SlaacEntry *e = SLAAC_AT(work, i);
@@ -586,7 +579,7 @@ static void slaac_tick(uint8_t *restrict work)
         {
             continue;
         }
-        if (!e->valid_infinite && slaac_due(now_ms, e->valid_ms))
+        if (!e->valid_infinite && slaac_due(now, e->valid_at))
         {
             slaac_publish(work, i);
             memset(e, 0, sizeof(SlaacEntry));
@@ -595,7 +588,7 @@ static void slaac_tick(uint8_t *restrict work)
             io->status = IDEMIP_OK;
             return;
         }
-        if (e->state == IDEMIP_SLAAC_ADDR_PREFERRED && !e->preferred_infinite && slaac_due(now_ms, e->preferred_ms))
+        if (e->state == IDEMIP_SLAAC_ADDR_PREFERRED && !e->preferred_infinite && slaac_due(now, e->preferred_at))
         {
             e->state = IDEMIP_SLAAC_ADDR_DEPRECATED;
             slaac_publish(work, i);
