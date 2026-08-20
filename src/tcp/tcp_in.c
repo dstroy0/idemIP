@@ -98,6 +98,14 @@ static idemip_bool tcp_in_seg_acceptable(uint32_t seq, uint32_t len, uint32_t rc
     return (tcp_in_from(seq + len - 1u, rcv_nxt) < rcv_wnd) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
+// RFC 7323 sec 5.2: "the 'timestamps' are 32-bit unsigned integers in a modular 32-bit space. Thus,
+// 'less than' is defined the same way it is for TCP sequence numbers ... s < t if 0 < (t - s) < 2^31".
+static idemip_bool tcp_in_ts_lt(uint32_t s, uint32_t t)
+{
+    uint32_t d = tcp_in_from(t, s);
+    return (d != 0u && d < 0x80000000u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+}
+
 // RFC 5961 sec 3.2 step 3's "within the current receive window (RCV.NXT < SEG.SEQ <
 // RCV.NXT+RCV.WND)", which is the span that earns a challenge ACK rather than a reset.
 static idemip_bool tcp_in_rst_in_window(uint32_t seq, uint32_t rcv_nxt, uint32_t rcv_wnd)
@@ -118,6 +126,8 @@ static void tcp_in_put_ack(TcpInIo *io)
     io->reply.ack = io->vars.rcv_nxt;
     io->reply.flags = (uint16_t)IDEMIP_TCP_ACK;
     io->res.act |= IDEMIP_TCP_IN_ACT_ACK;
+    // RFC 7323 sec 4.3: "Last.ACK.sent holds the ACK field from the last segment sent."
+    io->ctl.last_ack_sent = io->reply.ack;
 }
 
 // RFC 9293 sec 3.5.2 group 2: "If the incoming segment has an ACK field, the reset takes its sequence
@@ -274,8 +284,11 @@ static void tcp_in_parse(uint8_t *restrict work)
             io->opts.mss = idemip_tcp_opt_mss(w.opt);
             io->opts.present |= (uint8_t)IDEMIP_TCP_IN_OPT_MSS;
         }
-        else if (w.kind == (uint8_t)IDEMIP_TCP_OPT_WS && w.len == (uint8_t)IDEMIP_TCP_OPT_WS_LEN)
+        else if (w.kind == (uint8_t)IDEMIP_TCP_OPT_WS && w.len == (uint8_t)IDEMIP_TCP_OPT_WS_LEN &&
+                 (flags & IDEMIP_TCP_SYN) != 0u)
         {
+            // RFC 7323 sec 2.2: "A Window Scale option in a segment without a SYN bit MUST be
+            // ignored."
             io->opts.ws = idemip_tcp_opt_ws(w.opt);
             io->opts.present |= (uint8_t)IDEMIP_TCP_IN_OPT_WS;
         }
@@ -394,7 +407,50 @@ static void tcp_in_listen(uint8_t *restrict work)
     io->reply.ack = io->vars.rcv_nxt;
     io->reply.flags = (uint16_t)(IDEMIP_TCP_SYN | IDEMIP_TCP_ACK);
     io->res.act |= IDEMIP_TCP_IN_ACT_ACK;
+    // RFC 7323 Appendix A, the SYN,ACK of the second and fourth checks: "Last.ACK.sent is set to
+    // RCV.NXT."
+    io->ctl.last_ack_sent = io->reply.ack;
 }
+
+// RFC 7323 sec 5.3's rules R1 and R3, in the order Appendix A puts them at the head of SEGMENT
+// ARRIVES: "Check whether the segment contains a Timestamps option and if bit Snd.TS.OK is on. If so:
+// If SEG.TSval < TS.Recent and the RST bit is off: If the connection has been idle more than 24 days,
+// save SEG.TSval in variable TS.Recent, else the segment is not acceptable ... If SEG.TSval >=
+// TS.Recent and SEG.SEQ <= Last.ACK.sent, then save SEG.TSval in variable TS.Recent." Reports true
+// when R1 rejects the segment, which sec 5.3 says "MUST take precedence over the regular TCP
+// acceptability check".
+static idemip_bool tcp_in_paws(TcpInIo *io)
+{
+    if ((io->ctl.flags & IDEMIP_TCP_CTL_TS_OK) == 0u || (io->opts.present & IDEMIP_TCP_IN_OPT_TS) == 0u)
+    {
+        return IDEMIP_FALSE;
+    }
+    if (tcp_in_ts_lt(io->opts.tsval, io->ctl.ts_recent) && (io->seg.flags & IDEMIP_TCP_RST) == 0u)
+    {
+        // sec 5.5: "The validity of TS.Recent needs to be checked only if the basic PAWS timestamp
+        // check fails ... If TS.Recent is found to be invalid, then the segment is accepted."
+        if (tcp_in_from(io->now_ms, io->ctl.ts_recent_ms) <= (uint32_t)IDEMIP_TCP_TS_RECENT_MAX_MS)
+        {
+            return IDEMIP_TRUE;
+        }
+        io->ctl.ts_recent = io->opts.tsval;
+        io->ctl.ts_recent_ms = io->now_ms;
+        return IDEMIP_FALSE;
+    }
+    // R3, over the sec 5.2 comparison. "SEG.SEQ <= Last.ACK.sent" is a distance forward from SEG.SEQ.
+    if (!tcp_in_ts_lt(io->opts.tsval, io->ctl.ts_recent) &&
+        tcp_in_from(io->ctl.last_ack_sent, io->seg.seq) < 0x80000000u)
+    {
+        io->ctl.ts_recent = io->opts.tsval;
+        io->ctl.ts_recent_ms = io->now_ms;
+    }
+    return IDEMIP_FALSE;
+}
+
+// sec 3.10.7.4's sixth, seventh and eighth checks, which sec 3.10.7.3's fourth continues into.
+static void tcp_in_check_urg(TcpInIo *io);
+static void tcp_in_check_text(TcpInIo *io);
+static void tcp_in_check_fin(TcpInIo *io);
 
 // RFC 9293 sec 3.10.7.3 SYN-SENT STATE, its five checks in order. The third, the security and
 // compartment of Appendix A.1, has nothing in a TCB here to compare and is not made.
@@ -476,6 +532,18 @@ static void tcp_in_syn_sent(uint8_t *restrict work)
         io->state = IDEMIP_TCP_STATE_ESTABLISHED;
         io->res.act |= IDEMIP_TCP_IN_ACT_ESTABLISHED;
         tcp_in_put_ack(io);
+        // "If there are other controls or text in the segment, then continue processing at the sixth
+        // step under Section 3.10.7.4 where the URG bit is checked; otherwise, return." sec 3.10.7.3
+        // adds "it is legal to send and receive application data on SYN segments".
+        if (io->seg.data_len != 0u || (io->seg.flags & (IDEMIP_TCP_FIN | IDEMIP_TCP_URG)) != 0u)
+        {
+            tcp_in_check_urg(io);
+            tcp_in_check_text(io);
+            if ((io->res.act & IDEMIP_TCP_IN_ACT_HOLD) == 0u)
+            {
+                tcp_in_check_fin(io);
+            }
+        }
         return;
     }
     // "Otherwise, enter SYN-RECEIVED, form a SYN,ACK segment <SEQ=ISS><ACK=RCV.NXT><CTL=SYN,ACK> and
@@ -485,10 +553,12 @@ static void tcp_in_syn_sent(uint8_t *restrict work)
     io->reply.ack = io->vars.rcv_nxt;
     io->reply.flags = (uint16_t)(IDEMIP_TCP_SYN | IDEMIP_TCP_ACK);
     io->res.act |= IDEMIP_TCP_IN_ACT_ACK;
+    // RFC 7323 Appendix A, the SYN,ACK of the second and fourth checks: "Last.ACK.sent is set to
+    // RCV.NXT."
+    io->ctl.last_ack_sent = io->reply.ack;
 }
 
-// RFC 9293 sec 3.10.7.4 second, in the three steps that section takes from RFC 5961 sec 3.2. RFC 1337
-// sec 3's fix F1, "Ignore RST segments in TIME-WAIT state", holds TIME-WAIT open for its full 2 MSL.
+// RFC 9293 sec 3.10.7.4 second, in the three steps that section takes from RFC 5961 sec 3.2.
 // Reports true when processing stops here.
 static idemip_bool tcp_in_check_rst(uint8_t *restrict work, TcpInIo *io)
 {
@@ -546,15 +616,12 @@ static idemip_bool tcp_in_check_rst(uint8_t *restrict work, TcpInIo *io)
         return IDEMIP_TRUE;
     case IDEMIP_TCP_STATE_CLOSING:
     case IDEMIP_TCP_STATE_LAST_ACK:
+    case IDEMIP_TCP_STATE_TIME_WAIT:
         // "If the RST bit is set, then enter the CLOSED state, delete the TCB, and return."
         io->state = IDEMIP_TCP_STATE_CLOSED;
         io->res.act |= IDEMIP_TCP_IN_ACT_FLUSH | IDEMIP_TCP_IN_ACT_DELETE;
         return IDEMIP_TRUE;
     default:
-        // TIME-WAIT. RFC 1337 sec 4: "fix (F1), ignoring RST segments in TIME-WAIT state, seems like
-        // the best short-term solution", which sec 3 says "avoids all three hazards" while the 2 MSL
-        // is enforced. RFC 9293 sec 3.10.7.4 second would delete the TCB here; RFC 1337 sec 1 is why
-        // that is the assassination.
         return IDEMIP_TRUE;
     }
 }
@@ -731,14 +798,32 @@ static void tcp_in_check_urg(TcpInIo *io)
     }
     uint32_t up = io->seg.seq + (uint32_t)io->seg.up;
     uint32_t cur = tcp_in_from(io->vars.rcv_up, io->vars.rcv_nxt);
-    // An RCV.UP behind RCV.NXT names data already consumed, which sec 3.10.7.4 sixth says is no
-    // longer "in advance of the data consumed", so this segment's pointer takes its place. RFC 7323
-    // sec 2.3 puts the two ends within 2^31 of each other, so behind is a distance above that half.
-    if (cur >= 0x80000000u || tcp_in_from(up, io->vars.rcv_nxt) > cur)
+    uint32_t at = tcp_in_from(up, io->vars.rcv_nxt);
+    // sec 3.8.5: "the urgent pointer cannot 'recede' in the sequence space". A pointer at or behind
+    // RCV.NXT is not "in advance of the data consumed", so it neither replaces RCV.UP nor signals.
+    // RFC 7323 sec 2.3 puts the two ends within 2^31 of each other, so behind is a distance above
+    // that half.
+    if (at == 0u || at >= 0x80000000u)
+    {
+        return;
+    }
+    // An RCV.UP behind RCV.NXT names data already consumed, so this segment's pointer takes its
+    // place; otherwise "RCV.UP <- max(RCV.UP,SEG.UP)" keeps the further of the two. sec 3.8.5
+    // MUST-32 signals on the pointer arriving with no pending urgent data and on it advancing, and
+    // sec 3.10.7.4 sixth says "If the user has already been signaled ... do not signal the user
+    // again", which is the equal case.
+    if (cur >= 0x80000000u || at > cur)
     {
         io->vars.rcv_up = up;
+        io->res.act |= IDEMIP_TCP_IN_ACT_URGENT;
     }
-    io->res.act |= IDEMIP_TCP_IN_ACT_URGENT;
+}
+
+// RFC 9293 sec 3.4: "The SYN control flag ... occupies one sequence number", so on a SYN segment the
+// first data octet sits at SEG.SEQ+1 and the FIN after the last one.
+static uint32_t tcp_in_text_seq(const TcpInIo *io)
+{
+    return io->seg.seq + (((io->seg.flags & IDEMIP_TCP_SYN) != 0u) ? 1u : 0u);
 }
 
 // RFC 9293 sec 3.10.7.4 seventh, the segment text. "In the following it is assumed that the segment
@@ -757,15 +842,15 @@ static void tcp_in_check_text(TcpInIo *io)
     {
         return; // "This should not occur since a FIN has been received from the remote side."
     }
-    uint32_t off = tcp_in_from(io->vars.rcv_nxt, io->seg.seq);
+    uint32_t seq = tcp_in_text_seq(io);
+    uint32_t off = tcp_in_from(io->vars.rcv_nxt, seq);
     if (off >= (uint32_t)io->seg.data_len)
     {
         // Every octet is older than RCV.NXT, or the segment begins past it. A segment that begins
         // past RCV.NXT is held; one entirely behind it is an old duplicate and only draws an ACK.
-        if (tcp_in_from(io->seg.seq, io->vars.rcv_nxt) != 0u &&
-            tcp_in_from(io->seg.seq, io->vars.rcv_nxt) < io->vars.rcv_wnd)
+        if (tcp_in_from(seq, io->vars.rcv_nxt) != 0u && tcp_in_from(seq, io->vars.rcv_nxt) < io->vars.rcv_wnd)
         {
-            io->res.text_seq = io->seg.seq;
+            io->res.text_seq = seq;
             io->res.text_off = 0u;
             io->res.text_len = io->seg.data_len;
             io->res.act |= IDEMIP_TCP_IN_ACT_HOLD;
@@ -805,7 +890,7 @@ static void tcp_in_check_fin(TcpInIo *io)
     }
     // The FIN occupies the sequence number after the segment's last data octet, so it is processed
     // only once every octet before it has been taken.
-    if (io->vars.rcv_nxt != io->seg.seq + (uint32_t)io->seg.data_len)
+    if (io->vars.rcv_nxt != tcp_in_text_seq(io) + (uint32_t)io->seg.data_len)
     {
         return;
     }
@@ -867,6 +952,15 @@ static void tcp_in_segment(uint8_t *restrict work)
     }
     io->status = IDEMIP_OK;
 
+    // RFC 7323 sec 5.3: "PAWS processing MUST take precedence over the regular TCP acceptability
+    // check", and R1's reject "Send an acknowledgment in reply ... and drop the segment."
+    if (tcp_in_paws(io))
+    {
+        io->res.act |= IDEMIP_TCP_IN_ACT_PAWS;
+        tcp_in_put_ack(io);
+        return;
+    }
+
     // First: the sec 3.4 Table 6 acceptability test. "If an incoming segment is not acceptable, an
     // acknowledgment should be sent in reply (unless the RST bit is set, if so drop the segment and
     // return) ... After sending the acknowledgment, drop the unacceptable segment and return."
@@ -884,6 +978,16 @@ static void tcp_in_segment(uint8_t *restrict work)
         {
             (void)tcp_in_check_syn(work, io);
             return;
+        }
+        // sec 3.4 MUST-66: "A TCP receiver MUST process the RST and URG fields of all incoming
+        // segments, even when the receive window is zero."
+        tcp_in_check_urg(io);
+        // "If the RCV.WND is zero, no segments will be acceptable, but special allowance should be
+        // made to accept valid ACKs, URGs, and RSTs." The fifth check runs on the ACK a zero-window
+        // probe carries, so SND.UNA advances while the receive window stays shut.
+        if (io->vars.rcv_wnd == 0u && tcp_in_check_ack(io))
+        {
+            return; // the fifth check stopped, on the reply it formed
         }
         tcp_in_put_ack(io);
         return;

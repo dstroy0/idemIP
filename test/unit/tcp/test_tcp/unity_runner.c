@@ -119,16 +119,16 @@ int main(void)
   run_test(test_window_scale_option_figure, "test_window_scale_option_figure", 456);
   run_test(test_window_scale_over_fourteen_reads_as_fourteen, "test_window_scale_over_fourteen_reads_as_fourteen", 470);
   run_test(test_window_scale_reaches_one_gibibyte, "test_window_scale_reaches_one_gibibyte", 484);
-  run_test(test_timestamps_option_figure, "test_timestamps_option_figure", 496);
-  run_test(test_sack_permitted_option_figure, "test_sack_permitted_option_figure", 513);
-  run_test(test_sack_option_blocks, "test_sack_option_blocks", 530);
-  run_test(test_sack_block_count_bounds, "test_sack_block_count_bounds", 569);
-  run_test(test_build_a_syn_option_list, "test_build_a_syn_option_list", 584);
-  run_test(test_build_helpers_write_only_what_they_report, "test_build_helpers_write_only_what_they_report", 626);
-  run_test(test_build_clamps_the_window_scale_shift, "test_build_clamps_the_window_scale_shift", 672);
-  run_test(test_build_fills_the_option_maximum, "test_build_fills_the_option_maximum", 684);
-  run_test(test_pseudo_header_checksum, "test_pseudo_header_checksum", 717);
-  run_test(test_checksum_pads_an_odd_length, "test_checksum_pads_an_odd_length", 743);
+  run_test(test_timestamps_option_figure, "test_timestamps_option_figure", 502);
+  run_test(test_sack_permitted_option_figure, "test_sack_permitted_option_figure", 519);
+  run_test(test_sack_option_blocks, "test_sack_option_blocks", 536);
+  run_test(test_sack_block_count_bounds, "test_sack_block_count_bounds", 575);
+  run_test(test_build_a_syn_option_list, "test_build_a_syn_option_list", 590);
+  run_test(test_build_helpers_write_only_what_they_report, "test_build_helpers_write_only_what_they_report", 632);
+  run_test(test_build_clamps_the_window_scale_shift, "test_build_clamps_the_window_scale_shift", 678);
+  run_test(test_build_fills_the_option_maximum, "test_build_fills_the_option_maximum", 690);
+  run_test(test_pseudo_header_checksum, "test_pseudo_header_checksum", 723);
+  run_test(test_checksum_pads_an_odd_length, "test_checksum_pads_an_odd_length", 749);
 
   return UNITY_END();
 }

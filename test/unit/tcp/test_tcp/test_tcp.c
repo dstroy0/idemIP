@@ -485,9 +485,15 @@ void test_window_scale_reaches_one_gibibyte(void)
 {
     put_offs_flags(seg, IDEMIP_TCP_DOFF_MIN, 0u);
     idemip_wr16(seg + IDEMIP_TCP_OFF_WINDOW, 0xFFFFu);
+    TEST_ASSERT_EQUAL_HEX16(0xFFFFu, idemip_tcp_window(seg));
     uint32_t scaled = (uint32_t)idemip_tcp_window(seg) << IDEMIP_TCP_WS_MAX;
-    TEST_ASSERT_TRUE(scaled < 0x40000000u);
-    TEST_ASSERT_EQUAL_HEX32(0x40000000u, (uint32_t)1u << (IDEMIP_TCP_WS_MAX + 16u));
+    // The largest the field can name at the largest shift, one scale unit short of the 1 GiB ceiling.
+    TEST_ASSERT_EQUAL_HEX32(0x3FFFC000u, scaled);
+    TEST_ASSERT_EQUAL_HEX32((uint32_t)1u << IDEMIP_TCP_WS_MAX, 0x40000000u - scaled);
+
+    // One shift lower halves it, so 14 is the exponent that reaches the ceiling.
+    idemip_wr16(seg + IDEMIP_TCP_OFF_WINDOW, 0x0001u);
+    TEST_ASSERT_EQUAL_HEX32(0x4000u, (uint32_t)idemip_tcp_window(seg) << IDEMIP_TCP_WS_MAX);
 }
 
 // --- RFC 7323 sec 3.2, Timestamps -------------------------------------------

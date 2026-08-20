@@ -63,6 +63,24 @@ static void call_every_entry(uint8_t *w)
     TcpIn.segment(w);
 }
 
+// Every entry writes io->status, so reading it once after the six would show only the last. Each is
+// read before the next call overwrites it.
+static void every_entry_refuses(uint8_t *w)
+{
+    TcpIn.parse(w);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(w)->status, "parse ran on a context that was never marked");
+    TcpIn.acceptable(w);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(w)->status, "acceptable ran on a context that was never marked");
+    TcpIn.closed(w);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(w)->status, "closed ran on a context that was never marked");
+    TcpIn.listen(w);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(w)->status, "listen ran on a context that was never marked");
+    TcpIn.syn_sent(w);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(w)->status, "syn_sent ran on a context that was never marked");
+    TcpIn.segment(w);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(w)->status, "segment ran on a context that was never marked");
+}
+
 // A connection at rest, with the four variables every check below reads.
 static void conn(uint8_t *w, IdemIpTcpState st, uint32_t una, uint32_t nxt, uint32_t rcv_nxt, uint32_t rcv_wnd)
 {
@@ -155,6 +173,8 @@ void test_the_published_offsets_are_ordered_and_do_not_overlap(void)
 }
 
 // Zeroed, never cleared: every entry must refuse rather than run on a context that was never marked.
+// RFC 9293 sec 3.10.7.1: "An incoming segment not containing a RST causes a RST to be sent in
+// response", which TcpIn.closed would emit from an unmarked context if its refusal were missed.
 void test_an_uncleared_borrow_is_refused(void)
 {
     IO(work_a)->parse_args.seg = g_wire;
@@ -162,10 +182,9 @@ void test_an_uncleared_borrow_is_refused(void)
     IO(work_a)->parse_args.remote_ip = g_remote;
     IO(work_a)->parse_args.len = (uint16_t)IDEMIP_TCP_HDR_LEN;
     IO(work_a)->parse_args.ip_version = 4u;
-    call_every_entry(work_a);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
-    TcpIn.acceptable(work_a);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+    every_entry_refuses(work_a);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_RST,
+                              "no reset is formed from a context that was never marked");
 }
 
 // An entry is a function of its borrow alone, so the same call on the same bytes repeats.
@@ -332,6 +351,35 @@ void test_parse_scales_every_window_but_a_syn_segments(void)
     aim_parse(work_a, total, 30u);
     TcpIn.parse(work_a);
     TEST_ASSERT_EQUAL_UINT32(1000u << IDEMIP_TCP_WS_MAX, IO(work_a)->seg.wnd);
+
+    // sec 2.2: 14 gives "a maximum permissible receive window size of 1 GiB (2^(14+16))", which the
+    // widest field at the largest shift comes one scale unit short of.
+    total = wire(100u, 300u, (uint8_t)IDEMIP_TCP_ACK, 0xFFFFu, NULL, 0u, NULL, 0u);
+    aim_parse(work_a, total, (uint8_t)IDEMIP_TCP_WS_MAX);
+    TcpIn.parse(work_a);
+    TEST_ASSERT_EQUAL_HEX32(0x3FFFC000u, IO(work_a)->seg.wnd);
+}
+
+// RFC 7323 sec 2.2: "A Window Scale option in a segment without a SYN bit MUST be ignored."
+void test_parse_ignores_a_window_scale_option_without_a_syn_bit(void)
+{
+    static const uint8_t opts[4] = {3u, 3u, 7u, 0u}; // kind 3, length 3, shift.cnt 7, then End of Option List
+    TcpIn.clear(work_a);
+    uint16_t total = wire(100u, 300u, (uint8_t)IDEMIP_TCP_ACK, 4096u, opts, 4u, NULL, 0u);
+    aim_parse(work_a, total, 0u);
+    TcpIn.parse(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->opts.present & IDEMIP_TCP_IN_OPT_WS,
+                              "sec 2.2 ignores a Window Scale option in a segment without a SYN bit");
+    TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->opts.ws);
+
+    // The same option on a SYN,ACK is the one sec 2.2 does allow: "If a Window Scale option was
+    // received in the initial <SYN> segment, then this option MAY be sent in the <SYN,ACK> segment."
+    total = wire(100u, 300u, (uint8_t)(IDEMIP_TCP_SYN | IDEMIP_TCP_ACK), 4096u, opts, 4u, NULL, 0u);
+    aim_parse(work_a, total, 0u);
+    TcpIn.parse(work_a);
+    TEST_ASSERT_TRUE(IO(work_a)->opts.present & IDEMIP_TCP_IN_OPT_WS);
+    TEST_ASSERT_EQUAL_UINT8(7u, IO(work_a)->opts.ws);
 }
 
 // --- the acceptability test (RFC 9293 sec 3.4, sec 3.10.7.4 Table 6) ----------
@@ -469,6 +517,41 @@ void test_a_reset_at_rcv_nxt_resets_the_connection(void)
     TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_DELETE);
     TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_FLUSH);
     TEST_ASSERT_FALSE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_ACK);
+}
+
+// RFC 9293 sec 3.10.7.4 second groups FIN-WAIT-1, FIN-WAIT-2 and CLOSE-WAIT with ESTABLISHED: "any
+// outstanding RECEIVEs and SEND should receive 'reset' responses ... Enter the CLOSED state, delete
+// the TCB, and return."
+void test_a_reset_in_fin_wait_2_resets_the_user(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_FIN_WAIT_2, 140u, 140u, 500u, 100u);
+    seg(work_a, 500u, 0u, 0u, 0u, (uint8_t)IDEMIP_TCP_RST);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_EQUAL_INT((int)IDEMIP_TCP_STATE_CLOSED, (int)IO(work_a)->state);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_RESET);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_DELETE);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_FLUSH);
+}
+
+// The CLOSING / LAST-ACK / TIME-WAIT arm carries no user signal: "If the RST bit is set, then enter
+// the CLOSED state, delete the TCB, and return."
+void test_a_reset_in_closing_and_last_ack_closes_without_a_user_signal(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_CLOSING, 140u, 141u, 500u, 100u);
+    seg(work_a, 500u, 0u, 0u, 0u, (uint8_t)IDEMIP_TCP_RST);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_EQUAL_INT((int)IDEMIP_TCP_STATE_CLOSED, (int)IO(work_a)->state);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_DELETE);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_FLUSH);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_RESET,
+                              "the CLOSING arm names no 'connection reset' signal");
+
+    conn(work_a, IDEMIP_TCP_STATE_LAST_ACK, 140u, 141u, 500u, 100u);
+    seg(work_a, 500u, 0u, 0u, 0u, (uint8_t)IDEMIP_TCP_RST);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_EQUAL_INT((int)IDEMIP_TCP_STATE_CLOSED, (int)IO(work_a)->state);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_DELETE);
+    TEST_ASSERT_FALSE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_RESET);
 }
 
 // RFC 5961 sec 3.2 step 1: "If the RST bit is set and the sequence number is outside the current
@@ -666,32 +749,281 @@ void test_max_snd_wnd_keeps_the_largest_window_ever_received(void)
                                      "MAX.SND.WND is the largest window ever received, so it does not fall back");
 }
 
-// --- RFC 1337, TIME-WAIT assassination ----------------------------------------
+// --- RFC 7323 sec 5.3, PAWS ---------------------------------------------------
 
-// RFC 1337 sec 3 fix F1: "Ignore RST segments in TIME-WAIT state. If the 2 minute MSL is enforced,
-// this fix avoids all three hazards", and sec 4: "of the three fixes described in the previous
-// section, fix (F1) ... seems like the best short-term solution."
+// One synchronized connection with Snd.TS.OK on and TS.Recent held, plus the arriving segment's
+// Timestamps option, which TcpIn.parse would otherwise have read into io->opts.
+static void paws(uint8_t *w, uint32_t ts_recent, uint32_t ts_recent_ms, uint32_t tsval, uint32_t now_ms)
+{
+    IO(w)->ctl.flags |= (uint16_t)IDEMIP_TCP_CTL_TS_OK;
+    IO(w)->ctl.ts_recent = ts_recent;
+    IO(w)->ctl.ts_recent_ms = ts_recent_ms;
+    IO(w)->ctl.last_ack_sent = IO(w)->vars.rcv_nxt;
+    IO(w)->opts.present = (uint8_t)IDEMIP_TCP_IN_OPT_TS;
+    IO(w)->opts.tsval = tsval;
+    IO(w)->now_ms = now_ms;
+}
+
+// R1: "If there is a Timestamps option in the arriving segment, SEG.TSval < TS.Recent, TS.Recent is
+// valid ..., and if the RST bit is not set, then treat the arriving segment as not acceptable: Send
+// an acknowledgment in reply as specified in Section 3.9 of [RFC0793], page 69, and drop the
+// segment." sec 5.3 puts this ahead of Table 6, which would have taken the segment.
+void test_a_timestamp_behind_ts_recent_is_rejected_before_the_acceptability_test(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 200u, 500u, 1000u);
+    seg(work_a, 500u, 100u, 40u, 40u, (uint8_t)IDEMIP_TCP_ACK);
+    paws(work_a, 9000u, 1000u, 8999u, 2000u);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_PAWS);
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_ACK, "R1 sends an acknowledgment in reply");
+    TEST_ASSERT_EQUAL_UINT32(500u, IO(work_a)->reply.ack);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_TEXT, "R1 drops the segment");
+    TEST_ASSERT_EQUAL_UINT32(500u, IO(work_a)->vars.rcv_nxt);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(9000u, IO(work_a)->ctl.ts_recent, "a rejected segment does not update TS.Recent");
+}
+
+// sec 5.2's comparison is modular: "s < t if 0 < (t - s) < 2^31, computed in unsigned 32-bit
+// arithmetic", so a TSval just past the wrap is ahead of a TS.Recent just before it.
+void test_the_paws_comparison_is_modular(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 200u, 500u, 1000u);
+    seg(work_a, 500u, 100u, 40u, 40u, (uint8_t)IDEMIP_TCP_ACK);
+    paws(work_a, 0xFFFFFFF0u, 1000u, 0x00000010u, 2000u);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_PAWS, "0x10 is ahead of 0xFFFFFFF0 modulo 2^32");
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_TEXT);
+    TEST_ASSERT_EQUAL_UINT32(0x00000010u, IO(work_a)->ctl.ts_recent);
+}
+
+// R1 exempts the RST: "and if the RST bit is not set". sec 5.2 adds "When an <RST> segment is
+// received, it MUST NOT be subjected to the PAWS check by verifying an acceptable value in SEG.TSval,
+// and information from the Timestamps option MUST NOT be used to update connection state information."
+void test_a_reset_is_not_subjected_to_the_paws_check(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 200u, 500u, 1000u);
+    seg(work_a, 500u, 100u, 0u, 0u, (uint8_t)IDEMIP_TCP_RST);
+    paws(work_a, 9000u, 1000u, 1u, 2000u);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_FALSE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_PAWS);
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)IDEMIP_TCP_STATE_CLOSED, (int)IO(work_a)->state, "the reset still lands");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(9000u, IO(work_a)->ctl.ts_recent,
+                                     "a reset's Timestamps option does not update connection state");
+}
+
+// R3: "If an arriving segment satisfies SEG.TSval >= TS.Recent and SEG.SEQ <= Last.ACK.sent, then
+// record its timestamp in TS.Recent."
+void test_ts_recent_takes_a_forward_timestamp_at_or_behind_last_ack_sent(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 200u, 500u, 1000u);
+    seg(work_a, 500u, 100u, 40u, 40u, (uint8_t)IDEMIP_TCP_ACK);
+    paws(work_a, 9000u, 1000u, 9001u, 2000u);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_EQUAL_UINT32(9001u, IO(work_a)->ctl.ts_recent);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(2000u, IO(work_a)->ctl.ts_recent_ms, "sec 5.5's idle clock restarts with it");
+
+    // A segment past Last.ACK.sent leaves TS.Recent alone, so the value stays monotonically
+    // non-decreasing over the left window edge.
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 200u, 500u, 1000u);
+    seg(work_a, 600u, 100u, 40u, 40u, (uint8_t)IDEMIP_TCP_ACK);
+    paws(work_a, 9000u, 1000u, 9001u, 2000u);
+    IO(work_a)->ctl.last_ack_sent = 500u;
+    TcpIn.segment(work_a);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(9000u, IO(work_a)->ctl.ts_recent, "SEG.SEQ is past Last.ACK.sent");
+}
+
+// sec 5.5: "an implementation of PAWS include a mechanism to 'invalidate' the TS.Recent value when a
+// connection is idle for more than 24 days ... If TS.Recent is found to be invalid, then the segment
+// is accepted, regardless of the failure of the timestamp check, and rule R3 updates TS.Recent with
+// the TSval from the new segment."
+void test_ts_recent_is_invalidated_after_24_days_idle(void)
+{
+    // One millisecond short of 24 days: TS.Recent still holds, so R1 rejects.
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 200u, 500u, 1000u);
+    seg(work_a, 500u, 100u, 40u, 40u, (uint8_t)IDEMIP_TCP_ACK);
+    paws(work_a, 9000u, 0u, 8999u, (uint32_t)IDEMIP_TCP_TS_RECENT_MAX_MS);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_PAWS);
+
+    // One past it: TS.Recent is invalid, the segment is accepted and R3 takes the new TSval.
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 200u, 500u, 1000u);
+    seg(work_a, 500u, 100u, 40u, 40u, (uint8_t)IDEMIP_TCP_ACK);
+    paws(work_a, 9000u, 0u, 8999u, (uint32_t)IDEMIP_TCP_TS_RECENT_MAX_MS + 1u);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_FALSE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_PAWS);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_TEXT);
+    TEST_ASSERT_EQUAL_UINT32(8999u, IO(work_a)->ctl.ts_recent);
+}
+
+// sec 5.3: "If the PAWS algorithm is used". Snd.TS.OK clear, or no Timestamps option in the arriving
+// segment, and the check does not run at all.
+void test_paws_does_not_run_without_snd_ts_ok_or_a_timestamps_option(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 200u, 500u, 1000u);
+    seg(work_a, 500u, 100u, 40u, 40u, (uint8_t)IDEMIP_TCP_ACK);
+    paws(work_a, 9000u, 1000u, 8999u, 2000u);
+    IO(work_a)->ctl.flags &= (uint16_t)~(uint16_t)IDEMIP_TCP_CTL_TS_OK;
+    TcpIn.segment(work_a);
+    TEST_ASSERT_FALSE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_PAWS);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_TEXT);
+
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 200u, 500u, 1000u);
+    seg(work_a, 500u, 100u, 40u, 40u, (uint8_t)IDEMIP_TCP_ACK);
+    paws(work_a, 9000u, 1000u, 8999u, 2000u);
+    IO(work_a)->opts.present = 0u;
+    TcpIn.segment(work_a);
+    TEST_ASSERT_FALSE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_PAWS);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_TEXT);
+}
+
+// RFC 7323 sec 4.3: "Last.ACK.sent holds the ACK field from the last segment sent", which is what
+// the acknowledgment this module forms carries.
+void test_last_ack_sent_follows_the_acknowledgment_that_goes_out(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 200u, 500u, 1000u);
+    seg(work_a, 500u, 100u, 40u, 40u, (uint8_t)IDEMIP_TCP_ACK);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_EQUAL_UINT32(540u, IO(work_a)->reply.ack);
+    TEST_ASSERT_EQUAL_UINT32(540u, IO(work_a)->ctl.last_ack_sent);
+
+    // RFC 7323 Appendix A, the SYN,ACK of the fourth check: "Last.ACK.sent is set to RCV.NXT."
+    conn(work_a, IDEMIP_TCP_STATE_SYN_SENT, 100u, 101u, 0u, 4096u);
+    IO(work_a)->vars.iss = 100u;
+    seg(work_a, 300u, 0u, 1u, 0u, (uint8_t)IDEMIP_TCP_SYN);
+    TcpIn.syn_sent(work_a);
+    TEST_ASSERT_EQUAL_INT((int)IDEMIP_TCP_STATE_SYN_RECEIVED, (int)IO(work_a)->state);
+    TEST_ASSERT_EQUAL_UINT32(301u, IO(work_a)->ctl.last_ack_sent);
+}
+
+// --- RFC 9293 sec 3.4 MUST-66, a zero receive window --------------------------
+
+// "A TCP receiver MUST process the RST and URG fields of all incoming segments, even when the
+// receive window is zero (MUST-66)." Table 6 row 3 refuses every SEG.LEN > 0 segment while RCV.WND
+// is zero, so a zero-window probe carrying urgent data reaches only the unacceptable branch.
+void test_the_urg_field_of_a_zero_window_probe_is_processed(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 200u, 1000u, 0u);
+    IO(work_a)->vars.rcv_up = 1000u;
+    seg(work_a, 1000u, 100u, 1u, 1u, (uint8_t)(IDEMIP_TCP_ACK | IDEMIP_TCP_URG));
+    IO(work_a)->seg.up = 1u;
+    TcpIn.segment(work_a);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.acceptable, "Table 6 row 3 refuses a data segment with RCV.WND zero");
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_URGENT,
+                             "MUST-66 processes the URG field even when the receive window is zero");
+    TEST_ASSERT_EQUAL_UINT32(1001u, IO(work_a)->vars.rcv_up);
+    // "If an incoming segment is not acceptable, an acknowledgment should be sent in reply."
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_ACK);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1000u, IO(work_a)->vars.rcv_nxt, "no octet is taken into a zero window");
+}
+
+// The other half of MUST-66, the RST field, at SEG.SEQ == RCV.NXT with the window shut.
+void test_the_rst_field_of_a_zero_window_segment_is_processed(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 200u, 1000u, 0u);
+    seg(work_a, 1000u, 100u, 1u, 1u, (uint8_t)(IDEMIP_TCP_ACK | IDEMIP_TCP_RST));
+    TcpIn.segment(work_a);
+    TEST_ASSERT_FALSE(IO(work_a)->res.acceptable);
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)IDEMIP_TCP_STATE_CLOSED, (int)IO(work_a)->state,
+                                  "MUST-66 processes the RST field even when the receive window is zero");
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_RESET);
+}
+
+// sec 3.10.7.4 first: "If the RCV.WND is zero, no segments will be acceptable, but special allowance
+// should be made to accept valid ACKs, URGs, and RSTs", and sec 3.4: "it is possible for a TCP
+// implementation to maintain a zero receive window while transmitting data and receiving ACKs."
+void test_the_ack_riding_a_zero_window_probe_advances_snd_una(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 5000u, 6000u, 1000u, 0u);
+    seg(work_a, 1000u, 6000u, 1u, 1u, (uint8_t)IDEMIP_TCP_ACK);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_FALSE(IO(work_a)->res.acceptable);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_ACKED);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(6000u, IO(work_a)->vars.snd_una,
+                                     "the ACK a zero-window probe carries still drains the retransmission queue");
+    TEST_ASSERT_EQUAL_UINT32(1000u, IO(work_a)->res.acked);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_ACK);
+}
+
+// The fifth check's own replies stand. sec 3.10.7.4 fifth, TIME-WAIT: "The only thing that can arrive
+// in this state is a retransmission of the remote FIN. Acknowledge it, and restart the 2 MSL
+// timeout." The retransmitted FIN sits behind RCV.NXT, so Table 6 refuses it.
+void test_a_retransmitted_fin_reaching_a_shut_window_in_time_wait_restarts_the_2msl(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_TIME_WAIT, 101u, 101u, 301u, 0u);
+    seg(work_a, 300u, 101u, 1u, 0u, (uint8_t)(IDEMIP_TCP_FIN | IDEMIP_TCP_ACK));
+    TcpIn.segment(work_a);
+    TEST_ASSERT_FALSE(IO(work_a)->res.acceptable);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_2MSL);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_ACK);
+    TEST_ASSERT_EQUAL_UINT32(301u, IO(work_a)->reply.ack);
+}
+
+// sec 3.10.7.4 fifth, SYN-RECEIVED: "If the segment acknowledgment is not acceptable, form a reset
+// segment <SEQ=SEG.ACK><CTL=RST> and send it." That reset is the reply, not the plain acknowledgment
+// the unacceptable segment would otherwise draw.
+void test_the_reset_the_fifth_check_forms_survives_the_unacceptable_branch(void)
+{
+    // SEG.ACK 200 is inside RFC 5961 sec 5.2's range, whose left edge is SND.UNA - MAX.SND.WND, and
+    // outside sec 3.4's "acceptable ack" SND.UNA < SEG.ACK =< SND.NXT.
+    conn(work_a, IDEMIP_TCP_STATE_SYN_RECEIVED, 300u, 301u, 101u, 0u);
+    seg(work_a, 101u, 200u, 1u, 1u, (uint8_t)IDEMIP_TCP_ACK);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_FALSE(IO(work_a)->res.acceptable);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_RST);
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)IDEMIP_TCP_RST, IO(work_a)->reply.flags);
+    TEST_ASSERT_EQUAL_UINT32(200u, IO(work_a)->reply.seq);
+}
+
+// The allowance is sec 3.10.7.4 first's, which names the zero window. A segment refused for lying
+// outside a window that is open draws the plain acknowledgment and nothing else.
+void test_an_out_of_window_ack_with_an_open_window_does_not_advance_snd_una(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 5000u, 6000u, 1000u, 100u);
+    seg(work_a, 9000u, 6000u, 1u, 1u, (uint8_t)IDEMIP_TCP_ACK);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_FALSE(IO(work_a)->res.acceptable);
+    TEST_ASSERT_FALSE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_ACKED);
+    TEST_ASSERT_EQUAL_UINT32(5000u, IO(work_a)->vars.snd_una);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_ACK);
+}
+
+// --- RFC 9293 sec 3.10.7.4 second, the TIME-WAIT arm --------------------------
+
+// RFC 9293 sec 3.10.7.4 second groups "CLOSING STATE / LAST-ACK STATE / TIME-WAIT STATE" under one
+// rule: "If the RST bit is set, then enter the CLOSED state, delete the TCB, and return."
 //
-// Remove it and RFC 9293 sec 3.10.7.4 second's TIME-WAIT rule deletes the TCB, which is exactly the
-// premature termination RFC 1337 sec 1 names: "TIME-WAIT state can be prematurely terminated
-// ('assassinated') by an old duplicate data or ACK segment".
-void test_a_reset_in_time_wait_is_ignored_per_rfc_1337_fix_f1(void)
+// RFC 5961 sec 3.2 is what keeps a blind RST off this path: step 2 takes the RST only when
+// "the sequence number exactly matches the next expected sequence number (RCV.NXT)", and this
+// segment matches, so the rule applies.
+void test_a_reset_at_rcv_nxt_in_time_wait_closes_the_connection(void)
 {
     conn(work_a, IDEMIP_TCP_STATE_TIME_WAIT, 101u, 101u, 301u, 4096u);
     seg(work_a, 301u, 101u, 0u, 0u, (uint8_t)IDEMIP_TCP_RST);
     TcpIn.segment(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)IDEMIP_TCP_STATE_CLOSED, (int)IO(work_a)->state,
+                                  "sec 3.10.7.4 second's TIME-WAIT bullet enters the CLOSED state");
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_DELETE,
+                             "sec 3.10.7.4 second's TIME-WAIT bullet deletes the TCB");
+}
+
+// RFC 5961 sec 3.2 step 3: a RST inside the window but not at RCV.NXT draws a challenge ACK and the
+// TIME-WAIT state stands, so only the exact match above closes it.
+void test_a_reset_inside_the_window_in_time_wait_draws_a_challenge_ack(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_TIME_WAIT, 101u, 101u, 301u, 4096u);
+    seg(work_a, 400u, 101u, 0u, 0u, (uint8_t)IDEMIP_TCP_RST);
+    TcpIn.segment(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE((int)IDEMIP_TCP_STATE_TIME_WAIT, (int)IO(work_a)->state,
-                                  "RFC 1337 fix F1 ignores a RST in TIME-WAIT, so the state must not move");
-    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_DELETE,
-                              "RFC 1337 fix F1 must not let a RST delete the TCB in TIME-WAIT");
+                                  "RFC 5961 sec 3.2 step 3 drops the segment instead of resetting");
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_ACK);
+    TEST_ASSERT_EQUAL_UINT32(301u, IO(work_a)->reply.ack);
 }
 
 // RFC 1337 Figure 1, the whole assassination, run as the figure prints it. Segments 1 through 5 are
 // "copied exactly from Figure 13 of RFC-793"; 5.1 is "any old segment that is unacceptable to TCP A",
 // 5.2 is the acknowledgment A sends for it, and 5.3 is the RST that "assassinates the TIME-WAIT state
-// at A". With F1 in place the state survives 5.3.
-void test_the_time_wait_assassination_of_rfc_1337_figure_1_does_not_fire(void)
+// at A". RFC 9293 sec 3.10.7.4 second takes 5.3 and closes, as the figure's right column prints.
+void test_the_time_wait_assassination_of_rfc_1337_figure_1(void)
 {
     // 4. "TIME-WAIT <-- <SEQ=300><ACK=101><CTL=FIN,ACK> <-- LAST-ACK", reached from FIN-WAIT-2.
     conn(work_a, IDEMIP_TCP_STATE_FIN_WAIT_2, 101u, 101u, 300u, 4096u);
@@ -714,8 +1046,9 @@ void test_the_time_wait_assassination_of_rfc_1337_figure_1_does_not_fire(void)
     // 5.3 "CLOSED <-- <SEQ=301><CTL=RST> <-- ????  (prematurely)"
     seg(work_a, 301u, 0u, 0u, 0u, (uint8_t)IDEMIP_TCP_RST);
     TcpIn.segment(work_a);
-    TEST_ASSERT_EQUAL_INT_MESSAGE((int)IDEMIP_TCP_STATE_TIME_WAIT, (int)IO(work_a)->state,
-                                  "RFC 1337 Figure 1 segment 5.3 must not close TIME-WAIT");
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)IDEMIP_TCP_STATE_CLOSED, (int)IO(work_a)->state,
+                                  "RFC 9293 sec 3.10.7.4 second closes TIME-WAIT on a RST at RCV.NXT");
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_DELETE);
 }
 
 // --- RFC 9293 sec 3.10.7.1, the CLOSED state ----------------------------------
@@ -831,6 +1164,55 @@ void test_syn_sent_reaches_established_on_the_syn_ack_of_figure_6(void)
     TEST_ASSERT_EQUAL_UINT32(101u, IO(work_a)->reply.seq);
     TEST_ASSERT_EQUAL_UINT32(301u, IO(work_a)->reply.ack);
     TEST_ASSERT_EQUAL_UINT16((uint16_t)IDEMIP_TCP_ACK, IO(work_a)->reply.flags);
+}
+
+// RFC 9293 sec 3.10.7.3 fourth: "If there are other controls or text in the segment, then continue
+// processing at the sixth step under Section 3.10.7.4 where the URG bit is checked; otherwise,
+// return", and "it is legal to send and receive application data on SYN segments (this is the 'text
+// in the segment' mentioned above)." sec 3.4 puts the SYN on SEG.SEQ, so the text starts one past it.
+void test_syn_sent_takes_the_text_carried_on_the_syn_ack(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_SYN_SENT, 100u, 101u, 0u, 4096u);
+    IO(work_a)->vars.iss = 100u;
+    seg(work_a, 500u, 101u, 21u, 20u, (uint8_t)(IDEMIP_TCP_SYN | IDEMIP_TCP_ACK | IDEMIP_TCP_PSH));
+    TcpIn.syn_sent(work_a);
+    TEST_ASSERT_EQUAL_INT((int)IDEMIP_TCP_STATE_ESTABLISHED, (int)IO(work_a)->state);
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_TEXT, "the sixth step is continued into");
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_PUSH);
+    TEST_ASSERT_EQUAL_UINT32(501u, IO(work_a)->res.text_seq);
+    TEST_ASSERT_EQUAL_UINT16(0u, IO(work_a)->res.text_off);
+    TEST_ASSERT_EQUAL_UINT16(20u, IO(work_a)->res.text_len);
+    TEST_ASSERT_EQUAL_UINT32(521u, IO(work_a)->vars.rcv_nxt);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(521u, IO(work_a)->reply.ack, "the acknowledgment covers the text");
+}
+
+// The eighth step of sec 3.10.7.4 on the same continuation: "advance RCV.NXT over the FIN, and send
+// an acknowledgment for the FIN", then "Enter the CLOSE-WAIT state".
+void test_syn_sent_takes_a_fin_carried_on_the_syn_ack(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_SYN_SENT, 100u, 101u, 0u, 4096u);
+    IO(work_a)->vars.iss = 100u;
+    seg(work_a, 500u, 101u, 22u, 20u, (uint8_t)(IDEMIP_TCP_SYN | IDEMIP_TCP_ACK | IDEMIP_TCP_FIN));
+    TcpIn.syn_sent(work_a);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_TEXT);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_CLOSING);
+    TEST_ASSERT_EQUAL_INT((int)IDEMIP_TCP_STATE_CLOSE_WAIT, (int)IO(work_a)->state);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(522u, IO(work_a)->vars.rcv_nxt, "RCV.NXT covers the SYN, the text and the FIN");
+    TEST_ASSERT_EQUAL_UINT32(522u, IO(work_a)->reply.ack);
+}
+
+// "otherwise, return": a bare SYN,ACK carries no controls or text, so nothing past the fourth check
+// runs and the acknowledgment covers the SYN alone.
+void test_syn_sent_stops_at_the_fourth_check_on_a_bare_syn_ack(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_SYN_SENT, 100u, 101u, 0u, 4096u);
+    IO(work_a)->vars.iss = 100u;
+    seg(work_a, 500u, 101u, 1u, 0u, (uint8_t)(IDEMIP_TCP_SYN | IDEMIP_TCP_ACK));
+    TcpIn.syn_sent(work_a);
+    TEST_ASSERT_EQUAL_INT((int)IDEMIP_TCP_STATE_ESTABLISHED, (int)IO(work_a)->state);
+    TEST_ASSERT_FALSE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_TEXT);
+    TEST_ASSERT_FALSE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_CLOSING);
+    TEST_ASSERT_EQUAL_UINT32(501u, IO(work_a)->vars.rcv_nxt);
 }
 
 // RFC 9293 sec 3.5 Figure 8 lines 4 and 5: an old duplicate SYN made B answer "<SEQ=300><ACK=91>
@@ -997,6 +1379,28 @@ void test_a_segment_without_an_ack_is_dropped(void)
     TEST_ASSERT_EQUAL_UINT32(500u, IO(work_a)->vars.rcv_nxt);
 }
 
+// "If the ACK acks something not yet sent (SEG.ACK > SND.NXT), then send an ACK, drop the segment,
+// and return." RFC 5961 sec 5.2 puts the same edge on the range it takes: "((SND.UNA - MAX.SND.WND)
+// =< SEG.ACK =< SND.NXT)".
+void test_an_ack_of_something_not_yet_sent_is_dropped_and_acknowledged(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 140u, 1000u, 1000u);
+    seg(work_a, 1000u, 141u, 10u, 10u, (uint8_t)IDEMIP_TCP_ACK);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_TRUE(IO(work_a)->res.acceptable);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_ACK);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_TEXT, "the segment is dropped, so no text lands");
+    TEST_ASSERT_EQUAL_UINT32(100u, IO(work_a)->vars.snd_una);
+    TEST_ASSERT_EQUAL_UINT32(1000u, IO(work_a)->vars.rcv_nxt);
+
+    // SND.NXT itself is inside the range, so the same segment one octet lower runs through.
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 140u, 1000u, 1000u);
+    seg(work_a, 1000u, 140u, 10u, 10u, (uint8_t)IDEMIP_TCP_ACK);
+    TcpIn.segment(work_a);
+    TEST_ASSERT_TRUE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_TEXT);
+    TEST_ASSERT_EQUAL_UINT32(140u, IO(work_a)->vars.snd_una);
+}
+
 // --- RFC 9293 sec 3.10.7.4 sixth and seventh ----------------------------------
 
 // "If the URG bit is set, RCV.UP <- max(RCV.UP,SEG.UP), and signal the user that the remote side has
@@ -1018,6 +1422,35 @@ void test_the_urgent_pointer_advances_rcv_up_and_never_retreats(void)
     IO(work_a)->seg.up = 2u;
     TcpIn.segment(work_a);
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(600u, IO(work_a)->vars.rcv_up, "RCV.UP is the max, so it moves forward only");
+    // sec 3.10.7.4 sixth: "If the user has already been signaled (or is still in the 'urgent mode')
+    // for this continuous sequence of urgent data, do not signal the user again."
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_URGENT,
+                              "the pointer did not advance, so the user is not signalled again");
+
+    // sec 3.8.5 MUST-32's other half: "whenever the urgent pointer advances in the data stream".
+    seg(work_a, 516u, 100u, 8u, 8u, (uint8_t)(IDEMIP_TCP_ACK | IDEMIP_TCP_URG));
+    IO(work_a)->seg.up = 100u;
+    TcpIn.segment(work_a);
+    TEST_ASSERT_EQUAL_UINT32(616u, IO(work_a)->vars.rcv_up);
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_URGENT,
+                             "the pointer advanced, so the user is signalled");
+}
+
+// RFC 9293 sec 3.8.5: "the urgent pointer cannot 'recede' in the sequence space, but a TCP receiver
+// should be robust to invalid urgent pointer values." A segment straddling the left window edge puts
+// SEG.SEQ+SEG.UP behind RCV.NXT, which names data already consumed.
+void test_an_urgent_pointer_behind_rcv_nxt_neither_moves_rcv_up_nor_signals(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 200u, 1000u, 100u);
+    IO(work_a)->vars.rcv_up = 1010u;
+    // Table 6's second clause takes it: SEG.SEQ+SEG.LEN-1 = 1049, which is inside the window.
+    seg(work_a, 900u, 100u, 150u, 150u, (uint8_t)(IDEMIP_TCP_ACK | IDEMIP_TCP_URG));
+    IO(work_a)->seg.up = 5u; // SEG.SEQ+SEG.UP = 905, behind RCV.NXT
+    TcpIn.segment(work_a);
+    TEST_ASSERT_TRUE(IO(work_a)->res.acceptable);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1010u, IO(work_a)->vars.rcv_up, "the urgent pointer cannot recede");
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_URGENT,
+                              "a pointer behind RCV.NXT is not in advance of the data consumed");
 }
 
 // "Once the TCP endpoint takes responsibility for the data, it advances RCV.NXT over the data
@@ -1080,6 +1513,28 @@ void test_text_past_the_right_window_edge_is_left(void)
     TEST_ASSERT_EQUAL_UINT16(16u, IO(work_a)->res.text_len);
     TEST_ASSERT_EQUAL_UINT32(516u, IO(work_a)->vars.rcv_nxt);
     TEST_ASSERT_EQUAL_UINT32(0u, IO(work_a)->vars.rcv_wnd);
+}
+
+// RFC 9293 sec 3.10.7.4 seventh and sixth, the CLOSE-WAIT / CLOSING / LAST-ACK / TIME-WAIT bullet:
+// "This should not occur since a FIN has been received from the remote side. Ignore the segment
+// text." The URG bit carries the same bullet.
+void test_text_and_urg_after_a_fin_are_ignored(void)
+{
+    static const IdemIpTcpState after_fin[4] = {IDEMIP_TCP_STATE_CLOSE_WAIT, IDEMIP_TCP_STATE_CLOSING,
+                                                IDEMIP_TCP_STATE_LAST_ACK, IDEMIP_TCP_STATE_TIME_WAIT};
+    for (size_t i = 0; i < 4u; i++)
+    {
+        conn(work_a, after_fin[i], 100u, 200u, 500u, 1000u);
+        IO(work_a)->vars.rcv_up = 500u;
+        seg(work_a, 500u, 100u, 40u, 40u, (uint8_t)(IDEMIP_TCP_ACK | IDEMIP_TCP_URG | IDEMIP_TCP_PSH));
+        IO(work_a)->seg.up = 10u;
+        TcpIn.segment(work_a);
+        TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_TEXT, "the segment text is ignored");
+        TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.act & IDEMIP_TCP_IN_ACT_URGENT, "the URG bit is ignored");
+        TEST_ASSERT_EQUAL_UINT16(0u, IO(work_a)->res.text_len);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(500u, IO(work_a)->vars.rcv_nxt, "no octet is taken after a FIN");
+        TEST_ASSERT_EQUAL_UINT32(500u, IO(work_a)->vars.rcv_up);
+    }
 }
 
 // --- RFC 9293 sec 3.10.7.4 eighth, the FIN bit --------------------------------

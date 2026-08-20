@@ -600,6 +600,17 @@ static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
 #endif
 
 /**
+ * @brief RFC 7323 sec 5.5: an implementation of PAWS includes "a mechanism to 'invalidate' the
+ * TS.Recent value when a connection is idle for more than 24 days".
+ *
+ * 24 days of milliseconds. sec 5.5 takes the worst case of the sec 4 clock range, where "the time to
+ * wrap the sign bit will be between 24.8 days and 24800 days".
+ */
+#ifndef IDEMIP_TCP_TS_RECENT_MAX_MS
+#define IDEMIP_TCP_TS_RECENT_MAX_MS 2073600000u
+#endif
+
+/**
  * @brief RFC 6298 (2.1): "the sender SHOULD set RTO <- 1 second" until a round-trip time has been
  * measured.
  */
@@ -1280,11 +1291,11 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 #ifndef IDEMIP_TCP_OOSEQ_ENTRY_SHIFT
 #define IDEMIP_TCP_OOSEQ_ENTRY_SHIFT 4u
 #endif
-// The region also carries tcp_pcb.h's operand block, which is 384 octets, the context 8 behind it.
+// The region also carries tcp_pcb.h's operand block, which is 392 octets, the context 8 behind it.
 // The block holds one whole TCB's worth of fields, load and store copying the RFC 9293 sec 3.3.1
 // variables, the sec 3.3.2 state and the estimator and congestion state through it.
 #ifndef IDEMIP_TCP_PCB_CTX_BYTES
-#define IDEMIP_TCP_PCB_CTX_BYTES 416u
+#define IDEMIP_TCP_PCB_CTX_BYTES 424u
 #endif
 #define IDEMIP_TCP_PCB_BORROW                                                                                          \
     (IDEMIP_TCP_PCB_CTX_BYTES + (IDEMIP_TCP_PCBS << IDEMIP_TCP_PCB_ENTRY_SHIFT) +                                      \
@@ -1296,11 +1307,11 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 // tcp_in holds no table, so this region is the whole borrow and carries the operand block of tcp_in.h
 // as well as the context. The block is one arriving segment's RFC 9293 sec 3.3.1 Table 4 variables
 // with the sec 3.1 control bits, one whole TCB's worth of sec 3.3.1 variables and control state that
-// a load fills and a store takes back, and what the call reports: 272 octets on a target with
+// a load fills and a store takes back, and what the call reports: 280 octets on a target with
 // 8-octet pointers. The context behind it is the mark clear leaves and RFC 5961 sec 7's challenge-ACK
 // counter with the millisecond its window opened at, 12 more.
 #ifndef IDEMIP_TCP_IN_CTX_BYTES
-#define IDEMIP_TCP_IN_CTX_BYTES 288u
+#define IDEMIP_TCP_IN_CTX_BYTES 296u
 #endif
 #define IDEMIP_TCP_IN_BORROW (IDEMIP_TCP_IN_CTX_BYTES)
 
@@ -1308,9 +1319,9 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 // tcp_out holds no table either. The operand block is what a build takes (the caller's buffer, the
 // four-tuple, the sec 3.1 header fields and the sec 3.2 options), what the sec 3.8.6.2.1 send rule
 // takes, one whole TCB's worth of sec 3.3.1 variables and control state, and what the call reports:
-// 312 octets on a target with 8-octet pointers. The context behind it is the mark clear leaves.
+// 320 octets on a target with 8-octet pointers. The context behind it is the mark clear leaves.
 #ifndef IDEMIP_TCP_OUT_CTX_BYTES
-#define IDEMIP_TCP_OUT_CTX_BYTES 320u
+#define IDEMIP_TCP_OUT_CTX_BYTES 328u
 #endif
 #define IDEMIP_TCP_OUT_BORROW (IDEMIP_TCP_OUT_CTX_BYTES)
 

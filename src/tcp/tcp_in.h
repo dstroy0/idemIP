@@ -14,6 +14,10 @@
  *
  * The security and compartment of RFC 9293 Appendix A.1 are not carried by a TCB here, so the third
  * check of sec 3.10.7.4 and the third of sec 3.10.7.3 have nothing to compare and are not made.
+ *
+ * RFC 7323 sec 5.3's PAWS rules R1 and R3 run ahead of the sec 3.10.7.4 first check, over
+ * @ref TcpPcbCtl::ts_recent and @ref TcpPcbCtl::last_ack_sent, while @ref IDEMIP_TCP_CTL_TS_OK is
+ * set. The caller sets that flag when the SYN exchange carried a Timestamps option both ways.
  */
 
 #ifndef IDEMIP_TCP_IN_H
@@ -62,6 +66,15 @@ IDEMIP_BEGIN_DECLS
  * @ref IDEMIP_TCP_IN_ACT_ACK.
  */
 #define IDEMIP_TCP_IN_ACT_THROTTLED (1u << 18)
+
+/**
+ * @brief RFC 7323 sec 5.3 rule R1 rejected the segment: it carried a Timestamps option whose
+ * SEG.TSval is behind TS.Recent while TS.Recent is valid.
+ *
+ * Set with @ref IDEMIP_TCP_IN_ACT_ACK, which R1's "Send an acknowledgment in reply ... and drop the
+ * segment" forms. @ref TcpInResult::acceptable stays false, the Table 6 test never having run.
+ */
+#define IDEMIP_TCP_IN_ACT_PAWS (1u << 19)
 
 // ---------------------------------------------------------------------------
 // Options a parse found (RFC 9293 sec 3.2, RFC 7323, RFC 2018)
@@ -127,7 +140,9 @@ typedef struct
  * @var TcpInOpts::mss     RFC 9293 sec 3.2 Maximum Segment Size, valid with IDEMIP_TCP_IN_OPT_MSS
  * @var TcpInOpts::hdr_len the header octets the Data Offset named
  * @var TcpInOpts::present which options were there
- * @var TcpInOpts::ws      RFC 7323 sec 2.2 shift.cnt, clamped to fourteen
+ * @var TcpInOpts::ws      RFC 7323 sec 2.2 shift.cnt, clamped to fourteen, read only from a segment
+ *                         with the SYN bit: "A Window Scale option in a segment without a SYN bit
+ *                         MUST be ignored"
  */
 typedef struct
 {

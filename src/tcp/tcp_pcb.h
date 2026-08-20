@@ -141,6 +141,14 @@ typedef struct
 #define IDEMIP_TCP_CTL_SYN_RTX (1u << 0)
 
 /**
+ * @brief RFC 7323 sec 3.2 Snd.TS.OK, set "Once TSopt has been successfully negotiated, that is both
+ * <SYN> and <SYN,ACK> contain TSopt".
+ *
+ * sec 5.3's PAWS check runs on a synchronized connection only while this is set.
+ */
+#define IDEMIP_TCP_CTL_TS_OK (1u << 1)
+
+/**
  * @brief The estimator, congestion, option and keepalive state of one TCB.
  *
  * Everything a connection carries that RFC 9293 sec 3.3.1 does not name, each field from the RFC that
@@ -165,6 +173,8 @@ typedef struct
  *                               TSecr whenever a segment is sent"
  * @var TcpPcbCtl::last_ack_sent RFC 7323 sec 3.2 Last.ACK.sent, which "holds the ACK field from the
  *                               last segment sent"
+ * @var TcpPcbCtl::ts_recent_ms  the millisecond TS.Recent was last saved, which RFC 7323 sec 5.5's
+ *                               24-day idle test measures from
  * @var TcpPcbCtl::last_send_ms  the millisecond data was last sent, which RFC 5681 sec 4.1 measures
  *                               the idle interval from, zero until the first send
  * @var TcpPcbCtl::keep_idle_ms  RFC 1122 sec 4.2.3.6: keep-alives "MUST only be sent when no data or
@@ -204,6 +214,7 @@ typedef struct
     uint32_t max_snd_wnd;
     uint32_t ts_recent;
     uint32_t last_ack_sent;
+    uint32_t ts_recent_ms;
     uint32_t last_send_ms;
     uint32_t keep_idle_ms;
     uint32_t keep_intvl_ms;
