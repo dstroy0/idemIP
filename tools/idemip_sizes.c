@@ -24,7 +24,7 @@
 
 #include <stdio.h>
 
-#define ROW(name) printf("  %-28s %7zu\n", #name, (size_t)(name))
+#define ROW(name) printf("  %-28s %7lu\n", #name, (unsigned long)(name))
 
 int main(void)
 {
@@ -63,7 +63,7 @@ int main(void)
     ROW(IDEMIP_STATS_BORROW);
     ROW(IDEMIP_VLAN_BORROW);
     ROW(IDEMIP_ETHIP6_BORROW);
-    printf("  %-28s %7zu\n\n", "= IDEMIP_SHARED_BORROW", (size_t)IDEMIP_SHARED_BORROW);
+    printf("  %-28s %7lu\n\n", "= IDEMIP_SHARED_BORROW", (unsigned long)IDEMIP_SHARED_BORROW);
 
     printf("per interface, taken IDEMIP_NETIF_COUNT times:\n");
     ROW(IDEMIP_PHY_BORROW);
@@ -77,13 +77,13 @@ int main(void)
     ROW(IDEMIP_DAD_BORROW);
     ROW(IDEMIP_SLAAC_BORROW);
     ROW(IDEMIP_RDNSS_BORROW);
-    printf("  %-28s %7zu  x %u\n\n", "= IDEMIP_PER_NETIF_BORROW",
-           (size_t)IDEMIP_PER_NETIF_BORROW, (unsigned)IDEMIP_NETIF_COUNT);
+    printf("  %-28s %7lu  x %u\n\n", "= IDEMIP_PER_NETIF_BORROW",
+           (unsigned long)IDEMIP_PER_NETIF_BORROW, (unsigned)IDEMIP_NETIF_COUNT);
 
-    printf("  %-28s %7zu\n", "IDEMIP_TOTAL_BORROW", (size_t)IDEMIP_TOTAL_BORROW);
+    printf("  %-28s %7lu\n", "IDEMIP_TOTAL_BORROW", (unsigned long)IDEMIP_TOTAL_BORROW);
 
-    printf("\nnot counted: the driver's frame buffers (%u octets each, stride %zu),\n",
-           (unsigned)IDEMIP_DMA_FRAME_MAX, (size_t)IDEMIP_DMA_BUF_STRIDE);
+    printf("\nnot counted: the driver's frame buffers (%u octets each, stride %lu),\n",
+           (unsigned)IDEMIP_DMA_FRAME_MAX, (unsigned long)IDEMIP_DMA_BUF_STRIDE);
     printf("             and the caller's stack.\n");
     return 0;
 }

@@ -215,7 +215,7 @@ endif()
 # The footprint is the compiler's arithmetic over idemip_config.h, not a figure kept by hand.
 
 add_executable(idemip_sizes "${CMAKE_CURRENT_SOURCE_DIR}/tools/idemip_sizes.c")
-target_link_libraries(idemip_sizes PRIVATE idemip)
+target_link_libraries(idemip_sizes PRIVATE idemip idemip_warnings)
 
 # --- benches -----------------------------------------------------------------
 # Measurement, not test: nothing here asserts, so ctest never sees these and BUILD_TESTING does not
@@ -225,7 +225,7 @@ target_link_libraries(idemip_sizes PRIVATE idemip)
 if(IDEMIP_BENCH)
     foreach(b bench_words bench_entries)
         add_executable(${b} "${CMAKE_CURRENT_SOURCE_DIR}/test/bench/${b}.c")
-        target_link_libraries(${b} PRIVATE idemip)
+        target_link_libraries(${b} PRIVATE idemip idemip_warnings)
         # The bench takes the library's own optimisation, so the two sides of a comparison are
         # compiled the same way. A bench built at a different level than the code it links measures
         # the difference between the two builds and calls it a result.
