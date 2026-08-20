@@ -155,7 +155,11 @@ IDEMIP_INLINE IdemIpWord idemip_span_tail(const uint8_t *p, size_t r)
     const IdemIpWord mask =
         (IdemIpWord) ~(((((IdemIpWord)1u) << (8u * (sizeof(IdemIpWord) - r - 1u))) << 8u) - 1u);
 #else
-    const IdemIpWord mask = ((((IdemIpWord)1u) << (8u * r)) - 1u);
+    // The cast is NOT redundant, whatever an analyser reading this at one word width reports. The
+    // shift promotes to unsigned int, and on a 16-bit IdemIpWord the result of (1 << 8r) - 1 does
+    // not fit the word for r >= 2, so this is a narrowing and is spelled as one. gcc's -Wconversion
+    // agrees only at IDEMIP_WORD_BITS=16, which is why a build on a 64-bit host cannot see it.
+    const IdemIpWord mask = (IdemIpWord)((((IdemIpWord)1u) << (8u * r)) - 1u);
 #endif
     return (w & mask);
 }
