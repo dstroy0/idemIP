@@ -169,6 +169,20 @@ typedef struct
  * @var TickIo::timeout_arg  the index into that unit's own table
  * @var TickIo::frames     frames the drain phase dispatched this tick
  * @var TickIo::steps      steps the service phase ran this tick
+ * @var TickIo::reasm_timeout the step reports a reassembly row the clock reached, not one a caller
+ *                         released. RFC 1122 sec 3.3.2: "If this timeout expires, the
+ *                         partially-reassembled datagram MUST be discarded and an ICMP Time Exceeded
+ *                         message sent to the source host (if fragment zero has been received)", and
+ *                         RFC 8200 sec 4.5: "If the first fragment (i.e., the one with a Fragment
+ *                         Offset of zero) has been received, an ICMP Time Exceeded -- Fragment
+ *                         Reassembly Time Exceeded message should be sent to the source of that
+ *                         fragment." @ref TickIo::desc is that fragment and stays pinned for this one
+ *                         step, so the header it carries is readable while the message is built.
+ * @var TickIo::reasm_frag_zero the offset-zero fragment was among the ones the row held, which is the
+ *                         condition both sections put the message behind
+ * @var TickIo::reasm_src  the RFC 791 sec 3.1 Source Address of the timed-out IPv4 row, host order,
+ *                         which is the destination of the ICMP Time Exceeded. Zero on the IPv6 path,
+ *                         where the address is the sixteen octets @ref TickIo::desc carries.
  */
 typedef struct
 {
@@ -188,6 +202,9 @@ typedef struct
     uint32_t until_ms;
     uint16_t frames;
     uint16_t steps;
+    uint32_t reasm_src;
+    idemip_bool reasm_timeout;
+    idemip_bool reasm_frag_zero;
 } TickIo;
 
 // ---------------------------------------------------------------------------

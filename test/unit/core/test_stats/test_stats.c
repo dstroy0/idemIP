@@ -524,19 +524,34 @@ void test_a_group_gauge_rises_and_falls(void)
     TEST_ASSERT_EQUAL_UINT32(0u, read_ctr(work_a, GROUP_GAUGE));
 }
 
-// RFC 1155 sec 3.2.3.4: a Gauge "latches at a maximum value", specified as 2^32-1. The ceiling holds
-// the value it is assigned and no assignment can pass it.
-void test_a_gauge_latches_at_the_rfc_1155_ceiling(void)
+// RFC 1155 sec 3.2.3.4 calls a Gauge's ceiling a latch, and RFC 2578 sec 7.1.7 settles what that
+// means: "The Gauge32 type represents a non-negative integer, which may increase or decrease, but
+// shall never exceed a maximum value ... If the information being modeled subsequently decreases
+// below (increases above) the maximum (minimum) value, the Gauge32 also decreases (increases). (Note
+// that despite of the use of the term 'latched' in the original definition of this type, it does not
+// become 'stuck' at its maximum or minimum value.)"
+void test_a_gauge_at_the_ceiling_is_not_stuck_there(void)
 {
     Stats.clear(work_a);
     set_to(work_a, GROUP_GAUGE, RFC1155_MAX);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_STATS_IO(work_a)->status);
-    TEST_ASSERT_EQUAL_UINT32(4294967295u, read_ctr(work_a, GROUP_GAUGE));
     TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFFu, read_ctr(work_a, GROUP_GAUGE));
 
-    // The ceiling latches rather than wrapping: it is still the maximum, not zero.
+    // The sequence a latch and a plain assignment answer differently: down from the maximum.
+    set_to(work_a, GROUP_GAUGE, 7u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_STATS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(7u, read_ctr(work_a, GROUP_GAUGE),
+                                     "a Gauge does not become stuck at its maximum value");
+
+    // And the minimum is not sticky either.
+    set_to(work_a, GROUP_GAUGE, 0u);
+    TEST_ASSERT_EQUAL_UINT32(0u, read_ctr(work_a, GROUP_GAUGE));
     set_to(work_a, GROUP_GAUGE, RFC1155_MAX);
     TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFFu, read_ctr(work_a, GROUP_GAUGE));
+
+    // "The maximum value can not be greater than 2^32-1 (4294967295 decimal)", which the operand
+    // width is what enforces.
+    TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFFu, RFC1155_MAX);
 }
 
 // RFC 1213 sec 6.4: ifSpeed is "An estimate of the interface's current bandwidth in bits per second",
@@ -556,13 +571,19 @@ void test_the_interface_gauges_rise_and_fall(void)
     TEST_ASSERT_EQUAL_UINT32(0u, if_read_ctr(work_a, 0u, IDEMIP_STAT_IF_OUT_QLEN));
 }
 
-void test_an_interface_gauge_latches_at_the_ceiling(void)
+// The same of a per-interface Gauge, RFC 1213 sec 6.4's ifSpeed.
+void test_an_interface_gauge_at_the_ceiling_is_not_stuck_there(void)
 {
     Stats.clear(work_a);
     if_set_to(work_a, 1u, IDEMIP_STAT_IF_SPEED, RFC1155_MAX);
-    TEST_ASSERT_EQUAL_UINT32(4294967295u, if_read_ctr(work_a, 1u, IDEMIP_STAT_IF_SPEED));
-    if_set_to(work_a, 1u, IDEMIP_STAT_IF_SPEED, RFC1155_MAX);
     TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFFu, if_read_ctr(work_a, 1u, IDEMIP_STAT_IF_SPEED));
+
+    if_set_to(work_a, 1u, IDEMIP_STAT_IF_SPEED, 10000000u);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(10000000u, if_read_ctr(work_a, 1u, IDEMIP_STAT_IF_SPEED),
+                                     "a Gauge does not become stuck at its maximum value");
+
+    // And one interface's Gauge is not another's.
+    TEST_ASSERT_EQUAL_UINT32(0u, if_read_ctr(work_a, 0u, IDEMIP_STAT_IF_SPEED));
 }
 
 // --- Counter and Gauge are not the same object -------------------------------

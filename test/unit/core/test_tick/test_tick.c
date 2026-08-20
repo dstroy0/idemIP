@@ -286,9 +286,14 @@ static void open_tick(uint8_t *w, uint32_t now_ms)
 // through RFC 1213 ipInUnknownProtos without any transport binding.
 #define TICK_TEST_PROTO 253u
 #define TICK_TEST_DATA 8u
-// RFC 791 sec 3.2 step (17) raises a partial datagram's timer to the TTL, so a test that waits one
-// out waits this long, not IDEMIP_IP_REASS_MAXAGE_S.
-#define TICK_TEST_TTL 64u
+// RFC 1122 sec 3.3.2: "The reassembly timeout value SHOULD be a fixed value, not set from the
+// remaining TTL. It is recommended that the value lie between 60 seconds and 120 seconds." The
+// fragment's Time to Live is deliberately large here, so a timeout taken from it would not be
+// IDEMIP_IP_REASS_MAXAGE_S.
+#define TICK_TEST_TTL 200u
+
+// The fixed bound the sweep runs on, in milliseconds.
+#define TICK_REASS_MS ((uint32_t)IDEMIP_IP_REASS_MAXAGE_S * 1000u)
 
 static uint16_t fill_ip4(unsigned slot, uint32_t dst, uint16_t flags_frag)
 {
@@ -653,10 +658,10 @@ void test_an_expired_datagram_returns_every_descriptor_it_pinned(void)
     Dma.pinned(dma_mem);
     TEST_ASSERT_EQUAL_UINT16(1u, IDEMIP_DMA_IO(dma_mem)->pinned);
 
-    // The timer step (17) raised, run out, with the fragment that would fill the hole never
-    // arriving. Each phase loop is capped: a phase that reports a step it did not take would
-    // otherwise never end.
-    open_tick(work_a, 1000u + ((uint32_t)TICK_TEST_TTL * 1000u));
+    // sec 3.3.2's fixed timeout run out, with the fragment that would fill the hole never arriving.
+    // The fragment's TTL is 200, so a timeout taken from it would still be far off here. Each phase
+    // loop is capped: a phase that reports a step it did not take would otherwise never end.
+    open_tick(work_a, 1000u + TICK_REASS_MS);
     TEST_ASSERT_TRUE(run_phase(work_a, Tick.drain));
     TEST_ASSERT_TRUE_MESSAGE(run_phase(work_a, Tick.service),
                              "the service phase never stopped reporting steps for the expired datagram");
@@ -667,7 +672,7 @@ void test_an_expired_datagram_returns_every_descriptor_it_pinned(void)
 
     // The reassembler's own state: the row is gone, not merely unpinned. A row the sweep can still
     // find is one the service phase reports a step for on every later tick.
-    IDEMIP_IP4_REASS_IO(ip4_reass_mem)->now_ms = 1000u + ((uint32_t)TICK_TEST_TTL * 1000u);
+    IDEMIP_IP4_REASS_IO(ip4_reass_mem)->now_ms = 1000u + TICK_REASS_MS;
     Ip4Reass.tick(ip4_reass_mem);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_IP4_REASS_IO(ip4_reass_mem)->status,
                                   "the timed-out row was never freed");
@@ -1041,10 +1046,25 @@ void test_a_resolved_hold_is_reported_and_unpinned_one_step_later(void)
                                      "the pin outlived the step after the one that reported it");
 }
 
-// The flush phase reports its units in the fixed order too.
+// The flush phase reports its units in the fixed order too. A tick with nothing deferred reports no
+// step at all, so the order can only be seen on one that has work: a partial IPv4 datagram and a
+// partial IPv6 one, both left to time out, so IDEMIP_TICK_UNIT_IP4_RECLAIM and
+// IDEMIP_TICK_UNIT_IP6_DROP both have something to report in the same tick.
 void test_the_flush_phase_reports_its_units_in_order(void)
 {
+    give_the_interface_an_ipv6_address();
+    uint16_t len4 = fill_ip4(0u, LOCAL_IP4, IDEMIP_IP4_FLAG_MF);
+    engine_queue(0u, len4);
+    uint16_t len6 = fill_ip6_fragment(1u, 0u, IDEMIP_TRUE);
+    engine_queue(1u, len6);
     open_tick(work_a, 1000u);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+
+    // Past both fixed bounds, so both rows are reached by one sweep.
+    const uint32_t at = 1000u + TICK_REASS_MS + (uint32_t)IDEMIP_IP6_REASS_MAXAGE_MS;
+    open_tick(work_a, at);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
     }
@@ -1053,18 +1073,134 @@ void test_the_flush_phase_reports_its_units_in_order(void)
     }
     int last = 0;
     int steps = 0;
+    int saw_ip4 = 0;
+    int saw_ip6 = 0;
     while (Tick.flush(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
     {
         int unit = (int)IDEMIP_TICK_IO(work_a)->unit;
         TEST_ASSERT_TRUE_MESSAGE(unit >= last, "a flush step ran out of the fixed order");
         last = unit;
         steps++;
+        if (unit == (int)IDEMIP_TICK_UNIT_IP4_RECLAIM)
+        {
+            saw_ip4++;
+        }
+        if (unit == (int)IDEMIP_TICK_UNIT_IP6_DROP)
+        {
+            saw_ip6++;
+        }
         if (steps > 64)
         {
             TEST_FAIL_MESSAGE("the flush phase did not finish");
         }
     }
+    TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0, steps, "the flush phase reported no step, so no order was seen");
+    TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0, saw_ip4, "the IPv4 reclaim step never ran");
+    TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0, saw_ip6, "the IPv6 drop step never ran");
+    TEST_ASSERT_TRUE_MESSAGE((int)IDEMIP_TICK_UNIT_IP4_RECLAIM < (int)IDEMIP_TICK_UNIT_IP6_DROP,
+                             "the two units the case walked are in the order it asserted");
     TEST_ASSERT_EQUAL_INT(IDEMIP_TICK_PHASE_DONE, IDEMIP_TICK_IO(work_a)->phase);
+}
+
+// RFC 1122 sec 3.3.2: "If this timeout expires, the partially-reassembled datagram MUST be discarded
+// and an ICMP Time Exceeded message sent to the source host (if fragment zero has been received)",
+// and the same section saves the first fragment's header "for inclusion in a possible ICMP Time
+// Exceeded (Reassembly Timeout) message". The reclaim step names the timed-out row and reports the
+// fragment with the octets it holds, still pinned, so that message can be built.
+void test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded(void)
+{
+    uint16_t len = fill_ip4(0u, LOCAL_IP4, IDEMIP_IP4_FLAG_MF);
+    engine_queue(0u, len);
+    open_tick(work_a, 1000u);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+
+    open_tick(work_a, 1000u + TICK_REASS_MS);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    // The sweep reports the source the message goes to and the fragment-zero mark it is gated on.
+    int saw_sweep = 0;
+    while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+        if (IDEMIP_TICK_IO(work_a)->unit == IDEMIP_TICK_UNIT_IP4_REASS)
+        {
+            TEST_ASSERT_TRUE_MESSAGE(IDEMIP_TICK_IO(work_a)->reasm_timeout, "the sweep reached a timed-out row");
+            TEST_ASSERT_TRUE_MESSAGE(IDEMIP_TICK_IO(work_a)->reasm_frag_zero,
+                                     "the offset-zero fragment was the one held");
+            TEST_ASSERT_EQUAL_HEX32_MESSAGE(REMOTE_IP4, IDEMIP_TICK_IO(work_a)->reasm_src,
+                                            "the message goes to the source host");
+            saw_sweep++;
+        }
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, saw_sweep, "the sweep never reported the expired row");
+
+    int saw_reclaim = 0;
+    while (Tick.flush(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+        if (IDEMIP_TICK_IO(work_a)->unit != IDEMIP_TICK_UNIT_IP4_RECLAIM)
+        {
+            continue;
+        }
+        if (saw_reclaim == 0)
+        {
+            TEST_ASSERT_TRUE_MESSAGE(IDEMIP_TICK_IO(work_a)->reasm_timeout,
+                                     "the reclaim did not say the row timed out");
+            TEST_ASSERT_GREATER_THAN_UINT16_MESSAGE(0u, IDEMIP_TICK_IO(work_a)->len,
+                                                    "the quoted header cannot be read out of a zero length");
+            TEST_ASSERT_NOT_EQUAL_UINT16(IDEMIP_DISPATCH_DESC_NONE, IDEMIP_TICK_IO(work_a)->desc);
+        }
+        saw_reclaim++;
+    }
+    TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0, saw_reclaim, "the reclaim step never ran");
+}
+
+// RFC 8200 sec 4.5: "If the first fragment (i.e., the one with a Fragment Offset of zero) has been
+// received, an ICMP Time Exceeded -- Fragment Reassembly Time Exceeded message should be sent to the
+// source of that fragment." That source is sixteen octets of the fragment's own header, so the
+// offset-zero fragment stays pinned for the step that reports the abandon.
+void test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded(void)
+{
+    give_the_interface_an_ipv6_address();
+    uint16_t len = fill_ip6_fragment(0u, 0u, IDEMIP_TRUE);
+    engine_queue(0u, len);
+    open_tick(work_a, 1000u);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+
+    open_tick(work_a, 1000u + (uint32_t)IDEMIP_IP6_REASS_MAXAGE_MS);
+    while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    while (Tick.service(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+    }
+    int saw = 0;
+    while (Tick.flush(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
+    {
+        if (IDEMIP_TICK_IO(work_a)->unit != IDEMIP_TICK_UNIT_IP6_DROP)
+        {
+            continue;
+        }
+        if (saw == 0)
+        {
+            TEST_ASSERT_TRUE_MESSAGE(IDEMIP_TICK_IO(work_a)->reasm_timeout, "the abandon was a timeout");
+            TEST_ASSERT_TRUE_MESSAGE(IDEMIP_TICK_IO(work_a)->reasm_frag_zero,
+                                     "the offset-zero fragment was among the ones held");
+            TEST_ASSERT_NOT_EQUAL_MESSAGE(IDEMIP_DISPATCH_DESC_NONE, IDEMIP_TICK_IO(work_a)->desc,
+                                          "the source address cannot be read from a dropped descriptor");
+        }
+        saw++;
+    }
+    TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0, saw, "the IPv6 drop step never ran");
+
+    // sec 4.5's "all the fragments that have been received for that packet must be discarded" still
+    // holds: the pin the report kept goes back on the step after it.
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(dma_mem)->pinned,
+                                     "an abandoned datagram kept the descriptors its fragments pinned");
 }
 
 // An interface with no ring bound is stepped over rather than faulting the drain.

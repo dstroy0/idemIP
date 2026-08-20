@@ -42,6 +42,9 @@ typedef struct
     uint8_t phase;
     uint8_t cursor;
     uint8_t if_cursor;
+    // RFC 1122 sec 3.3.2: the sweep and the reclaim are two steps of one tick, so the mark the sweep
+    // set is what tells the reclaim its descriptor is a timed-out row's rather than a released one's.
+    idemip_bool ip4_timed_out;
 } TickCtx;
 
 // The mark clear leaves.
@@ -95,6 +98,9 @@ static void t_reset(TickIo *io)
     io->desc = IDEMIP_DISPATCH_DESC_NONE;
     io->len = 0u;
     io->ip = 0u;
+    io->reasm_src = 0u;
+    io->reasm_timeout = IDEMIP_FALSE;
+    io->reasm_frag_zero = IDEMIP_FALSE;
 }
 
 // The interface a descriptor a shared unit handed back belongs to, read out of the descriptor.
@@ -218,16 +224,31 @@ static idemip_bool t_service_arp(uint8_t *restrict work)
     return IDEMIP_TRUE;
 }
 
+// RFC 791 sec 3.2 step (19), "timer expires: flush all reassembly with this BUFID". RFC 1122
+// sec 3.3.2 attaches a message to it: "If this timeout expires, the partially-reassembled datagram
+// MUST be discarded and an ICMP Time Exceeded message sent to the source host (if fragment zero has
+// been received)." The sweep reports the source and that mark, and both are carried out so the caller
+// can build the message.
 static idemip_bool t_service_ip4_reass(uint8_t *restrict work)
 {
     TickCtx *ctx = T_CTX(work);
+    TickIo *io = T_IO(work);
     if (ctx->ip4_reass == NULL)
     {
         return IDEMIP_FALSE;
     }
-    IDEMIP_IP4_REASS_IO(ctx->ip4_reass)->now_ms = ctx->now_ms;
+    Ip4ReassIo *re = IDEMIP_IP4_REASS_IO(ctx->ip4_reass);
+    re->now_ms = ctx->now_ms;
     Ip4Reass.tick(ctx->ip4_reass);
-    return (idemip_bool)(IDEMIP_IP4_REASS_IO(ctx->ip4_reass)->status == IDEMIP_OK);
+    if (re->status != IDEMIP_OK)
+    {
+        return IDEMIP_FALSE;
+    }
+    T_CTX(work)->ip4_timed_out = IDEMIP_TRUE;
+    io->reasm_timeout = IDEMIP_TRUE;
+    io->reasm_frag_zero = re->frag_zero;
+    io->reasm_src = re->src;
+    return IDEMIP_TRUE;
 }
 
 static idemip_bool t_service_igmp(uint8_t *restrict work)
@@ -379,13 +400,21 @@ static idemip_bool t_flush_ip4_reass(uint8_t *restrict work)
     {
         return IDEMIP_FALSE;
     }
-    IDEMIP_IP4_REASS_IO(ctx->ip4_reass)->now_ms = ctx->now_ms;
+    TickIo *io = T_IO(work);
+    Ip4ReassIo *re = IDEMIP_IP4_REASS_IO(ctx->ip4_reass);
+    re->now_ms = ctx->now_ms;
     Ip4Reass.reclaim(ctx->ip4_reass);
-    if (IDEMIP_IP4_REASS_IO(ctx->ip4_reass)->status != IDEMIP_OK)
+    if (re->status != IDEMIP_OK)
     {
+        ctx->ip4_timed_out = IDEMIP_FALSE;
         return IDEMIP_FALSE;
     }
-    t_hold(work, t_desc_netif(IDEMIP_IP4_REASS_IO(ctx->ip4_reass)->desc), IDEMIP_IP4_REASS_IO(ctx->ip4_reass)->desc, 0u);
+    // sec 3.3.2 saves the first fragment's header "for inclusion in a possible ICMP Time Exceeded
+    // (Reassembly Timeout) message", so the descriptor is reported with the octets it holds and stays
+    // pinned for this one step. A reclaim after a normal release carries no timeout.
+    io->reasm_timeout = ctx->ip4_timed_out;
+    ctx->ip4_timed_out = IDEMIP_FALSE;
+    t_hold(work, t_desc_netif(re->desc), re->desc, re->len);
     return IDEMIP_TRUE;
 }
 
@@ -413,7 +442,15 @@ static idemip_bool t_flush_ip6_reass(uint8_t *restrict work)
     }
     uint8_t datagram = re->datagram;
     uint8_t frags = re->frag_count;
+    const idemip_bool timed_out = (idemip_bool)(re->err == IDEMIP_IP6_REASS_ERR_TIMEOUT);
     uint8_t netif = IDEMIP_DISPATCH_NETIF_NONE;
+    // sec 4.5: "If the first fragment (i.e., the one with a Fragment Offset of zero) has been
+    // received, an ICMP Time Exceeded -- Fragment Reassembly Time Exceeded message should be sent to
+    // the source of that fragment." That source is sixteen octets of the fragment's own IPv6 header,
+    // so the offset-zero fragment is reported and left pinned for this one step while the rest go
+    // back. The row is freed on the following step, once the message has been built.
+    uint16_t first_desc = IDEMIP_DISPATCH_DESC_NONE;
+    uint16_t first_len = 0u;
     // The fragments of one datagram can have arrived on different interfaces, so each descriptor
     // names its own ring and is returned to that one. io->netif reports the last, which is what a
     // caller reads to know a ring moved.
@@ -422,16 +459,29 @@ static idemip_bool t_flush_ip6_reass(uint8_t *restrict work)
         re->frag_args.datagram = datagram;
         re->frag_args.index = i;
         Ip6Reass.frag_at(ctx->ip6_reass);
-        if (re->status == IDEMIP_OK)
+        if (re->status != IDEMIP_OK)
         {
-            netif = t_desc_netif(re->frag_desc);
-            t_unpin(work, netif, re->frag_desc);
+            continue;
         }
+        if (timed_out && re->frag_offset == 0u && first_desc == IDEMIP_DISPATCH_DESC_NONE)
+        {
+            first_desc = re->frag_desc;
+            first_len = re->frag_len;
+            continue;
+        }
+        netif = t_desc_netif(re->frag_desc);
+        t_unpin(work, netif, re->frag_desc);
     }
     re->drop_args.datagram = datagram;
     Ip6Reass.drop(ctx->ip6_reass);
     io->netif = netif;
     io->len = frags;
+    io->reasm_timeout = timed_out;
+    if (first_desc != IDEMIP_DISPATCH_DESC_NONE)
+    {
+        io->reasm_frag_zero = IDEMIP_TRUE;
+        t_hold(work, t_desc_netif(first_desc), first_desc, first_len);
+    }
     return IDEMIP_TRUE;
 }
 
