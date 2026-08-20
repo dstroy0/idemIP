@@ -16,3 +16,6 @@ build-cov/
 # Python bytecode from the tools in tools/dev_env, which are run in place.
 __pycache__/
 *.pyc
+
+# ctest scratch, written into the working directory by a bare `ctest` run outside a build tree.
+Testing/
