@@ -73,12 +73,16 @@ IDEMIP_BEGIN_DECLS
  *                            @ref Nd6Ns::dest_find reports in @ref Nd6Io::pmtu. Zero when the row
  *                            carries none, sec 5.2 taking the PMTU of a path to be "the (known) MTU
  *                            of the first-hop link" until a message lowers it.
+ * @var Pmtu6TooBigArgs::link_mtu the MTU of that first-hop link, which stands in for
+ *                            @ref Pmtu6TooBigArgs::held when the row carries none, so sec 4's
+ *                            non-increase rule has a ceiling on a path no message has named yet.
  */
 typedef struct
 {
     const uint8_t *msg;
     size_t len;
     uint16_t held;
+    uint16_t link_mtu;
 } Pmtu6TooBigArgs;
 
 /**

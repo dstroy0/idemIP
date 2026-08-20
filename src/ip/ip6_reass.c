@@ -28,8 +28,7 @@ IDEMIP_BEGIN_DECLS
 
 // What a scan of a datagram's held fragments found the arriving one to be.
 #define IP6_REASS_SCAN_CLEAR 0u   ///< it reaches no held fragment
-#define IP6_REASS_SCAN_DUP 1u     ///< same Fragment Offset and same length as one already held
-#define IP6_REASS_SCAN_OVERLAP 2u ///< it reaches into one, which sec 4.5 abandons the packet for
+#define IP6_REASS_SCAN_OVERLAP 1u ///< it reaches into one, which sec 4.5 abandons the packet for
 
 // RFC 815 sec 3: "hole.last equals infinity. (Infinity is presumably implemented by a very large
 // integer ... of the implementor's choice.)" The Fragmentable Part reaches at most the Payload
@@ -232,14 +231,15 @@ static void ip6_reass_put_datagram(uint8_t *restrict work, uint8_t d)
 }
 
 // RFC 8200 sec 4.5: "An original packet is reassembled only from fragment packets that have the same
-// Source Address, Destination Address, and Fragment Identification." An entry that is no longer
-// HOLDING matches nothing: its fragments are waiting to be walked out and dropped.
+// Source Address, Destination Address, and Fragment Identification." An abandoned entry still matches
+// its key, because RFC 5722 sec 4 discards "any constituent fragments, including those not yet
+// received", so a later fragment of a poisoned datagram must not open a fresh reassembly.
 static uint8_t ip6_reass_match(uint8_t *restrict work, const uint8_t *src, const uint8_t *dst, uint32_t ident)
 {
     for (uint8_t i = 0u; i < IDEMIP_IP6_REASS_DATAGRAMS; i++)
     {
         Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, i);
-        if (dg->used && dg->state == IP6_REASS_HOLDING && dg->ident == ident &&
+        if (dg->used && (dg->state == IP6_REASS_HOLDING || dg->state == IP6_REASS_ABANDONED) && dg->ident == ident &&
             memcmp(dg->src, src, IDEMIP_IP6_ADDR_LEN) == 0 && memcmp(dg->dst, dst, IDEMIP_IP6_ADDR_LEN) == 0)
         {
             return i;
@@ -250,8 +250,9 @@ static uint8_t ip6_reass_match(uint8_t *restrict work, const uint8_t *src, const
 
 // What the arriving fragment [first, end) is against the ones already held, and where it belongs in
 // the list. RFC 8200 sec 4.5 abandons the packet when fragments "overlap with any other fragments
-// being reassembled for the same packet", and permits the one exception: "an implementation may
-// choose to detect this case and drop exact duplicate fragments while keeping the other fragments".
+// being reassembled for the same packet". The exception it permits is for "exact duplicate
+// fragments", which a same-offset, same-length fragment is not: this module holds a receive
+// descriptor and not the octets, so it cannot tell one from a forgery, and the shortcut is a "may".
 static uint8_t ip6_reass_scan(uint8_t *restrict work, uint8_t d, uint16_t offset, uint16_t frag_len, uint8_t *prev_out)
 {
     Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
@@ -262,10 +263,6 @@ static uint8_t ip6_reass_scan(uint8_t *restrict work, uint8_t d, uint16_t offset
     while (cur != IDEMIP_IP6_REASS_NONE)
     {
         Ip6ReassFrag *fr = IP6_REASS_FRAG_AT(work, cur);
-        if (fr->offset == offset && fr->len == frag_len)
-        {
-            return IP6_REASS_SCAN_DUP;
-        }
         if (first < (uint32_t)fr->offset + (uint32_t)fr->len && (uint32_t)fr->offset < end)
         {
             return IP6_REASS_SCAN_OVERLAP;
@@ -524,11 +521,15 @@ static void ip6_reass_file(uint8_t *restrict work)
 
     if (d != IDEMIP_IP6_REASS_NONE)
     {
-        uint8_t scan = ip6_reass_scan(work, d, f.offset, f.frag_len, &prev);
-        if (scan == IP6_REASS_SCAN_DUP)
+        if (IP6_REASS_DATAGRAM_AT(work, d)->state == IP6_REASS_ABANDONED)
         {
-            return; // an exact duplicate is dropped and the rest of the packet kept, sec 4.5
+            // RFC 5722 sec 4: the overlap discards "the entire datagram (and any constituent
+            // fragments, including those not yet received)", so a later fragment of this key is
+            // dropped rather than allowed to open a fresh reassembly. The entry holds the key until
+            // its deadline retires it.
+            return;
         }
+        uint8_t scan = ip6_reass_scan(work, d, f.offset, f.frag_len, &prev);
         if (scan == IP6_REASS_SCAN_OVERLAP)
         {
             // sec 4.5: "reassembly of that packet must be abandoned and all the fragments that have

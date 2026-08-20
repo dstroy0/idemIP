@@ -205,9 +205,11 @@ static void ip6_frag_take(uint8_t *restrict work)
         const uint16_t chunk = (uint16_t)(((size_t)mtu - head) & ~(size_t)IP6_FRAG_UNIT_MASK);
         // "(3) Extension headers, if any, and the Upper-Layer header. These headers must be in the
         // first fragment." Their octets lead the Fragmentable Part, so the first fragment has to
-        // reach at least past them. How far the upper-layer header itself runs is that protocol's,
-        // and is not known here.
-        if ((size_t)chunk < c.ext_end - c.unfrag)
+        // reach past them and into the upper-layer header, never stop on the boundary between them.
+        // A caller that knows the upper-layer header's own length names it; one that does not still
+        // gets the octet that makes the difference between reaching it and not.
+        const size_t upper = (io->begin_args.upper_hdr_len != 0u) ? (size_t)io->begin_args.upper_hdr_len : 1u;
+        if ((size_t)chunk < (c.ext_end - c.unfrag) + upper)
         {
             ctx->pkt = NULL;
             io->err = IDEMIP_IP6_FRAG_ERR_HEADERS;

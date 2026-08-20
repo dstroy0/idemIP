@@ -170,6 +170,10 @@ typedef enum IDEMIP_ENUM_PACKED
      *  pointing to the Option Type, which @ref DispatchIo::err_ptr names and whose own octet says
      *  which. 11 owes it "only if the packet's Destination Address was not a multicast address". */
     IDEMIP_DISPATCH_DROP_IP6_OPTION,
+    /** RFC 6980 sec 5: "Nodes MUST silently ignore the following Neighbor Discovery and SEcure
+     *  Neighbor Discovery messages if the packets carrying them include an IPv6 Fragmentation
+     *  Header". The rule is on the presence of the header, so an atomic fragment is covered too. */
+    IDEMIP_DISPATCH_DROP_IP6_FRAG_ND,
     IDEMIP_DISPATCH_DROP_NO_PCB,     ///< ipInDiscards: nothing is bound to the port or protocol
     IDEMIP_DISPATCH_DROP_REASS,      ///< ipInDiscards: the reassembler had no room, or refused it
     IDEMIP_DISPATCH_DROP_NO_DESC,    ///< ipInDiscards: retention needs a descriptor and there is none

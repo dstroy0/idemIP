@@ -227,7 +227,14 @@ static void pmtu6_too_big(uint8_t *restrict work)
 
     io->dst = pmtu6_path(pkt, io->too_big_args.len - (size_t)IDEMIP_ICMP6_ERR_HDR_LEN);
     uint16_t mtu = (reported > 0xFFFFu) ? (uint16_t)0xFFFFu : (uint16_t)reported;
+    // sec 5.2: "Initially, the PMTU value for a path is assumed to be the (known) MTU of the
+    // first-hop link", so a Destination Cache row carrying none still has an estimate and a zero held
+    // is not the absence of a ceiling.
     uint16_t held = io->too_big_args.held;
+    if (held == 0u)
+    {
+        held = io->too_big_args.link_mtu;
+    }
     if (held != 0u && mtu >= held)
     {
         // sec 4: "A node must not increase its estimate of the Path MTU in response to the contents

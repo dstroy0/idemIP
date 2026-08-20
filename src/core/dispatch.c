@@ -1643,6 +1643,18 @@ static void d_ip6(uint8_t *restrict work, const uint8_t *ip6, size_t avail)
     }
     if (chain.fragmented)
     {
+        // RFC 6980 sec 5: "Nodes MUST silently ignore the following Neighbor Discovery and SEcure
+        // Neighbor Discovery messages if the packets carrying them include an IPv6 Fragmentation
+        // Header". The message type is readable on the fragment that carries the ICMPv6 header, which
+        // is the one at Fragment Offset zero; dropping it leaves the rest of a multi-fragment message
+        // with no first fragment to complete against, and an atomic fragment is refused outright.
+        if (chain.next_hdr == IDEMIP_IP6_NH_ICMPV6 &&
+            idemip_ip6_frag_offset_bytes(ip6 + chain.frag_hdr) == 0u && chain.offset < total_len &&
+            idemip_icmp6_is_nd(ip6[chain.offset]))
+        {
+            d_drop(work, IDEMIP_DISPATCH_DROP_IP6_FRAG_ND, IDEMIP_STAT_IF_IN_DISCARDS);
+            return;
+        }
         d_ip6_frag(work, ip6, total_len, chain.frag_hdr);
         return;
     }

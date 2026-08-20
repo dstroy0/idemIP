@@ -771,8 +771,9 @@ void test_an_atomic_fragment_is_processed_independently_of_a_reassembly_it_match
     TEST_ASSERT_EQUAL_HEX16(1u, IDEMIP_IP6_REASS_IO(work_a)->frag_desc);
 }
 
-// An abandoned packet takes no further fragment: sec 4.5 abandons "reassembly of that packet", so a
-// matching fragment starts a new one rather than joining it.
+// RFC 5722 sec 4: the overlap discards "the entire datagram (and any constituent fragments,
+// including those not yet received)", so a later fragment bearing the poisoned key is discarded and
+// must not open a fresh reassembly for the same datagram.
 void test_an_abandoned_packet_takes_no_more_fragments(void)
 {
     ready();
@@ -780,9 +781,18 @@ void test_an_abandoned_packet_takes_no_more_fragments(void)
     uint8_t d = IDEMIP_IP6_REASS_IO(work_a)->datagram;
     feed_plain(work_a, 19u, 8u, 1, IDEMIP_IP6_NH_UDP, 16u, 1001u, 2u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_REASS_ERR_OVERLAP, IDEMIP_IP6_REASS_IO(work_a)->err);
+
+    // A fragment that would have completed a replacement datagram is dropped instead.
     feed_plain(work_a, 19u, 32u, 1, IDEMIP_IP6_NH_UDP, 8u, 1002u, 3u);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
-    TEST_ASSERT_NOT_EQUAL_UINT8(d, IDEMIP_IP6_REASS_IO(work_a)->datagram);
+    TEST_ASSERT_NOT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status,
+                                      "a fragment of a poisoned key opened a fresh reassembly");
+    TEST_ASSERT_FALSE(IDEMIP_IP6_REASS_IO(work_a)->complete);
+
+    // And the offset-zero fragment of a replacement cannot restart it either.
+    feed_plain(work_a, 19u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 1003u, 4u);
+    TEST_ASSERT_NOT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_FALSE(IDEMIP_IP6_REASS_IO(work_a)->complete);
+    (void)d;
 }
 
 // sec 4.5's overlap bullet says "no ICMP error messages should be sent", so the sweep that finds an
@@ -798,22 +808,20 @@ void test_an_abandoned_packet_owes_no_icmp(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_REASS_ERR_NONE, IDEMIP_IP6_REASS_IO(work_a)->err);
 }
 
-// sec 4.5: "Instead of treating these exact duplicate fragments as overlapping fragments, an
-// implementation may choose to detect this case and drop exact duplicate fragments while keeping the
-// other fragments belonging to the same packet."
-void test_an_exact_duplicate_is_dropped_and_the_packet_kept(void)
+// RFC 8200 sec 4.5 permits dropping "exact duplicate fragments" while keeping the packet, but this
+// module holds a receive descriptor and not the octets, so it cannot tell an exact duplicate from a
+// same-offset, same-length forgery carrying different data. The shortcut is a "may", so the default
+// disposition stands: RFC 5722 sec 4 discards the entire datagram.
+void test_a_same_offset_same_length_fragment_discards_the_packet(void)
 {
     ready();
     feed_plain(work_a, 21u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 1000u, 1u);
-    uint8_t d = IDEMIP_IP6_REASS_IO(work_a)->datagram;
     feed_plain(work_a, 21u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 1001u, 2u);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP6_REASS_IO(work_a)->status);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_REASS_ERR_NONE, IDEMIP_IP6_REASS_IO(work_a)->err);
-    // the packet is untouched, so the fragment that follows completes it
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_REASS_ERR_OVERLAP, IDEMIP_IP6_REASS_IO(work_a)->err);
+
+    // The packet is poisoned, so the fragment that would have completed it does not.
     feed_plain(work_a, 21u, 8u, 0, IDEMIP_IP6_NH_UDP, 8u, 1002u, 3u);
-    TEST_ASSERT_TRUE(IDEMIP_IP6_REASS_IO(work_a)->complete);
-    TEST_ASSERT_EQUAL_UINT8(d, IDEMIP_IP6_REASS_IO(work_a)->datagram);
-    TEST_ASSERT_EQUAL_UINT8(2u, IDEMIP_IP6_REASS_IO(work_a)->frag_count);
+    TEST_ASSERT_FALSE(IDEMIP_IP6_REASS_IO(work_a)->complete);
 }
 
 // A fragment at a held fragment's offset with a different length is not an exact duplicate, so sec

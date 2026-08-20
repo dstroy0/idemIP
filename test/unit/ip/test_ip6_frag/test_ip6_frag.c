@@ -348,6 +348,42 @@ void test_extension_headers_wider_than_a_fragment_are_refused(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FRAG_ERR_HEADERS, begin_err(work_a, IDEMIP_IPV6_MIN_MTU));
 }
 
+// The boundary between the two above: extension headers that fill the first fragment exactly, so it
+// would carry every extension header and not one octet of the Upper-Layer header. Item (3) puts both
+// in the first fragment, so this is refused too.
+void test_extension_headers_that_fill_the_fragment_exactly_are_refused(void)
+{
+    pkt_start(IDEMIP_IP6_NH_DSTOPTS);
+    pkt_ext(IDEMIP_IP6_NH_UDP, 153u); // 1232 octets, exactly the 1280 MTU less the 48-octet head
+    pkt_finish(4000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FRAG_ERR_HEADERS, begin_err(work_a, IDEMIP_IPV6_MIN_MTU));
+}
+
+// One octet of room past the extension headers is enough for the split to be accepted, and a caller
+// that names the Upper-Layer header's own length is held to that instead.
+void test_the_first_fragment_must_reach_into_the_upper_layer_header(void)
+{
+    pkt_start(IDEMIP_IP6_NH_DSTOPTS);
+    pkt_ext(IDEMIP_IP6_NH_UDP, 152u); // 1224 octets, leaving 8 of the first fragment past them
+    pkt_finish(4000u);
+    begin_ok(work_a, IDEMIP_IPV6_MIN_MTU);
+
+    // The same packet with the UDP header's 8 octets named still fits, exactly.
+    pkt_start(IDEMIP_IP6_NH_DSTOPTS);
+    pkt_ext(IDEMIP_IP6_NH_UDP, 152u);
+    pkt_finish(4000u);
+    IDEMIP_IP6_FRAG_IO(work_a)->begin_args.upper_hdr_len = 8u;
+    begin_ok(work_a, IDEMIP_IPV6_MIN_MTU);
+
+    // One octet more of upper-layer header than there is room for is refused.
+    pkt_start(IDEMIP_IP6_NH_DSTOPTS);
+    pkt_ext(IDEMIP_IP6_NH_UDP, 152u);
+    pkt_finish(4000u);
+    IDEMIP_IP6_FRAG_IO(work_a)->begin_args.upper_hdr_len = 9u;
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FRAG_ERR_HEADERS, begin_err(work_a, IDEMIP_IPV6_MIN_MTU));
+    IDEMIP_IP6_FRAG_IO(work_a)->begin_args.upper_hdr_len = 0u;
+}
+
 // --- the Per-Fragment headers ------------------------------------------------
 
 // "else no extension headers": a chain with none puts the whole payload in the fragmentable part.

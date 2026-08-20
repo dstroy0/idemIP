@@ -1509,6 +1509,51 @@ void test_an_ipv6_packet_for_our_address_is_delivered(void)
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_DELIVERS));
 }
 
+// A Fragment header at Fragment Offset zero with M clear, ahead of an ICMPv6 message of @p type.
+// That is an atomic fragment: RFC 8200 sec 4.5 says it "does not need any further reassembly".
+static size_t build_ip6_atomic_icmp6(uint8_t *f, size_t off, uint8_t type)
+{
+    const size_t fh = off + IDEMIP_IPV6_HDR_LEN;
+    const size_t msg_len = 8u;
+    (void)build_ip6(f, off, IDEMIP_IP6_NH_FRAGMENT, g_remote_ip6, g_local_ip6,
+                    IDEMIP_IP6_FRAG_HDR_LEN + msg_len);
+    idemip_ip6_frag_build(f + fh, IDEMIP_IP6_NH_ICMPV6, 0u, IDEMIP_FALSE, 0x12345678u);
+    const size_t m = fh + IDEMIP_IP6_FRAG_HDR_LEN;
+    for (size_t i = 0u; i < msg_len; i++)
+    {
+        f[m + i] = 0u;
+    }
+    f[m] = type;
+    return m + msg_len;
+}
+
+// RFC 6980 sec 5: "Nodes MUST silently ignore the following Neighbor Discovery and SEcure Neighbor
+// Discovery messages if the packets carrying them include an IPv6 Fragmentation Header". The rule is
+// on the presence of the header, so an atomic fragment carrying a Router Advertisement is covered.
+void test_a_fragmented_neighbor_discovery_message_is_ignored(void)
+{
+    static const uint8_t nd_types[] = {133u, 134u, 135u, 136u, 137u};
+    for (size_t i = 0u; i < sizeof nd_types; i++)
+    {
+        size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+        size_t end = build_ip6_atomic_icmp6(g_frame, off, nd_types[i]);
+        input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP6_FRAG_ND, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                      "a fragmented Neighbor Discovery message was processed");
+        TEST_ASSERT_EQUAL_UINT32(0u, ctr(IDEMIP_STAT_IP6_REASM_REQDS));
+    }
+}
+
+// The same shape carrying an ICMPv6 type RFC 6980 does not name reaches the reassembler as usual.
+void test_a_fragmented_echo_request_is_not_ignored(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t end = build_ip6_atomic_icmp6(g_frame, off, 128u); // Echo Request
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_NOT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP6_FRAG_ND, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_REASM_REQDS));
+}
+
 // A Routing header carrying @p segs_left, ahead of an eight-octet UDP header. The Routing Type is 43,
 // which no allocation names and this library executes none of either way.
 static size_t build_ip6_routing(uint8_t *f, size_t off, uint8_t segs_left)

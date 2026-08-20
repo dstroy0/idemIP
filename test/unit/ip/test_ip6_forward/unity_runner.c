@@ -46,6 +46,8 @@ extern void test_a_wrong_version_is_discarded(void);
 extern void test_a_payload_length_past_the_span_is_discarded(void);
 extern void test_a_span_longer_than_the_payload_length_is_forwarded(void);
 extern void test_a_redirect_is_owed_when_the_source_is_a_neighbor_on_the_same_link(void);
+extern void test_no_redirect_to_a_next_hop_that_is_not_link_local(void);
+extern void test_a_redirect_to_the_destination_itself_is_owed(void);
 extern void test_no_redirect_across_interfaces(void);
 extern void test_no_redirect_to_a_multicast_destination(void);
 extern void test_no_redirect_when_the_source_is_not_a_neighbor(void);
@@ -153,14 +155,16 @@ int main(void)
   run_test(test_a_payload_length_past_the_span_is_discarded, "test_a_payload_length_past_the_span_is_discarded", 612);
   run_test(test_a_span_longer_than_the_payload_length_is_forwarded, "test_a_span_longer_than_the_payload_length_is_forwarded", 622);
   run_test(test_a_redirect_is_owed_when_the_source_is_a_neighbor_on_the_same_link, "test_a_redirect_is_owed_when_the_source_is_a_neighbor_on_the_same_link", 636);
-  run_test(test_no_redirect_across_interfaces, "test_no_redirect_across_interfaces", 653);
-  run_test(test_no_redirect_to_a_multicast_destination, "test_no_redirect_to_a_multicast_destination", 664);
-  run_test(test_no_redirect_when_the_source_is_not_a_neighbor, "test_no_redirect_when_the_source_is_not_a_neighbor", 677);
-  run_test(test_an_mtu_below_the_ipv6_minimum_is_refused, "test_an_mtu_below_the_ipv6_minimum_is_refused", 691);
-  run_test(test_a_null_packet_is_refused, "test_a_null_packet_is_refused", 705);
-  run_test(test_a_routed_call_with_no_next_hop_is_refused, "test_a_routed_call_with_no_next_hop_is_refused", 716);
-  run_test(test_an_interface_index_past_the_count_is_refused, "test_an_interface_index_past_the_count_is_refused", 726);
-  run_test(test_nothing_is_ever_busy, "test_nothing_is_ever_busy", 743);
+  run_test(test_no_redirect_to_a_next_hop_that_is_not_link_local, "test_no_redirect_to_a_next_hop_that_is_not_link_local", 656);
+  run_test(test_a_redirect_to_the_destination_itself_is_owed, "test_a_redirect_to_the_destination_itself_is_owed", 675);
+  run_test(test_no_redirect_across_interfaces, "test_no_redirect_across_interfaces", 692);
+  run_test(test_no_redirect_to_a_multicast_destination, "test_no_redirect_to_a_multicast_destination", 703);
+  run_test(test_no_redirect_when_the_source_is_not_a_neighbor, "test_no_redirect_when_the_source_is_not_a_neighbor", 716);
+  run_test(test_an_mtu_below_the_ipv6_minimum_is_refused, "test_an_mtu_below_the_ipv6_minimum_is_refused", 730);
+  run_test(test_a_null_packet_is_refused, "test_a_null_packet_is_refused", 744);
+  run_test(test_a_routed_call_with_no_next_hop_is_refused, "test_a_routed_call_with_no_next_hop_is_refused", 755);
+  run_test(test_an_interface_index_past_the_count_is_refused, "test_an_interface_index_past_the_count_is_refused", 765);
+  run_test(test_nothing_is_ever_busy, "test_nothing_is_ever_busy", 782);
 
   return UNITY_END();
 }

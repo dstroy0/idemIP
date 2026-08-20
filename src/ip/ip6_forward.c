@@ -391,10 +391,18 @@ static void ip6_forward_decide(uint8_t *restrict work)
     // packet leaving the interface it arrived on, and "the Destination Address of the packet is not a
     // multicast address". The Target Address is the sec 8.2 "address to which subsequent packets for
     // the destination should be sent", which the route named.
+    // sec 4.5 splits the Target Address in two, both MUSTs: it equals the Destination Address when the
+    // target is the destination itself, and otherwise "the target is a better first-hop router and
+    // the Target Address MUST be the router's link-local address so that hosts can uniquely identify
+    // routers". A next hop that is neither is not a target this may name, so no redirect is asked for.
     if (a->src_neighbor && !ip6_forward_crosses_link(a) && !ip6_forward_is_multicast(dst))
     {
-        io->redirect = IDEMIP_TRUE;
-        io->redirect_target = a->next_hop;
+        const idemip_bool target_is_dst = (idemip_bool)(memcmp(a->next_hop, dst, IDEMIP_IP6_ADDR_LEN) == 0);
+        if (target_is_dst || ip6_forward_is_link_local(a->next_hop))
+        {
+            io->redirect = IDEMIP_TRUE;
+            io->redirect_target = a->next_hop;
+        }
     }
 
     io->action = IDEMIP_IP6_FORWARD_SEND;

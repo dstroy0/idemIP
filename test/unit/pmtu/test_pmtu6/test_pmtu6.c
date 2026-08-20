@@ -106,14 +106,23 @@ static void ready(uint8_t *w)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU6_IO(w)->status);
 }
 
-// One message through the unit, on a path whose cache row holds `held`.
-static void deliver(uint8_t *w, uint32_t mtu, const uint8_t *dst, uint16_t held, uint32_t now_ms)
+// One message through the unit, on a path whose cache row holds `held` and whose first hop is
+// `link`. sec 5.2 takes the PMTU of a path with no row to be "the (known) MTU of the first-hop
+// link", so `link` is the ceiling whenever `held` is zero.
+static void deliver_on_link(uint8_t *w, uint32_t mtu, const uint8_t *dst, uint16_t held, uint16_t link, uint32_t now_ms)
 {
     IDEMIP_PMTU6_IO(w)->too_big_args.msg = g_msg;
     IDEMIP_PMTU6_IO(w)->too_big_args.len = packet_too_big(mtu, dst);
     IDEMIP_PMTU6_IO(w)->too_big_args.held = held;
+    IDEMIP_PMTU6_IO(w)->too_big_args.link_mtu = link;
     IDEMIP_PMTU6_IO(w)->now_ms = now_ms;
     Pmtu6.too_big(w);
+}
+
+// The same with no first hop named, which is what a caller that does not know it passes.
+static void deliver(uint8_t *w, uint32_t mtu, const uint8_t *dst, uint16_t held, uint32_t now_ms)
+{
+    deliver_on_link(w, mtu, dst, held, 0u, now_ms);
 }
 
 // --- the borrow --------------------------------------------------------------
@@ -285,6 +294,30 @@ void test_an_mtu_wider_than_the_row_is_carried_at_its_ceiling(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU6_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT32(0x1FFFFu, IDEMIP_PMTU6_IO(work_a)->reported_mtu);
     TEST_ASSERT_EQUAL_UINT16(0xFFFFu, IDEMIP_PMTU6_IO(work_a)->mtu);
+}
+
+// sec 4: "A node must not increase its estimate of the Path MTU in response to the contents of a
+// Packet Too Big message." sec 5.2 says a path with no Destination Cache row already has an
+// estimate, "the (known) MTU of the first-hop link", so the first message for a path cannot raise it.
+void test_an_empty_cache_row_is_still_bounded_by_the_first_hop(void)
+{
+    ready(work_a);
+    deliver_on_link(work_a, 9000u, dst_one, 0u, 1500u, 1000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(1500u, IDEMIP_PMTU6_IO(work_a)->mtu, "the estimate rose past the first hop");
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_PMTU6_IO(work_a)->decreased, "a raise was reported as a decrease");
+
+    // A message at the first hop's own MTU is not a decrease either.
+    ready(work_a);
+    deliver_on_link(work_a, 1500u, dst_one, 0u, 1500u, 1000u);
+    TEST_ASSERT_EQUAL_UINT16(1500u, IDEMIP_PMTU6_IO(work_a)->mtu);
+    TEST_ASSERT_FALSE(IDEMIP_PMTU6_IO(work_a)->decreased);
+
+    // One below it is, and it is the reported value that lands.
+    ready(work_a);
+    deliver_on_link(work_a, 1400u, dst_one, 0u, 1500u, 1000u);
+    TEST_ASSERT_EQUAL_UINT16(1400u, IDEMIP_PMTU6_IO(work_a)->mtu);
+    TEST_ASSERT_TRUE(IDEMIP_PMTU6_IO(work_a)->decreased);
 }
 
 // --- the path ----------------------------------------------------------------

@@ -67,6 +67,10 @@ typedef enum IDEMIP_ENUM_PACKED
  * @var Ip6FragBeginArgs::len   octets readable at @c pkt, never below the header plus Payload Length
  * @var Ip6FragBeginArgs::ident the 32-bit Identification every fragment of this packet carries
  * @var Ip6FragBeginArgs::mtu   "the MTU of the path to the packet's destination(s)", header included
+ * @var Ip6FragBeginArgs::upper_hdr_len octets of the Upper-Layer header, which sec 4.5 item (3) puts
+ *                              in the first fragment along with the extension headers. Zero when the
+ *                              caller does not know it, which still requires the first fragment to
+ *                              reach past the extension headers rather than stop on them.
  */
 typedef struct
 {
@@ -74,6 +78,7 @@ typedef struct
     size_t len;
     uint32_t ident;
     uint16_t mtu;
+    uint16_t upper_hdr_len;
 } Ip6FragBeginArgs;
 
 /**

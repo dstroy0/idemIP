@@ -650,6 +650,45 @@ void test_a_redirect_is_owed_when_the_source_is_a_neighbor_on_the_same_link(void
     TEST_ASSERT_EQUAL_PTR(LINK_LOCAL_B, io->redirect_target);
 }
 
+// RFC 4861 sec 4.5: "Otherwise, the target is a better first-hop router and the Target Address MUST
+// be the router's link-local address so that hosts can uniquely identify routers." A global-scope
+// next hop is not a target this may name, so no redirect is asked for.
+void test_no_redirect_to_a_next_hop_that_is_not_link_local(void)
+{
+    clear_ok(work_a);
+    size_t len = build_plain(DOC_HOST_A, DOC_HOST_B, HOP_COMMON);
+    args_default(work_a, len);
+    Ip6ForwardArgs *a = &IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args;
+    a->out_netif = 0u;
+    a->src_neighbor = IDEMIP_TRUE;
+    a->next_hop = DOC_ROUTER; // a second router on the link, named by its global address
+    Ip6Forward.decide(work_a);
+
+    Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_SEND, io->action);
+    TEST_ASSERT_FALSE_MESSAGE(io->redirect, "a redirect named a global-scope router address");
+}
+
+// The other half of sec 4.5: "If the Reserved field of the Redirect message is set ... the Target
+// Address field MUST be set to the same value as the Destination Address field" when the target is
+// the destination itself, which is on-link and therefore not required to be link-local.
+void test_a_redirect_to_the_destination_itself_is_owed(void)
+{
+    clear_ok(work_a);
+    size_t len = build_plain(DOC_HOST_A, DOC_HOST_B, HOP_COMMON);
+    args_default(work_a, len);
+    Ip6ForwardArgs *a = &IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args;
+    a->out_netif = 0u;
+    a->src_neighbor = IDEMIP_TRUE;
+    a->next_hop = DOC_HOST_B; // the destination is on-link, so the next hop is the destination
+    Ip6Forward.decide(work_a);
+
+    Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_SEND, io->action);
+    TEST_ASSERT_TRUE(io->redirect);
+    TEST_ASSERT_EQUAL_PTR(DOC_HOST_B, io->redirect_target);
+}
+
 void test_no_redirect_across_interfaces(void)
 {
     clear_ok(work_a);
