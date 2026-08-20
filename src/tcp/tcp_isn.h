@@ -52,6 +52,14 @@ static_assert(IDEMIP_TCP_ISN_TICKS_PER_MS * 4u == 1000u,
  * predefined/random time has expired", or when "The secret key has been used sufficiently often that
  * it should be regarded as insecure at that point." One entry serves all four.
  *
+ * The same section states what a rekey costs, and this entry does not enforce it: "changing the
+ * secret would change the ISN space used for reincarnated connections, and thus could cause the
+ * 4.4BSD heuristics to fail; to maintain safety, either dead connection state could be kept or a
+ * quiet time observed for two maximum segment lifetimes before such a change." @c base carries M
+ * across a rekey, and nothing carries F: every four-tuple lands in a new space at the instant the
+ * key changes. The caller owns that timing, and IDEMIP_TCP_MSL_MS is the MSL the rest of the stack
+ * counts in.
+ *
  * @var TcpIsnSeedArgs::key     the secret, in the caller's storage, read and not held
  * @var TcpIsnSeedArgs::key_len its octets, at least IDEMIP_TCP_ISN_SECRET_BYTES
  * @var TcpIsnSeedArgs::base    the tick M is counted from, so a reseed can leave M rising
