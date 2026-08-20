@@ -55,12 +55,10 @@ static_assert(sizeof(UdpPcbFields) <= sizeof(UdpPcbEntry),
               "the RFC 768 field set outgrew one entry - raise IDEMIP_UDP_PCB_ENTRY_SHIFT");
 
 // The one definition, private to this TU. A borrow that was never cleared carries no mark, so every
-// entry refuses it rather than reading a table that was never zeroed. next_port is where a bind of
-// IDEMIP_UDP_PCB_PORT_ANY starts looking, RFC 768 reading a Source Port of zero as "not used".
+// entry refuses it rather than reading a table that was never zeroed.
 typedef struct
 {
     uint32_t ready;
-    uint16_t next_port;
 } UdpPcbCtx;
 
 // The mark clear leaves.
@@ -167,19 +165,21 @@ static idemip_bool udp_pcb_port_held(uint8_t *restrict work, uint16_t port, uint
     return IDEMIP_FALSE;
 }
 
-// The first port in RFC 6335 sec 6's dynamic range no other open entry holds, starting where the
-// last assignment left off, or IDEMIP_UDP_PCB_PORT_ANY when the walk found none. The candidate is
-// the low bits of the running count laid into the range, the range being a power of two wide.
-static uint16_t udp_pcb_free_port(uint8_t *restrict work, uint16_t skip)
+// The first port in RFC 6335 sec 6's dynamic range no other open entry holds, or
+// IDEMIP_UDP_PCB_PORT_ANY when the walk found none. RFC 6056 sec 3.3.1 Algorithm 1 places the first
+// candidate at "min_ephemeral + (random() % num_ephemeral)" and walks from there, and sec 3.3 makes
+// the obfuscation a SHOULD "since this helps to mitigate a number of attacks that depend on the
+// attacker's ability to guess or know the five-tuple". The range is a power of two wide, so the
+// modulo is an AND and the wrap is an AND and an OR: no divide runs. A walk from where the last
+// assignment left off is guessable from one observed port.
+static uint16_t udp_pcb_free_port(uint8_t *restrict work, uint16_t skip, uint32_t rand)
 {
-    UdpPcbCtx *ctx = UDP_PCB_CTX(work);
     for (uint16_t n = 0u; n <= (uint16_t)IDEMIP_UDP_PCBS; n++)
     {
-        uint16_t step = (uint16_t)((ctx->next_port + n) & UDP_PCB_PORT_MASK);
+        uint16_t step = (uint16_t)(((uint16_t)rand + n) & UDP_PCB_PORT_MASK);
         uint16_t port = (uint16_t)(IDEMIP_UDP_PCB_PORT_FIRST | step);
         if (!udp_pcb_port_held(work, port, skip))
         {
-            ctx->next_port = (uint16_t)((step + 1u) & UDP_PCB_PORT_MASK);
             return port;
         }
     }
@@ -295,6 +295,16 @@ static idemip_bool udp_pcb_cov_admits(const UdpPcbFields *f, uint16_t cov)
         return IDEMIP_TRUE;
     }
     if (!f->lite)
+    {
+        return IDEMIP_FALSE;
+    }
+    // sec 3.3: "It is RECOMMENDED that the default behavior of UDP-Lite be set to mimic UDP by having
+    // the Checksum Coverage field match the length of the UDP-Lite packet and verify the entire
+    // packet", and "Applications that wish to receive payloads that were only partially covered by a
+    // checksum should inform the receiving system by an explicit system call." A stored coverage of
+    // IDEMIP_UDPLITE_COV_ALL is that default and admits nothing partial; a set_opts naming a minimum
+    // is the explicit call that lowers it.
+    if (f->cksum_len_rx == (uint16_t)IDEMIP_UDPLITE_COV_ALL)
     {
         return IDEMIP_FALSE;
     }
@@ -462,7 +472,7 @@ static void udp_pcb_bind(uint8_t *restrict work)
     uint16_t port = io->bind_args.port;
     if (port == (uint16_t)IDEMIP_UDP_PCB_PORT_ANY)
     {
-        port = udp_pcb_free_port(work, io->bind_args.index);
+        port = udp_pcb_free_port(work, io->bind_args.index, io->bind_args.rand);
         if (port == (uint16_t)IDEMIP_UDP_PCB_PORT_ANY)
         {
             io->status = IDEMIP_BUSY;
@@ -566,7 +576,10 @@ static void udp_pcb_set_opts(uint8_t *restrict work)
         return;
     }
     UdpPcbEntry *e = UDP_PCB_AT(work, io->opt_args.index);
-    if (!e->f.in_use || io->opt_args.ttl == 0u)
+    // RFC 1122 sec 3.2.1.7: "A host MUST NOT send a datagram with a Time-to-Live (TTL) value of
+    // zero." RFC 1112 sec 6.1 calls the multicast operand "the IP time-to-live of an outgoing
+    // multicast datagram", which is the same octet, so the same rule refuses it.
+    if (!e->f.in_use || io->opt_args.ttl == 0u || io->opt_args.mcast_ttl == 0u)
     {
         return;
     }

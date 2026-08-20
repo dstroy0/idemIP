@@ -80,10 +80,19 @@ typedef struct
  *                            IDEMIP_UDP_PCB_PORT_ANY to be assigned one
  * @var UdpPcbAddrArgs::zone  the RFC 4007 sec 6 zone index qualifying a non-global IPv6 address
  * @var UdpPcbAddrArgs::netif the interface this endpoint is pinned to, 0 for none
+ * @var UdpPcbAddrArgs::rand  a random word, read only on a bind of IDEMIP_UDP_PCB_PORT_ANY. RFC 6056
+ *                            sec 3.3: "Ephemeral port selection algorithms SHOULD obfuscate the
+ *                            selection of their ephemeral ports, since this helps to mitigate a
+ *                            number of attacks that depend on the attacker's ability to guess or know
+ *                            the five-tuple that identifies the transport-protocol instance to be
+ *                            attacked", and sec 1 names UDP and UDP-Lite among the protocols it
+ *                            applies to. This is sec 3.3.1 Algorithm 1's random() and is what places
+ *                            the first candidate.
  */
 typedef struct
 {
     const uint8_t *ip;
+    uint32_t rand;
     uint16_t index;
     uint16_t port;
     uint8_t zone;

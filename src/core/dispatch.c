@@ -372,8 +372,30 @@ static void d_raw(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t
         RawPcb.find(ctx->raw_pcb);
         if (rp->status == IDEMIP_OK)
         {
+            // RFC 3542 sec 3.1: "the application must set the new IPV6_CHECKSUM socket option to have
+            // the kernel (1) compute and store a checksum for output, and (2) verify the received
+            // checksum on input, discarding the packet if the checksum is in error", the same
+            // paragraph adding "The checksum will incorporate the IPv6 pseudo-header, defined in
+            // Section 8.1 of [RFC-2460]". A negative offset is the disabled state.
+            const uint16_t bound = rp->index;
+            rp->pcb_args.index = bound;
+            RawPcb.load(ctx->raw_pcb);
+            if (rp->status == IDEMIP_OK && ip_version == IDEMIP_IP6_VERSION && rp->info.cksum_offset >= 0)
+            {
+                const uint8_t *body = io->input_args.frame + io->payload_off;
+                uint32_t sum = 0u;
+                if ((size_t)rp->info.cksum_offset + 2u > io->payload_len ||
+                    !idemip_pseudo_accum(&sum, ip_version, io->proto, remote_ip, local_ip,
+                                         (uint32_t)io->payload_len) ||
+                    idemip_cksum_final(idemip_cksum_accum(sum, body, io->payload_len)) != 0u)
+                {
+                    d_drop(work, IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_STAT_IF_IN_ERRORS);
+                    d_bump(work, d_ip_ctr(ip_version, IDEMIP_STAT_IP4_IN_DISCARDS, IDEMIP_STAT_IP6_IN_DISCARDS));
+                    return;
+                }
+            }
             io->pcb_kind = IDEMIP_DISPATCH_PCB_RAW;
-            io->pcb = rp->index;
+            io->pcb = bound;
             io->act |= IDEMIP_DISPATCH_ACT_DELIVER;
             d_bump(work, d_ip_ctr(ip_version, IDEMIP_STAT_IP4_IN_DELIVERS, IDEMIP_STAT_IP6_IN_DELIVERS));
             d_delivered(work, io->input_args.frame);
@@ -473,7 +495,10 @@ static void d_udp(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t
             d_bump(work, IDEMIP_STAT_UDP_IN_ERRORS);
             return;
         }
-        cov = ul->res.cov;
+        // sec 3.1: "A Checksum Coverage of zero indicates that the entire UDP-Lite packet is covered
+        // by the checksum", which a sender may also write as the packet's own length. Both are the
+        // whole packet, so both reach the binding as the same value and sec 3.3's default admits them.
+        cov = ul->res.covered ? (uint16_t)IDEMIP_UDPLITE_COV_ALL : ul->res.cov;
     }
     UdpPcbIo *up = IDEMIP_UDP_PCB_IO(ctx->udp_pcb);
     up->find_args.local_ip = local_ip;

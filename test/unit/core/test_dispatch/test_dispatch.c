@@ -1198,6 +1198,71 @@ void test_an_unclaimed_ipv6_next_header_counts_unknown_protos(void)
 }
 #endif
 
+
+#if IDEMIP_ENABLE_IPV6
+// RFC 3542 sec 3.1: "the application must set the new IPV6_CHECKSUM socket option to have the kernel
+// (1) compute and store a checksum for output, and (2) verify the received checksum on input,
+// discarding the packet if the checksum is in error." The same paragraph names the sum: "The checksum
+// will incorporate the IPv6 pseudo-header, defined in Section 8.1 of [RFC-2460]."
+void test_a_raw_ipv6_binding_with_ipv6_checksum_verifies_the_received_checksum(void)
+{
+    RawPcbIo *rp = IDEMIP_RAW_PCB_IO(raw_mem);
+    rp->open_args.ip_version = 6u;
+    rp->open_args.proto = 253u; // RFC 3692 leaves 253 to testing, so no built-in module claims it
+    RawPcb.open(raw_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, rp->status);
+    const uint16_t pcb = rp->index;
+    rp->bind_args.index = pcb;
+    rp->bind_args.ip = g_local_ip6;
+    rp->bind_args.zone = 0u;
+    rp->bind_args.netif = 0u;
+    RawPcb.bind(raw_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, rp->status);
+
+    rp->opt_args.index = pcb;
+    rp->opt_args.ttl = 64u;
+    rp->opt_args.tos = 0u;
+    rp->opt_args.cksum_offset = 2; // an even offset into the user data, sec 3.1's IPV6_CHECKSUM
+    RawPcb.set_opts(raw_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, rp->status);
+
+    // Eight octets of payload whose 16-bit field at offset 2 holds a wrong sum.
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, 253u, g_remote_ip6, g_local_ip6, 8u);
+    memset(g_frame + off, 0x5A, 8u);
+    idemip_wr16(g_frame + off + 2u, 0x0000u);
+    input(work_a, off + 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a raw packet whose IPV6_CHECKSUM is in error must be discarded");
+    TEST_ASSERT_BITS_LOW(IDEMIP_DISPATCH_ACT_DELIVER, IDEMIP_DISPATCH_IO(work_a)->act);
+
+    // The same payload with the sum RFC 8200 sec 8.1's pseudo-header makes correct.
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, 253u, g_remote_ip6, g_local_ip6, 8u);
+    memset(g_frame + off, 0x5A, 8u);
+    idemip_wr16(g_frame + off + 2u, 0x0000u);
+    uint32_t sum = 0u;
+    TEST_ASSERT_TRUE(idemip_pseudo_accum(&sum, 6u, 253u, g_remote_ip6, g_local_ip6, 8u));
+    idemip_wr16(g_frame + off + 2u, idemip_cksum_final(idemip_cksum_accum(sum, g_frame + off, 8u)));
+    input(work_a, off + 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_RAW, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_BITS_HIGH(IDEMIP_DISPATCH_ACT_DELIVER, IDEMIP_DISPATCH_IO(work_a)->act);
+
+    // sec 3.1's disabled state, "-1 ... disables the checksum", takes the packet either way.
+    rp->opt_args.index = pcb;
+    rp->opt_args.ttl = 64u;
+    rp->opt_args.cksum_offset = -1;
+    RawPcb.set_opts(raw_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, rp->status);
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, 253u, g_remote_ip6, g_local_ip6, 8u);
+    memset(g_frame + off, 0x5A, 8u);
+    input(work_a, off + 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_RAW, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_BITS_HIGH(IDEMIP_DISPATCH_ACT_DELIVER, IDEMIP_DISPATCH_IO(work_a)->act);
+}
+#endif
+
 // RFC 1122 sec 3.2: a raw binding takes the protocol number itself, so a protocol no built-in module
 // claims still reaches a pcb.
 void test_a_raw_binding_takes_an_unclaimed_protocol(void)

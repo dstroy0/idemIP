@@ -298,7 +298,8 @@ static uint16_t open_binding(uint8_t *w, uint8_t version, idemip_bool lite)
     return io->index;
 }
 
-static void bind_ok(uint8_t *w, uint16_t index, const uint8_t *ip, uint16_t port, uint8_t zone, uint8_t netif)
+static void bind_rand(uint8_t *w, uint16_t index, const uint8_t *ip, uint16_t port, uint8_t zone, uint8_t netif,
+                      uint32_t rand)
 {
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(w);
     io->bind_args.index = index;
@@ -306,8 +307,14 @@ static void bind_ok(uint8_t *w, uint16_t index, const uint8_t *ip, uint16_t port
     io->bind_args.port = port;
     io->bind_args.zone = zone;
     io->bind_args.netif = netif;
+    io->bind_args.rand = rand;
     UdpPcb.bind(w);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, io->status, "a bind of a free port was refused");
+}
+
+static void bind_ok(uint8_t *w, uint16_t index, const uint8_t *ip, uint16_t port, uint8_t zone, uint8_t netif)
+{
+    bind_rand(w, index, ip, port, zone, netif, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_UDP_PCB_IO(w)->status, "a bind of a free port was refused");
 }
 
 static void connect_ok(uint8_t *w, uint16_t index, const uint8_t *ip, uint16_t port)
@@ -516,6 +523,39 @@ void test_two_binds_of_port_any_settle_on_different_ports(void)
     uint16_t first = io->port;
     bind_ok(work_a, b, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u);
     TEST_ASSERT_NOT_EQUAL_UINT16(first, io->port);
+}
+
+
+// RFC 6056 sec 3.3: "Ephemeral port selection algorithms SHOULD obfuscate the selection of their
+// ephemeral ports, since this helps to mitigate a number of attacks that depend on the attacker's
+// ability to guess or know the five-tuple that identifies the transport-protocol instance to be
+// attacked", and sec 1 names UDP and UDP-Lite among the protocols it covers. sec 3.3.1 Algorithm 1
+// places the first candidate at "min_ephemeral + (random() % num_ephemeral)", so the caller's word is
+// what places it and a counter from a fixed origin is what it replaces.
+void test_the_ephemeral_draw_follows_the_callers_random_word(void)
+{
+    UdpPcb.clear(work_a);
+    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
+    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_rand(work_a, i, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u, 0x0F0F0F0Fu);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    const uint16_t first = io->port;
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT16((uint16_t)IDEMIP_UDP_PCB_PORT_FIRST, first);
+
+    // The same empty table, a different word: a counter would hand out the same port either way.
+    UdpPcb.clear(work_a);
+    i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_rand(work_a, i, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u, 0xF0F0F0F0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    const uint16_t second = io->port;
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(first, second, "the draw did not follow the caller's word");
+
+    // And the same word on the same empty table places it the same way, so the draw is a function of
+    // the word rather than of a cursor the last call moved.
+    UdpPcb.clear(work_a);
+    i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_rand(work_a, i, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u, 0x0F0F0F0Fu);
+    TEST_ASSERT_EQUAL_UINT16(first, io->port);
 }
 
 // An endpoint another binding already carries is ERR: no retry frees it, and reported as BUSY the
@@ -750,6 +790,27 @@ void test_set_opts_refuses_a_time_to_live_of_zero(void)
 
     load_ok(work_a, i);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_IP_DEFAULT_TTL, io->info.ttl);
+
+    // RFC 1112 sec 6.1 calls the multicast operand "the IP time-to-live of an outgoing multicast
+    // datagram", the same octet of the header, so the same MUST NOT refuses it.
+    io->opt_args.index = i;
+    io->opt_args.ttl = 64u;
+    io->opt_args.mcast_ttl = 0u;
+    UdpPcb.set_opts(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "a multicast time-to-live of zero is the same octet");
+    load_ok(work_a, i);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_IP_DEFAULT_TTL, io->info.ttl);
+    TEST_ASSERT_EQUAL_UINT8(1u, io->info.mcast_ttl);
+
+    // sec 6.1: the multicast time-to-live "should default to 1", which is legal.
+    io->opt_args.index = i;
+    io->opt_args.ttl = 64u;
+    io->opt_args.mcast_ttl = 1u;
+    UdpPcb.set_opts(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    load_ok(work_a, i);
+    TEST_ASSERT_EQUAL_UINT8(64u, io->info.ttl);
+    TEST_ASSERT_EQUAL_UINT8(1u, io->info.mcast_ttl);
 }
 
 // RFC 3828 sec 3.1: "the value of the Checksum Coverage field MUST be either 0 or at least 8".
@@ -964,9 +1025,39 @@ void test_find_discards_a_coverage_of_one_through_seven(void)
         TEST_ASSERT_EQUAL_UINT16(IDEMIP_UDP_PCB_NONE, io->index);
     }
 
+    // RFC 3828 sec 3.3: "It is RECOMMENDED that the default behavior of UDP-Lite be set to mimic UDP
+    // by having the Checksum Coverage field match the length of the UDP-Lite packet and verify the
+    // entire packet", and "Applications that wish to receive payloads that were only partially
+    // covered by a checksum should inform the receiving system by an explicit system call." A binding
+    // that made no such call takes no partial coverage, the header-only 8 included.
     set_datagram(work_a, 4u, g_local, 5004u, g_remote, 40000u, 8u, 1u);
     UdpPcb.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status,
+                                  "a binding that asked for nothing partial must mimic UDP");
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_UDP_PCB_NONE, io->index);
+
+    // sec 3.1: "A Checksum Coverage of zero indicates that the entire UDP-Lite packet is covered by
+    // the checksum", which is what the default does verify.
+    set_datagram(work_a, 4u, g_local, 5004u, g_remote, 40000u, (uint16_t)IDEMIP_UDPLITE_COV_ALL, 1u);
+    UdpPcb.find(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_EQUAL_UINT16(i, io->index);
+
+    // The explicit call is what opens it: a minimum of 8 admits the header-only coverage.
+    io->opt_args.index = i;
+    io->opt_args.ttl = 64u;
+    io->opt_args.mcast_ttl = 1u;
+    io->opt_args.tos = 0u;
+    io->opt_args.mcast_netif = 0u;
+    io->opt_args.flags = 0u;
+    io->opt_args.cksum_len_tx = (uint16_t)IDEMIP_UDPLITE_COV_ALL;
+    io->opt_args.cksum_len_rx = 8u;
+    UdpPcb.set_opts(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+
+    set_datagram(work_a, 4u, g_local, 5004u, g_remote, 40000u, 8u, 1u);
+    UdpPcb.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, io->status, "the explicit call lets partial coverage through");
     TEST_ASSERT_EQUAL_UINT16(i, io->index);
 }
 

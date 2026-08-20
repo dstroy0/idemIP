@@ -217,13 +217,28 @@ void test_two_borrows_share_no_byte(void)
 {
     ready(work_a);
     ready(work_b);
+    // RFC 3828 sec 3.1 sums over the covered span with the pseudo-header of the version the datagram
+    // arrived under, so two borrows carrying different versions and different coverages answer
+    // differently and neither answer reaches the other.
+    (void)build_v4(work_a, buf, V_IPL, 8u);
+    (void)build_v6(work_b, buf_b, V_IPL, 12u);
     set_check4(work_a, buf, V_IPL);
     set_check6(work_b, buf_b, V_IPL);
 
+    UdpLite.check(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_UDPLITE_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_HEX16(V4_COV8_CKSUM, IDEMIP_UDPLITE_IO(work_a)->res.cksum);
+    TEST_ASSERT_EQUAL_UINT16(8u, IDEMIP_UDPLITE_IO(work_a)->res.cov);
+
+    UdpLite.check(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_UDPLITE_IO(work_b)->status);
+    TEST_ASSERT_EQUAL_HEX16(V6_COV12_CKSUM, IDEMIP_UDPLITE_IO(work_b)->res.cksum);
+    TEST_ASSERT_EQUAL_UINT16(12u, IDEMIP_UDPLITE_IO(work_b)->res.cov);
+
+    // b's whole call left a's result where a's call put it.
+    TEST_ASSERT_EQUAL_HEX16(V4_COV8_CKSUM, IDEMIP_UDPLITE_IO(work_a)->res.cksum);
+    TEST_ASSERT_EQUAL_UINT16(8u, IDEMIP_UDPLITE_IO(work_a)->res.cov);
     TEST_ASSERT_EQUAL_UINT8(4u, IDEMIP_UDPLITE_IO(work_a)->check_args.ip_version);
-    TEST_ASSERT_EQUAL_UINT8(6u, IDEMIP_UDPLITE_IO(work_b)->check_args.ip_version);
-    TEST_ASSERT_EQUAL_PTR(buf, IDEMIP_UDPLITE_IO(work_a)->check_args.dgram);
-    TEST_ASSERT_EQUAL_PTR(buf_b, IDEMIP_UDPLITE_IO(work_b)->check_args.dgram);
 }
 
 // An entry is a function of its borrow alone, so a call interleaved on another borrow cannot change
