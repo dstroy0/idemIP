@@ -3,7 +3,7 @@
 
 /**
  * @file timeouts.h
- * @brief The deadline list every service registers into, and the tick that drains it.
+ * @brief The deadline list, keyed by the unit whose tick owns the work, and the tick that drains it.
  *
  * A deadline is an absolute millisecond, compared against the count the caller hands @ref
  * TimeoutsNs::tick. Deadlines are held in milliseconds throughout this tree, so no tick period
@@ -16,7 +16,16 @@
  *
  * No entry holds a function pointer. An entry names the unit whose own tick owns the work and an
  * index into that unit's own table, and @ref TimeoutsNs::expire hands the pair back to the caller.
- * The order those units run in is core/dispatch.c's.
+ * The order those units run in is core/tick.h's IdemIpTickUnit, which is where the dependency order
+ * is enforced; nothing here orders anything but deadlines.
+ *
+ * Nothing under src/ arms one. Every service carries its own deadlines in its own table - a TCB its
+ * RFC 6298 retransmission, an ARP row its age, a reassembly row its RFC 1122 sec 3.3.2 timer - and
+ * its own tick walks them, so this list is not how the library keeps time. It is the caller's, for
+ * deadlines the caller wants handed back to it on the tick that reaches them, and TickNs::service
+ * drains it into TickIo::timeout_unit and TickIo::timeout_arg once the units it does drive are
+ * through. IDEMIP_TIMEOUTS is sized for one deadline per service on that basis, so a caller wanting
+ * one per row of a unit's table raises it.
  */
 
 #ifndef IDEMIP_TIMEOUTS_H

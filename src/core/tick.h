@@ -160,7 +160,10 @@ typedef struct
  * @var TickIo::unit       which unit the step just run belongs to
  * @var TickIo::netif      the interface it worked on, IDEMIP_DISPATCH_NETIF_NONE for a shared unit
  * @var TickIo::desc       the receive descriptor a flush step handed back, which stays pinned until
- *                         the step after this one
+ *                         the step after this one. A DRAIN step writes it too, and there it names
+ *                         the frame it dispatched rather than lending it: that descriptor was
+ *                         posted back inside the step, and is the engine's again unless a unit
+ *                         retained the frame and pinned it.
  * @var TickIo::len        octets of frame in it
  * @var TickIo::ip         the protocol address a released hold was waiting on
  * @var TickIo::until_ms   milliseconds from the millisecond this tick opened at to the earliest

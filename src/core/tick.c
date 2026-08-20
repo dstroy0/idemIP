@@ -189,11 +189,18 @@ static idemip_bool t_drain_one(uint8_t *restrict work, uint8_t netif)
     io->netif = netif;
     io->desc = desc;
     io->len = dm->len;
-    if ((di->act & IDEMIP_DISPATCH_ACT_PINNED) == 0u)
-    {
-        IDEMIP_DMA_IO(row->f.dma)->desc_args.index = desc;
-        Dma.rx_post(row->f.dma);
-    }
+
+    // Every descriptor a take took is posted back, retained or not, because posting is what ENDS
+    // this pass's claim on it and not what returns it. dma.h: rx_post gives a taken descriptor back
+    // to the engine, and unpin lowers a pin "and post the descriptor back when the last pin goes" -
+    // which it can only do once the take is over, so unpin's give-back is gated on the HELD flag
+    // rx_post clears. Skipping the post for a retained frame left HELD set, and the unpin that came
+    // when the reassembler or the out-of-order queue let go found it set and handed nothing back.
+    // The descriptor was unpinned and still out of the ring, and stayed out: every fragment and
+    // every held segment cost the interface one of its IDEMIP_RX_DESCRIPTORS for good.
+    IDEMIP_DMA_IO(row->f.dma)->desc_args.index = desc;
+    Dma.rx_post(row->f.dma);
+
     io->frames = (uint16_t)(io->frames + 1u);
     return IDEMIP_TRUE;
 }

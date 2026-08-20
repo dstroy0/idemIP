@@ -669,6 +669,9 @@ void test_an_expired_datagram_returns_every_descriptor_it_pinned(void)
     Dma.pinned(dma_mem);
     TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(dma_mem)->pinned,
                                      "a timed-out datagram kept the descriptors its fragments pinned");
+    // A pin count of zero is not a descriptor back in the ring, and this case is about the second.
+    // rx_release is the driver call that returns one, so it is the only thing that says so.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, g_released, "the descriptor was unpinned and never handed back");
 
     // The reassembler's own state: the row is gone, not merely unpinned. A row the sweep can still
     // find is one the service phase reports a step for on every later tick.
@@ -676,6 +679,37 @@ void test_an_expired_datagram_returns_every_descriptor_it_pinned(void)
     Ip4Reass.tick(ip4_reass_mem);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_IP4_REASS_IO(ip4_reass_mem)->status,
                                   "the timed-out row was never freed");
+}
+
+// What a descriptor that never comes back costs, said in the only terms that matter: the interface
+// goes deaf. The ring holds IDEMIP_RX_DESCRIPTORS of them and a retained frame takes one, so a
+// release that does not return it takes it for good. rx_take refuses a descriptor the engine does
+// not own and the drain steps that interface over without a word, so the frame is claimed off the
+// engine, dropped, and counted nowhere.
+void test_the_ring_still_receives_after_a_retained_frame_is_released(void)
+{
+    uint16_t len = fill_ip4(0u, LOCAL_IP4, IDEMIP_IP4_FLAG_MF);
+    engine_queue(0u, len);
+    open_tick(work_a, 1000u);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(dispatch_mem)->act & IDEMIP_DISPATCH_ACT_PINNED) != 0u,
+                             "the fragment was not retained, so this case proves nothing");
+
+    // The reassembly timeout frees the row, which drops the pin the fragment held.
+    open_tick(work_a, 1000u + TICK_REASS_MS);
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.drain));
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.service));
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.flush));
+
+    // The same buffer, filled again. The engine writes it only if the descriptor is its own again.
+    len = fill_ip4(0u, LOCAL_IP4, 0u);
+    engine_queue(0u, len);
+    open_tick(work_a, 2000u);
+    Tick.drain(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status,
+                                  "the ring never got back the descriptor the released fragment took");
+    TEST_ASSERT_EQUAL_UINT16(1u, IDEMIP_TICK_IO(work_a)->frames);
 }
 
 // The same datagram, completed instead of timed out: the descriptors stay pinned, because the caller
@@ -776,6 +810,7 @@ void test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned(void)
     Dma.pinned(dma_mem);
     TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(dma_mem)->pinned,
                                      "an abandoned datagram kept the descriptors its fragments pinned");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, g_released, "the descriptor was unpinned and never handed back");
 
     // The reassembler's own state: the row is freed, not merely unpinned. A row left expired is one
     // the flush phase reports again on every later tick.
