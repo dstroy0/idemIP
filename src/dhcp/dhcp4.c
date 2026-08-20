@@ -72,9 +72,6 @@ static_assert((IDEMIP_DHCP4_OFF_CTX & (IDEMIP_ALIGN - 1u)) == 0u,
 // RFC 2131 sec 4.1 doubles the retransmission delay four times to reach its 64-second maximum.
 #define DHCP4_RETRY_SHIFT_MAX 4u
 
-// The half of the 32-bit millisecond clock a wrap-safe compare covers.
-#define DHCP4_CLOCK_HALF 0x80000000u
-
 // One option each bit records as read, so an option that appears twice is taken once (RFC 2131
 // sec 4.1: "Options may appear only once, unless otherwise specified in the options document").
 #define DHCP4_HAS_MSG_TYPE 0x0001u
@@ -160,6 +157,10 @@ static uint32_t dhcp4_half_left(IdemIpMs now, IdemIpMs deadline, idemip_bool tim
         left = deadline - now;
     }
     IdemIpMs half = left >> 1;
+    if (half > (IdemIpMs)0xFFFFFFFFu)
+    {
+        half = (IdemIpMs)0xFFFFFFFFu; // the interval is one word, and a lease this long is not bounded by it
+    }
     return (half > (IdemIpMs)IDEMIP_DHCP4_RENEW_MIN_MS) ? (uint32_t)half : (uint32_t)IDEMIP_DHCP4_RENEW_MIN_MS;
 }
 
@@ -453,11 +454,17 @@ static void dhcp4_lease(uint8_t *restrict work, const Dhcp4Opts *o, const uint8_
     uint32_t t2 = lease - (lease >> 3);
     if (dhcp4_timed(lease))
     {
-        if (((o->has & DHCP4_HAS_T1) != 0u) && ((o->has & DHCP4_HAS_T2) != 0u) && (o->t1_s < o->t2_s) &&
-            (o->t2_s < lease))
+        // sec 4.4.5 makes each of T1 and T2 "configurable by the server through options" with its own
+        // default, so a present option 58 governs T1 whether or not option 59 came with it. The
+        // ordering test then runs over whatever pair that leaves, and an inconsistent one falls back
+        // to both defaults: "T1 MUST be earlier than T2, which, in turn, MUST be earlier than the
+        // time at which the client's lease will expire."
+        uint32_t want_t1 = ((o->has & DHCP4_HAS_T1) != 0u) ? o->t1_s : t1;
+        uint32_t want_t2 = ((o->has & DHCP4_HAS_T2) != 0u) ? o->t2_s : t2;
+        if ((want_t1 < want_t2) && (want_t2 < lease))
         {
-            t1 = o->t1_s;
-            t2 = o->t2_s;
+            t1 = want_t1;
+            t2 = want_t2;
         }
     }
     else
@@ -561,7 +568,11 @@ static idemip_bool dhcp4_take(uint8_t *restrict work)
     Dhcp4Ctx *ctx = DHCP4_CTX(work);
     const IdemIpDhcp4Cfg *cfg = ctx->cfg;
     const uint8_t *msg = io->input_args.msg;
-    if ((msg == NULL) || (io->input_args.len < IDEMIP_DHCP4_FIXED_LEN))
+    // RFC 1542 sec 2.1: "The IP Total Length and UDP Length must be large enough to contain the
+    // minimal BOOTP header of 300 octets (in the UDP data field)", and "BOOTP messages not meeting
+    // these consistency checks MUST be silently discarded". The build path already holds to the same
+    // 300 octets.
+    if ((msg == NULL) || (io->input_args.len < IDEMIP_DHCP4_MSG_BOOTP_MIN))
     {
         return IDEMIP_FALSE;
     }
@@ -783,7 +794,7 @@ static void dhcp4_write(uint8_t *restrict work)
 
     // sec 4.4.1 and sec 4.4.5: the client records the local time the message went out, which the
     // lease expiration is measured from. The clock is the one the last tick or start supplied.
-    uint32_t next_ms = ctx->now_ms + dhcp4_backoff(ctx, io->tick_args.rand);
+    IdemIpMs next_ms = ctx->now_ms + (IdemIpMs)dhcp4_backoff(ctx, io->tick_args.rand);
     ctx->sent_ms = ctx->now_ms;
     ctx->sent = type;
     ctx->owed = 0u;
@@ -803,7 +814,7 @@ static void dhcp4_write(uint8_t *restrict work)
         // sec 3.1: the client "restarts the configuration process" and "SHOULD wait a minimum of ten
         // seconds before restarting", which start reports BUSY until.
         dhcp4_halt(work);
-        next_ms = ctx->now_ms + IDEMIP_DHCP4_DECLINE_WAIT_MS;
+        next_ms = ctx->now_ms + (IdemIpMs)IDEMIP_DHCP4_DECLINE_WAIT_MS;
     }
     ctx->retry_ms = next_ms;
 }
