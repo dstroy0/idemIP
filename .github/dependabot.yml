@@ -1,0 +1,29 @@
+# What Dependabot has to keep fresh here, which is the workflows and nothing else.
+#
+# This library has no package manifest of any kind: no dependency is fetched at build time, the
+# whole tree is C11 and CMake, and the only third-party code named anywhere is the GitHub Actions
+# the three workflows run. Those ARE pinned - .github/workflows/capabilities.yml and SonarCloud.yml
+# name actions/checkout and SonarSource/sonarqube-scan-action by commit SHA - and a pin is exactly
+# the thing that goes stale silently: it keeps working, and keeps working at whatever the action was
+# on the day it was written, security fixes included.
+#
+# So github-actions, and nothing else. The stub this replaced had package-ecosystem: "", which is
+# not a value Dependabot accepts, so the file it came from would have been reported as invalid
+# rather than doing nothing quietly.
+version: 2
+updates:
+  # The directory is the repository root and not .github/workflows: for this ecosystem Dependabot
+  # reads / and finds the workflow files under it itself.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      # The tree's own subject form, so a Dependabot commit reads like the ones around it.
+      prefix: "(build)"
+    groups:
+      # One pull request a week rather than one per action. Every workflow here either builds the
+      # library or analyses it, so they are reviewed together or not at all.
+      actions:
+        patterns:
+          - "*"

@@ -1,0 +1,82 @@
+# CodeQL over the three languages this tree actually holds, with the C built rather than read.
+#
+# The C analysis is build-mode: manual and not none, which is the difference between analysing this
+# library and analysing nothing. Every unit in src/ sits inside #if IDEMIP_ENABLE_ETHERNET, and the
+# capability macros come from CMake's -D flags: no header defaults them, so a preprocessor that has
+# not been told sees them as 0 and skips every file's whole body. Buildless extraction would report
+# a clean scan of an empty library.
+#
+# So it configures and builds the way the other two workflows do. Every capability defaults ON in
+# CMakeLists.txt, so a plain configure is the widest set there is - the analysis sees IPv4, IPv6, TCP
+# and UDP at once, which no single reduced build does.
+#
+# BUILD_TESTING=OFF because test/ is the measuring instrument. The suites pass null borrows and
+# malformed frames on purpose, and every one of those is a finding about the test and not the
+# library.
+name: "CodeQL"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '43 9 * * 3'
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    strategy:
+      # One language failing does not hide the other two.
+      fail-fast: false
+      matrix:
+        include:
+          # The workflows in this directory.
+          - language: actions
+            build-mode: none
+          # src/ and tools/, which is the library and the two programs that link it.
+          - language: c-cpp
+            build-mode: manual
+          # tools/dev_env/, the readers and guards.
+          - language: python
+            build-mode: none
+
+    steps:
+      # The same pin the other two workflows carry, so all three move together when Dependabot
+      # raises them.
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # Before init, which is where CodeQL's own documentation puts a toolchain the manual build
+      # needs. Only the C job builds anything.
+      - name: Install Ninja
+        if: matrix.build-mode == 'manual'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      # Between init and analyze, so the extractor sees every translation unit the compiler does.
+      - name: Build the library
+        if: matrix.build-mode == 'manual'
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja -DBUILD_TESTING=OFF
+          cmake --build build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{matrix.language}}"
