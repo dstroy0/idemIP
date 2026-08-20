@@ -548,7 +548,13 @@ void test_an_expired_entry_is_deleted(void)
     tick_at(work_a, 9999u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
 
+    // sec 6.1 expires the entry when the current time becomes *larger* than Expiration-time, so at
+    // exactly Expiration-time it still stands.
     tick_at(work_a, 10000u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status,
+                                  "an entry expired at Expiration-time rather than past it");
+
+    tick_at(work_a, 10001u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_TRUE(IO(work_a)->expired);
     TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(g_a, IO(work_a)->addr, IDEMIP_IP6_ADDR_LEN,
@@ -563,13 +569,13 @@ void test_a_tick_reports_one_expiry_per_call(void)
     Rdnss.clear(work_a);
     feed(work_a, 10u, 0u, two, 2u);
 
-    tick_at(work_a, 10000u);
+    tick_at(work_a, 10001u);
     TEST_ASSERT_TRUE(IO(work_a)->expired);
     TEST_ASSERT_EQUAL_UINT8(1u, IO(work_a)->servers);
-    tick_at(work_a, 10000u);
+    tick_at(work_a, 10001u);
     TEST_ASSERT_TRUE(IO(work_a)->expired);
     TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->servers);
-    tick_at(work_a, 10000u);
+    tick_at(work_a, 10001u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
 }
 
@@ -595,7 +601,7 @@ void test_an_expiry_closes_the_gap(void)
     get_slot(work_a, 2u);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(g_a, IO(work_a)->addr, IDEMIP_IP6_ADDR_LEN);
 
-    tick_at(work_a, 10000u);
+    tick_at(work_a, 10001u);
     TEST_ASSERT_TRUE(IO(work_a)->expired);
     TEST_ASSERT_EQUAL_UINT8(2u, IO(work_a)->servers);
     get_slot(work_a, 0u);

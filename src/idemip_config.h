@@ -1125,15 +1125,17 @@ static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
 // against DupAddrDetectTransmits and the ones received against the loopback semantics of sec 5.4.3,
 // its RetransTimer, the sec 5.4.5 flag saying the identifier came from the hardware address, and the
 // millisecond its next deadline falls on: 16, 1, 1, 1, 4, 1 and 4 octets, at a power of two.
+// The entry carries its RFC 4862 sec 5.4 deadline on the 64-bit millisecond clock, so a RetransTimer
+// a Router Advertisement set is served whole.
 #ifndef IDEMIP_DAD_ENTRY_SHIFT
-#define IDEMIP_DAD_ENTRY_SHIFT 5u
+#define IDEMIP_DAD_ENTRY_SHIFT 6u
 #endif
 // Spans the operand block and the context together, as IDEMIP_PHY_BORROW does: dad.h puts DadIo at
 // offset zero and the context behind it, holding the bound sec 5.1 configuration and the mark clear
 // leaves. sizeof(DadIo) is 112 on a target with 8-octet pointers and the context is 16, so the assert
 // in dad.c holds at 128.
 #ifndef IDEMIP_DAD_CTX_BYTES
-#define IDEMIP_DAD_CTX_BYTES 128u
+#define IDEMIP_DAD_CTX_BYTES 144u
 #endif
 #define IDEMIP_DAD_BORROW (IDEMIP_DAD_CTX_BYTES + (IDEMIP_IP6_ADDRESSES << IDEMIP_DAD_ENTRY_SHIFT))
 

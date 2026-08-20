@@ -105,13 +105,13 @@ static idemip_bool rdnss_is_unicast(const uint8_t *addr)
 
 // --- the clock -------------------------------------------------------------
 
-// True once @p now has reached @p deadline. sec 6.1: "When the current time becomes larger than
-// Expiration-time, this entry is regarded as expired". The difference is taken in 32 unsigned bits
-// and read as a span below half the range, so an expiration the millisecond clock has passed stays
-// passed across its wrap at 2^32.
+// sec 6.1 states the expiry strictly: "When the current time becomes larger than Expiration-time, this
+// entry is regarded as expired". At exactly Expiration-time the entry still stands, which is why this
+// is a greater-than and not the at-or-past comparison RFC 4862 sec 5.5.4's wording takes. Both sit on
+// the same 64-bit millisecond clock, so this is one comparison and nothing wraps under it.
 static idemip_bool rdnss_due(IdemIpMs now, IdemIpMs deadline)
 {
-    return (idemip_bool)((uint32_t)(now - deadline) < 0x80000000u);
+    return (now > deadline) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
 // sec 6.1: "Expiration-time is set to the value of the Lifetime field of the RDNSS option ... plus the

@@ -107,6 +107,10 @@ typedef struct
     uint32_t now_ms;
     idemip_bool delay;
     idemip_bool hw_derived;
+    /** RFC 4862 sec 5.4: "Duplicate Address Detection MUST NOT be performed on anycast addresses
+     *  (note that anycast addresses cannot syntactically be distinguished from unicast addresses)."
+     *  The octets cannot say which it is, so the caller that assigned the address says. */
+    idemip_bool anycast;
 } DadStartArgs;
 
 /** @brief What a call keyed on an address takes. */
@@ -163,7 +167,7 @@ typedef struct
  * @var DadIo::solicited   the solicited-node multicast address of @ref DadIo::target, RFC 4291
  *                         sec 2.7.1's FF02:0:0:0:0:1:FFXX:XXXX, which sec 5.4.2 joins and addresses
  *                         the solicitation to
- * @var DadIo::deadline_ms when the next solicitation, or the end of the procedure, is due
+ * @var DadIo::deadline when the next solicitation, or the end of the procedure, is due
  * @var DadIo::entry       the table slot the call touched, or IDEMIP_DAD_NONE
  * @var DadIo::state       where the machine is over that address
  * @var DadIo::sent        solicitations sent on it, against DupAddrDetectTransmits
@@ -194,7 +198,7 @@ typedef struct
     DadTickArgs tick_args;
 
     const uint8_t *target;
-    uint32_t deadline_ms;
+    IdemIpMs deadline;
     uint8_t solicited[IDEMIP_IP6_ADDR_LEN];
     IdemIpStatus status;
     uint8_t entry;

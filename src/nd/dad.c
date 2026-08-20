@@ -22,18 +22,16 @@ IDEMIP_BEGIN_DECLS
 // every entry but clear refuses it.
 #define DAD_READY 0x44414431u
 
-// A deadline is one absolute millisecond stamp read as a span below half the clock's range, so an
-// interval past this arms a deadline that is already due. RFC 4862 sec 5.4 waits RetransTimer
-// milliseconds for a defence, and RFC 4861 sec 6.3.4 lets a Router Advertisement set that timer, so
-// the value reaching dad_start is a remote party's. Held at the bound, the wait is still a wait.
-#define DAD_RETRANS_MAX_MS 0x7FFFFFFFu
+// A deadline is one absolute millisecond on the 64-bit clock. RFC 4862 sec 5.4 waits RetransTimer
+// milliseconds for a defence and RFC 4861 sec 6.3.4 lets a Router Advertisement set that timer, so the
+// value reaching dad_start is a remote party's; it is served whole rather than held at a bound.
 
 // One machine over one tentative address (RFC 4862 sec 5.4). sent counts the solicitations sec 5.4.2
 // transmits, received the ones sec 5.4.3 counts against the loopback semantics, and hw_derived is
 // sec 5.4.5's "interface identifier based on the hardware address".
 typedef struct
 {
-    uint32_t deadline_ms;
+    IdemIpMs deadline;
     uint32_t retrans_ms;
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     IdemIpDadState state;
@@ -41,7 +39,9 @@ typedef struct
     uint8_t received;
     idemip_bool hw_derived;
     idemip_bool used;
-    uint8_t pad[3];
+    uint8_t pad[(1u << IDEMIP_DAD_ENTRY_SHIFT) -
+                (sizeof(IdemIpMs) + 4u + IDEMIP_IP6_ADDR_LEN + sizeof(IdemIpDadState) +
+                 (4u * sizeof(idemip_bool)))];
 } DadEntry;
 
 // The running context: the sec 5.1 configuration this interface was bound to, and the mark.
@@ -49,6 +49,8 @@ typedef struct
 {
     uint32_t ready;
     const IdemIpDadCfg *cfg;
+    uint32_t tick_ms; // the last reading of the caller's 32-bit millisecond clock
+    uint32_t tick_hi; // its high word, raised each time that reading wraps
 } DadCtx;
 
 // An index is (i << SHIFT), so each entry is exactly its width.
@@ -135,12 +137,11 @@ static void dad_solicited(uint8_t *out, const uint8_t *addr)
 
 // --- the clock and the draw ------------------------------------------------
 
-// True once @p now has reached @p deadline. The difference is taken in 32 unsigned bits and read as a
-// span below half the range, so a deadline the millisecond clock has passed stays passed across its
-// wrap at 2^32.
-static idemip_bool dad_due(uint32_t now, uint32_t deadline)
+// True once @p now has reached @p deadline. Both sit on the same 64-bit millisecond clock, so this is
+// one comparison and nothing wraps under it.
+static idemip_bool dad_due(IdemIpMs now, IdemIpMs deadline)
 {
-    return (idemip_bool)((uint32_t)(now - deadline) < 0x80000000u);
+    return (now >= deadline) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
 // A draw over [0, span]. sec 5.4.2 delays "by a random delay between 0 and
@@ -185,7 +186,7 @@ static uint8_t dad_free_slot(uint8_t *restrict work)
 static void dad_clear_results(DadIo *io)
 {
     io->target = NULL;
-    io->deadline_ms = 0u;
+    io->deadline = 0;
     memset(io->solicited, 0, sizeof io->solicited);
     io->entry = (uint8_t)IDEMIP_DAD_NONE;
     io->state = IDEMIP_DAD_STATE_FREE;
@@ -207,7 +208,7 @@ static void dad_publish(uint8_t *restrict work, uint8_t index)
     DadEntry *e = DAD_AT(work, index);
     io->entry = index;
     io->target = e->addr;
-    io->deadline_ms = e->deadline_ms;
+    io->deadline = e->deadline;
     io->state = e->state;
     io->sent = e->sent;
     io->received = e->received;
@@ -225,7 +226,7 @@ static void dad_fail(uint8_t *restrict work, uint8_t index)
     DadIo *io = DAD_IO(work);
     DadEntry *e = DAD_AT(work, index);
     e->state = IDEMIP_DAD_STATE_DUPLICATE;
-    e->deadline_ms = 0u;
+    e->deadline = 0;
     io->duplicate = IDEMIP_TRUE;
     io->disable_ip = (idemip_bool)(e->hw_derived && dad_is_link_local(e->addr));
 }
@@ -237,7 +238,7 @@ static void dad_pass(uint8_t *restrict work, uint8_t index)
 {
     DadEntry *e = DAD_AT(work, index);
     e->state = IDEMIP_DAD_STATE_UNIQUE;
-    e->deadline_ms = 0u;
+    e->deadline = 0;
     DAD_IO(work)->unique = IDEMIP_TRUE;
 }
 
@@ -245,14 +246,14 @@ static void dad_pass(uint8_t *restrict work, uint8_t index)
 // separated by RetransTimer milliseconds", and sec 5.1 makes RetransTimer "the time a node waits
 // after sending the last Neighbor Solicitation before ending the Duplicate Address Detection
 // process", which is the WAIT the last transmission enters.
-static void dad_send(uint8_t *restrict work, uint8_t index, uint32_t now_ms)
+static void dad_send(uint8_t *restrict work, uint8_t index, IdemIpMs now)
 {
     DadIo *io = DAD_IO(work);
     DadEntry *e = DAD_AT(work, index);
     const DadCtx *ctx = DAD_CTX(work);
     io->send_ns = IDEMIP_TRUE;
     e->sent++;
-    e->deadline_ms = now_ms + e->retrans_ms;
+    e->deadline = now + (IdemIpMs)e->retrans_ms;
     e->state = (e->sent >= ctx->cfg->transmits) ? IDEMIP_DAD_STATE_WAIT : IDEMIP_DAD_STATE_PROBING;
 }
 
@@ -265,13 +266,13 @@ static void dad_send(uint8_t *restrict work, uint8_t index, uint32_t now_ms)
 static void dad_fire(uint8_t *restrict work)
 {
     DadIo *io = DAD_IO(work);
-    uint32_t now_ms = io->tick_args.now_ms;
+    const IdemIpMs now = idemip_ms_extend(&DAD_CTX(work)->tick_ms, &DAD_CTX(work)->tick_hi, io->tick_args.now_ms);
 
     for (uint8_t i = 0; i < DAD_ENTRIES; i++)
     {
         DadEntry *e = DAD_AT(work, i);
         if (!e->used || e->state == IDEMIP_DAD_STATE_FREE || e->state == IDEMIP_DAD_STATE_UNIQUE ||
-            e->state == IDEMIP_DAD_STATE_DUPLICATE || !dad_due(now_ms, e->deadline_ms))
+            e->state == IDEMIP_DAD_STATE_DUPLICATE || !dad_due(now, e->deadline))
         {
             continue;
         }
@@ -282,10 +283,10 @@ static void dad_fire(uint8_t *restrict work)
             // all-nodes multicast address and the solicited-node multicast address of the tentative
             // address", the delay above having held the join back.
             io->join = IDEMIP_TRUE;
-            dad_send(work, i, now_ms);
+            dad_send(work, i, now);
             break;
         case IDEMIP_DAD_STATE_PROBING:
-            dad_send(work, i, now_ms);
+            dad_send(work, i, now);
             break;
         case IDEMIP_DAD_STATE_WAIT:
             dad_pass(work, i);
@@ -381,7 +382,11 @@ static void dad_start(uint8_t *restrict work)
     {
         return;
     }
-    if (dad_is_multicast(io->start_args.addr) || dad_is_unspecified(io->start_args.addr))
+    // sec 5.4: "Duplicate Address Detection MUST NOT be performed on anycast addresses (note that
+    // anycast addresses cannot syntactically be distinguished from unicast addresses)." The octets
+    // cannot say which it is, so the operand does.
+    if (dad_is_multicast(io->start_args.addr) || dad_is_unspecified(io->start_args.addr) ||
+        io->start_args.anycast)
     {
         return;
     }
@@ -399,9 +404,9 @@ static void dad_start(uint8_t *restrict work)
 
     DadEntry *e = DAD_AT(work, index);
     memcpy(e->addr, io->start_args.addr, IDEMIP_IP6_ADDR_LEN);
-    uint32_t retrans = (io->start_args.retrans_ms != 0u) ? io->start_args.retrans_ms
+    const uint32_t retrans = (io->start_args.retrans_ms != 0u) ? io->start_args.retrans_ms
                                                          : (uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS;
-    e->retrans_ms = (retrans > DAD_RETRANS_MAX_MS) ? (uint32_t)DAD_RETRANS_MAX_MS : retrans;
+    e->retrans_ms = retrans;
     e->sent = 0u;
     e->received = 0u;
     e->hw_derived = io->start_args.hw_derived;
@@ -415,10 +420,11 @@ static void dad_start(uint8_t *restrict work)
         e->state = IDEMIP_DAD_STATE_DELAY;
         // sec 5.4.2 draws the delay "between 0 and MAX_RTR_SOLICITATION_DELAY"; without one the
         // first solicitation is due on the next tick.
-        e->deadline_ms = io->start_args.delay
-                             ? io->start_args.now_ms +
-                                   dad_draw(io->start_args.rand, (uint32_t)IDEMIP_ND6_MAX_RTR_SOLICITATION_DELAY_MS)
-                             : io->start_args.now_ms;
+        const IdemIpMs start = idemip_ms_extend(&DAD_CTX(work)->tick_ms, &DAD_CTX(work)->tick_hi, io->start_args.now_ms);
+        e->deadline = io->start_args.delay
+                          ? start + (IdemIpMs)dad_draw(io->start_args.rand,
+                                                       (uint32_t)IDEMIP_ND6_MAX_RTR_SOLICITATION_DELAY_MS)
+                          : start;
     }
     dad_publish(work, index);
     io->status = IDEMIP_OK;
