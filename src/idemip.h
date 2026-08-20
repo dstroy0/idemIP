@@ -56,6 +56,9 @@
  *   static _Alignas(IDEMIP_ALIGN) uint8_t icmp_w[IDEMIP_ICMP_IN_BORROW];
  *   static _Alignas(IDEMIP_ALIGN) uint8_t udp_w[IDEMIP_UDP_PCB_BORROW];
  *   static _Alignas(IDEMIP_ALIGN) uint8_t stats_w[IDEMIP_STATS_BORROW];
+ *   static _Alignas(IDEMIP_ALIGN) uint8_t timeouts_w[IDEMIP_TIMEOUTS_BORROW];
+ *   static _Alignas(IDEMIP_ALIGN) uint8_t dispatch_w[IDEMIP_DISPATCH_BORROW];
+ *   static _Alignas(IDEMIP_ALIGN) uint8_t tick_w[IDEMIP_TICK_BORROW];
  *
  *   // the driver's frame storage, not a borrow
  *   static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t rx_bufs[IDEMIP_RX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE];
@@ -131,12 +134,38 @@
  *       app_flush_deferred(now_ms);
  *   }
  *
- * WHAT IS NOT INCLUDED HERE, AND IS NOT IN THIS TREE
- * --------------------------------------------------
- * `src/core/tick.h` and `src/core/dispatch.h` belong in the list below and are absent from
- * this checkout, so the two lines that would include them are not written. With them present, an
- * application calls one dispatch entry per frame and one tick entry per pass instead of writing
- * the loop above by hand; without them, the loop above is the caller's, as `net_tick` shows.
+ * THE SAME PASS, WITH THE SCHEDULER
+ * ---------------------------------
+ * `net_tick` writes the three stages out longhand, which is what they are, and what
+ * `app_dispatch_one_frame` stands for is one call to @ref DispatchNs::input. Neither has to be the
+ * caller's: `src/core/dispatch.h` is that one frame in, one decision out, and `src/core/tick.h` is
+ * the same three stages with the order ENFORCED rather than described. Tick holds the phase in its
+ * own context, @ref TickNs::open puts it at DRAIN, and an entry called out of its phase reports
+ * IDEMIP_ERR, so the services cannot silently run before the ring is drained. Each phase reports
+ * OK per step and IDEMIP_BUSY when that phase is through, which is the same shape the loop above
+ * already uses for ArpTable.tick:
+ *
+ *   void net_tick(uint32_t now_ms)
+ *   {
+ *       IDEMIP_TICK_IO(tick_w)->open_args.now_ms = now_ms;
+ *       Tick.open(tick_w);
+ *       while (Tick.drain(tick_w), IDEMIP_TICK_IO(tick_w)->status == IDEMIP_OK)
+ *       {
+ *       }
+ *       while (Tick.service(tick_w), IDEMIP_TICK_IO(tick_w)->status == IDEMIP_OK)
+ *       {
+ *       }
+ *       while (Tick.flush(tick_w), IDEMIP_TICK_IO(tick_w)->status == IDEMIP_OK)
+ *       {
+ *       }
+ *   }
+ *
+ * Tick.bind takes the borrows it drives and Tick.if_bind takes one interface's rings, neighbor
+ * machine and transmit buffer, both in step 2 above; Dispatch.bind takes the borrows the receive
+ * path calls into and Dispatch.if_bind one interface's ring pair and its IEEE 802.1Q membership.
+ * Tick's own bind takes the dispatch borrow, so the two are bound once and in that order. Both
+ * borrows are unconditional terms of IDEMIP_SHARED_BORROW, so the footprint is the same either way
+ * and hand-writing the loop saves nothing but the two bind calls.
  */
 
 #ifndef IDEMIP_IDEMIP_H
@@ -159,7 +188,7 @@
 #include "src/netif/netif.h"       // the interface table
 
 // --- core ----------------------------------------------------------------------------------------
-#include "src/core/stats.h"    // RFC 1213 counters
+#include "src/core/stats.h"    // RFC 1213, RFC 2465 and RFC 2466 counters
 #include "src/core/timeouts.h" // the deadline list
 
 // --- IPv4 ----------------------------------------------------------------------------------------
@@ -210,5 +239,10 @@
 
 // --- services ------------------------------------------------------------------------------------
 #include "src/dns/dns.h" // RFC 1035, RFC 5452
+
+// --- scheduling ----------------------------------------------------------------------------------
+// Last, because these two drive every unit above and are the only ones that decide what runs when.
+#include "src/core/dispatch.h" // one frame in, one decision out
+#include "src/core/tick.h"     // PLAN.md sec 3.4b's drain, service and flush, in that order
 
 #endif // IDEMIP_IDEMIP_H

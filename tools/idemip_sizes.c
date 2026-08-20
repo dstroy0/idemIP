@@ -10,9 +10,17 @@
  * context or one of its counts moves, so this is run rather than remembered.
  *
  * tools/ is exempt from the src/ style rules, so this reads as plain host C.
+ *
+ * It includes src/idemip.h and not only src/idemip_config.h, and the extra header is not for the
+ * numbers: the config alone would print every one of them. This target is built in every capability
+ * set, and nothing in the library includes the front door, so without this line src/idemip.h is
+ * compiled by test_loopback and the bench, both of which need IPV4 and TCP and UDP - two of the
+ * thirteen sets. A unit added to the front door and not gated correctly would break the other
+ * eleven and be found by nobody. tools/dev_env/guards.py says the front door NAMES every namespace;
+ * this says naming them all still compiles wherever the library does.
  */
 
-#include "src/idemip_config.h"
+#include "src/idemip.h"
 
 #include <stdio.h>
 
