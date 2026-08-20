@@ -55,6 +55,49 @@ IDEMIP_BEGIN_DECLS
 /** @brief Milliseconds in a second, the scale between an RFC lifetime field and the epoch. */
 #define IDEMIP_MS_PER_S 1000u
 
+/** @brief Microseconds in a millisecond, the scale between the two grades below. */
+#define IDEMIP_US_PER_MS 1000u
+
+// ---------------------------------------------------------------------------
+// What a pad is measured in
+// ---------------------------------------------------------------------------
+// CMake owns both values. determinism_pad() and everything under it is gone when the first is off,
+// and the other three readings are there either way.
+
+#ifndef IDEMIP_ENABLE_TIME_DETERMINISM
+#define IDEMIP_ENABLE_TIME_DETERMINISM 0
+#endif
+
+/** @brief Milliseconds. The epoch's own unit, so a pad costs no reading of its own. */
+#define IDEMIP_DETERMINISM_COARSE 1
+
+/** @brief Microseconds, taken as a second reading beside the epoch. */
+#define IDEMIP_DETERMINISM_FINE 2
+
+/**
+ * @brief Microseconds, and the pad is not tuned: it is pinned to the measured worst case.
+ *
+ * FINE walks its pad towards the cost the function turns out to have on the host it is running on.
+ * LITERAL does not walk: the ceiling is a compile-time constant per entry, measured beforehand, and
+ * every call runs to it. A pass that outruns it reports OVER, which is a fault to be read and not a
+ * step to be taken - the constant was wrong, or the host is not the one it was measured on.
+ */
+#define IDEMIP_DETERMINISM_LITERAL 3
+
+/**
+ * @brief Which of the three a build takes. CMake owns the value.
+ *
+ * COARSE is the cheap one and it is almost certainly the wrong one here: every entry this tree has
+ * been measured at costs well under a microsecond, so padding to a millisecond pads to about thirty
+ * thousand times the work. See test/bench/results.
+ */
+#ifndef IDEMIP_TIME_DETERMINISM_GRADE
+#define IDEMIP_TIME_DETERMINISM_GRADE IDEMIP_DETERMINISM_FINE
+#endif
+
+/** @brief True when the pad is measured against a reading of its own rather than the epoch's. */
+#define IDEMIP_DETERMINISM_HAS_TICK (IDEMIP_TIME_DETERMINISM_GRADE >= IDEMIP_DETERMINISM_FINE)
+
 // ---------------------------------------------------------------------------
 // The epoch
 // ---------------------------------------------------------------------------
@@ -121,6 +164,10 @@ typedef struct
     uint32_t reading;
     uint32_t hi;
     uint32_t stamp;
+#if IDEMIP_ENABLE_TIME_DETERMINISM && IDEMIP_DETERMINISM_HAS_TICK
+    uint32_t tick;       ///< the caller's reading in the pad's own unit, microseconds
+    uint32_t tick_stamp; ///< it, at the instant the pass opened
+#endif
     uint32_t pad_to_word;
 } IdemIpClock;
 
@@ -154,7 +201,30 @@ IDEMIP_INLINE IdemIpMs idemip_clock_refresh(IdemIpClock *c, uint32_t now_ms)
 IDEMIP_INLINE void idemip_clock_open(IdemIpClock *c)
 {
     c->stamp = c->reading;
+#if IDEMIP_ENABLE_TIME_DETERMINISM && IDEMIP_DETERMINISM_HAS_TICK
+    c->tick_stamp = c->tick;
+#endif
 }
+
+#if IDEMIP_ENABLE_TIME_DETERMINISM && IDEMIP_DETERMINISM_HAS_TICK
+/**
+ * @brief Take the caller's microsecond reading, which is the one a pad is measured against.
+ *
+ * A second reading and not a rescale of the first. The epoch stays milliseconds because that is what
+ * every RFC lifetime and every deadline in this tree is in, and rescaling it to microseconds to suit
+ * a pad would put a 136-year lifetime somewhere it was never asked to go. The pad has different work
+ * to do - it measures one entry, which is over in well under a millisecond - so it gets its own
+ * reading at its own resolution and the two never meet.
+ *
+ * This one is not carried across its wrap, and does not need to be: a pad spans one pass, the
+ * difference is taken unsigned between two readings of the same clock, and 32 bits of microseconds
+ * is 71 minutes. An entry that takes 71 minutes has a problem a pad will not fix.
+ */
+IDEMIP_INLINE void idemip_clock_refresh_fine(IdemIpClock *c, uint32_t now_us)
+{
+    c->tick = now_us;
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // The four readings
@@ -229,11 +299,41 @@ IDEMIP_INLINE IdemIpMs idemip_clock_epoch(const IdemIpClock *c)
  */
 IDEMIP_INLINE uint32_t idemip_determinism_pad(const IdemIpClock *c, uint32_t pad)
 {
+#if IDEMIP_DETERMINISM_HAS_TICK
+    return (uint32_t)(c->tick_stamp + (pad & IDEMIP_CLOCK_PAD_MASK));
+#else
     return (uint32_t)(c->stamp + (pad & IDEMIP_CLOCK_PAD_MASK));
+#endif
+}
+
+/** @brief What one unit of a pad is: microseconds at FINE and LITERAL, milliseconds at COARSE. */
+IDEMIP_INLINE uint32_t idemip_determinism_tick(const IdemIpClock *c)
+{
+#if IDEMIP_DETERMINISM_HAS_TICK
+    return c->tick;
+#else
+    return c->reading;
+#endif
+}
+
+/** @brief The stamp in that same unit, which is what @ref idemip_determinism_pad adds to. */
+IDEMIP_INLINE uint32_t idemip_determinism_tick_stamp(const IdemIpClock *c)
+{
+#if IDEMIP_DETERMINISM_HAS_TICK
+    return c->tick_stamp;
+#else
+    return c->stamp;
+#endif
+}
+
+/** @brief What this pass has cost so far, in the pad's unit. What a pad is tuned against. */
+IDEMIP_INLINE uint32_t idemip_determinism_spent(const IdemIpClock *c)
+{
+    return (uint32_t)(idemip_determinism_tick(c) - idemip_determinism_tick_stamp(c));
 }
 
 /** @brief The pad out of that word, for a caller that wants the milliseconds alone. */
-IDEMIP_INLINE uint32_t idemip_determinism_pad_ms(uint32_t pad)
+IDEMIP_INLINE uint32_t idemip_determinism_pad_ticks(uint32_t pad)
 {
     return pad & IDEMIP_CLOCK_PAD_MASK;
 }
@@ -276,18 +376,19 @@ static_assert((IDEMIP_CLOCK_PAD_MASK & (IDEMIP_CLOCK_PAD_STATE_MASK << IDEMIP_CL
  * The difference is taken unsigned between two of the caller's own readings, so a wrap between them
  * subtracts out and no pad shorter than the reading's period is disturbed by one.
  */
-IDEMIP_INLINE IdemIpClockPad idemip_clock_pad_state(const IdemIpClock *c, uint32_t pad_ms)
+IDEMIP_INLINE IdemIpClockPad idemip_clock_pad_state(const IdemIpClock *c, uint32_t pad)
 {
-    if (pad_ms == 0u)
+    const uint32_t want = pad & IDEMIP_CLOCK_PAD_MASK;
+    if (want == 0u)
     {
         return IDEMIP_CLOCK_PAD_UNSET;
     }
-    const uint32_t spent = (uint32_t)(c->reading - c->stamp);
-    if (spent < pad_ms)
+    const uint32_t spent = idemip_determinism_spent(c);
+    if (spent < want)
     {
         return IDEMIP_CLOCK_PAD_EARLY;
     }
-    return (spent == pad_ms) ? IDEMIP_CLOCK_PAD_MET : IDEMIP_CLOCK_PAD_OVER;
+    return (spent == want) ? IDEMIP_CLOCK_PAD_MET : IDEMIP_CLOCK_PAD_OVER;
 }
 
 /**
@@ -317,6 +418,15 @@ IDEMIP_INLINE IdemIpClockPad idemip_clock_pad_state(const IdemIpClock *c, uint32
  */
 IDEMIP_INLINE uint32_t idemip_determinism_tune(uint32_t pad, IdemIpClockPad state, uint32_t lo, uint32_t hi)
 {
+#if IDEMIP_TIME_DETERMINISM_GRADE == IDEMIP_DETERMINISM_LITERAL
+    // LITERAL does not walk. The ceiling was measured beforehand and every call runs to it, so the
+    // only thing kept here is which state the pass ended in: OVER at this grade is a fault the
+    // caller reads, not a step this takes.
+    (void)lo;
+    (void)hi;
+    return (uint32_t)((((uint32_t)state & IDEMIP_CLOCK_PAD_STATE_MASK) << IDEMIP_CLOCK_PAD_SHIFT) |
+                      (pad & IDEMIP_CLOCK_PAD_MASK));
+#else
     const uint32_t ms = pad & IDEMIP_CLOCK_PAD_MASK;
     const uint32_t last = (pad >> IDEMIP_CLOCK_PAD_SHIFT) & IDEMIP_CLOCK_PAD_STATE_MASK;
     const uint32_t seen = (uint32_t)state & IDEMIP_CLOCK_PAD_STATE_MASK;
@@ -330,6 +440,7 @@ IDEMIP_INLINE uint32_t idemip_determinism_tune(uint32_t pad, IdemIpClockPad stat
 
     const uint32_t next = (uint32_t)(ms + up - down);
     return (uint32_t)((seen << IDEMIP_CLOCK_PAD_SHIFT) | (next & IDEMIP_CLOCK_PAD_MASK));
+#endif
 }
 
 #endif // IDEMIP_ENABLE_TIME_DETERMINISM

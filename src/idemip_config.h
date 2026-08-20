@@ -252,6 +252,47 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_IP_REASS_MAXAGE_S 60u
 #endif
 
+// ---------------------------------------------------------------------------
+// The determinism pad's window (clock.h)
+// ---------------------------------------------------------------------------
+// The range a function's pad is tuned inside, in the pad's own unit: microseconds at the FINE and
+// LITERAL grades, milliseconds at COARSE. Every value below was measured, not chosen - see
+// test/bench/results and tools/dev_env/padwindow.py, which regenerates this block from a run.
+//
+// On the host in that archive every entry in this tree finishes inside one microsecond, the widest
+// being idemip_cksum over 1500 octets at 0.10 us and ip4_frag.next at 0.08. So the ceiling is one
+// tick and the floor is one tick and there is nothing to tune, which is the honest answer for that
+// host and is also why COARSE is the wrong grade here: a millisecond pad would be about thirty
+// thousand times the work.
+//
+// A slower target moves all of it. Regenerate rather than scale by hand: the entries do not slow
+// down by the same factor, because the ones that walk a structure lose more to a smaller cache than
+// the ones that fold a fixed-width field.
+
+/** @brief The floor a pad never steps below. */
+#ifndef IDEMIP_DETERMINISM_PAD_MIN
+#define IDEMIP_DETERMINISM_PAD_MIN 1u
+#endif
+
+/**
+ * @brief The ceiling a pad never steps above.
+ *
+ * Eight times the widest entry measured, which is the headroom padwindow.py leaves: a pad that
+ * cannot reach the cost it is meant to cover would sit at this bound reporting OVER for ever.
+ */
+#ifndef IDEMIP_DETERMINISM_PAD_MAX
+#define IDEMIP_DETERMINISM_PAD_MAX 8u
+#endif
+
+/**
+ * @brief What a function's pad starts at before it has tuned itself.
+ *
+ * At the LITERAL grade nothing tunes, so this IS the pad unless an entry overrides it.
+ */
+#ifndef IDEMIP_DETERMINISM_PAD_DEFAULT
+#define IDEMIP_DETERMINISM_PAD_DEFAULT 1u
+#endif
+
 /** @brief lwIP IP_DEFAULT_TTL. */
 #ifndef IDEMIP_IP_DEFAULT_TTL
 #define IDEMIP_IP_DEFAULT_TTL 255u

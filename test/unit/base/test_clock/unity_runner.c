@@ -19,17 +19,22 @@ extern void test_a_lifetime_in_seconds_scales_exactly(void);
 extern void test_the_widest_lifetime_still_lands_ahead_of_a_stamp(void);
 extern void test_a_split_epoch_rejoins_to_itself(void);
 extern void test_the_loose_word_extension_matches_a_refresh(void);
-extern void test_the_pad_is_the_stamp_plus_the_milliseconds(void);
+extern void test_the_pad_is_the_stamp_plus_the_pad_ticks(void);
 extern void test_the_state_in_the_word_does_not_reach_the_pad(void);
+extern void test_the_pad_reading_and_the_epoch_are_separate(void);
+extern void test_the_pad_reading_survives_its_own_wrap(void);
 extern void test_the_four_states_are_told_apart(void);
+extern void test_the_state_in_the_word_does_not_reach_the_state_test(void);
 extern void test_a_single_state_moves_the_pad_not_at_all(void);
 extern void test_the_same_state_twice_steps_the_pad(void);
+extern void test_the_tune_always_records_the_state_it_saw(void);
 extern void test_one_disturbed_pass_does_not_disturb_the_pad(void);
 extern void test_a_met_pad_never_moves(void);
 extern void test_the_pad_never_steps_outside_its_range(void);
 extern void test_an_unset_pad_stays_unset(void);
 extern void test_the_pad_converges_and_stays(void);
 extern void test_the_widest_pad_does_not_reach_the_state_bits(void);
+extern void test_the_configured_window_is_a_window(void);
 
 
 /*=======Mock Management=====*/
@@ -102,17 +107,22 @@ int main(void)
   run_test(test_the_widest_lifetime_still_lands_ahead_of_a_stamp, "test_the_widest_lifetime_still_lands_ahead_of_a_stamp", 128);
   run_test(test_a_split_epoch_rejoins_to_itself, "test_a_split_epoch_rejoins_to_itself", 138);
   run_test(test_the_loose_word_extension_matches_a_refresh, "test_the_loose_word_extension_matches_a_refresh", 152);
-  run_test(test_the_pad_is_the_stamp_plus_the_milliseconds, "test_the_pad_is_the_stamp_plus_the_milliseconds", 167);
-  run_test(test_the_state_in_the_word_does_not_reach_the_pad, "test_the_state_in_the_word_does_not_reach_the_pad", 175);
-  run_test(test_the_four_states_are_told_apart, "test_the_four_states_are_told_apart", 184);
-  run_test(test_a_single_state_moves_the_pad_not_at_all, "test_a_single_state_moves_the_pad_not_at_all", 198);
-  run_test(test_the_same_state_twice_steps_the_pad, "test_the_same_state_twice_steps_the_pad", 207);
-  run_test(test_one_disturbed_pass_does_not_disturb_the_pad, "test_one_disturbed_pass_does_not_disturb_the_pad", 221);
-  run_test(test_a_met_pad_never_moves, "test_a_met_pad_never_moves", 235);
-  run_test(test_the_pad_never_steps_outside_its_range, "test_the_pad_never_steps_outside_its_range", 245);
-  run_test(test_an_unset_pad_stays_unset, "test_an_unset_pad_stays_unset", 264);
-  run_test(test_the_pad_converges_and_stays, "test_the_pad_converges_and_stays", 275);
-  run_test(test_the_widest_pad_does_not_reach_the_state_bits, "test_the_widest_pad_does_not_reach_the_state_bits", 290);
+  run_test(test_the_pad_is_the_stamp_plus_the_pad_ticks, "test_the_pad_is_the_stamp_plus_the_pad_ticks", 178);
+  run_test(test_the_state_in_the_word_does_not_reach_the_pad, "test_the_state_in_the_word_does_not_reach_the_pad", 187);
+  run_test(test_the_pad_reading_and_the_epoch_are_separate, "test_the_pad_reading_and_the_epoch_are_separate", 198);
+  run_test(test_the_pad_reading_survives_its_own_wrap, "test_the_pad_reading_survives_its_own_wrap", 224);
+  run_test(test_the_four_states_are_told_apart, "test_the_four_states_are_told_apart", 232);
+  run_test(test_the_state_in_the_word_does_not_reach_the_state_test, "test_the_state_in_the_word_does_not_reach_the_state_test", 247);
+  run_test(test_a_single_state_moves_the_pad_not_at_all, "test_a_single_state_moves_the_pad_not_at_all", 257);
+  run_test(test_the_same_state_twice_steps_the_pad, "test_the_same_state_twice_steps_the_pad", 267);
+  run_test(test_the_tune_always_records_the_state_it_saw, "test_the_tune_always_records_the_state_it_saw", 287);
+  run_test(test_one_disturbed_pass_does_not_disturb_the_pad, "test_one_disturbed_pass_does_not_disturb_the_pad", 297);
+  run_test(test_a_met_pad_never_moves, "test_a_met_pad_never_moves", 311);
+  run_test(test_the_pad_never_steps_outside_its_range, "test_the_pad_never_steps_outside_its_range", 321);
+  run_test(test_an_unset_pad_stays_unset, "test_an_unset_pad_stays_unset", 337);
+  run_test(test_the_pad_converges_and_stays, "test_the_pad_converges_and_stays", 348);
+  run_test(test_the_widest_pad_does_not_reach_the_state_bits, "test_the_widest_pad_does_not_reach_the_state_bits", 367);
+  run_test(test_the_configured_window_is_a_window, "test_the_configured_window_is_a_window", 376);
 
   return UNITY_END();
 }

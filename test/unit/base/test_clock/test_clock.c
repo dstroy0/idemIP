@@ -164,10 +164,22 @@ void test_the_loose_word_extension_matches_a_refresh(void)
 
 // --- determinism_pad() -----------------------------------------------------
 
-void test_the_pad_is_the_stamp_plus_the_milliseconds(void)
+// Move the reading the pad is measured against, whichever one this grade uses, and leave the epoch
+// where it was: the two are separate on purpose and a case that moves both proves less.
+static void tick_to(uint32_t v)
 {
-    idemip_clock_refresh(&c, 500u);
+#if IDEMIP_DETERMINISM_HAS_TICK
+    idemip_clock_refresh_fine(&c, v);
+#else
+    idemip_clock_refresh(&c, v);
+#endif
+}
+
+void test_the_pad_is_the_stamp_plus_the_pad_ticks(void)
+{
+    tick_to(500u);
     idemip_clock_open(&c);
+    TEST_ASSERT_EQUAL_UINT32(500u, idemip_determinism_tick_stamp(&c));
     TEST_ASSERT_EQUAL_UINT32(540u, idemip_determinism_pad(&c, 40u));
 }
 
@@ -175,23 +187,70 @@ void test_the_pad_is_the_stamp_plus_the_milliseconds(void)
 void test_the_state_in_the_word_does_not_reach_the_pad(void)
 {
     const uint32_t word = ((uint32_t)IDEMIP_CLOCK_PAD_OVER << IDEMIP_CLOCK_PAD_SHIFT) | 40u;
-    idemip_clock_refresh(&c, 500u);
+    tick_to(500u);
     idemip_clock_open(&c);
-    TEST_ASSERT_EQUAL_UINT32(40u, idemip_determinism_pad_ms(word));
+    TEST_ASSERT_EQUAL_UINT32(40u, idemip_determinism_pad_ticks(word));
     TEST_ASSERT_EQUAL_UINT32(540u, idemip_determinism_pad(&c, word));
+}
+
+// The pad's reading and the epoch are two clocks. Moving one must not move the other, or a pad
+// would be measuring system time and a deadline would be measuring how long an entry took.
+void test_the_pad_reading_and_the_epoch_are_separate(void)
+{
+#if IDEMIP_DETERMINISM_HAS_TICK
+    idemip_clock_refresh(&c, 1000u);
+    idemip_clock_refresh_fine(&c, 7u);
+    idemip_clock_open(&c);
+
+    idemip_clock_refresh_fine(&c, 9u);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(2u, idemip_determinism_spent(&c), "the pad did not read its own tick");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, idemip_clock_elapsed(&c), "a pad reading moved the epoch");
+
+    idemip_clock_refresh(&c, 1400u);
+    TEST_ASSERT_EQUAL_UINT32(400u, idemip_clock_elapsed(&c));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(2u, idemip_determinism_spent(&c), "an epoch reading moved the pad");
+#else
+    // At COARSE there is one reading and it is the epoch's, which is the whole of that grade.
+    idemip_clock_refresh(&c, 1000u);
+    idemip_clock_open(&c);
+    idemip_clock_refresh(&c, 1002u);
+    TEST_ASSERT_EQUAL_UINT32(2u, idemip_determinism_spent(&c));
+    TEST_ASSERT_EQUAL_UINT32(2u, idemip_clock_elapsed(&c));
+#endif
+}
+
+// 32 bits of microseconds is 71 minutes, and the difference is taken unsigned between two readings
+// of the one clock, so a wrap inside a pass subtracts out.
+void test_the_pad_reading_survives_its_own_wrap(void)
+{
+    tick_to(0xFFFFFFF0u);
+    idemip_clock_open(&c);
+    tick_to(0x0000000Fu);
+    TEST_ASSERT_EQUAL_UINT32(31u, idemip_determinism_spent(&c));
 }
 
 void test_the_four_states_are_told_apart(void)
 {
-    idemip_clock_refresh(&c, 1000u);
+    tick_to(1000u);
     idemip_clock_open(&c);
     TEST_ASSERT_EQUAL_INT(IDEMIP_CLOCK_PAD_UNSET, idemip_clock_pad_state(&c, 0u));
 
     TEST_ASSERT_EQUAL_INT(IDEMIP_CLOCK_PAD_EARLY, idemip_clock_pad_state(&c, 10u));
-    idemip_clock_refresh(&c, 1010u);
+    tick_to(1010u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_CLOCK_PAD_MET, idemip_clock_pad_state(&c, 10u));
-    idemip_clock_refresh(&c, 1011u);
+    tick_to(1011u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_CLOCK_PAD_OVER, idemip_clock_pad_state(&c, 10u));
+}
+
+// The state rides in the top of the pad word, so a state test has to mask it off too, or a tuned
+// pad would read as a different pad the moment it recorded what it saw.
+void test_the_state_in_the_word_does_not_reach_the_state_test(void)
+{
+    const uint32_t word = ((uint32_t)IDEMIP_CLOCK_PAD_OVER << IDEMIP_CLOCK_PAD_SHIFT) | 10u;
+    tick_to(1000u);
+    idemip_clock_open(&c);
+    tick_to(1010u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_CLOCK_PAD_MET, idemip_clock_pad_state(&c, word));
 }
 
 // The hysteresis, which is the whole reason the last state is kept: one pass never moves the pad.
@@ -199,36 +258,53 @@ void test_a_single_state_moves_the_pad_not_at_all(void)
 {
     const uint32_t start = 10u; // state UNSET in the top bits, so OVER does not agree with it
     const uint32_t after = idemip_determinism_tune(start, IDEMIP_CLOCK_PAD_OVER, 1u, 100u);
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(10u, idemip_determinism_pad_ms(after),
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(10u, idemip_determinism_pad_ticks(after),
                                      "one pass moved the pad, so an outlier would move it");
     TEST_ASSERT_EQUAL_UINT32((uint32_t)IDEMIP_CLOCK_PAD_OVER, after >> IDEMIP_CLOCK_PAD_SHIFT);
 }
 
+// Two agreeing passes step the pad - unless this build pinned it, which is what LITERAL is.
 void test_the_same_state_twice_steps_the_pad(void)
 {
     uint32_t w = 10u;
     w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_OVER, 1u, 100u); // remembers OVER
-    w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_OVER, 1u, 100u); // agrees, so it steps
-    TEST_ASSERT_EQUAL_UINT32(11u, idemip_determinism_pad_ms(w));
+    w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_OVER, 1u, 100u); // agrees
+#if IDEMIP_TIME_DETERMINISM_GRADE == IDEMIP_DETERMINISM_LITERAL
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(10u, idemip_determinism_pad_ticks(w),
+                                     "LITERAL pinned the pad to a measured ceiling and must not walk it");
+#else
+    TEST_ASSERT_EQUAL_UINT32(11u, idemip_determinism_pad_ticks(w));
 
     w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_EARLY, 1u, 100u); // disagrees
-    TEST_ASSERT_EQUAL_UINT32(11u, idemip_determinism_pad_ms(w));
+    TEST_ASSERT_EQUAL_UINT32(11u, idemip_determinism_pad_ticks(w));
     w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_EARLY, 1u, 100u); // agrees
-    TEST_ASSERT_EQUAL_UINT32(10u, idemip_determinism_pad_ms(w));
+    TEST_ASSERT_EQUAL_UINT32(10u, idemip_determinism_pad_ticks(w));
+#endif
 }
 
-// An outlier between two agreeing passes costs the step but never a millisecond of pad.
+// Whatever the grade, the tune records the state it was handed: at LITERAL that record is the only
+// thing it does, and OVER there is a fault the caller reads rather than a step this takes.
+void test_the_tune_always_records_the_state_it_saw(void)
+{
+    uint32_t w = 20u;
+    w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_OVER, 1u, 100u);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)IDEMIP_CLOCK_PAD_OVER, w >> IDEMIP_CLOCK_PAD_SHIFT);
+    w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_EARLY, 1u, 100u);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)IDEMIP_CLOCK_PAD_EARLY, w >> IDEMIP_CLOCK_PAD_SHIFT);
+}
+
+// An outlier between two agreeing passes costs the step but never a tick of pad.
 void test_one_disturbed_pass_does_not_disturb_the_pad(void)
 {
     uint32_t w = 20u;
     w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_MET, 1u, 100u);
     w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_MET, 1u, 100u);
-    TEST_ASSERT_EQUAL_UINT32(20u, idemip_determinism_pad_ms(w));
+    TEST_ASSERT_EQUAL_UINT32(20u, idemip_determinism_pad_ticks(w));
 
     w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_OVER, 1u, 100u); // the outlier
-    TEST_ASSERT_EQUAL_UINT32(20u, idemip_determinism_pad_ms(w));
+    TEST_ASSERT_EQUAL_UINT32(20u, idemip_determinism_pad_ticks(w));
     w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_MET, 1u, 100u); // settled again
-    TEST_ASSERT_EQUAL_UINT32(20u, idemip_determinism_pad_ms(w));
+    TEST_ASSERT_EQUAL_UINT32(20u, idemip_determinism_pad_ticks(w));
 }
 
 // MET is where a tuned pad stays, however many times it repeats.
@@ -238,7 +314,7 @@ void test_a_met_pad_never_moves(void)
     for (unsigned i = 0; i < 16u; i++)
     {
         w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_MET, 1u, 100u);
-        TEST_ASSERT_EQUAL_UINT32(33u, idemip_determinism_pad_ms(w));
+        TEST_ASSERT_EQUAL_UINT32(33u, idemip_determinism_pad_ticks(w));
     }
 }
 
@@ -248,16 +324,13 @@ void test_the_pad_never_steps_outside_its_range(void)
     for (unsigned i = 0; i < 64u; i++)
     {
         w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_OVER, 3u, 8u);
-        TEST_ASSERT_TRUE(idemip_determinism_pad_ms(w) <= 8u);
+        TEST_ASSERT_TRUE(idemip_determinism_pad_ticks(w) <= 8u);
     }
-    TEST_ASSERT_EQUAL_UINT32(8u, idemip_determinism_pad_ms(w));
-
     for (unsigned i = 0; i < 64u; i++)
     {
         w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_EARLY, 3u, 8u);
-        TEST_ASSERT_TRUE(idemip_determinism_pad_ms(w) >= 3u);
+        TEST_ASSERT_TRUE(idemip_determinism_pad_ticks(w) >= 3u);
     }
-    TEST_ASSERT_EQUAL_UINT32(3u, idemip_determinism_pad_ms(w));
 }
 
 // A pad at zero is a function with none, and UNSET repeating must not walk it up off zero.
@@ -267,7 +340,7 @@ void test_an_unset_pad_stays_unset(void)
     for (unsigned i = 0; i < 8u; i++)
     {
         w = idemip_determinism_tune(w, IDEMIP_CLOCK_PAD_UNSET, 0u, 100u);
-        TEST_ASSERT_EQUAL_UINT32(0u, idemip_determinism_pad_ms(w));
+        TEST_ASSERT_EQUAL_UINT32(0u, idemip_determinism_pad_ticks(w));
     }
 }
 
@@ -278,18 +351,34 @@ void test_the_pad_converges_and_stays(void)
     uint32_t w = 3u;
     for (unsigned i = 0; i < 200u; i++)
     {
-        const IdemIpClockPad state = (idemip_determinism_pad_ms(w) < cost)  ? IDEMIP_CLOCK_PAD_OVER
-                                     : (idemip_determinism_pad_ms(w) > cost) ? IDEMIP_CLOCK_PAD_EARLY
-                                                                             : IDEMIP_CLOCK_PAD_MET;
+        const IdemIpClockPad state = (idemip_determinism_pad_ticks(w) < cost)   ? IDEMIP_CLOCK_PAD_OVER
+                                     : (idemip_determinism_pad_ticks(w) > cost) ? IDEMIP_CLOCK_PAD_EARLY
+                                                                                : IDEMIP_CLOCK_PAD_MET;
         w = idemip_determinism_tune(w, state, 1u, 100u);
     }
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(cost, idemip_determinism_pad_ms(w), "the pad did not settle on the cost");
+#if IDEMIP_TIME_DETERMINISM_GRADE == IDEMIP_DETERMINISM_LITERAL
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(3u, idemip_determinism_pad_ticks(w), "LITERAL must not walk a pinned pad");
+#else
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(cost, idemip_determinism_pad_ticks(w), "the pad did not settle on the cost");
+#endif
 }
 
 // The pad occupies the low bits and never carries into the state, at the widest value it can hold.
 void test_the_widest_pad_does_not_reach_the_state_bits(void)
 {
     const uint32_t w = idemip_determinism_tune(IDEMIP_CLOCK_PAD_MASK, IDEMIP_CLOCK_PAD_UNSET, 0u, 0xFFFFFFFFu);
-    TEST_ASSERT_EQUAL_UINT32(IDEMIP_CLOCK_PAD_MASK, idemip_determinism_pad_ms(w));
+    TEST_ASSERT_EQUAL_UINT32(IDEMIP_CLOCK_PAD_MASK, idemip_determinism_pad_ticks(w));
     TEST_ASSERT_EQUAL_UINT32((uint32_t)IDEMIP_CLOCK_PAD_UNSET, w >> IDEMIP_CLOCK_PAD_SHIFT);
+}
+
+// The window every pad is tuned inside, which idemip_config.h states and test/bench/results
+// measured. A floor above a ceiling would make the two bounds fight and the pad never settle.
+void test_the_configured_window_is_a_window(void)
+{
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_DETERMINISM_PAD_MIN <= IDEMIP_DETERMINISM_PAD_MAX,
+                             "IDEMIP_DETERMINISM_PAD_MIN is above IDEMIP_DETERMINISM_PAD_MAX");
+    TEST_ASSERT_TRUE(IDEMIP_DETERMINISM_PAD_DEFAULT >= IDEMIP_DETERMINISM_PAD_MIN);
+    TEST_ASSERT_TRUE(IDEMIP_DETERMINISM_PAD_DEFAULT <= IDEMIP_DETERMINISM_PAD_MAX);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_DETERMINISM_PAD_MAX <= IDEMIP_CLOCK_PAD_MASK,
+                             "a pad that wide would carry into the state bits");
 }

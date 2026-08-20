@@ -69,6 +69,13 @@ add_child_option(IDEMIP_ENABLE_UDP "Build the UDP capability" ON
 # needs. See src/clock.h.
 option(IDEMIP_ENABLE_TIME_DETERMINISM "Enable time determinism" OFF)
 
+# What a pad is measured in. COARSE is milliseconds and costs no reading of its own; FINE is
+# microseconds, taken as a second reading beside the epoch; LITERAL is microseconds with the pad
+# pinned to a measured ceiling rather than tuned. FINE is the default because every entry in this
+# tree measures well under a millisecond, so COARSE would pad each one to many times its own cost.
+set(IDEMIP_TIME_DETERMINISM_GRADE "FINE" CACHE STRING "What a determinism pad is measured in")
+set_property(CACHE IDEMIP_TIME_DETERMINISM_GRADE PROPERTY STRINGS COARSE FINE LITERAL)
+
 # The benches, which are not tests: they measure and report and assert nothing, so ctest does not
 # run them and a normal build does not carry them. They link the library rather than including its
 # sources, so what they time is the translation unit this build produced under this build's flags.
@@ -164,6 +171,18 @@ if(IDEMIP_ENABLE_TIME_DETERMINISM)
 else()
     target_compile_definitions(idemip PUBLIC IDEMIP_ENABLE_TIME_DETERMINISM=0)
 endif()
+
+# COARSE is 1, FINE is 2, LITERAL is 3, and clock.h names them. The value is passed as the number
+# rather than the word so the header needs no string comparison in the preprocessor.
+set(IDEMIP_TIME_DETERMINISM_GRADES COARSE FINE LITERAL)
+if(NOT IDEMIP_TIME_DETERMINISM_GRADE IN_LIST IDEMIP_TIME_DETERMINISM_GRADES)
+    message(FATAL_ERROR
+        "IDEMIP_TIME_DETERMINISM_GRADE is '${IDEMIP_TIME_DETERMINISM_GRADE}': it must be one of "
+        "${IDEMIP_TIME_DETERMINISM_GRADES}")
+endif()
+list(FIND IDEMIP_TIME_DETERMINISM_GRADES "${IDEMIP_TIME_DETERMINISM_GRADE}" IDEMIP_GRADE_INDEX)
+math(EXPR IDEMIP_GRADE_VALUE "${IDEMIP_GRADE_INDEX} + 1")
+target_compile_definitions(idemip PUBLIC IDEMIP_TIME_DETERMINISM_GRADE=${IDEMIP_GRADE_VALUE})
 
 list(LENGTH IDEMIP_SOURCES IDEMIP_SOURCE_COUNT)
 message(STATUS "idemIP: ${IDEMIP_SOURCE_COUNT} translation units")
