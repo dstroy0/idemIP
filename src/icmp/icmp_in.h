@@ -92,6 +92,16 @@ IDEMIP_BEGIN_DECLS
 #define IDEMIP_ICMP_IN_SUPPRESS_REDIRECT 7u
 
 /**
+ * @brief RFC 1812 sec 4.3.2.8: the rate limit refused it.
+ *
+ * "A router which sends ICMP Source Quench messages MUST be able to limit the rate at which the
+ * messages can be generated. A router SHOULD also be able to limit the rate at which it sends other
+ * sorts of ICMP error messages." Reported with @ref IcmpInIo::status BUSY, because the clock refills
+ * the bucket and a later call succeeds.
+ */
+#define IDEMIP_ICMP_IN_SUPPRESS_RATE 8u
+
+/**
  * @brief What a received message takes.
  *
  * @var IcmpInRecvArgs::datagram the RFC 791 sec 3.1 internet header, the RFC 792 message behind it.
@@ -133,6 +143,8 @@ typedef struct
  * @var IcmpInErrArgs::word     the 32 bits at IDEMIP_ICMP_OFF_UNUSED: zero where RFC 792 labels the
  *                              field unused, the Pointer at IDEMIP_ICMP_POINTER_SHIFT for parameter
  *                              problem
+ * @var IcmpInErrArgs::now_ms   the caller's monotonic millisecond count, which RFC 1812 sec 4.3.2.8's
+ *                              rate limit refills its bucket from
  * @var IcmpInErrArgs::type     one of the five types RFC 1122 sec 3.2.2 groups as errors
  * @var IcmpInErrArgs::code     that type's code
  * @var IcmpInErrArgs::link_bcast the datagram arrived as a link-layer broadcast
@@ -145,6 +157,7 @@ typedef struct
     size_t out_cap;
     uint32_t if_mask;
     uint32_t word;
+    uint32_t now_ms;
     uint8_t type;
     uint8_t code;
     idemip_bool link_bcast;
@@ -184,6 +197,12 @@ typedef struct
  *                          IcmpInIo::cksum_ok are the two that name one. A discard with neither set
  *                          is one RFC 1122 sec 3.2.2 takes silently and is no error.
  * @var IcmpInIo::truncated the Echo Reply did not fit @ref IcmpInRecvArgs::out_cap and was cut to it
+ * @var IcmpInIo::tokens    RFC 1812 sec 4.3.2.8 error messages the bucket still allows in a burst
+ * @var IcmpInIo::quoted_dst the Destination Address of the datagram a Redirect quotes, host order,
+ *                          zero when the quote carried no whole header. RFC 1122 sec 3.2.2.2's
+ *                          second test, "the source of the Redirect is not the current first-hop
+ *                          gateway for the specified destination", is the caller's to apply against
+ *                          it, and sec 3.3.1.2 (c) keys the route cache entry on it.
  */
 typedef struct
 {
@@ -195,6 +214,7 @@ typedef struct
     uint32_t src;
     uint32_t dst;
     uint32_t gateway;
+    uint32_t quoted_dst;
     uint8_t act;
     uint8_t type;
     uint8_t code;
@@ -202,6 +222,7 @@ typedef struct
     uint16_t id;
     uint16_t seq;
     uint8_t suppress;
+    uint8_t tokens;
     idemip_bool cksum_ok;
     idemip_bool bad_len;
     idemip_bool truncated;

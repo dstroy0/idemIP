@@ -525,6 +525,29 @@ typedef enum IDEMIP_ENUM_PACKED
 // burst". The section prints the defaults this build takes: "in a small/mid-size device, the possible
 // defaults could be B=10, N=10/s."
 
+// RFC 1812 sec 4.3.2.8: "A router which sends ICMP Source Quench messages MUST be able to limit the
+// rate at which the messages can be generated. A router SHOULD also be able to limit the rate at
+// which it sends other sorts of ICMP error messages (Destination Unreachable, Redirect, Time
+// Exceeded, Parameter Problem). The rate limit parameters SHOULD be settable as part of the
+// configuration of the router." The same section names the token bucket: "Bucket-based - count
+// 'credits' ... allowing a burst of messages to be sent". The IPv4 bucket takes the shape and the
+// defaults RFC 4443 sec 2.4 (f) prints for IPv6, "B=10, N=10/s", which sec 4.3.2.8 leaves open.
+
+/** @brief Error messages the IPv4 bucket holds for a burst. */
+#ifndef IDEMIP_ICMP4_ERR_BUCKET
+#define IDEMIP_ICMP4_ERR_BUCKET 10u
+#endif
+
+/** @brief Error messages a second refills, as messages per second. */
+#ifndef IDEMIP_ICMP4_ERR_RATE_PER_S
+#define IDEMIP_ICMP4_ERR_RATE_PER_S 10u
+#endif
+
+/** @brief Milliseconds between two refilled tokens, so the bucket needs no divide to age. */
+#ifndef IDEMIP_ICMP4_ERR_TOKEN_MS
+#define IDEMIP_ICMP4_ERR_TOKEN_MS 100u
+#endif
+
 /** @brief RFC 4443 sec 2.4 (f) B, error messages the bucket holds for a burst. */
 #ifndef IDEMIP_ICMP6_ERR_BUCKET
 #define IDEMIP_ICMP6_ERR_BUCKET 10u

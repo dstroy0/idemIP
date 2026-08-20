@@ -23,6 +23,8 @@ IDEMIP_BEGIN_DECLS
 typedef struct
 {
     uint32_t ready;
+    uint32_t refill_ms;
+    uint8_t tokens;
 } IcmpInCtx;
 
 // The mark clear leaves.
@@ -191,6 +193,25 @@ static void icmp_in_error_arrived(IcmpInIo *io, const uint8_t *msg, size_t msg_l
             return;
         }
         io->gateway = idemip_icmp_gateway(msg);
+        // RFC 1122 sec 3.2.2.2: "A Redirect message SHOULD be silently discarded if the new gateway
+        // address it specifies is not on the same connected (sub-) net through which the Redirect
+        // arrived", the sec 4.2.2 summary listing it as "Discard illegal Redirect". A broadcast or
+        // multicast address on that subnet does not name a gateway either.
+        const uint32_t mask = io->recv_args.if_mask;
+        if (((io->gateway ^ io->recv_args.if_addr) & mask) != 0u || icmp_in_is_broadcast(io->gateway, mask) ||
+            icmp_in_is_multicast(io->gateway))
+        {
+            io->suppress = IDEMIP_ICMP_IN_SUPPRESS_REDIRECT;
+            io->act |= IDEMIP_ICMP_IN_ACT_DISCARD;
+            return;
+        }
+        // The second half of sec 3.2.2.2, "or if the source of the Redirect is not the current
+        // first-hop gateway for the specified destination", needs the route the caller holds, so the
+        // quoted datagram's Destination Address is reported for it to test and to key its cache on.
+        if (icmp_in_quoted_proto(msg, msg_len, &io->proto))
+        {
+            io->quoted_dst = idemip_ip4_dst(idemip_icmp_quote(msg));
+        }
         io->act |= IDEMIP_ICMP_IN_ACT_ROUTE;
         return;
     }
@@ -247,7 +268,9 @@ static void icmp_in_clear(uint8_t *restrict work)
         return; // no borrow, so nowhere to report
     }
     memset(work, 0, (size_t)IDEMIP_ICMP_IN_BORROW);
-    ICMP_IN_CTX(work)->ready = ICMP_IN_READY;
+    IcmpInCtx *ctx = ICMP_IN_CTX(work);
+    ctx->ready = ICMP_IN_READY;
+    ctx->tokens = (uint8_t)IDEMIP_ICMP4_ERR_BUCKET; // sec 4.3.2.8: a full bucket allows the first burst
     ICMP_IN_IO(work)->status = IDEMIP_OK;
 }
 
@@ -265,6 +288,8 @@ static void icmp_in_result_clear(IcmpInIo *io)
     io->id = 0u;
     io->seq = 0u;
     io->suppress = IDEMIP_ICMP_IN_SUPPRESS_NONE;
+    io->tokens = 0u;
+    io->quoted_dst = 0u;
     io->cksum_ok = IDEMIP_FALSE;
     io->bad_len = IDEMIP_FALSE;
     io->truncated = IDEMIP_FALSE;
@@ -374,6 +399,39 @@ static uint8_t icmp_in_suppressed(const IcmpInErrArgs *a)
     return IDEMIP_ICMP_IN_SUPPRESS_NONE;
 }
 
+// --- RFC 1812 sec 4.3.2.8, the rate limit ----------------------------------
+
+// "A router which sends ICMP Source Quench messages MUST be able to limit the rate at which the
+// messages can be generated. A router SHOULD also be able to limit the rate at which it sends other
+// sorts of ICMP error messages." The section names the shape: "Bucket-based - count 'credits' ...
+// allowing a burst of messages to be sent". One token lands every IDEMIP_ICMP4_ERR_TOKEN_MS, the
+// count stops at IDEMIP_ICMP4_ERR_BUCKET, and a gap of a whole bucket or more fills it in one step so
+// the loop runs at most IDEMIP_ICMP4_ERR_BUCKET times.
+#define ICMP_IN_BUCKET_MS ((uint32_t)IDEMIP_ICMP4_ERR_BUCKET * (uint32_t)IDEMIP_ICMP4_ERR_TOKEN_MS)
+
+static void icmp_in_refill(IcmpInCtx *ctx, uint32_t now_ms)
+{
+    if (ctx->tokens >= (uint8_t)IDEMIP_ICMP4_ERR_BUCKET)
+    {
+        ctx->tokens = (uint8_t)IDEMIP_ICMP4_ERR_BUCKET;
+        ctx->refill_ms = now_ms;
+        return;
+    }
+    uint32_t elapsed = now_ms - ctx->refill_ms;
+    if (elapsed >= ICMP_IN_BUCKET_MS)
+    {
+        ctx->tokens = (uint8_t)IDEMIP_ICMP4_ERR_BUCKET;
+        ctx->refill_ms = now_ms;
+        return;
+    }
+    while (elapsed >= (uint32_t)IDEMIP_ICMP4_ERR_TOKEN_MS && ctx->tokens < (uint8_t)IDEMIP_ICMP4_ERR_BUCKET)
+    {
+        ctx->tokens = (uint8_t)(ctx->tokens + 1u);
+        ctx->refill_ms += (uint32_t)IDEMIP_ICMP4_ERR_TOKEN_MS;
+        elapsed -= (uint32_t)IDEMIP_ICMP4_ERR_TOKEN_MS;
+    }
+}
+
 // One error message about a datagram, its head written by icmp.h and the quote copied behind it.
 // RFC 792 carries "The internet header plus the first 64 bits of the original datagram's data", and
 // RFC 1122 sec 3.2.2 requires "the Internet header and at least the first 8 data octets of the
@@ -432,6 +490,18 @@ static void icmp_in_error(uint8_t *restrict work)
     {
         return; // the buffer cannot hold the head and the quote RFC 1122 sec 3.2.2 requires
     }
+    // RFC 1812 sec 4.3.2.8 is answered last, so a token is spent only on a message actually built.
+    IcmpInCtx *ctx = ICMP_IN_CTX(work);
+    icmp_in_refill(ctx, a->now_ms);
+    io->tokens = ctx->tokens;
+    if (ctx->tokens == 0u)
+    {
+        io->suppress = IDEMIP_ICMP_IN_SUPPRESS_RATE;
+        io->status = IDEMIP_BUSY; // the clock refills the bucket, so a later call succeeds
+        return;
+    }
+    ctx->tokens = (uint8_t)(ctx->tokens - 1u);
+    io->tokens = ctx->tokens;
     memcpy(a->out + IDEMIP_ICMP_OFF_QUOTE, a->datagram, quote);
     idemip_icmp_build_error(a->out, a->type, a->code, a->word, out_len);
     io->out_len = out_len;

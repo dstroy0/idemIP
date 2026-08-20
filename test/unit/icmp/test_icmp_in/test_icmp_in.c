@@ -525,6 +525,61 @@ void test_a_redirect_reports_the_gateway(void)
     TEST_ASSERT_EQUAL_HEX32(PEER_IP, io->gateway);
 }
 
+// RFC 1122 sec 3.2.2.2: "A Redirect message SHOULD be silently discarded if the new gateway address
+// it specifies is not on the same connected (sub-) net through which the Redirect arrived", which the
+// sec 4.2.2 requirements table lists as "Discard illegal Redirect".
+void test_a_redirect_naming_an_off_link_gateway_is_discarded(void)
+{
+    const uint32_t off_link = 0xCB007109u; // outside HOST_IP under HOST_MASK
+    const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, off_link);
+    put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
+    load_recv(work_a);
+    IcmpIn.recv(work_a);
+
+    const IcmpInIo *io = IDEMIP_ICMP_IN_IO(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_BITS_LOW_MESSAGE(IDEMIP_ICMP_IN_ACT_ROUTE, io->act,
+                                 "a gateway off the arrival subnet must not become a next hop");
+    TEST_ASSERT_BITS_HIGH(IDEMIP_ICMP_IN_ACT_DISCARD, io->act);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP_IN_SUPPRESS_REDIRECT, io->suppress);
+}
+
+// A gateway address that is on the subnet but names no single host is not a first hop either: RFC
+// 1122 sec 3.2.1.3 (e) makes the all-ones host part the subnet's directed broadcast.
+void test_a_redirect_naming_a_broadcast_or_multicast_gateway_is_discarded(void)
+{
+    const uint32_t forms[2] = {0xC0A801FFu, 0xE0000001u};
+    for (int i = 0; i < 2; i++)
+    {
+        memset(dgram, 0, sizeof dgram);
+        const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, forms[i]);
+        put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
+        load_recv(work_a);
+        IcmpIn.recv(work_a);
+        TEST_ASSERT_BITS_LOW_MESSAGE(IDEMIP_ICMP_IN_ACT_ROUTE, IDEMIP_ICMP_IN_IO(work_a)->act,
+                                     "a gateway address that names no single host is not a next hop");
+        TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP_IN_SUPPRESS_REDIRECT, IDEMIP_ICMP_IN_IO(work_a)->suppress);
+    }
+}
+
+// The second half of sec 3.2.2.2 is "or if the source of the Redirect is not the current first-hop
+// gateway for the specified destination", which needs the route the caller holds. sec 3.3.1.2 (c)
+// keys the route cache entry on the quoted datagram's Destination Address, so an accepted Redirect
+// reports it.
+void test_an_accepted_redirect_reports_the_destination_it_names(void)
+{
+    const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, PEER_IP);
+    put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
+    load_recv(work_a);
+    IcmpIn.recv(work_a);
+
+    const IcmpInIo *io = IDEMIP_ICMP_IN_IO(work_a);
+    TEST_ASSERT_BITS_HIGH(IDEMIP_ICMP_IN_ACT_ROUTE, io->act);
+    TEST_ASSERT_EQUAL_HEX32(PEER_IP, io->gateway);
+    // put_error quotes a datagram from HOST_IP to PEER_IP.
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(PEER_IP, io->quoted_dst, "the route cache entry keys on this address");
+}
+
 // RFC 1122 sec 3.2.2 demuxes on the quoted internet header, so an error carrying less than a whole
 // one names no transport entity.
 void test_an_error_without_a_whole_quoted_header_is_discarded(void)
@@ -805,6 +860,120 @@ void test_a_suppressed_error_never_becomes_ok_on_a_retry(void)
 }
 
 // An error the rules allow is built the same way however many times it is asked for.
+// RFC 1812 sec 4.3.2.8: "A router which sends ICMP Source Quench messages MUST be able to limit the
+// rate at which the messages can be generated. A router SHOULD also be able to limit the rate at
+// which it sends other sorts of ICMP error messages (Destination Unreachable, Redirect, Time
+// Exceeded, Parameter Problem). The rate limit parameters SHOULD be settable as part of the
+// configuration of the router."
+void test_originated_errors_are_rate_limited(void)
+{
+    // A full bucket allows the burst the section's "allowing a burst of messages to be sent" names.
+    put_victim();
+    for (uint8_t n = 0u; n < (uint8_t)IDEMIP_ICMP4_ERR_BUCKET; n++)
+    {
+        load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
+        IDEMIP_ICMP_IN_IO(work_a)->err_args.now_ms = 0u;
+        IcmpIn.error(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ICMP_IN_IO(work_a)->status, "the burst is short of the bucket");
+    }
+
+    // The next one is refused, and BUSY because the clock refills the bucket.
+    load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
+    IDEMIP_ICMP_IN_IO(work_a)->err_args.now_ms = 0u;
+    IcmpIn.error(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_ICMP_IN_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP_IN_SUPPRESS_RATE, IDEMIP_ICMP_IN_IO(work_a)->suppress);
+    TEST_ASSERT_EQUAL_size_t_MESSAGE(0u, IDEMIP_ICMP_IN_IO(work_a)->out_len, "a refused call builds nothing");
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_ICMP_IN_IO(work_a)->tokens);
+
+    // One token's worth of milliseconds later, exactly one more message goes out.
+    load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
+    IDEMIP_ICMP_IN_IO(work_a)->err_args.now_ms = (uint32_t)IDEMIP_ICMP4_ERR_TOKEN_MS;
+    IcmpIn.error(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ICMP_IN_IO(work_a)->status);
+    load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
+    IDEMIP_ICMP_IN_IO(work_a)->err_args.now_ms = (uint32_t)IDEMIP_ICMP4_ERR_TOKEN_MS;
+    IcmpIn.error(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_ICMP_IN_IO(work_a)->status);
+
+    // A gap of a whole bucket refills it.
+    load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
+    IDEMIP_ICMP_IN_IO(work_a)->err_args.now_ms =
+        (uint32_t)IDEMIP_ICMP4_ERR_BUCKET * (uint32_t)IDEMIP_ICMP4_ERR_TOKEN_MS * 4u;
+    IcmpIn.error(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ICMP_IN_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_ICMP4_ERR_BUCKET - 1u, IDEMIP_ICMP_IN_IO(work_a)->tokens);
+}
+
+// The section names Source Quench first: "A router which sends ICMP Source Quench messages MUST be
+// able to limit the rate at which the messages can be generated."
+void test_source_quench_is_rate_limited(void)
+{
+    put_victim();
+    for (uint8_t n = 0u; n < (uint8_t)IDEMIP_ICMP4_ERR_BUCKET; n++)
+    {
+        load_error(work_a, (uint8_t)IDEMIP_ICMP_SOURCE_QUENCH, 0u);
+        IDEMIP_ICMP_IN_IO(work_a)->err_args.now_ms = 0u;
+        IcmpIn.error(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ICMP_IN_IO(work_a)->status);
+    }
+    load_error(work_a, (uint8_t)IDEMIP_ICMP_SOURCE_QUENCH, 0u);
+    IDEMIP_ICMP_IN_IO(work_a)->err_args.now_ms = 0u;
+    IcmpIn.error(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_ICMP_IN_IO(work_a)->status);
+}
+
+// The bucket is one borrow's, so a burst through one does not spend another's tokens.
+void test_the_rate_limit_is_per_borrow(void)
+{
+    put_victim();
+    for (uint8_t n = 0u; n < (uint8_t)IDEMIP_ICMP4_ERR_BUCKET; n++)
+    {
+        load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
+        IcmpIn.error(work_a);
+    }
+    load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
+    IcmpIn.error(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_ICMP_IN_IO(work_a)->status);
+
+    load_error(work_b, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
+    IcmpIn.error(work_b);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ICMP_IN_IO(work_b)->status, "one borrow spent another's tokens");
+}
+
+// RFC 1122 sec 3.2.2: an error carries "the Internet header and at least the first 8 data octets of
+// the datagram that triggered the error; ... this header and data MUST be unchanged from the received
+// datagram", so a header carrying RFC 791 sec 3.1 options is quoted whole, options included.
+void test_an_error_quotes_a_header_with_options_whole(void)
+{
+    // A Router Alert option (RFC 2113), padded to the 32-bit boundary sec 3.1 requires.
+    static const uint8_t opts[4] = {0x94u, 0x04u, 0x00u, 0x00u};
+    IdemIpIp4Fields f;
+    memset(&f, 0, sizeof f);
+    f.total_len = (uint16_t)(IDEMIP_IPV4_HDR_LEN + sizeof opts + 16u);
+    f.ttl = 64u;
+    f.proto = IDEMIP_IP4_PROTO_UDP;
+    f.src = PEER_IP;
+    f.dst = HOST_IP;
+    idemip_ip4_build(dgram, &f);
+    // sec 3.1: a caller that appends options raises IHL and reseals the checksum.
+    memcpy(dgram + IDEMIP_IPV4_HDR_LEN, opts, sizeof opts);
+    idemip_ip4_set_ver_ihl(dgram, (uint8_t)((IDEMIP_IPV4_HDR_LEN + sizeof opts) >> 2));
+    idemip_ip4_recksum(dgram);
+    memset(dgram + IDEMIP_IPV4_HDR_LEN + sizeof opts, 0x33, 16u);
+    dgram_len = IDEMIP_IPV4_HDR_LEN + sizeof opts + 16u;
+
+    load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
+    IcmpIn.error(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ICMP_IN_IO(work_a)->status);
+
+    const size_t hdr = IDEMIP_IPV4_HDR_LEN + sizeof opts;
+    TEST_ASSERT_EQUAL_size_t_MESSAGE(IDEMIP_ICMP_ERR_HDR_LEN + hdr + 8u, IDEMIP_ICMP_IN_IO(work_a)->out_len,
+                                     "the quote is the whole header, options included, plus 8 data octets");
+    TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(dgram, out + IDEMIP_ICMP_OFF_QUOTE, hdr + 8u,
+                                          "the quoted header and data MUST be unchanged");
+}
+
 void test_a_built_error_repeats(void)
 {
     put_victim();

@@ -33,7 +33,13 @@ typedef struct
     uint8_t netif;
     idemip_bool last_reporter;
     idemip_bool used;
-    uint8_t reserved[4];
+    // RFC 1112 sec 7.2: "Each membership should have an associated reference count or similar
+    // mechanism to handle multiple requests to join and leave the same group", sec 7.1 adding that
+    // "LeaveHostGroup may succeed, but the membership persist, if more than one upper-layer protocol
+    // has requested membership in the same group". The RFC 2236 sec 6 state machine sits below it and
+    // sees only the first join and the last leave.
+    uint8_t refs;
+    uint8_t reserved[3];
 } IgmpGroup;
 
 // The running context. v1_deadline_ms holds, per interface, the millisecond at which the sec 4
@@ -191,8 +197,21 @@ static void igmp_do_join(uint8_t *restrict work)
     IgmpCtx *ctx = IGMP_CTX(work);
     const uint32_t group = io->group_args.group;
     const uint8_t netif = io->group_args.netif;
-    if (igmp_lookup(work, group, netif) != IDEMIP_IGMP_NONE)
+    // RFC 1112 sec 7.2 notifies the local network module only "On the first request to join and the
+    // last request to leave a group on a given interface", so a repeat join takes a reference and
+    // leaves the sec 6 state machine where it is. A count at its ceiling is BUSY: a leave frees one.
+    const uint8_t held = igmp_lookup(work, group, netif);
+    if (held != IDEMIP_IGMP_NONE)
     {
+        IgmpGroup *e = IGMP_GROUP_AT(work, held);
+        if (e->refs == 0xFFu)
+        {
+            io->status = IDEMIP_BUSY;
+            return;
+        }
+        e->refs++;
+        igmp_report_entry(io, e, held);
+        io->status = IDEMIP_OK;
         return;
     }
     const uint8_t index = igmp_free_slot(work);
@@ -205,6 +224,7 @@ static void igmp_do_join(uint8_t *restrict work)
     entry->group = group;
     entry->netif = netif;
     entry->used = IDEMIP_TRUE;
+    entry->refs = 1u;
     entry->state = IDEMIP_IGMP_DELAYING_MEMBER;
     entry->last_reporter = IDEMIP_TRUE;
     entry->deadline_ms =
@@ -230,6 +250,15 @@ static void igmp_do_leave(uint8_t *restrict work)
         return;
     }
     IgmpGroup *entry = IGMP_GROUP_AT(work, index);
+    // sec 7.2's "last request to leave a group on a given interface" is what reaches the sec 6 state
+    // machine; a leave that only drops one of several references leaves the membership standing.
+    if (entry->refs > 1u)
+    {
+        entry->refs--;
+        igmp_report_entry(io, entry, index);
+        io->status = IDEMIP_OK;
+        return;
+    }
     io->send_leave = (idemip_bool)(entry->last_reporter && !ctx->v1_present[entry->netif]);
     igmp_report_entry(io, entry, index);
     memset(entry, 0, sizeof *entry);
@@ -392,6 +421,25 @@ static void igmp_clear(uint8_t *restrict work)
     IGMP_IO(work)->status = IDEMIP_OK;
 }
 
+// Every member an entry reports, back to the state a call that decided nothing leaves. All seven
+// entries share the one operand block, so a flag or a group left standing from an earlier call would
+// be read alongside this call's answer: RFC 2236 sec 6 binds "send leave" to the "leave group" event
+// and "send report" to the events that raise them, and a Leave Group message for a group the host
+// has not left is outside the state machine.
+static void igmp_result_clear(IgmpIo *io)
+{
+    io->index = IDEMIP_IGMP_NONE;
+    io->group = 0u;
+    io->netif = 0u;
+    io->state = IDEMIP_IGMP_NON_MEMBER;
+    io->deadline_ms = 0u;
+    io->expired = 0u;
+    io->last_reporter = IDEMIP_FALSE;
+    io->send_report = IDEMIP_FALSE;
+    io->send_leave = IDEMIP_FALSE;
+    io->report_v1 = IDEMIP_FALSE;
+}
+
 // A full table is BUSY: leave frees an entry, so the retry succeeds once a membership is dropped. A
 // bad address, an interface this build does not carry, an uncleared borrow and a group already joined
 // are ERR, since no later call changes any of them.
@@ -403,9 +451,7 @@ static void igmp_join(uint8_t *restrict work)
     }
     IgmpIo *io = IGMP_IO(work);
     io->status = IDEMIP_ERR;
-    io->index = IDEMIP_IGMP_NONE;
-    io->send_report = IDEMIP_FALSE;
-    io->report_v1 = IDEMIP_FALSE;
+    igmp_result_clear(io);
     if (!igmp_ready(work) || !igmp_group_ok(io->group_args.group) || io->group_args.netif >= IDEMIP_NETIF_COUNT)
     {
         return;
@@ -423,8 +469,7 @@ static void igmp_leave(uint8_t *restrict work)
     }
     IgmpIo *io = IGMP_IO(work);
     io->status = IDEMIP_ERR;
-    io->index = IDEMIP_IGMP_NONE;
-    io->send_leave = IDEMIP_FALSE;
+    igmp_result_clear(io);
     if (!igmp_ready(work) || !igmp_group_ok(io->group_args.group) || io->group_args.netif >= IDEMIP_NETIF_COUNT)
     {
         return;
@@ -440,11 +485,7 @@ static void igmp_find(uint8_t *restrict work)
     }
     IgmpIo *io = IGMP_IO(work);
     io->status = IDEMIP_ERR;
-    io->index = IDEMIP_IGMP_NONE;
-    io->group = 0u;
-    io->state = IDEMIP_IGMP_NON_MEMBER;
-    io->deadline_ms = 0u;
-    io->last_reporter = IDEMIP_FALSE;
+    igmp_result_clear(io);
     if (!igmp_ready(work) || !igmp_group_ok(io->group_args.group) || io->group_args.netif >= IDEMIP_NETIF_COUNT)
     {
         return;
@@ -463,8 +504,7 @@ static void igmp_query_in(uint8_t *restrict work)
     }
     IgmpIo *io = IGMP_IO(work);
     io->status = IDEMIP_ERR;
-    io->index = IDEMIP_IGMP_NONE;
-    io->send_report = IDEMIP_FALSE;
+    igmp_result_clear(io);
     if (!igmp_ready(work) || io->query_args.netif >= IDEMIP_NETIF_COUNT ||
         (!io->query_args.general && !igmp_group_ok(io->query_args.group)) ||
         io->query_args.max_resp_ms > IGMP_MAX_RESP_MS_MAX)
@@ -484,7 +524,7 @@ static void igmp_report_in(uint8_t *restrict work)
     }
     IgmpIo *io = IGMP_IO(work);
     io->status = IDEMIP_ERR;
-    io->index = IDEMIP_IGMP_NONE;
+    igmp_result_clear(io);
     if (!igmp_ready(work) || io->report_args.netif >= IDEMIP_NETIF_COUNT || !igmp_group_ok(io->report_args.group))
     {
         return;
@@ -501,7 +541,7 @@ static void igmp_tick(uint8_t *restrict work)
     }
     IgmpIo *io = IGMP_IO(work);
     io->status = IDEMIP_ERR;
-    io->index = IDEMIP_IGMP_NONE;
+    igmp_result_clear(io);
     io->expired = 0u;
     io->send_report = IDEMIP_FALSE;
     io->report_v1 = IDEMIP_FALSE;

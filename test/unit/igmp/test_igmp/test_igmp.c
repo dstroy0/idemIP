@@ -84,6 +84,84 @@ static void arm_group(uint8_t *w, uint32_t group, uint8_t netif)
 
 // --- the borrow --------------------------------------------------------------
 
+static void join_at(uint8_t *w, uint32_t group, uint8_t netif, uint32_t now_ms, uint32_t rand)
+{
+    IDEMIP_IGMP_IO(w)->group_args.group = group;
+    IDEMIP_IGMP_IO(w)->group_args.netif = netif;
+    IDEMIP_IGMP_IO(w)->group_args.now_ms = now_ms;
+    IDEMIP_IGMP_IO(w)->group_args.rand = rand;
+    Igmp.join(w);
+}
+
+static void join_ok(uint8_t *w, uint32_t group, uint8_t netif, uint32_t now_ms, uint32_t rand)
+{
+    join_at(w, group, netif, now_ms, rand);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_IGMP_IO(w)->status, "a join of a free group was refused");
+}
+
+static void leave_at(uint8_t *w, uint32_t group, uint8_t netif)
+{
+    IDEMIP_IGMP_IO(w)->group_args.group = group;
+    IDEMIP_IGMP_IO(w)->group_args.netif = netif;
+    Igmp.leave(w);
+}
+
+static void query_at(uint8_t *w, uint8_t netif, idemip_bool general, uint32_t group, uint32_t max_resp_ms,
+                     uint32_t now_ms, uint32_t rand, idemip_bool v1)
+{
+    IDEMIP_IGMP_IO(w)->query_args.netif = netif;
+    IDEMIP_IGMP_IO(w)->query_args.general = general;
+    IDEMIP_IGMP_IO(w)->query_args.group = group;
+    IDEMIP_IGMP_IO(w)->query_args.max_resp_ms = max_resp_ms;
+    IDEMIP_IGMP_IO(w)->query_args.now_ms = now_ms;
+    IDEMIP_IGMP_IO(w)->query_args.rand = rand;
+    IDEMIP_IGMP_IO(w)->query_args.v1 = v1;
+    Igmp.query_in(w);
+}
+
+static void report_at(uint8_t *w, uint32_t group, uint8_t netif)
+{
+    IDEMIP_IGMP_IO(w)->report_args.group = group;
+    IDEMIP_IGMP_IO(w)->report_args.netif = netif;
+    Igmp.report_in(w);
+}
+
+static void tick_at(uint8_t *w, uint32_t now_ms)
+{
+    IDEMIP_IGMP_IO(w)->tick_args.now_ms = now_ms;
+    Igmp.tick(w);
+}
+
+// find, with the entry it reported left in the operand block for the caller to read.
+static void find_at(uint8_t *w, uint32_t group, uint8_t netif)
+{
+    IDEMIP_IGMP_IO(w)->group_args.group = group;
+    IDEMIP_IGMP_IO(w)->group_args.netif = netif;
+    Igmp.find(w);
+}
+
+static uint32_t deadline_of(uint8_t *w, uint32_t group, uint8_t netif)
+{
+    find_at(w, group, netif);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_IGMP_IO(w)->status, "find could not reach a joined group");
+    return IDEMIP_IGMP_IO(w)->deadline_ms;
+}
+
+static IdemIpIgmpState state_of(uint8_t *w, uint32_t group, uint8_t netif)
+{
+    find_at(w, group, netif);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_IGMP_IO(w)->status, "find could not reach a joined group");
+    return IDEMIP_IGMP_IO(w)->state;
+}
+
+// Drive a Delaying Member to Idle Member by letting its report delay timer fire.
+static void run_timer_out(uint8_t *w, uint32_t now_ms)
+{
+    tick_at(w, now_ms);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(w)->status);
+}
+
+
 // Nothing to report into, so nothing is written and nothing faults.
 void test_every_entry_survives_a_null_borrow(void)
 {
@@ -91,24 +169,32 @@ void test_every_entry_survives_a_null_borrow(void)
     TEST_PASS();
 }
 
-// The borrow IS the instance, and the operand block is in it, so two tables share no byte at all. This
-// is the property the whole storage model rests on.
+// The borrow IS the instance, and the group table is in it, so two tables share no byte at all. This
+// is the property the whole storage model rests on: RFC 2236 sec 6 holds a state "with respect to any
+// single IP multicast group on any single network interface", and each borrow holds its own.
 void test_two_borrows_share_no_byte(void)
 {
     Igmp.clear(work_a);
     Igmp.clear(work_b);
 
-    arm_group(work_a, GROUP_A, 0u);
-    arm_group(work_b, GROUP_B, 1u);
-    IDEMIP_IGMP_IO(work_a)->query_args.max_resp_ms = 10000u;
-    IDEMIP_IGMP_IO(work_b)->query_args.max_resp_ms = 100u;
+    join_ok(work_a, GROUP_A, 0u, 0u, 0u);
+    join_ok(work_b, GROUP_B, 1u, 0u, 0u);
 
-    TEST_ASSERT_EQUAL_HEX32(GROUP_A, IDEMIP_IGMP_IO(work_a)->group_args.group);
-    TEST_ASSERT_EQUAL_HEX32(GROUP_B, IDEMIP_IGMP_IO(work_b)->group_args.group);
-    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_IGMP_IO(work_a)->group_args.netif);
-    TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_IGMP_IO(work_b)->group_args.netif);
-    TEST_ASSERT_EQUAL_UINT32(10000u, IDEMIP_IGMP_IO(work_a)->query_args.max_resp_ms);
-    TEST_ASSERT_EQUAL_UINT32(100u, IDEMIP_IGMP_IO(work_b)->query_args.max_resp_ms);
+    // Each borrow holds only its own membership.
+    find_at(work_a, GROUP_A, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
+    find_at(work_a, GROUP_B, 1u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IGMP_IO(work_a)->status, "b's membership reached a's table");
+    find_at(work_b, GROUP_B, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_b)->status);
+    find_at(work_b, GROUP_A, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IGMP_IO(work_b)->status, "a's membership reached b's table");
+
+    // And a leave on one leaves the other where it was.
+    leave_at(work_a, GROUP_A, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
+    find_at(work_b, GROUP_B, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_b)->status);
 }
 
 // A call on one borrow reaches no byte of another, clear included, which is the widest-reaching entry
@@ -132,18 +218,77 @@ void test_clear_on_one_borrow_leaves_the_other_untouched(void)
 void test_a_call_is_a_function_of_its_borrow_alone(void)
 {
     Igmp.clear(work_a);
-    arm_group(work_a, GROUP_A, 0u);
+    Igmp.clear(work_b);
+    join_ok(work_a, GROUP_A, 0u, 1000u, 0x40000000u);
 
-    Igmp.find(work_a);
-    IdemIpStatus first = IDEMIP_IGMP_IO(work_a)->status;
+    find_at(work_a, GROUP_A, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
+    const uint8_t index = IDEMIP_IGMP_IO(work_a)->index;
+    const uint32_t group = IDEMIP_IGMP_IO(work_a)->group;
+    const uint32_t deadline = IDEMIP_IGMP_IO(work_a)->deadline_ms;
+    const IdemIpIgmpState state = IDEMIP_IGMP_IO(work_a)->state;
 
-    // work_b was never cleared, so its calls take the other path through every entry.
-    arm_group(work_b, GROUP_B, 1u);
-    Igmp.join(work_b);
-    Igmp.tick(work_b);
+    // A whole join and a whole tick on the other borrow, both of which write its table and context.
+    join_ok(work_b, GROUP_B, 1u, 0u, 0u);
+    tick_at(work_b, 100000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_b)->status);
 
-    Igmp.find(work_a);
-    TEST_ASSERT_EQUAL_INT(first, IDEMIP_IGMP_IO(work_a)->status);
+    find_at(work_a, GROUP_A, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(index, IDEMIP_IGMP_IO(work_a)->index);
+    TEST_ASSERT_EQUAL_HEX32(group, IDEMIP_IGMP_IO(work_a)->group);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(deadline, IDEMIP_IGMP_IO(work_a)->deadline_ms,
+                                     "a tick on another borrow moved this one's timer");
+    TEST_ASSERT_EQUAL_INT(state, IDEMIP_IGMP_IO(work_a)->state);
+}
+
+
+// RFC 2236 sec 6 binds "send leave" to the "leave group" event, which "may occur only in the Delaying
+// Member and Idle Member states", and sec 3 makes the Leave Group message the report of an actual
+// departure: "When a Querier receives a Leave Group message for a group that has group members on the
+// reception interface, it sends [Last Member Query Count] Group-Specific Queries". All seven entries
+// share one operand block, so a flag left standing from an earlier leave would be read alongside a
+// later call's group.
+void test_no_entry_leaves_a_stale_send_leave_behind(void)
+{
+    Igmp.clear(work_a);
+    join_ok(work_a, GROUP_A, 0u, 0u, 0u);
+    join_ok(work_a, GROUP_B, 0u, 0u, 0u);
+
+    leave_at(work_a, GROUP_A, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
+    TEST_ASSERT_TRUE(IDEMIP_IGMP_IO(work_a)->send_leave);
+    TEST_ASSERT_EQUAL_HEX32(GROUP_A, IDEMIP_IGMP_IO(work_a)->group);
+
+    // A find on the surviving group rewrites io->group; the flag must not still name it.
+    find_at(work_a, GROUP_B, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_HEX32(GROUP_B, IDEMIP_IGMP_IO(work_a)->group);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IGMP_IO(work_a)->send_leave,
+                              "a find must not carry an earlier leave's flag onto its own group");
+
+    // The same through a tick that reports the surviving group's unsolicited report.
+    leave_at(work_a, GROUP_B, 0u);
+    Igmp.clear(work_a);
+    join_ok(work_a, GROUP_A, 0u, 0u, 0u);
+    join_ok(work_a, GROUP_B, 0u, 0u, 0u);
+    leave_at(work_a, GROUP_A, 0u);
+    TEST_ASSERT_TRUE(IDEMIP_IGMP_IO(work_a)->send_leave);
+    tick_at(work_a, 100000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IGMP_IO(work_a)->send_report, "the surviving group's timer expired");
+    TEST_ASSERT_EQUAL_HEX32(GROUP_B, IDEMIP_IGMP_IO(work_a)->group);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IGMP_IO(work_a)->send_leave,
+                              "a tick must not carry an earlier leave's flag onto its own group");
+
+    // And a query does not either.
+    Igmp.clear(work_a);
+    join_ok(work_a, GROUP_A, 0u, 0u, 0u);
+    join_ok(work_a, GROUP_B, 0u, 0u, 0u);
+    leave_at(work_a, GROUP_A, 0u);
+    query_at(work_a, 0u, IDEMIP_TRUE, 0u, 10000u, 0u, 0u, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
+    TEST_ASSERT_FALSE(IDEMIP_IGMP_IO(work_a)->send_leave);
 }
 
 // --- the published map -------------------------------------------------------
@@ -429,83 +574,6 @@ static_assert(IDEMIP_NETIF_COUNT >= 2u, "test_igmp's per-interface cases need ID
 #define GROUP_D 0xE0000011u
 #define GROUP_E 0xE0000012u
 
-static void join_at(uint8_t *w, uint32_t group, uint8_t netif, uint32_t now_ms, uint32_t rand)
-{
-    IDEMIP_IGMP_IO(w)->group_args.group = group;
-    IDEMIP_IGMP_IO(w)->group_args.netif = netif;
-    IDEMIP_IGMP_IO(w)->group_args.now_ms = now_ms;
-    IDEMIP_IGMP_IO(w)->group_args.rand = rand;
-    Igmp.join(w);
-}
-
-static void join_ok(uint8_t *w, uint32_t group, uint8_t netif, uint32_t now_ms, uint32_t rand)
-{
-    join_at(w, group, netif, now_ms, rand);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_IGMP_IO(w)->status, "a join of a free group was refused");
-}
-
-static void leave_at(uint8_t *w, uint32_t group, uint8_t netif)
-{
-    IDEMIP_IGMP_IO(w)->group_args.group = group;
-    IDEMIP_IGMP_IO(w)->group_args.netif = netif;
-    Igmp.leave(w);
-}
-
-static void query_at(uint8_t *w, uint8_t netif, idemip_bool general, uint32_t group, uint32_t max_resp_ms,
-                     uint32_t now_ms, uint32_t rand, idemip_bool v1)
-{
-    IDEMIP_IGMP_IO(w)->query_args.netif = netif;
-    IDEMIP_IGMP_IO(w)->query_args.general = general;
-    IDEMIP_IGMP_IO(w)->query_args.group = group;
-    IDEMIP_IGMP_IO(w)->query_args.max_resp_ms = max_resp_ms;
-    IDEMIP_IGMP_IO(w)->query_args.now_ms = now_ms;
-    IDEMIP_IGMP_IO(w)->query_args.rand = rand;
-    IDEMIP_IGMP_IO(w)->query_args.v1 = v1;
-    Igmp.query_in(w);
-}
-
-static void report_at(uint8_t *w, uint32_t group, uint8_t netif)
-{
-    IDEMIP_IGMP_IO(w)->report_args.group = group;
-    IDEMIP_IGMP_IO(w)->report_args.netif = netif;
-    Igmp.report_in(w);
-}
-
-static void tick_at(uint8_t *w, uint32_t now_ms)
-{
-    IDEMIP_IGMP_IO(w)->tick_args.now_ms = now_ms;
-    Igmp.tick(w);
-}
-
-// find, with the entry it reported left in the operand block for the caller to read.
-static void find_at(uint8_t *w, uint32_t group, uint8_t netif)
-{
-    IDEMIP_IGMP_IO(w)->group_args.group = group;
-    IDEMIP_IGMP_IO(w)->group_args.netif = netif;
-    Igmp.find(w);
-}
-
-static uint32_t deadline_of(uint8_t *w, uint32_t group, uint8_t netif)
-{
-    find_at(w, group, netif);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_IGMP_IO(w)->status, "find could not reach a joined group");
-    return IDEMIP_IGMP_IO(w)->deadline_ms;
-}
-
-static IdemIpIgmpState state_of(uint8_t *w, uint32_t group, uint8_t netif)
-{
-    find_at(w, group, netif);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_IGMP_IO(w)->status, "find could not reach a joined group");
-    return IDEMIP_IGMP_IO(w)->state;
-}
-
-// Drive a Delaying Member to Idle Member by letting its report delay timer fire.
-static void run_timer_out(uint8_t *w, uint32_t now_ms)
-{
-    tick_at(w, now_ms);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(w)->status);
-}
-
 // --- sec 6 join group --------------------------------------------------------
 
 // sec 6's join group arc out of Non-Member runs "send report, set flag, start timer", and sec 3 says a
@@ -534,16 +602,47 @@ void test_join_arms_the_timer_inside_the_unsolicited_report_interval(void)
     TEST_ASSERT_LESS_OR_EQUAL_UINT32(5000u + IDEMIP_IGMP_UNSOLICITED_REPORT_MS, deadline);
 }
 
-// sec 6: "join group" ... "may occur only in the Non-Member state". A group already in the table is in
-// Delaying Member or Idle Member, so the event cannot occur and no retry changes that: ERR, not BUSY.
-void test_a_second_join_of_the_same_group_on_the_same_interface_is_refused(void)
+// RFC 1112 sec 7.1: "It is also permissible for more than one upper-layer protocol to request
+// membership in the same group", and "LeaveHostGroup may succeed, but the membership persist, if more
+// than one upper-layer protocol has requested membership in the same group". sec 7.2 requires "an
+// associated reference count or similar mechanism to handle multiple requests to join and leave the
+// same group", and notifies the network module only "On the first request to join and the last
+// request to leave a group on a given interface", so RFC 2236 sec 6's "join group" event, which "may
+// occur only in the Non-Member state", fires on the first join alone.
+void test_a_second_join_of_the_same_group_takes_a_reference(void)
 {
     Igmp.clear(work_a);
     join_ok(work_a, GROUP_A, 0u, 0u, 0u);
-    join_at(work_a, GROUP_A, 0u, 0u, 0u);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IGMP_IO(work_a)->status);
-    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IGMP_NONE, IDEMIP_IGMP_IO(work_a)->index);
-    TEST_ASSERT_FALSE(IDEMIP_IGMP_IO(work_a)->send_report);
+    uint8_t index = IDEMIP_IGMP_IO(work_a)->index;
+    uint32_t deadline = IDEMIP_IGMP_IO(work_a)->deadline_ms;
+    IdemIpIgmpState state = IDEMIP_IGMP_IO(work_a)->state;
+
+    join_at(work_a, GROUP_A, 0u, 5000u, 0xFFFFFFFFu);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(index, IDEMIP_IGMP_IO(work_a)->index, "the second request joins the same entry");
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IGMP_IO(work_a)->send_report,
+                              "only the first request to join notifies the network module");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(deadline, IDEMIP_IGMP_IO(work_a)->deadline_ms,
+                                     "the sec 6 timer is not restarted by a second reference");
+    TEST_ASSERT_EQUAL_INT(state, IDEMIP_IGMP_IO(work_a)->state);
+
+    // The first leave drops a reference and the membership stands, so a datagram for the group is
+    // still delivered.
+    leave_at(work_a, GROUP_A, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IGMP_IO(work_a)->send_leave,
+                              "only the last request to leave notifies the network module");
+    find_at(work_a, GROUP_A, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(index, IDEMIP_IGMP_IO(work_a)->index);
+
+    // The last leave runs the sec 6 leave-group arc.
+    leave_at(work_a, GROUP_A, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
+    TEST_ASSERT_TRUE(IDEMIP_IGMP_IO(work_a)->send_leave);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IGMP_NON_MEMBER, IDEMIP_IGMP_IO(work_a)->state);
+    find_at(work_a, GROUP_A, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IGMP_IO(work_a)->status, "the membership is gone");
 }
 
 // sec 6 holds a state "with respect to any single IP multicast group on any single network interface",
