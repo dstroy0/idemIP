@@ -98,6 +98,13 @@ typedef uint16_t IdemIpWord;
 static_assert((IDEMIP_WORD_BITS & (IDEMIP_WORD_BITS - 1u)) == 0u, "IDEMIP_WORD_BITS must be a power of two");
 static_assert(sizeof(IdemIpWord) * 8u == IDEMIP_WORD_BITS, "IdemIpWord must be IDEMIP_WORD_BITS wide");
 
+// Every borrow is taken at IDEMIP_ALIGN and every region inside one starts on a multiple of it, so a
+// word laid in a borrow is aligned for its own width only while the borrow's alignment covers it.
+// The two are set apart - IDEMIP_ALIGN in idemip_config.h, the word from the target's pointer width -
+// so a target that widened one past the other would otherwise under-align every one of them silently.
+static_assert(IDEMIP_ALIGN >= sizeof(IdemIpWord), "IDEMIP_ALIGN must cover IdemIpWord: a borrow holds words");
+static_assert((IDEMIP_ALIGN & (IDEMIP_ALIGN - 1u)) == 0u, "IDEMIP_ALIGN must be a power of two");
+
 // ---------------------------------------------------------------------------
 // Spans of octets
 // ---------------------------------------------------------------------------
