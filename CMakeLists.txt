@@ -62,6 +62,13 @@ add_child_option(IDEMIP_ENABLE_UDP "Build the UDP capability" ON
     "IDEMIP_ENABLE_UDP needs IDEMIP_ENABLE_IPV4 or IDEMIP_ENABLE_IPV6: the checksum covers a pseudo-header"
     IDEMIP_ENABLE_IPV4 IDEMIP_ENABLE_IPV6)
 
+# Determinism in the time domain: each entry runs to a pad it tunes rather than to whatever its
+# inputs cost. Not a capability - it selects no translation unit and parses no wire field - so it is
+# not in the list above, and it is off unless a build asks for it. now(), stamp() and epoch() are
+# there either way; this option is the fourth reading, determinism_pad(), and the per-entry word it
+# needs. See src/clock.h.
+option(IDEMIP_ENABLE_TIME_DETERMINISM "Enable time determinism" OFF)
+
 # --- the translation units each capability is ---------------------------------
 # One list per capability, and a file appears in exactly one of them. An option that is off leaves
 # its files out of the target, so a disabled capability reaches the compiler as no file at all.
@@ -146,6 +153,12 @@ foreach(cap ${IDEMIP_CAPABILITIES})
         target_compile_definitions(idemip PUBLIC IDEMIP_ENABLE_${cap}=0)
     endif()
 endforeach()
+
+if(IDEMIP_ENABLE_TIME_DETERMINISM)
+    target_compile_definitions(idemip PUBLIC IDEMIP_ENABLE_TIME_DETERMINISM=1)
+else()
+    target_compile_definitions(idemip PUBLIC IDEMIP_ENABLE_TIME_DETERMINISM=0)
+endif()
 
 list(LENGTH IDEMIP_SOURCES IDEMIP_SOURCE_COUNT)
 message(STATUS "idemIP: ${IDEMIP_SOURCE_COUNT} translation units")
