@@ -37,7 +37,7 @@ extern void test_the_service_phase_runs_the_mld_report_delay_down(void);
 extern void test_the_drain_takes_every_waiting_frame(void);
 extern void test_the_drain_takes_a_frame_addressed_to_our_directed_broadcast(void);
 extern void test_the_drain_reads_a_tagged_frame_behind_its_tag(void);
-extern void test_the_drain_takes_a_frame_addressed_to_the_loopback_range(void);
+extern void test_the_drain_discards_a_wire_frame_addressed_to_the_loopback_range(void);
 extern void test_a_resolved_hold_is_reported_and_unpinned_one_step_later(void);
 extern void test_the_flush_phase_reports_its_units_in_order(void);
 extern void test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded(void);
@@ -133,15 +133,15 @@ int main(void)
   run_test(test_the_drain_takes_every_waiting_frame, "test_the_drain_takes_every_waiting_frame", 850);
   run_test(test_the_drain_takes_a_frame_addressed_to_our_directed_broadcast, "test_the_drain_takes_a_frame_addressed_to_our_directed_broadcast", 870);
   run_test(test_the_drain_reads_a_tagged_frame_behind_its_tag, "test_the_drain_reads_a_tagged_frame_behind_its_tag", 906);
-  run_test(test_the_drain_takes_a_frame_addressed_to_the_loopback_range, "test_the_drain_takes_a_frame_addressed_to_the_loopback_range", 960);
-  run_test(test_a_resolved_hold_is_reported_and_unpinned_one_step_later, "test_a_resolved_hold_is_reported_and_unpinned_one_step_later", 994);
-  run_test(test_the_flush_phase_reports_its_units_in_order, "test_the_flush_phase_reports_its_units_in_order", 1053);
-  run_test(test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded, "test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded", 1110);
-  run_test(test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded, "test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded", 1163);
-  run_test(test_an_interface_with_no_ring_is_stepped_over, "test_an_interface_with_no_ring_is_stepped_over", 1207);
-  run_test(test_a_descriptor_from_the_second_interface_goes_back_to_it, "test_a_descriptor_from_the_second_interface_goes_back_to_it", 1235);
-  run_test(test_a_descriptor_handle_round_trips, "test_a_descriptor_handle_round_trips", 1317);
-  run_test(test_an_unbound_service_is_skipped, "test_an_unbound_service_is_skipped", 1334);
+  run_test(test_the_drain_discards_a_wire_frame_addressed_to_the_loopback_range, "test_the_drain_discards_a_wire_frame_addressed_to_the_loopback_range", 960);
+  run_test(test_a_resolved_hold_is_reported_and_unpinned_one_step_later, "test_a_resolved_hold_is_reported_and_unpinned_one_step_later", 997);
+  run_test(test_the_flush_phase_reports_its_units_in_order, "test_the_flush_phase_reports_its_units_in_order", 1056);
+  run_test(test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded, "test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded", 1113);
+  run_test(test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded, "test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded", 1166);
+  run_test(test_an_interface_with_no_ring_is_stepped_over, "test_an_interface_with_no_ring_is_stepped_over", 1210);
+  run_test(test_a_descriptor_from_the_second_interface_goes_back_to_it, "test_a_descriptor_from_the_second_interface_goes_back_to_it", 1238);
+  run_test(test_a_descriptor_handle_round_trips, "test_a_descriptor_handle_round_trips", 1320);
+  run_test(test_an_unbound_service_is_skipped, "test_an_unbound_service_is_skipped", 1337);
 
   return UNITY_END();
 }

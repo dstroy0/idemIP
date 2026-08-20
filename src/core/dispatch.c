@@ -644,13 +644,15 @@ static void d_tcp(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t
         d_drop(work, IDEMIP_DISPATCH_DROP_UNBOUND, IDEMIP_STAT_IF_COUNT);
         return;
     }
+    // RFC 1213 sec 6.5 tcpInSegs: "The total number of segments received, including those received in
+    // error", so it is counted before any of the error paths.
+    d_bump(work, IDEMIP_STAT_TCP_IN_SEGS);
     if (io->payload_len < IDEMIP_TCP_HDR_LEN)
     {
         d_drop(work, IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_STAT_IF_IN_ERRORS);
         d_bump(work, IDEMIP_STAT_TCP_IN_ERRS);
         return;
     }
-    d_bump(work, IDEMIP_STAT_TCP_IN_SEGS);
 
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(ctx->tcp_pcb);
     TcpInIo *ti = IDEMIP_TCP_IN_IO(ctx->tcp_in);
@@ -718,20 +720,58 @@ static void d_tcp(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t
         io->tcp_act = ti->res.act;
         io->reply = ti->reply;
         io->act |= IDEMIP_DISPATCH_ACT_TCP;
+        // RFC 1213 sec 6.5 tcpOutRsts: "The number of TCP segments sent containing the RST flag."
+        if ((ti->res.act & IDEMIP_TCP_IN_ACT_RST) != 0u)
+        {
+            d_bump(work, IDEMIP_STAT_TCP_OUT_RSTS);
+        }
         d_drop(work, IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_STAT_IF_IN_DISCARDS);
         return;
     }
 
     if (pcb == IDEMIP_TCP_PCB_NONE)
     {
-        // RFC 9293 sec 3.10.7.2 LISTEN STATE. The connection the SYN creates is a TCB of its own,
-        // which sec 3.5 (MUST-11) records the listener on.
+        // RFC 9293 sec 3.10.7.2 LISTEN STATE. Only the third check creates anything: "The connection
+        // state should be changed to SYN-RECEIVED." The first says of a RST "An incoming RST should
+        // be ignored. Return", the second forms a reset for an ACK-bearing segment and returns, and
+        // the fourth drops anything else. So the state machine runs against a scratch image first and
+        // a TCB is opened only for the segment that reached SYN-RECEIVED; a TCB opened for the other
+        // three would stay in_use in LISTEN with the four-tuple, and TcpPcb.find matches on the tuple
+        // with no state test, so it would shadow the listener for that peer forever.
+        d_tcp_load_in(work, listener, a->now_ms);
+        ti->state = IDEMIP_TCP_STATE_LISTEN;
+        TcpIn.listen(ctx->tcp_in);
+        io->tcp_act = ti->res.act;
+        io->reply = ti->reply;
+        io->act |= IDEMIP_DISPATCH_ACT_TCP;
+        // RFC 1213 sec 6.5 tcpOutRsts: "The number of TCP segments sent containing the RST flag."
+        if ((ti->res.act & IDEMIP_TCP_IN_ACT_RST) != 0u)
+        {
+            d_bump(work, IDEMIP_STAT_TCP_OUT_RSTS);
+        }
+        if (ti->state != IDEMIP_TCP_STATE_SYN_RECEIVED)
+        {
+            io->pcb_kind = IDEMIP_DISPATCH_PCB_NONE;
+            d_drop(work, IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_STAT_IF_IN_DISCARDS);
+            return;
+        }
+
+        // The connection the SYN creates is a TCB of its own, which sec 3.5 (MUST-11) records the
+        // listener on.
+        IdemIpTcpVars vars = ti->vars;
+        TcpInReply reply = ti->reply;
+        uint32_t act = ti->res.act;
         tp->open_args.ip_version = ip_version;
         TcpPcb.open(ctx->tcp_pcb);
         if (tp->status != IDEMIP_OK)
         {
+            // RFC 1213 sec 6.5 tcpAttemptFails counts only "a direct transition to the CLOSED state
+            // from either the SYN-SENT state or the SYN-RCVD state, plus ... to the LISTEN state from
+            // the SYN-RCVD state". No TCB exists here, so no connection transitioned anywhere.
+            io->pcb_kind = IDEMIP_DISPATCH_PCB_NONE;
+            io->tcp_act = 0u;
+            io->act &= ~(uint32_t)IDEMIP_DISPATCH_ACT_TCP;
             d_drop(work, IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_STAT_IF_IN_DISCARDS);
-            d_bump(work, IDEMIP_STAT_TCP_ATTEMPT_FAILS);
             return;
         }
         pcb = tp->index;
@@ -750,17 +790,15 @@ static void d_tcp(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t
         tp->accept_args.index = pcb;
         tp->accept_args.listener = listener;
         TcpPcb.accept(ctx->tcp_pcb);
-        tp->pcb_args.index = pcb;
-        TcpPcb.load(ctx->tcp_pcb);
-        d_tcp_load_in(work, listener, a->now_ms);
-        ti->state = IDEMIP_TCP_STATE_LISTEN;
-        TcpIn.listen(ctx->tcp_in);
+        ti->vars = vars;
+        ti->reply = reply;
+        ti->res.act = act;
+        ti->state = IDEMIP_TCP_STATE_SYN_RECEIVED;
         d_tcp_store(work, pcb);
         io->pcb_kind = IDEMIP_DISPATCH_PCB_TCP;
         io->pcb = pcb;
-        io->tcp_act = ti->res.act;
-        io->reply = ti->reply;
-        io->act |= IDEMIP_DISPATCH_ACT_TCP;
+        // RFC 1213 sec 6.5 tcpPassiveOpens: "The number of times TCP connections have made a direct
+        // transition to the SYN-RCVD state from the LISTEN state", which is this segment alone.
         d_bump(work, IDEMIP_STAT_TCP_PASSIVE_OPENS);
         d_delivered(work, a->frame);
         d_bump(work, d_ip_ctr(ip_version, IDEMIP_STAT_IP4_IN_DELIVERS, IDEMIP_STAT_IP6_IN_DELIVERS));
@@ -823,6 +861,23 @@ typedef enum
 
 #if IDEMIP_ENABLE_IPV4
 
+// RFC 1122 sec 3.2.1.3 case (g), "{ 127, <any> } Internal host loopback address. Addresses of this
+// form MUST NOT appear outside a host", and RFC 4291 sec 2.5.3 of ::1: "It must not be used as the
+// source address in IPv6 packets that are sent outside of a single node ... An IPv6 packet with a
+// destination address of loopback must never be sent outside of a single node and must never be
+// forwarded by an IPv6 router." RFC 6890 Table 4 records 127.0.0.0/8 with Destination False. So a
+// loopback address names this host only on the interface no wire reaches.
+static idemip_bool d_on_loopback(uint8_t *restrict work)
+{
+    DispatchCtx *ctx = D_CTX(work);
+    DispatchIo *io = D_IO(work);
+    if (!d_netif_get(work, io->netif))
+    {
+        return IDEMIP_FALSE;
+    }
+    return (idemip_bool)((IDEMIP_NETIF_IO(ctx->netif)->flags & (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK) != 0u);
+}
+
 // RFC 1122 sec 3.1 (2), over the forms sec 3.2.1.3 lists: case (c) "{ -1, -1 }" limited broadcast, a
 // class D group this node joined (RFC 1112 sec 4), case (g) "{ 127, <any> }" loopback, any
 // interface's own address, and case (e) "{ <Network-number>, <Subnet-number>, -1 }" directed
@@ -856,7 +911,7 @@ static DispatchDest d_ip4_dest(uint8_t *restrict work, uint32_t dst)
         Igmp.find(ctx->igmp);
         return (IDEMIP_IGMP_IO(ctx->igmp)->status == IDEMIP_OK) ? D_DEST_LOCAL : D_DEST_DROP;
     }
-    if (ctx->loopif != NULL)
+    if (ctx->loopif != NULL && d_on_loopback(work))
     {
         IDEMIP_LOOPIF_IO(ctx->loopif)->match_args.addr4 = dst;
         Loopif.owns4(ctx->loopif);
@@ -864,6 +919,12 @@ static DispatchDest d_ip4_dest(uint8_t *restrict work, uint32_t dst)
         {
             return D_DEST_LOCAL;
         }
+    }
+    // Case (g) again, from the other side: a 127/8 destination that arrived on a wire is one this
+    // host must not answer, so it is discarded rather than routed.
+    if (idemip_ip4_addr_type(dst) == IDEMIP_IP4_TYPE_LOOPBACK)
+    {
+        return D_DEST_DROP;
     }
     if (ctx->netif == NULL)
     {
@@ -1004,7 +1065,10 @@ static void d_igmp(uint8_t *restrict work, const uint8_t *msg)
     // packet", and sec 6 repeats it for the Query and the Report. The sum covers the whole IGMP
     // message, no pseudo-header, so RFC 1071 sec 1's fold to zero is the whole test. Nothing else
     // on this path checks it: the IPv4 header checksum covers only the header.
-    if (!idemip_cksum_valid(msg, IDEMIP_IGMP_MSG_LEN))
+    // RFC 2236 sec 2.5: "the IGMP checksum is always computed over the whole IP payload, not just
+    // over the first 8 octets", and sec 2.3: "The checksum is the 16-bit one's complement of the
+    // one's complement sum of the whole IGMP message (the entire IP payload)."
+    if (!idemip_cksum_valid(msg, io->payload_len))
     {
         d_drop(work, IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_STAT_IF_IN_ERRORS);
         return;
@@ -1033,8 +1097,10 @@ static void d_igmp(uint8_t *restrict work, const uint8_t *msg)
     }
     else
     {
-        d_drop(work, IDEMIP_DISPATCH_DROP_IP_PROTO, IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS);
-        d_bump(work, IDEMIP_STAT_IP4_IN_UNKNOWN_PROTOS);
+        // RFC 2236 sec 2.1: "Unrecognized message types should be silently ignored." The IP Protocol
+        // field was 2, which this build supports and just dispatched on, so RFC 1213
+        // ipInUnknownProtos, "discarded because of an unknown or unsupported protocol", names a
+        // different event. Silent means no reason and no counter.
         return;
     }
     io->act |= IDEMIP_DISPATCH_ACT_DELIVER;
@@ -1195,8 +1261,13 @@ static void d_ip4(uint8_t *restrict work, const uint8_t *ip4, size_t avail)
     // once.
     if (d_ip4_src_invalid(work, idemip_ip4_src(ip4)))
     {
+        // RFC 1213 sec 6.6 ipInAddrErrors counts datagrams "discarded because the IP address in
+        // their IP header's destination field was not a valid address to be received at this
+        // entity", which RFC 2011 repeats word for word. The destination field has not been read
+        // here and in the ordinary case holds this host's own address, so the discard is one of the
+        // "other format errors" ipInHdrErrors covers.
         d_drop(work, IDEMIP_DISPATCH_DROP_IP_SOURCE, IDEMIP_STAT_IF_IN_DISCARDS);
-        d_bump(work, IDEMIP_STAT_IP4_IN_ADDR_ERRORS);
+        d_bump(work, IDEMIP_STAT_IP4_IN_HDR_ERRORS);
         return;
     }
 
@@ -1333,7 +1404,7 @@ static DispatchDest d_ip6_dest(uint8_t *restrict work, const uint8_t *dst)
             return D_DEST_LOCAL;
         }
     }
-    if (ctx->loopif != NULL)
+    if (ctx->loopif != NULL && d_on_loopback(work))
     {
         IDEMIP_LOOPIF_IO(ctx->loopif)->match_args.addr6 = dst;
         Loopif.owns6(ctx->loopif);
@@ -1341,6 +1412,12 @@ static DispatchDest d_ip6_dest(uint8_t *restrict work, const uint8_t *dst)
         {
             return D_DEST_LOCAL;
         }
+    }
+    // RFC 4291 sec 2.5.3: an IPv6 packet with a destination of loopback "must never be sent outside
+    // of a single node and must never be forwarded by an IPv6 router", so one off a wire is dropped.
+    if (idemip_ip6_addr_type(dst) == IDEMIP_IP6_TYPE_LOOPBACK)
+    {
+        return D_DEST_DROP;
     }
     if (idemip_ip6_addr_type(dst) != IDEMIP_IP6_TYPE_MULTICAST)
     {
@@ -1713,6 +1790,12 @@ static void d_ip6(uint8_t *restrict work, const uint8_t *ip6, size_t avail)
     default:
         break;
     }
+    // RFC 8200 sec 4, of a Next Header no module claims: "it should discard the packet and send an
+    // ICMP Parameter Problem message to the source of the packet, with an ICMP Code value of 1
+    // ('unrecognized Next Header type encountered') and the ICMP Pointer field containing the offset
+    // of the unrecognized value within the original packet." The walk reports where it read the
+    // value, so the pointer is filled before d_raw decides whether anything claims it.
+    io->err_ptr = (uint16_t)chain.next_hdr_off;
     d_raw(work, ip6 + IDEMIP_IP6_OFF_DST, ip6 + IDEMIP_IP6_OFF_SRC, IDEMIP_IP6_VERSION);
 }
 
@@ -1746,7 +1829,14 @@ static idemip_bool d_link(uint8_t *restrict work, size_t *payload_off)
     Vlan.parse(ctx->vlan);
     if (v->status != IDEMIP_OK)
     {
-        d_drop(work, IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_STAT_IF_IN_ERRORS);
+        // A frame Vlan.parse refuses is one it could not decode: shorter than a header, or an 802.3
+        // Length with no RFC 1042 LLC and SNAP headers behind it, which RFC 1122 sec 2.3.3 makes the
+        // only 802.3 encapsulation a host has to receive.
+        const idemip_bool len_field =
+            (idemip_bool)(a->len >= IDEMIP_ETH_HDR_LEN &&
+                          idemip_rd16(a->frame + IDEMIP_ETH_OFF_TYPE) <= (uint16_t)IDEMIP_ETH_MAX_PAYLOAD);
+        d_drop(work, len_field ? IDEMIP_DISPATCH_DROP_ETHERTYPE : IDEMIP_DISPATCH_DROP_SHORT,
+               len_field ? IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS : IDEMIP_STAT_IF_IN_ERRORS);
         return IDEMIP_FALSE;
     }
     io->type = v->type;

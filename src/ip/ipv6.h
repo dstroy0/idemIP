@@ -431,6 +431,14 @@ IDEMIP_INLINE uint8_t idemip_ip6_rt_type(const uint8_t *r)
  *                                 or to the header the walk could not step when @c ok is false
  * @var IdemIpIp6Chain::frag_hdr   octets to the Fragment header, set only when @c fragmented
  * @var IdemIpIp6Chain::next_hdr   the upper-layer protocol, or IDEMIP_IP6_NH_NONE per sec 4.7
+ * @var IdemIpIp6Chain::next_hdr_off the offset of the Next Header field @ref IdemIpIp6Chain::next_hdr
+ *                                  was read from, which is the IPv6 header's own for a chain of
+ *                                  no extension headers. RFC 8200 sec 4, of an unrecognized Next
+ *                                  Header: "send an ICMP Parameter Problem message to the source
+ *                                  of the packet, with an ICMP Code value of 1 ('unrecognized
+ *                                  Next Header type encountered') and the ICMP Pointer field
+ *                                  containing the offset of the unrecognized value within the
+ *                                  original packet."
  * @var IdemIpIp6Chain::hops       extension headers stepped over
  * @var IdemIpIp6Chain::routing_hdr octets to the first sec 4.4 Routing header carrying a non-zero
  *                                 Segments Left, set only when @c routed. This library executes no
@@ -455,6 +463,7 @@ typedef struct
     size_t frag_hdr;
     size_t routing_hdr;
     size_t opt_hdr;
+    size_t next_hdr_off;
     uint8_t next_hdr;
     uint16_t hops;
     idemip_bool fragmented;
@@ -487,6 +496,7 @@ IDEMIP_INLINE IdemIpIp6Chain idemip_ip6_walk(const uint8_t *p, size_t len)
     c.offset = IDEMIP_IP6_OFF_PAYLOAD;
     c.frag_hdr = 0u;
     c.routing_hdr = 0u;
+    c.next_hdr_off = 0u;
     c.opt_hdr = 0u;
     c.next_hdr = IDEMIP_IP6_NH_NONE;
     c.hops = 0u;
@@ -501,6 +511,7 @@ IDEMIP_INLINE IdemIpIp6Chain idemip_ip6_walk(const uint8_t *p, size_t len)
         return c;
     }
 
+    c.next_hdr_off = (size_t)IDEMIP_IP6_OFF_NEXT_HDR;
     c.next_hdr = idemip_ip6_next_hdr(p);
     while (idemip_ip6_nh_is_ext(c.next_hdr))
     {
@@ -557,6 +568,7 @@ IDEMIP_INLINE IdemIpIp6Chain idemip_ip6_walk(const uint8_t *p, size_t len)
                 c.opt_hdr = bad;
             }
         }
+        c.next_hdr_off = c.offset;
         c.next_hdr = idemip_ip6_ext_next_hdr(p + c.offset);
         c.offset += step;
         c.hops = (uint16_t)(c.hops + 1u);

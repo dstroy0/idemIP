@@ -157,8 +157,17 @@ typedef enum IDEMIP_ENUM_PACKED
 
     IDEMIP_DISPATCH_DROP_IP_HEADER,  ///< ipInHdrErrors: version, IHL, length or checksum
     IDEMIP_DISPATCH_DROP_IP_ADDRESS, ///< ipInAddrErrors: the destination is not this host's
-    IDEMIP_DISPATCH_DROP_IP_SOURCE,  ///< ipInAddrErrors: the source is one RFC 1122 sec 3.2.1.3 bars
-    IDEMIP_DISPATCH_DROP_IP_PROTO,   ///< ipInUnknownProtos: no pcb kind claims the Protocol field
+    IDEMIP_DISPATCH_DROP_IP_SOURCE,  ///< ipInHdrErrors: the source is one RFC 1122 sec 3.2.1.3 bars
+    /**
+     * @brief ipInUnknownProtos: no pcb kind claims the Protocol or Next Header field.
+     *
+     * Over IPv6 this is RFC 8200 sec 4's unrecognized Next Header, which "should discard the packet
+     * and send an ICMP Parameter Problem message to the source of the packet, with an ICMP Code value
+     * of 1 ('unrecognized Next Header type encountered') and the ICMP Pointer field containing the
+     * offset of the unrecognized value within the original packet". @ref DispatchIo::err_ptr carries
+     * that offset.
+     */
+    IDEMIP_DISPATCH_DROP_IP_PROTO,
     /** ipInHdrErrors: a RFC 8200 sec 4.4 Routing header carrying a non-zero Segments Left, whose
      *  Routing Type this library executes none of. sec 4.4: "the node must discard the packet and send
      *  an ICMP Parameter Problem, Code 0, message to the packet's Source Address, pointing to the

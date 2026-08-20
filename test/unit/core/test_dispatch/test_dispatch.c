@@ -80,6 +80,7 @@ static const uint8_t g_bcast_mac[IDEMIP_MAC_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF
 
 #if IDEMIP_ENABLE_IPV6
 // RFC 3849: 2001:DB8::/32 is "for use in documentation".
+static const uint8_t g_ip6_any[IDEMIP_IP6_ADDR_LEN] = {0};
 static const uint8_t g_local_ip6[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
 static const uint8_t g_remote_ip6[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x09};
 static const uint8_t g_other_ip6[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x77};
@@ -938,6 +939,118 @@ void test_an_igmp_query_with_a_good_checksum_is_processed(void)
 
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
+}
+
+
+// RFC 2236 sec 2.5: "As long as the Type is one that is recognized, an IGMPv2 implementation MUST
+// ignore anything past the first 8 octets while processing the packet. However, the IGMP checksum is
+// always computed over the whole IP payload, not just over the first 8 octets", and sec 2.3: "The
+// checksum is the 16-bit one's complement of the one's complement sum of the whole IGMP message (the
+// entire IP payload)."
+void test_an_igmp_message_longer_than_eight_octets_sums_over_the_whole_payload(void)
+{
+    join_group(0xE0000102u);
+
+    // Twelve octets, the extra four sec 2.5 has a recognized Type ignore, with the sum over all of
+    // them the way sec 2.3 requires.
+    const size_t msg_len = IDEMIP_IGMP_MSG_LEN + 4u;
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, 0xE0000102u, msg_len, 0u);
+    uint8_t *m = g_frame + off;
+    m[IDEMIP_IGMP_OFF_TYPE] = (uint8_t)IDEMIP_IGMP_TYPE_QUERY;
+    m[IDEMIP_IGMP_OFF_MAX_RESP] = 100u;
+    idemip_wr16(m + IDEMIP_IGMP_OFF_CKSUM, 0u);
+    idemip_wr32(m + IDEMIP_IGMP_OFF_GROUP, 0xE0000102u);
+    memset(m + IDEMIP_IGMP_MSG_LEN, 0xA5, 4u);
+    idemip_wr16(m + IDEMIP_IGMP_OFF_CKSUM, idemip_cksum(m, msg_len));
+
+    input(work_a, off + msg_len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "the sum is over the whole IP payload, not the first 8 octets");
+
+    // The same message with the sum over the first 8 octets alone does not hold.
+    idemip_wr16(m + IDEMIP_IGMP_OFF_CKSUM, 0u);
+    idemip_wr16(m + IDEMIP_IGMP_OFF_CKSUM, idemip_cksum(m, IDEMIP_IGMP_MSG_LEN));
+    input(work_a, off + msg_len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop);
+}
+
+// RFC 2236 sec 2.1: "Unrecognized message types should be silently ignored." The IP Protocol field
+// was 2, which this build supports, so RFC 1213 ipInUnknownProtos, "discarded because of an unknown
+// or unsupported protocol", names a different event and must not move.
+void test_an_unrecognized_igmp_type_is_silently_ignored(void)
+{
+    join_group(0xE0000102u);
+    const uint32_t unknown = ctr(IDEMIP_STAT_IP4_IN_UNKNOWN_PROTOS);
+
+    // IGMPv2 Leave Group, which this build does not act on, and IGMPv3 Membership Report.
+    const uint8_t types[2] = {0x17u, 0x22u};
+    for (int i = 0; i < 2; i++)
+    {
+        size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+        off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, 0xE0000102u, IDEMIP_IGMP_MSG_LEN, 0u);
+        size_t end = build_igmp(g_frame, off, types[i], 0u, 0xE0000102u);
+        input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                      "silently ignored means no drop reason");
+        TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u,
+                                 "an unrecognized Type reaches no module");
+    }
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(unknown, ctr(IDEMIP_STAT_IP4_IN_UNKNOWN_PROTOS),
+                                     "IP protocol 2 is supported, so ipInUnknownProtos must not move");
+}
+
+// RFC 1122 sec 2.3.3, of a host on a 10Mbps Ethernet: "SHOULD be able to receive RFC-1042 packets,
+// intermixed with RFC-894 packets", which its sec 2.5 table lists as "Receive RFC-1042
+// encapsulation". RFC 1042 puts the DSAP and SSAP at 170, the Control at 3, a zero Organization Code,
+// and the EtherType behind them.
+void test_an_rfc_1042_encapsulated_datagram_is_received(void)
+{
+    UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
+    up->open_args.ip_version = 4u;
+    up->open_args.lite = IDEMIP_FALSE;
+    UdpPcb.open(udp_mem);
+    uint8_t local[IDEMIP_UDP_PCB_ADDR_BYTES];
+    memset(local, 0, sizeof local);
+    idemip_wr32(local, LOCAL_IP4);
+    up->bind_args.index = up->index;
+    up->bind_args.ip = local;
+    up->bind_args.port = 4001u;
+    up->bind_args.zone = 0u;
+    up->bind_args.netif = 0u;
+    UdpPcb.bind(udp_mem);
+
+    // The two octets at offset 12 hold an 802.3 Length rather than a type code, so the LLC and SNAP
+    // headers follow and the EtherType is read from behind them.
+    idemip_eth_build(g_frame, g_local_mac, g_remote_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    uint8_t *llc = g_frame + IDEMIP_ETH_OFF_PAYLOAD;
+    llc[IDEMIP_LLC_OFF_DSAP] = (uint8_t)IDEMIP_LLC_SAP_SNAP;
+    llc[IDEMIP_LLC_OFF_SSAP] = (uint8_t)IDEMIP_LLC_SAP_SNAP;
+    llc[IDEMIP_LLC_OFF_CONTROL] = (uint8_t)IDEMIP_LLC_CONTROL_UI;
+    llc[IDEMIP_LLC_OFF_ORG] = 0u;
+    llc[IDEMIP_LLC_OFF_ORG + 1u] = 0u;
+    llc[IDEMIP_LLC_OFF_ORG + 2u] = 0u;
+    idemip_wr16(llc + IDEMIP_LLC_OFF_TYPE, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t off = IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_LLC_SNAP_LEN;
+    size_t ip = off;
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp4(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    // The Length field the 802.3 frame carries, which is what separates it from an RFC 894 frame.
+    idemip_wr16(g_frame + IDEMIP_ETH_OFF_TYPE, (uint16_t)(end - IDEMIP_ETH_OFF_PAYLOAD));
+    (void)ip;
+
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "an RFC 1042 frame was dropped as an unknown EtherType");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+
+    // A Length in the type position with no SNAP header behind it is not ours.
+    idemip_eth_build(g_frame, g_local_mac, g_remote_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    idemip_wr16(g_frame + IDEMIP_ETH_OFF_TYPE, 0x002Eu);
+    memset(g_frame + IDEMIP_ETH_OFF_PAYLOAD, 0x11, 0x2Eu);
+    input(work_a, IDEMIP_ETH_OFF_PAYLOAD + 0x2Eu, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_ETHERTYPE, IDEMIP_DISPATCH_IO(work_a)->drop);
 }
 
 // RFC 2236 sec 2.3: "When receiving packets, the checksum MUST be verified before processing a
@@ -1874,6 +1987,19 @@ void test_an_ipv6_payload_length_past_the_frame_is_a_header_error(void)
 // a packet to one is this host's.
 void test_the_solicited_node_address_of_our_own_is_local(void)
 {
+    // A binding to answer with, so delivery is what the case reads rather than the absence of a
+    // forward, which no multicast destination ever takes.
+    UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
+    up->open_args.ip_version = 6u;
+    up->open_args.lite = IDEMIP_FALSE;
+    UdpPcb.open(udp_mem);
+    up->bind_args.index = up->index;
+    up->bind_args.ip = g_ip6_any;
+    up->bind_args.port = 4001u;
+    up->bind_args.zone = 0u;
+    up->bind_args.netif = 0u;
+    UdpPcb.bind(udp_mem);
+
     uint8_t solicited[IDEMIP_IP6_ADDR_LEN];
     idemip_ip6_addr_solicited(solicited, g_local_ip6);
 
@@ -1882,8 +2008,24 @@ void test_the_solicited_node_address_of_our_own_is_local(void)
     size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
     seal_udp6(g_frame, off, g_remote_ip6, solicited);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u,
+                             "the solicited-node address of a configured address is this node's");
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u);
+
+    // The solicited-node address of an address this node does not hold is not.
+    uint8_t other[IDEMIP_IP6_ADDR_LEN];
+    memcpy(other, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    other[IDEMIP_IP6_ADDR_LEN - 1u] = (uint8_t)(other[IDEMIP_IP6_ADDR_LEN - 1u] ^ 0x5Au);
+    idemip_ip6_addr_solicited(solicited, other);
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, solicited, IDEMIP_UDP_HDR_LEN);
+    end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, solicited);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u,
+                             "a solicited-node group this node did not join is not its own");
 }
+
 
 // --- RFC 4861 Neighbor Discovery and RFC 2710 MLD ----------------------------
 // These are ICMPv6 types this library implements, so RFC 4443 sec 2.4 (b)'s silent discard of an
@@ -2483,6 +2625,85 @@ static size_t build_tcp4(uint8_t *f, uint16_t sport, uint16_t dport, uint32_t se
     idemip_ip4_set_total_len(f + ip, (uint16_t)(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + IDEMIP_TCP_HDR_LEN + data_len));
     idemip_ip4_recksum(f + ip);
     return off + IDEMIP_TCP_HDR_LEN + data_len;
+}
+
+// RFC 9293 sec 3.10.7.2 LISTEN STATE, first check: "An incoming RST segment could not be valid since
+// it could not have been sent in response to anything sent by this incarnation of the connection. An
+// incoming RST should be ignored. Return." Nothing is created for it, so it cannot shadow the
+// listener for that peer afterwards.
+void test_a_bare_rst_at_a_listener_creates_no_tcb(void)
+{
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    listen_on(5001u);
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, (uint8_t)IDEMIP_TCP_RST, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_NONE, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "a RST at a listener must not take a TCB");
+
+    // The four-tuple is still free, so a genuine SYN from the same peer reaches SYN-RECEIVED.
+    end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, (uint8_t)IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_TCP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "the RST left a phantom TCB shadowing the listener");
+    tp->pcb_args.index = IDEMIP_DISPATCH_IO(work_a)->pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_SYN_RECEIVED, tp->state);
+}
+
+// The second check: an ACK-bearing segment at a listener draws "<SEQ=SEG.ACK><CTL=RST>" and returns,
+// creating nothing. RFC 1213 sec 6.5 tcpPassiveOpens counts "the number of times TCP connections have
+// made a direct transition to the SYN-RCVD state from the LISTEN state", which this is not, and
+// tcpOutRsts counts "The number of TCP segments sent containing the RST flag", which this is.
+void test_a_bare_ack_at_a_listener_resets_without_a_passive_open(void)
+{
+    listen_on(5001u);
+    const uint32_t opens = ctr(IDEMIP_STAT_TCP_PASSIVE_OPENS);
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 200u, (uint8_t)IDEMIP_TCP_ACK, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_NONE, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->tcp_act & IDEMIP_TCP_IN_ACT_RST) != 0u,
+                             "the second check forms a reset for an ACK-bearing segment");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(opens, ctr(IDEMIP_STAT_TCP_PASSIVE_OPENS),
+                                     "tcpPassiveOpens counts only the LISTEN to SYN-RCVD transition");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_TCP_OUT_RSTS), "the reset it sent is counted");
+}
+
+// The SYN is the one segment the section creates a TCB for, and the one tcpPassiveOpens counts.
+void test_a_syn_at_a_listener_is_the_one_passive_open(void)
+{
+    listen_on(5001u);
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, (uint8_t)IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_TCP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_TCP_PASSIVE_OPENS));
+}
+
+// RFC 1213 sec 6.5 tcpOutRsts: "The number of TCP segments sent containing the RST flag." RFC 9293
+// sec 3.10.7.1: "An incoming segment not containing a RST causes a RST to be sent in response."
+void test_a_reset_sent_for_a_segment_with_no_tcb_is_counted(void)
+{
+    size_t end = build_tcp4(g_frame, 5000u, 5999u, 100u, 0u, (uint8_t)IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->tcp_act & IDEMIP_TCP_IN_ACT_RST) != 0u);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_TCP_OUT_RSTS));
+}
+
+// RFC 1213 sec 6.5 tcpInSegs: "The total number of segments received, including those received in
+// error." A payload shorter than the fixed header is one of those.
+void test_tcp_in_segs_counts_a_segment_shorter_than_the_header(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_TCP, REMOTE_IP4, LOCAL_IP4, 12u, 0u);
+    memset(g_frame + off, 0, 12u);
+    input(work_a, off + 12u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_TCP_IN_ERRS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_TCP_IN_SEGS),
+                                     "tcpInErrs cannot exceed the segments tcpInSegs says arrived");
 }
 
 // RFC 9293 sec 3.10.7.1 CLOSED STATE: "If the state is CLOSED (i.e., TCB does not exist)", the

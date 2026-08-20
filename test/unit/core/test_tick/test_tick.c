@@ -953,11 +953,11 @@ void test_the_drain_reads_a_tagged_frame_behind_its_tag(void)
     TEST_ASSERT_FALSE(v->vid_reserved);
 }
 
-// RFC 1122 sec 3.2.1.3 case (g), "{ 127, <any> } Internal host loopback address", is the range, and
-// the loopback interface's address is one of "(one of) the host's IP address(es)" that clause (1) of
-// the same section makes a datagram destined for the host. Nothing else in the destination decision
-// knows the range, so this is the one unit that answers for it, and the drain had never asked.
-void test_the_drain_takes_a_frame_addressed_to_the_loopback_range(void)
+// RFC 1122 sec 3.2.1.3 case (g): "{ 127, <any> } Internal host loopback address. Addresses of this
+// form MUST NOT appear outside a host." RFC 6890 Table 4 records 127.0.0.0/8 with Destination False.
+// A frame off a wire carrying one is therefore not a datagram destined for this host, whatever the
+// loopback interface owns, and the drain discards it rather than delivering it to a transport.
+void test_the_drain_discards_a_wire_frame_addressed_to_the_loopback_range(void)
 {
     uint16_t len = fill_ip4(0u, 0x7F000001u, 0u);
     engine_queue(0u, len);
@@ -965,11 +965,14 @@ void test_the_drain_takes_a_frame_addressed_to_the_loopback_range(void)
     open_tick(work_a, 1000u);
     Tick.drain(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(work_a)->status);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_PROTO, IDEMIP_DISPATCH_IO(dispatch_mem)->drop,
-                                  "a loopback destination was not taken as this host's");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_ADDRESS, IDEMIP_DISPATCH_IO(dispatch_mem)->drop,
+                                  "case (g) bars a loopback address from the wire");
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(dispatch_mem)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u,
+                             "a loopback destination off a wire must reach no transport");
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(dispatch_mem)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u);
 
-    // The unit's own reading: the whole of 127/8 and nothing outside it.
+    // The unit's own reading, which is what the loopback interface answers with: the whole of 127/8
+    // and nothing outside it. The address is this host's; the interface it arrived on is what bars it.
     LoopifIo *lo = IDEMIP_LOOPIF_IO(loopif_mem);
     lo->match_args.addr4 = 0x7F000001u;
     Loopif.owns4(loopif_mem);
