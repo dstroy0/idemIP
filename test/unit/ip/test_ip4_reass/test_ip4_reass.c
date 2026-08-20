@@ -474,21 +474,19 @@ void test_a_duplicate_fragment_is_refused_and_pins_nothing(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
 }
 
-// A fragment covering octets the row already holds is an overlap, and which set of octets a caller
-// would end up with is exactly what RFC 1858 sec 3's attacks turn on. The datagram is discarded
-// rather than assembled from a precedence no IPv4 RFC fixes, which is what RFC 5722 sec 4 requires
-// for IPv6 and what shipping stacks do for IPv4.
-void test_a_partially_overlapping_fragment_discards_the_datagram(void)
+// RFC 815 sec 3: a fragment "may leave some remaining space at either the beginning or the end of an
+// existing hole". Partial overlap is ordinary in IPv4 - a retransmitted datagram refragmented along
+// another path produces it - so one that overlaps a held fragment still fills the hole and is held.
+// No IPv4 RFC makes overlap a discard; RFC 1858 is Informational and states no MUST.
+void test_a_partially_overlapping_fragment_fills_the_hole(void)
 {
     Ip4Reass.clear(work_a);
     // The last fragment first: octets 8 through 15, so TDL is 16 and hole 0 through 7 remains.
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 1u, 8u, 0), 71u));
-    // Octets 0 through 15: eight of them are already held, so this is an overlap.
-    TEST_ASSERT_NOT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 0u, 16u, 1), 72u));
-    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
-    // The row is gone and the pin it held comes back.
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
-    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+    // Octets 0 through 15, overlapping the held fragment and filling the hole.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 0u, 16u, 1), 72u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT16(16u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
 }
 
 // A fragment that repeats octets already held exactly, filling no hole, is neither an overlap nor an

@@ -1285,7 +1285,7 @@ void test_a_pointer_at_itself_is_refused(void)
     // No address is cached for the name. RFC 1123 sec 6.1.3.3 (4) does cache the negative outcome,
     // so the lookup is answered from that entry rather than left outstanding.
     look(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status, "a self naming owner reached the cache");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status, "a self naming owner reached the cache");
     TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_DNS_IO(work_a)->addr[0]);
 }
 
@@ -1318,7 +1318,7 @@ void test_a_forward_pointer_and_a_pointer_ring_are_refused(void)
     deliver_ok(work_a, len + 8u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     look(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status, "a pointer ring reached the cache");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status, "a pointer ring reached the cache");
     TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_DNS_IO(work_a)->addr[0]);
 }
 
@@ -1372,7 +1372,7 @@ void test_a_record_owned_by_another_name_is_not_an_answer(void)
     deliver_ok(work_a, at);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     look(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status,
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status,
                                   "an out of domain record was cached for the queried name");
     TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, IDEMIP_DNS_IO(work_a)->addr[0], "the attacker's address was handed back");
 }
@@ -1389,7 +1389,7 @@ void test_a_record_of_another_class_is_not_an_answer(void)
     deliver_ok(work_a, len);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     look(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_DNS_IO(work_a)->addr[0]);
 }
 
@@ -1404,7 +1404,7 @@ void test_a_record_of_the_wrong_rdlength_is_not_an_answer(void)
     deliver_ok(work_a, len);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     look(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_DNS_IO(work_a)->addr[0]);
 }
 
@@ -1760,10 +1760,10 @@ void test_a_response_with_no_record_of_the_type_retires_the_question(void)
     deliver_ok(work_a, at);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_DNS_IO(work_a)->answers);
-    // sec 6.1.3.3 (4)'s other half, "or data of the specified type, does not exist", is cached too.
+    // Nothing is cached from this path: a response whose records were refused lands here too, so a
+    // negative taken from it would let a forgery hold the name down for the whole negative TTL.
     look(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status);
-    TEST_ASSERT_EQUAL_UINT32((uint32_t)IDEMIP_DNS_NEG_TTL_S, IDEMIP_DNS_IO(work_a)->ttl_s);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status);
 }
 
 // --- the retry sweep ---------------------------------------------------------

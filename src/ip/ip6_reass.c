@@ -28,7 +28,8 @@ IDEMIP_BEGIN_DECLS
 
 // What a scan of a datagram's held fragments found the arriving one to be.
 #define IP6_REASS_SCAN_CLEAR 0u   ///< it reaches no held fragment
-#define IP6_REASS_SCAN_OVERLAP 1u ///< it reaches into one, which sec 4.5 abandons the packet for
+#define IP6_REASS_SCAN_DUP 1u     ///< same Fragment Offset and same length as one already held
+#define IP6_REASS_SCAN_OVERLAP 2u ///< it reaches into one, which sec 4.5 abandons the packet for
 
 // RFC 815 sec 3: "hole.last equals infinity. (Infinity is presumably implemented by a very large
 // integer ... of the implementor's choice.)" The Fragmentable Part reaches at most the Payload
@@ -250,9 +251,10 @@ static uint8_t ip6_reass_match(uint8_t *restrict work, const uint8_t *src, const
 
 // What the arriving fragment [first, end) is against the ones already held, and where it belongs in
 // the list. RFC 8200 sec 4.5 abandons the packet when fragments "overlap with any other fragments
-// being reassembled for the same packet". The exception it permits is for "exact duplicate
-// fragments", which a same-offset, same-length fragment is not: this module holds a receive
-// descriptor and not the octets, so it cannot tell one from a forgery, and the shortcut is a "may".
+// being reassembled for the same packet", and permits the one exception: "an implementation may
+// choose to detect this case and drop exact duplicate fragments while keeping the other fragments".
+// A network that duplicates a packet delivers the same fragment twice, so taking that exception is
+// what keeps reassembly working under ordinary duplication.
 static uint8_t ip6_reass_scan(uint8_t *restrict work, uint8_t d, uint16_t offset, uint16_t frag_len, uint8_t *prev_out)
 {
     Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
@@ -263,6 +265,10 @@ static uint8_t ip6_reass_scan(uint8_t *restrict work, uint8_t d, uint16_t offset
     while (cur != IDEMIP_IP6_REASS_NONE)
     {
         Ip6ReassFrag *fr = IP6_REASS_FRAG_AT(work, cur);
+        if (fr->offset == offset && fr->len == frag_len)
+        {
+            return IP6_REASS_SCAN_DUP;
+        }
         if (first < (uint32_t)fr->offset + (uint32_t)fr->len && (uint32_t)fr->offset < end)
         {
             return IP6_REASS_SCAN_OVERLAP;
@@ -530,6 +536,10 @@ static void ip6_reass_file(uint8_t *restrict work)
             return;
         }
         uint8_t scan = ip6_reass_scan(work, d, f.offset, f.frag_len, &prev);
+        if (scan == IP6_REASS_SCAN_DUP)
+        {
+            return; // an exact duplicate is dropped and the rest of the packet kept, sec 4.5
+        }
         if (scan == IP6_REASS_SCAN_OVERLAP)
         {
             // sec 4.5: "reassembly of that packet must be abandoned and all the fragments that have

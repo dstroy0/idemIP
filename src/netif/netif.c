@@ -131,6 +131,14 @@ static idemip_bool netif_ip4_multicast(uint32_t addr)
     return ((addr & NETIF_IP4_MULTICAST_PREFIX) == NETIF_IP4_MULTICAST_NET) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
+// The high-order three bits "111": RFC 1112 sec 4's class D and the class E above it, "those with
+// '1111' as their high-order four bits, are reserved for future addressing modes". RFC 6890 Table 15
+// gives 240.0.0.0/4 Source False and Destination False, so neither block is an interface's own.
+static idemip_bool netif_ip4_reserved(uint32_t addr)
+{
+    return ((addr & NETIF_IP4_MULTICAST_NET) == NETIF_IP4_MULTICAST_NET) ? IDEMIP_TRUE : IDEMIP_FALSE;
+}
+
 // RFC 1122 sec 3.2.1.3 case (g), the 127 network.
 static idemip_bool netif_ip4_loopback(uint32_t addr)
 {
@@ -148,7 +156,7 @@ static idemip_bool netif_ip4_loopback(uint32_t addr)
 // by which the host learns its own IP address", so it is left through.
 static idemip_bool netif_addr4_barred(uint32_t addr, uint32_t mask, uint16_t flags)
 {
-    if (addr == NETIF_IP4_LIMITED_BROADCAST || netif_ip4_multicast(addr))
+    if (addr == NETIF_IP4_LIMITED_BROADCAST || netif_ip4_reserved(addr))
     {
         return IDEMIP_TRUE;
     }
@@ -159,6 +167,16 @@ static idemip_bool netif_addr4_barred(uint32_t addr, uint32_t mask, uint16_t fla
     if ((~mask) != 0u && addr != 0u)
     {
         if ((addr & ~mask) == (~mask) || (addr & ~mask) == 0u)
+        {
+            return IDEMIP_TRUE;
+        }
+    }
+    // The <Network-number> half of the same sentence, which the host half above leaves. { 0, 0 } is
+    // the initialization case and stays through, and a mask with no host field at all is a single
+    // host address whose prefix is the address itself, which this rule does not reach.
+    if (mask != 0u && (~mask) != 0u && addr != 0u)
+    {
+        if ((addr & mask) == 0u || (addr & mask) == mask)
         {
             return IDEMIP_TRUE;
         }

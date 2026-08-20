@@ -1193,12 +1193,13 @@ static void dns_take(uint8_t *restrict work)
     uint32_t ttl = 0;
     if (!dns_answers_read(msg, len, at, io->answers, q->type, io->addr, &ttl))
     {
-        // The name exists and carries no record of the type asked for, so the exchange is over. RFC
-        // 1123 sec 6.1.3.3 (4) caches that half of the requirement too, "or data of the specified
-        // type, does not exist".
+        // The name exists and carries no record of the type asked for, so the exchange is over.
+        // Nothing is cached from here: this path is also where a response whose records were refused
+        // lands, a pointer ring or an out-of-domain owner among them, so caching it would let a
+        // forged answer hold the name negative for the whole negative TTL. RFC 1123 sec 6.1.3.3 (4)
+        // is taken on the Name Error alone, which is a server's own statement about the name.
         memset(io->addr, 0, sizeof io->addr);
         q->state = IDEMIP_DNS_QUERY_FAILED;
-        dns_cache_negative(work, i, q->type, rcode, ctx->now_ms);
         io->status = IDEMIP_OK;
         return;
     }

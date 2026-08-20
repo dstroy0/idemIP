@@ -511,17 +511,6 @@ static void ip4_reass_take(uint8_t *restrict work)
         return;
     }
 
-    // A fragment that covers octets the row already holds, without being wholly a repeat of them, is
-    // an overlap. Which of the two sets of octets wins is what RFC 1858 sec 3's attacks turn on, so
-    // the datagram is discarded rather than assembled from a precedence no RFC fixes for IPv4. RFC
-    // 5722 sec 4 makes the same call for IPv6: "the entire datagram ... MUST be silently discarded".
-    const uint32_t missing = ip4_reass_missing(work, index, off, frag_end - 1u);
-    if (missing != 0u && missing != data_len)
-    {
-        ip4_reass_flush(work, index);
-        return;
-    }
-
     const uint8_t frag = ip4_reass_frag_alloc(work);
     if (frag == IP4_REASS_NONE)
     {

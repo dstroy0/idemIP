@@ -808,20 +808,23 @@ void test_an_abandoned_packet_owes_no_icmp(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_REASS_ERR_NONE, IDEMIP_IP6_REASS_IO(work_a)->err);
 }
 
-// RFC 8200 sec 4.5 permits dropping "exact duplicate fragments" while keeping the packet, but this
-// module holds a receive descriptor and not the octets, so it cannot tell an exact duplicate from a
-// same-offset, same-length forgery carrying different data. The shortcut is a "may", so the default
-// disposition stands: RFC 5722 sec 4 discards the entire datagram.
-void test_a_same_offset_same_length_fragment_discards_the_packet(void)
+// sec 4.5: "Instead of treating these exact duplicate fragments as overlapping fragments, an
+// implementation may choose to detect this case and drop exact duplicate fragments while keeping the
+// other fragments belonging to the same packet." A network that duplicates a packet delivers the
+// same fragment twice, so taking that exception is what keeps reassembly working under duplication.
+void test_an_exact_duplicate_is_dropped_and_the_packet_kept(void)
 {
     ready();
     feed_plain(work_a, 21u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 1000u, 1u);
+    uint8_t d = IDEMIP_IP6_REASS_IO(work_a)->datagram;
     feed_plain(work_a, 21u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 1001u, 2u);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_REASS_ERR_OVERLAP, IDEMIP_IP6_REASS_IO(work_a)->err);
-
-    // The packet is poisoned, so the fragment that would have completed it does not.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_REASS_ERR_NONE, IDEMIP_IP6_REASS_IO(work_a)->err);
+    // the packet is untouched, so the fragment that follows completes it
     feed_plain(work_a, 21u, 8u, 0, IDEMIP_IP6_NH_UDP, 8u, 1002u, 3u);
-    TEST_ASSERT_FALSE(IDEMIP_IP6_REASS_IO(work_a)->complete);
+    TEST_ASSERT_TRUE(IDEMIP_IP6_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT8(d, IDEMIP_IP6_REASS_IO(work_a)->datagram);
+    TEST_ASSERT_EQUAL_UINT8(2u, IDEMIP_IP6_REASS_IO(work_a)->frag_count);
 }
 
 // A fragment at a held fragment's offset with a different length is not an exact duplicate, so sec
