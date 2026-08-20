@@ -298,28 +298,6 @@ static void ip4_reass_hole_thread(uint8_t *restrict work, uint8_t index, uint8_t
 // the fragment". Reports the holes step 4 deleted, so zero means steps 2 and 3 passed over every
 // hole and the fragment covers nothing missing, and IP4_REASS_NONE means the hole table ran out.
 // Step 8 is the caller's: it reads hole_head.
-// Octets of [first,last] that no fragment of this row holds yet, summed over the hole list. A
-// fragment every octet of which is missing fills holes only; anything less overlaps octets already
-// held, which is the shape RFC 1858 sec 3 names and RFC 5722 sec 4 answers for IPv6 by discarding the
-// datagram.
-static uint32_t ip4_reass_missing(uint8_t *restrict work, uint8_t index, uint32_t first, uint32_t last)
-{
-    uint32_t missing = 0u;
-    uint8_t h = IP4_REASS_DGRAM_AT(work, index)->hole_head;
-    while (h != IP4_REASS_NONE)
-    {
-        const Ip4ReassHole *hole = IP4_REASS_HOLE_AT(work, h);
-        const uint32_t lo = (first > hole->first) ? first : hole->first;
-        const uint32_t hi = (last < hole->last) ? last : hole->last;
-        if (lo <= hi)
-        {
-            missing += (hi - lo) + 1u;
-        }
-        h = hole->next;
-    }
-    return missing;
-}
-
 static uint8_t ip4_reass_holes(uint8_t *restrict work, uint8_t index, uint32_t first, uint32_t last, idemip_bool mf)
 {
     uint8_t prev = IP4_REASS_NONE;
