@@ -64,7 +64,7 @@ static_assert((IDEMIP_IP4_FRAG_CTX_BYTES & (IDEMIP_ALIGN - 1u)) == 0u,
 #define IP4_FRAG_CTX(w) ((Ip4FragCtx *)(void *)((w) + IDEMIP_IP4_FRAG_OFF_CTX))
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool ip4_frag_ready(uint8_t *restrict work)
+static idemip_bool ip4_frag_ready(uint8_t *work)
 {
     return (idemip_bool)(IP4_FRAG_CTX(work)->ready == IP4_FRAG_READY);
 }
@@ -123,7 +123,7 @@ static uint16_t ip4_frag_copy_options(const uint8_t *dgram, size_t hdr_len, uint
 // THEN discard the datagram ELSE" cut it. Everything the cut needs is computed once here: the
 // reduced header of step (9), and the "NFB*8" data octets of steps (3) and (4) for the first
 // fragment and for every one after it.
-static void ip4_frag_take(uint8_t *restrict work)
+static void ip4_frag_take(uint8_t *work)
 {
     Ip4FragIo *io = IP4_FRAG_IO(work);
     Ip4FragCtx *ctx = IP4_FRAG_CTX(work);
@@ -154,7 +154,7 @@ static void ip4_frag_take(uint8_t *restrict work)
     // a nonzero multiple of eight; the tail this would otherwise emit with MF set cannot be named by
     // the 13-bit Fragment Offset. The reassembler refuses the same shape.
     const uint16_t in_data_len = (uint16_t)(total_len - hdr_len);
-    if (idemip_ip4_mf(dgram) && (in_data_len == 0u || (in_data_len & (uint16_t)IP4_FRAG_UNIT_MASK) != 0u))
+    if (idemip_ip4_mf(dgram) && (in_data_len == 0u || (in_data_len & IP4_FRAG_UNIT_MASK) != 0u))
     {
         io->err = IDEMIP_IP4_FRAG_ERR_HEADER;
         return;
@@ -246,7 +246,7 @@ static void ip4_frag_emit_rest(const Ip4FragCtx *ctx, uint8_t *out, uint16_t chu
 // The fragment the cursor stands on, into the caller's buffer. A datagram that passed the sec 3.2
 // test whole is written unchanged, which is the section's "Submit this datagram to the next step in
 // datagram processing".
-static void ip4_frag_write(uint8_t *restrict work)
+static void ip4_frag_write(uint8_t *work)
 {
     Ip4FragIo *io = IP4_FRAG_IO(work);
     Ip4FragCtx *ctx = IP4_FRAG_CTX(work);
@@ -312,18 +312,18 @@ static void ip4_frag_write(uint8_t *restrict work)
 
 // --- the entries -----------------------------------------------------------
 
-void idemip_ip4_frag_clear(uint8_t *restrict work)
+void idemip_ip4_frag_clear(uint8_t *work)
 {
     if (!work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IP4_FRAG_OFF_CTX, 0, (size_t)IDEMIP_IP4_FRAG_BORROW - (size_t)IDEMIP_IP4_FRAG_OFF_CTX);
+    memset(work + IDEMIP_IP4_FRAG_OFF_CTX, 0, (size_t)IDEMIP_IP4_FRAG_BORROW - IDEMIP_IP4_FRAG_OFF_CTX);
     IP4_FRAG_CTX(work)->ready = IP4_FRAG_READY;
     IP4_FRAG_IO(work)->status = IDEMIP_OK;
 }
 
-void idemip_ip4_frag_begin(uint8_t *restrict work)
+void idemip_ip4_frag_begin(uint8_t *work)
 {
     if (!work)
     {
@@ -348,7 +348,7 @@ void idemip_ip4_frag_begin(uint8_t *restrict work)
     ip4_frag_take(work);
 }
 
-void idemip_ip4_frag_next(uint8_t *restrict work)
+void idemip_ip4_frag_next(uint8_t *work)
 {
     if (!work)
     {

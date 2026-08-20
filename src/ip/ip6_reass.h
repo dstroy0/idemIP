@@ -162,8 +162,8 @@ typedef struct
  *   IDEMIP_IP6_REASS_IO(work)->input_args.now_ms = now;
  *   Ip6Reass.input(work);
  *
- * @c work is IDEMIP_IP6_REASS_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. The borrow IS the
+ * @c work is IDEMIP_IP6_REASS_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. The borrow IS the
  * instance, so two reassemblers are two borrows and share not one byte.
  *
  * A borrow is refused until @ref Ip6ReassNs::clear has run on it: clear zeroes every region above
@@ -182,21 +182,21 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const input)(uint8_t *restrict work);
-    void (*const frag_at)(uint8_t *restrict work);
-    void (*const drop)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const input)(uint8_t *work);
+    void (*const frag_at)(uint8_t *work);
+    void (*const drop)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
 } Ip6ReassNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_ip6_reass_clear(uint8_t *restrict work);
-void idemip_ip6_reass_input(uint8_t *restrict work);
-void idemip_ip6_reass_frag_at(uint8_t *restrict work);
-void idemip_ip6_reass_drop(uint8_t *restrict work);
-void idemip_ip6_reass_tick(uint8_t *restrict work);
+void idemip_ip6_reass_clear(uint8_t *work);
+void idemip_ip6_reass_input(uint8_t *work);
+void idemip_ip6_reass_frag_at(uint8_t *work);
+void idemip_ip6_reass_drop(uint8_t *work);
+void idemip_ip6_reass_tick(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

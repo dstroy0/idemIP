@@ -152,8 +152,8 @@ typedef struct
  *   Phy.rx_claim(work);
  *   if (IDEMIP_PHY_IO(work)->status == IDEMIP_OK) { ... Phy.rx_release(work); }
  *
- * @c work is IDEMIP_PHY_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are
+ * @c work is IDEMIP_PHY_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are
  * carved is this module's and is never named here beyond the map above. The borrow IS the
  * interface, so two links are two borrows and share not one byte.
  *
@@ -178,27 +178,27 @@ typedef struct
  */
 typedef struct
 {
-    void (*const bind)(uint8_t *restrict work);
-    void (*const poll_link)(uint8_t *restrict work);
-    void (*const rx_claim)(uint8_t *restrict work);
-    void (*const rx_release)(uint8_t *restrict work);
-    void (*const tx_claim)(uint8_t *restrict work);
-    void (*const tx_commit)(uint8_t *restrict work);
-    void (*const mdio_read)(uint8_t *restrict work);
-    void (*const mdio_write)(uint8_t *restrict work);
+    void (*const bind)(uint8_t *work);
+    void (*const poll_link)(uint8_t *work);
+    void (*const rx_claim)(uint8_t *work);
+    void (*const rx_release)(uint8_t *work);
+    void (*const tx_claim)(uint8_t *work);
+    void (*const tx_commit)(uint8_t *work);
+    void (*const mdio_read)(uint8_t *work);
+    void (*const mdio_write)(uint8_t *work);
 } PhyNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_phy_bind(uint8_t *restrict work);
-void idemip_phy_poll_link(uint8_t *restrict work);
-void idemip_phy_rx_claim(uint8_t *restrict work);
-void idemip_phy_rx_release(uint8_t *restrict work);
-void idemip_phy_tx_claim(uint8_t *restrict work);
-void idemip_phy_tx_commit(uint8_t *restrict work);
-void idemip_phy_mdio_read(uint8_t *restrict work);
-void idemip_phy_mdio_write(uint8_t *restrict work);
+void idemip_phy_bind(uint8_t *work);
+void idemip_phy_poll_link(uint8_t *work);
+void idemip_phy_rx_claim(uint8_t *work);
+void idemip_phy_rx_release(uint8_t *work);
+void idemip_phy_tx_claim(uint8_t *work);
+void idemip_phy_tx_commit(uint8_t *work);
+void idemip_phy_mdio_read(uint8_t *work);
+void idemip_phy_mdio_write(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

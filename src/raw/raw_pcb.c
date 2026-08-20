@@ -166,7 +166,7 @@ static idemip_bool raw_pcb_zone_ok(uint8_t ip_version, uint8_t entry_zone, uint8
 // zero bits", a nonzero TTL since sec 3.2.1.7 states "A host MUST NOT send a datagram with a
 // Time-to-Live (TTL) value of zero", and the RFC 3542 sec 3.1 checksum offset "By default, this
 // socket option is disabled".
-static void raw_pcb_take(uint8_t *restrict work, uint8_t proto, uint8_t ip_version)
+static void raw_pcb_take(uint8_t *work, uint8_t proto, uint8_t ip_version)
 {
     RawPcbIo *io = RAW_PCB_IO(work);
     for (uint16_t i = 0; i < (uint16_t)IDEMIP_RAW_PCBS; i++)
@@ -193,7 +193,7 @@ static void raw_pcb_take(uint8_t *restrict work, uint8_t proto, uint8_t ip_versi
 
 // Writes the RFC 1122 sec 3.4 SEND parameter src, its RFC 4007 sec 6 zone, and the interface an
 // inbound datagram must have arrived on for this binding to match it.
-static void raw_pcb_set_local(uint8_t *restrict work, const RawPcbAddrArgs *args)
+static void raw_pcb_set_local(uint8_t *work, const RawPcbAddrArgs *args)
 {
     RawPcbIo *io = RAW_PCB_IO(work);
     RawPcbEntry *e = RAW_PCB_AT(work, args->index);
@@ -215,7 +215,7 @@ static void raw_pcb_set_local(uint8_t *restrict work, const RawPcbAddrArgs *args
 
 // Writes the RFC 1122 sec 3.4 SEND parameter dst and its RFC 4007 sec 6 zone, and marks the binding
 // connected so a find requires the datagram's source to be it.
-static void raw_pcb_set_remote(uint8_t *restrict work, const RawPcbAddrArgs *args)
+static void raw_pcb_set_remote(uint8_t *work, const RawPcbAddrArgs *args)
 {
     RawPcbIo *io = RAW_PCB_IO(work);
     RawPcbEntry *e = RAW_PCB_AT(work, args->index);
@@ -271,10 +271,10 @@ static idemip_bool raw_pcb_cksum_ok(const RawPcbEntry *e, int16_t offset)
 
 // Reports every RFC 1122 sec 3.4 SEND parameter the entry carries. The two addresses point into the
 // entry, which is this borrow.
-static void raw_pcb_read(uint8_t *restrict work, uint16_t index)
+static void raw_pcb_read(uint8_t *work, uint16_t index)
 {
     RawPcbIo *io = RAW_PCB_IO(work);
-    RawPcbEntry *e = RAW_PCB_AT(work, index);
+    const RawPcbEntry *e = RAW_PCB_AT(work, index);
     if (!e->f.in_use)
     {
         return;
@@ -338,7 +338,7 @@ static idemip_bool raw_pcb_score(const RawPcbEntry *e, const RawPcbFindArgs *a, 
 }
 
 // Walks the table once and keeps the highest-scoring binding, the lowest index breaking a tie.
-static void raw_pcb_scan(uint8_t *restrict work)
+static void raw_pcb_scan(uint8_t *work)
 {
     RawPcbIo *io = RAW_PCB_IO(work);
     const RawPcbFindArgs *a = &io->find_args;
@@ -370,7 +370,7 @@ static void raw_pcb_scan(uint8_t *restrict work)
 // The context and the table are contiguous from IDEMIP_RAW_PCB_OFF_CTX to the end of the borrow, so
 // one store covers both. The operand block is the caller's and is left as it was found, except for
 // the members a call reports through.
-void idemip_raw_pcb_clear(uint8_t *restrict work)
+void idemip_raw_pcb_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -386,7 +386,7 @@ void idemip_raw_pcb_clear(uint8_t *restrict work)
 
 // A version with no IP layer in this build can never be bound, so it is ERR. A table with every
 // entry held is BUSY, since a close frees one and the same call then succeeds.
-void idemip_raw_pcb_open(uint8_t *restrict work)
+void idemip_raw_pcb_open(uint8_t *work)
 {
     if (!work)
     {
@@ -409,7 +409,7 @@ void idemip_raw_pcb_open(uint8_t *restrict work)
 }
 
 // An entry no open holds is ERR: a close cannot start succeeding on it, only another open can.
-void idemip_raw_pcb_close(uint8_t *restrict work)
+void idemip_raw_pcb_close(uint8_t *work)
 {
     if (!work)
     {
@@ -432,7 +432,7 @@ void idemip_raw_pcb_close(uint8_t *restrict work)
 }
 
 // An address no host may send from is ERR: no later call makes it sendable.
-void idemip_raw_pcb_bind(uint8_t *restrict work)
+void idemip_raw_pcb_bind(uint8_t *work)
 {
     if (!work)
     {
@@ -449,7 +449,7 @@ void idemip_raw_pcb_bind(uint8_t *restrict work)
     raw_pcb_set_local(work, &io->bind_args);
 }
 
-void idemip_raw_pcb_connect(uint8_t *restrict work)
+void idemip_raw_pcb_connect(uint8_t *work)
 {
     if (!work)
     {
@@ -466,7 +466,7 @@ void idemip_raw_pcb_connect(uint8_t *restrict work)
     raw_pcb_set_remote(work, &io->connect_args);
 }
 
-void idemip_raw_pcb_disconnect(uint8_t *restrict work)
+void idemip_raw_pcb_disconnect(uint8_t *work)
 {
     if (!work)
     {
@@ -492,7 +492,7 @@ void idemip_raw_pcb_disconnect(uint8_t *restrict work)
 
 // A TTL of zero and an offset RFC 3542 sec 3.1 fails are both ERR: the operand is what is wrong, and
 // the same operand fails again on any later tick.
-void idemip_raw_pcb_set_opts(uint8_t *restrict work)
+void idemip_raw_pcb_set_opts(uint8_t *work)
 {
     if (!work)
     {
@@ -523,7 +523,7 @@ void idemip_raw_pcb_set_opts(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_raw_pcb_load(uint8_t *restrict work)
+void idemip_raw_pcb_load(uint8_t *work)
 {
     if (!work)
     {
@@ -542,7 +542,7 @@ void idemip_raw_pcb_load(uint8_t *restrict work)
 
 // No binding is ERR, never BUSY: the table is the whole answer, so the same call on the same table
 // reports the same thing however long the caller waits.
-void idemip_raw_pcb_find(uint8_t *restrict work)
+void idemip_raw_pcb_find(uint8_t *work)
 {
     if (!work)
     {

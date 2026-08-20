@@ -174,8 +174,8 @@ typedef struct
  *   Mld6.join(work);
  *   if (IDEMIP_MLD6_IO(work)->send_report) { ... }
  *
- * @c work is IDEMIP_MLD6_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. The borrow IS the
+ * @c work is IDEMIP_MLD6_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. The borrow IS the
  * instance, so two tables are two borrows and share not one byte.
  *
  * A borrow is refused until @ref Mld6Ns::clear has run on it: clear zeroes every region above and
@@ -195,25 +195,25 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const join)(uint8_t *restrict work);
-    void (*const leave)(uint8_t *restrict work);
-    void (*const find)(uint8_t *restrict work);
-    void (*const query_in)(uint8_t *restrict work);
-    void (*const report_in)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const join)(uint8_t *work);
+    void (*const leave)(uint8_t *work);
+    void (*const find)(uint8_t *work);
+    void (*const query_in)(uint8_t *work);
+    void (*const report_in)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
 } Mld6Ns;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_mld6_clear(uint8_t *restrict work);
-void idemip_mld6_join(uint8_t *restrict work);
-void idemip_mld6_leave(uint8_t *restrict work);
-void idemip_mld6_find(uint8_t *restrict work);
-void idemip_mld6_query_in(uint8_t *restrict work);
-void idemip_mld6_report_in(uint8_t *restrict work);
-void idemip_mld6_tick(uint8_t *restrict work);
+void idemip_mld6_clear(uint8_t *work);
+void idemip_mld6_join(uint8_t *work);
+void idemip_mld6_leave(uint8_t *work);
+void idemip_mld6_find(uint8_t *work);
+void idemip_mld6_query_in(uint8_t *work);
+void idemip_mld6_report_in(uint8_t *work);
+void idemip_mld6_tick(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

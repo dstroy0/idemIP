@@ -138,7 +138,7 @@ static void udp_pcb_addr_store(uint8_t *dst, const uint8_t *src, uint8_t n)
 }
 
 // The first entry no binding holds, or IDEMIP_UDP_PCB_NONE when every one is open.
-static uint16_t udp_pcb_free_entry(uint8_t *restrict work)
+static uint16_t udp_pcb_free_entry(uint8_t *work)
 {
     for (uint16_t i = 0u; i < (uint16_t)IDEMIP_UDP_PCBS; i++)
     {
@@ -151,7 +151,7 @@ static uint16_t udp_pcb_free_entry(uint8_t *restrict work)
 }
 
 // True when an open entry other than @p skip carries @p port as its RFC 768 Source Port.
-static idemip_bool udp_pcb_port_held(uint8_t *restrict work, uint16_t port, uint16_t skip)
+static idemip_bool udp_pcb_port_held(uint8_t *work, uint16_t port, uint16_t skip)
 {
     for (uint16_t i = 0u; i < (uint16_t)IDEMIP_UDP_PCBS; i++)
     {
@@ -171,7 +171,7 @@ static idemip_bool udp_pcb_port_held(uint8_t *restrict work, uint16_t port, uint
 // attacker's ability to guess or know the five-tuple". The range is a power of two wide, so the
 // modulo is an AND and the wrap is an AND and an OR: no divide runs. A walk from where the last
 // assignment left off is guessable from one observed port.
-static uint16_t udp_pcb_free_port(uint8_t *restrict work, uint16_t skip, uint32_t rand)
+static uint16_t udp_pcb_free_port(uint8_t *work, uint16_t skip, uint32_t rand)
 {
     for (uint16_t n = 0u; n <= (uint16_t)IDEMIP_UDP_PCBS; n++)
     {
@@ -203,7 +203,7 @@ static idemip_bool udp_pcb_netif_overlap(uint8_t a, uint8_t b)
 // address in the same zone, an overlapping interface, and the same Destination Port and address. Two
 // entries carrying it rank the same in a find, so nothing separates them and the second is refused.
 // A Source Port of zero is RFC 768's "not used", so an entry no bind has named collides with none.
-static idemip_bool udp_pcb_bind_taken(uint8_t *restrict work, uint16_t skip, const UdpPcbFields *e,
+static idemip_bool udp_pcb_bind_taken(uint8_t *work, uint16_t skip, const UdpPcbFields *e,
                                       const UdpPcbAddrArgs *a, uint16_t port)
 {
     uint8_t n = udp_pcb_addr_len(e->ip_version);
@@ -231,7 +231,7 @@ static idemip_bool udp_pcb_bind_taken(uint8_t *restrict work, uint16_t skip, con
 
 // True when an open entry other than @p skip already carries the identity a connect with operand
 // @p a would give entry @p e, on the same terms as udp_pcb_bind_taken.
-static idemip_bool udp_pcb_connect_taken(uint8_t *restrict work, uint16_t skip, const UdpPcbFields *e,
+static idemip_bool udp_pcb_connect_taken(uint8_t *work, uint16_t skip, const UdpPcbFields *e,
                                          const UdpPcbAddrArgs *a)
 {
     uint8_t n = udp_pcb_addr_len(e->ip_version);
@@ -316,7 +316,7 @@ static idemip_bool udp_pcb_cov_admits(const UdpPcbFields *f, uint16_t cov)
 // 4.1.3.5 wild one, so the most specific binding takes the datagram and the lowest index wins a tie.
 // An entry whose Source Port is still zero is not bound, RFC 768 reading that value as "not used",
 // and is passed over.
-static uint16_t udp_pcb_match(uint8_t *restrict work)
+static uint16_t udp_pcb_match(uint8_t *work)
 {
     const UdpPcbFindArgs *a = &UDP_PCB_IO(work)->find_args;
     uint8_t n = udp_pcb_addr_len(a->ip_version);
@@ -359,7 +359,7 @@ static uint16_t udp_pcb_match(uint8_t *restrict work)
 // The context and the table are contiguous from IDEMIP_UDP_PCB_OFF_CTX to the end of the borrow, so
 // one store covers both. The operand block is the caller's and is left as it was found, except for
 // the members a call reports through.
-void idemip_udp_pcb_clear(uint8_t *restrict work)
+void idemip_udp_pcb_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -380,7 +380,7 @@ void idemip_udp_pcb_clear(uint8_t *restrict work)
 // mimic UDP", which is the full coverage a Checksum Coverage of zero names. A version other than
 // RFC 791 sec 3.1's 4 and RFC 8200 sec 3's 6 is ERR, no retry making it one of them. A table with
 // every entry open is BUSY, since a close frees one.
-void idemip_udp_pcb_open(uint8_t *restrict work)
+void idemip_udp_pcb_open(uint8_t *work)
 {
     if (!work)
     {
@@ -421,7 +421,7 @@ void idemip_udp_pcb_open(uint8_t *restrict work)
 
 // Zeroes the entry, which is the state open reads as free. An entry that is not open is ERR: no
 // retry opens it.
-void idemip_udp_pcb_close(uint8_t *restrict work)
+void idemip_udp_pcb_close(uint8_t *work)
 {
     if (!work)
     {
@@ -448,7 +448,7 @@ void idemip_udp_pcb_close(uint8_t *restrict work)
 // alone. An endpoint another entry already carries is ERR, since no retry frees it; a port of
 // IDEMIP_UDP_PCB_PORT_ANY is assigned one no entry holds out of RFC 6335 sec 6's dynamic range, and a
 // range with none left is BUSY, since a close frees one.
-void idemip_udp_pcb_bind(uint8_t *restrict work)
+void idemip_udp_pcb_bind(uint8_t *work)
 {
     if (!work)
     {
@@ -495,7 +495,7 @@ void idemip_udp_pcb_bind(uint8_t *restrict work)
 // (RFC 4291 sec 2.5.2: it "must not be used as the destination address of IPv6 packets"), and an
 // identity another entry already carries leaves the two indistinguishable to a find, so all three are
 // ERR. A nonzero interface pins the binding to it.
-void idemip_udp_pcb_connect(uint8_t *restrict work)
+void idemip_udp_pcb_connect(uint8_t *work)
 {
     if (!work)
     {
@@ -532,7 +532,7 @@ void idemip_udp_pcb_connect(uint8_t *restrict work)
 
 // Zeroes the RFC 768 Destination Port and the address a connect set, leaving the local endpoint and
 // its interface as the bind left them.
-void idemip_udp_pcb_disconnect(uint8_t *restrict work)
+void idemip_udp_pcb_disconnect(uint8_t *work)
 {
     if (!work)
     {
@@ -562,7 +562,7 @@ void idemip_udp_pcb_disconnect(uint8_t *restrict work)
 // Checksum Coverage that is neither zero nor at least eight is ERR, RFC 3828 sec 3.1 stating "the
 // value of the Checksum Coverage field MUST be either 0 or at least 8"; so is a nonzero coverage on
 // a binding that is not UDP-Lite, RFC 768 carrying a Length in those octets.
-void idemip_udp_pcb_set_opts(uint8_t *restrict work)
+void idemip_udp_pcb_set_opts(uint8_t *work)
 {
     if (!work)
     {
@@ -605,7 +605,7 @@ void idemip_udp_pcb_set_opts(uint8_t *restrict work)
 
 // Reports one binding. The two addresses point into the entry, which is a region of this borrow, so
 // they stay valid until the next call that writes it.
-void idemip_udp_pcb_load(uint8_t *restrict work)
+void idemip_udp_pcb_load(uint8_t *work)
 {
     if (!work)
     {
@@ -618,7 +618,7 @@ void idemip_udp_pcb_load(uint8_t *restrict work)
     {
         return;
     }
-    UdpPcbEntry *e = UDP_PCB_AT(work, io->pcb_args.index);
+    const UdpPcbEntry *e = UDP_PCB_AT(work, io->pcb_args.index);
     if (!e->f.in_use)
     {
         return;
@@ -649,7 +649,7 @@ void idemip_udp_pcb_load(uint8_t *restrict work)
 // receiver", and so is a version other than 4 or 6. No binding is ERR too, not BUSY: nothing frees
 // later, and it is the RFC 1122 sec 4.1.3.1 case where "UDP SHOULD send an ICMP Port Unreachable
 // message".
-void idemip_udp_pcb_find(uint8_t *restrict work)
+void idemip_udp_pcb_find(uint8_t *work)
 {
     if (!work)
     {

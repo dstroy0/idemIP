@@ -321,7 +321,7 @@ static idemip_bool tcp_pcb_transition_ok(IdemIpTcpState from, IdemIpTcpState to)
 // so a link cycle cannot spin it. A send-queue segment names the caller's octets through a pointer
 // and pins nothing, so dropping it releases no descriptor. The out-of-order queue is left alone:
 // each entry there names a pinned receive descriptor, and only idemip_tcp_pcb_oos_free reports one back.
-static void tcp_pcb_send_queues_free(uint8_t *restrict work, uint16_t pcb)
+static void tcp_pcb_send_queues_free(uint8_t *work, uint16_t pcb)
 {
     TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, pcb)->f;
     for (uint8_t which = 0u; which < 2u; which++)
@@ -341,7 +341,7 @@ static void tcp_pcb_send_queues_free(uint8_t *restrict work, uint16_t pcb)
 // RFC 9293 sec 3.4 case (b), "all sequence numbers occupied by a segment have been acknowledged
 // (e.g., to remove the segment from a retransmission queue)". The segment is on exactly one of the
 // TCB's two send queues, so both heads are tried.
-static idemip_bool tcp_pcb_seg_unlink(uint8_t *restrict work, uint16_t pcb, uint16_t seg)
+static idemip_bool tcp_pcb_seg_unlink(uint8_t *work, uint16_t pcb, uint16_t seg)
 {
     TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, pcb)->f;
     for (uint8_t which = 0u; which < 2u; which++)
@@ -369,7 +369,7 @@ static idemip_bool tcp_pcb_seg_unlink(uint8_t *restrict work, uint16_t pcb, uint
 
 // RFC 9293 sec 3.10.7.4, releasing a held segment once RCV.NXT has passed it. The receive descriptor
 // the entry names is unpinned by the caller that pinned it, through netif/dma.h.
-static idemip_bool tcp_pcb_oos_unlink(uint8_t *restrict work, uint16_t pcb, uint16_t oos)
+static idemip_bool tcp_pcb_oos_unlink(uint8_t *work, uint16_t pcb, uint16_t oos)
 {
     TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, pcb)->f;
     if (t->ooseq == oos)
@@ -402,7 +402,7 @@ static idemip_bool tcp_pcb_oos_unlink(uint8_t *restrict work, uint16_t pcb, uint
 // sec 3.9.1.1 (MUST-42) requires that a LISTEN on a port be possible "while a connection block with
 // the same local port is in SYN-SENT or SYN-RECEIVED state", so a listener's port does not make one
 // taken here and a TCB's does not make one taken for a listen.
-static idemip_bool tcp_pcb_port_taken(uint8_t *restrict work, uint16_t port, uint16_t except)
+static idemip_bool tcp_pcb_port_taken(uint8_t *work, uint16_t port, uint16_t except)
 {
     for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_PCBS; i++)
     {
@@ -419,7 +419,7 @@ static idemip_bool tcp_pcb_port_taken(uint8_t *restrict work, uint16_t port, uin
 // be allowed for use as ephemeral ports. If this rule is not complied with, an attacker could
 // potentially 'steal' an incoming connection to a local server application". Only the ephemeral draw
 // walks past a listening port; idemip_tcp_pcb_bind's named-port path is what MUST-42 protects.
-static idemip_bool tcp_pcb_port_listening(uint8_t *restrict work, uint16_t port)
+static idemip_bool tcp_pcb_port_listening(uint8_t *work, uint16_t port)
 {
     for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_LISTEN_PCBS; i++)
     {
@@ -444,7 +444,7 @@ static idemip_bool tcp_pcb_port_listening(uint8_t *restrict work, uint16_t port)
 // runs. sec 3.3 makes the obfuscation a SHOULD, "since this helps to mitigate a number of attacks
 // that depend on the attacker's ability to guess or know the five-tuple", and a walk from where the
 // last draw left off is guessable from one observed port.
-static uint16_t tcp_pcb_port_draw(uint8_t *restrict work, uint16_t except, uint32_t rand)
+static uint16_t tcp_pcb_port_draw(uint8_t *work, uint16_t except, uint32_t rand)
 {
     uint16_t at = (uint16_t)(IDEMIP_TCP_PCB_PORT_EPH_FIRST | (uint16_t)(rand & IDEMIP_TCP_PCB_PORT_EPH_MASK));
     for (uint32_t n = 0u; n < (uint32_t)IDEMIP_TCP_PCB_PORT_EPH_COUNT; n++)
@@ -525,7 +525,7 @@ static idemip_bool tcp_pcb_listener_matches(const TcpPcbListenFields *l, const T
 // The context and the four tables are contiguous from IDEMIP_TCP_PCB_OFF_CTX to the end of the
 // borrow, so one store covers them all. The operand block is the caller's and is left as it was
 // found, except for the members a call reports through.
-void idemip_tcp_pcb_clear(uint8_t *restrict work)
+void idemip_tcp_pcb_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -550,7 +550,7 @@ void idemip_tcp_pcb_clear(uint8_t *restrict work)
 // TCB", and enters the machine when a store moves it to LISTEN, SYN-SENT or SYN-RECEIVED. A table
 // with every TCB open is BUSY, since sec 3.10.4's "Delete TCB" frees one; a version that names
 // neither RFC 791 sec 3.1 nor RFC 8200 sec 3 is ERR, since no later call makes 5 an address family.
-void idemip_tcp_pcb_open(uint8_t *restrict work)
+void idemip_tcp_pcb_open(uint8_t *work)
 {
     if (!work)
     {
@@ -598,7 +598,7 @@ void idemip_tcp_pcb_open(uint8_t *restrict work)
 // TCB can hold are here. sec 3.9.1.9 MUST-48: "The application layer MUST be able to specify the
 // Differentiated Services field for segments that are sent on a connection." sec 3.8.3 MUST-21: "An
 // application MUST be able to set the value for R2 for a particular connection."
-void idemip_tcp_pcb_opt(uint8_t *restrict work)
+void idemip_tcp_pcb_opt(uint8_t *work)
 {
     if (!work)
     {
@@ -629,7 +629,7 @@ void idemip_tcp_pcb_opt(uint8_t *restrict work)
 // descriptor, and an oos_free is what reports one back, so draining the hold makes this call succeed.
 // A TCB that is not open is sec 3.10.4's CLOSED case, "error: connection does not exist", which no
 // retry changes.
-void idemip_tcp_pcb_close(uint8_t *restrict work)
+void idemip_tcp_pcb_close(uint8_t *work)
 {
     if (!work)
     {
@@ -641,7 +641,7 @@ void idemip_tcp_pcb_close(uint8_t *restrict work)
     {
         return;
     }
-    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->pcb_args.index)->f;
+    const TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->pcb_args.index)->f;
     if (!t->in_use)
     {
         return;
@@ -663,7 +663,7 @@ void idemip_tcp_pcb_close(uint8_t *restrict work)
 // A port already held by another open TCB is BUSY, since sec 3.10.4's "Delete TCB" frees it, and
 // IDEMIP_TCP_PCB_PORT_ANY with none of RFC 6335 sec 6's Dynamic Ports free is BUSY for the same
 // reason.
-void idemip_tcp_pcb_bind(uint8_t *restrict work)
+void idemip_tcp_pcb_bind(uint8_t *work)
 {
     if (!work)
     {
@@ -742,7 +742,7 @@ static idemip_bool tcp_pcb_remote_invalid(uint8_t ip_version, const uint8_t *ip)
 // active and the remote socket is unspecified, return 'error: remote socket unspecified'", so a
 // remote port of zero is ERR. The pair completed here is what sec 3.4.1 calls a connection, "defined
 // by a pair of sockets", so a pair another open TCB already holds is BUSY: closing that one frees it.
-void idemip_tcp_pcb_connect(uint8_t *restrict work)
+void idemip_tcp_pcb_connect(uint8_t *work)
 {
     if (!work)
     {
@@ -791,7 +791,7 @@ void idemip_tcp_pcb_connect(uint8_t *restrict work)
 
 // RFC 9293 sec 3.3.1, reporting one TCB's four-tuple, Table 2 and Table 3 variables and sec 3.3.2
 // state. The two addresses point into the entry, which is the caller's own borrow.
-void idemip_tcp_pcb_load(uint8_t *restrict work)
+void idemip_tcp_pcb_load(uint8_t *work)
 {
     if (!work)
     {
@@ -807,7 +807,7 @@ void idemip_tcp_pcb_load(uint8_t *restrict work)
     {
         return;
     }
-    TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->pcb_args.index)->f;
+    const TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->pcb_args.index)->f;
     if (!t->in_use)
     {
         return;
@@ -837,7 +837,7 @@ void idemip_tcp_pcb_load(uint8_t *restrict work)
 // tcp_pcb_transitions: a state sec 3.3.2 does not name, and a transition no section of RFC 9293
 // permits out of the state the TCB is in, are both ERR, since the same call on the same TCB can
 // never succeed later.
-void idemip_tcp_pcb_store(uint8_t *restrict work)
+void idemip_tcp_pcb_store(uint8_t *work)
 {
     if (!work)
     {
@@ -867,7 +867,7 @@ void idemip_tcp_pcb_store(uint8_t *restrict work)
 // not a running total some close path could fail to decrement. IDEMIP_TCP_PCBS TCBs is the whole
 // scan, and the count cannot exceed it. @p except is left out so accepting one TCB twice counts the
 // same as once.
-static uint8_t tcp_pcb_syn_received_on(uint8_t *restrict work, uint16_t listener, uint16_t except)
+static uint8_t tcp_pcb_syn_received_on(uint8_t *work, uint16_t listener, uint16_t except)
 {
     uint8_t n = 0u;
     for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_PCBS; i++)
@@ -894,7 +894,7 @@ static_assert(IDEMIP_TCP_PCBS <= 255u, "tcp_pcb_syn_received_on counts TCBs in a
 // gets no connection, and the caller returns the TCB rather than making one the listener never
 // agreed to hold. Without it the field was written at listen and read nowhere, and one listener
 // could take every one of the IDEMIP_TCP_PCBS connections the whole build has.
-void idemip_tcp_pcb_accept(uint8_t *restrict work)
+void idemip_tcp_pcb_accept(uint8_t *work)
 {
     if (!work)
     {
@@ -934,7 +934,7 @@ void idemip_tcp_pcb_accept(uint8_t *restrict work)
 // in LISTEN state, or it returns an error", so the listener is taken in LISTEN. A port of zero names
 // no socket for a segment to arrive on and is ERR; a port another listener holds is BUSY, since an
 // unlisten frees it, and a table with every listener taken is BUSY for the same reason.
-void idemip_tcp_pcb_listen(uint8_t *restrict work)
+void idemip_tcp_pcb_listen(uint8_t *work)
 {
     if (!work)
     {
@@ -990,7 +990,7 @@ void idemip_tcp_pcb_listen(uint8_t *restrict work)
 
 // RFC 9293 sec 3.10.4's CLOSE from LISTEN, "Delete TCB, enter CLOSED state". A listener that is not
 // taken is "error: connection does not exist", which no retry changes.
-void idemip_tcp_pcb_unlisten(uint8_t *restrict work)
+void idemip_tcp_pcb_unlisten(uint8_t *work)
 {
     if (!work)
     {
@@ -1002,7 +1002,7 @@ void idemip_tcp_pcb_unlisten(uint8_t *restrict work)
     {
         return;
     }
-    TcpPcbListenFields *l = &TCP_PCB_LISTEN_AT(work, io->pcb_args.index)->f;
+    const TcpPcbListenFields *l = &TCP_PCB_LISTEN_AT(work, io->pcb_args.index)->f;
     if (!l->in_use)
     {
         return;
@@ -1013,7 +1013,7 @@ void idemip_tcp_pcb_unlisten(uint8_t *restrict work)
 
 // RFC 9293 sec 3.10.7, matching a segment to the TCB its four-tuple names. No TCB is sec 3.10.7.1's
 // CLOSED case, "i.e., TCB does not exist", and is ERR: the same segment matches no better later.
-void idemip_tcp_pcb_find(uint8_t *restrict work)
+void idemip_tcp_pcb_find(uint8_t *work)
 {
     if (!work)
     {
@@ -1046,7 +1046,7 @@ void idemip_tcp_pcb_find(uint8_t *restrict work)
 // RFC 9293 sec 3.10.7.2, the LISTEN state's answer to an arriving segment. A listener bound to the
 // segment's destination is matched before one left unspecified, which sec 3.9.1.1 says "will await an
 // incoming connection request to any local IP address".
-void idemip_tcp_pcb_find_listener(uint8_t *restrict work)
+void idemip_tcp_pcb_find_listener(uint8_t *work)
 {
     if (!work)
     {
@@ -1083,7 +1083,7 @@ void idemip_tcp_pcb_find_listener(uint8_t *restrict work)
 // names the caller's octets rather than holding them, and goes on the tail of the TCB's unsent
 // queue, so sec 3.10.7.4's "further processing is done in SEG.SEQ order" holds on a queue built in
 // send order. A table with every segment queued is BUSY, since a seg_free returns one.
-void idemip_tcp_pcb_seg_alloc(uint8_t *restrict work)
+void idemip_tcp_pcb_seg_alloc(uint8_t *work)
 {
     if (!work)
     {
@@ -1149,7 +1149,7 @@ void idemip_tcp_pcb_seg_alloc(uint8_t *restrict work)
 }
 
 // RFC 9293 sec 3.3.1, reporting one queued segment's SEG.SEQ and SEG.LEN.
-void idemip_tcp_pcb_seg_load(uint8_t *restrict work)
+void idemip_tcp_pcb_seg_load(uint8_t *work)
 {
     if (!work)
     {
@@ -1181,7 +1181,7 @@ void idemip_tcp_pcb_seg_load(uint8_t *restrict work)
 // from once it is "entirely acknowledged". The segment leaves the head of the unsent queue and goes
 // on the tail of that queue, so both stay in the sec 3.10.7.4 SEG.SEQ order they were built in. A
 // segment that is not that head is a broken link rather than a busy resource, so it is ERR.
-void idemip_tcp_pcb_seg_sent(uint8_t *restrict work)
+void idemip_tcp_pcb_seg_sent(uint8_t *work)
 {
     if (!work)
     {
@@ -1228,7 +1228,7 @@ void idemip_tcp_pcb_seg_sent(uint8_t *restrict work)
 // RFC 9293 sec 3.4 case (b), "all sequence numbers occupied by a segment have been acknowledged
 // (e.g., to remove the segment from a retransmission queue)". A segment not on the queue its own pcb
 // field names is a broken link rather than a busy resource, so it is ERR.
-void idemip_tcp_pcb_seg_free(uint8_t *restrict work)
+void idemip_tcp_pcb_seg_free(uint8_t *work)
 {
     if (!work)
     {
@@ -1240,7 +1240,7 @@ void idemip_tcp_pcb_seg_free(uint8_t *restrict work)
     {
         return;
     }
-    TcpPcbSegFields *s = &TCP_PCB_SEG_AT(work, io->seg_args.index)->f;
+    const TcpPcbSegFields *s = &TCP_PCB_SEG_AT(work, io->seg_args.index)->f;
     if (!s->in_use || s->pcb >= (uint16_t)IDEMIP_TCP_PCBS)
     {
         return;
@@ -1258,7 +1258,7 @@ void idemip_tcp_pcb_seg_free(uint8_t *restrict work)
 // that order, measured from RCV.NXT, which sec 3.3.1 Figure 4 calls "the left or lower edge of the
 // receive window", so the whole 2^32 space orders without a wrap ambiguity. A TCB already holding
 // IDEMIP_TCP_OOSEQ_SEGS is BUSY, since delivery or an oos_free frees one; so is a full table.
-void idemip_tcp_pcb_oos_alloc(uint8_t *restrict work)
+void idemip_tcp_pcb_oos_alloc(uint8_t *work)
 {
     if (!work)
     {
@@ -1332,7 +1332,7 @@ void idemip_tcp_pcb_oos_alloc(uint8_t *restrict work)
 }
 
 // RFC 9293 sec 3.10.7.4, reporting one held segment's SEG.SEQ and SEG.LEN.
-void idemip_tcp_pcb_oos_load(uint8_t *restrict work)
+void idemip_tcp_pcb_oos_load(uint8_t *work)
 {
     if (!work)
     {
@@ -1362,7 +1362,7 @@ void idemip_tcp_pcb_oos_load(uint8_t *restrict work)
 // RFC 9293 sec 3.10.7.4, releasing a held segment once RCV.NXT has passed it. The entry names the
 // receive descriptor rather than the octets, so the caller that pinned it through netif/dma.h drops
 // the pin once this reports OK.
-void idemip_tcp_pcb_oos_free(uint8_t *restrict work)
+void idemip_tcp_pcb_oos_free(uint8_t *work)
 {
     if (!work)
     {
@@ -1374,7 +1374,7 @@ void idemip_tcp_pcb_oos_free(uint8_t *restrict work)
     {
         return;
     }
-    TcpPcbOosFields *o = &TCP_PCB_OOS_AT(work, io->oos_args.index)->f;
+    const TcpPcbOosFields *o = &TCP_PCB_OOS_AT(work, io->oos_args.index)->f;
     if (!o->in_use || o->pcb >= (uint16_t)IDEMIP_TCP_PCBS)
     {
         return;

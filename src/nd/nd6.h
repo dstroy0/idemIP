@@ -320,8 +320,8 @@ typedef struct
  *   Nd6.neighbor_set(work);
  *   if (IDEMIP_ND6_IO(work)->status == IDEMIP_OK) { ... }
  *
- * @c work is IDEMIP_ND6_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. sec 5.1 keeps this state
+ * @c work is IDEMIP_ND6_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. sec 5.1 keeps this state
  * "for each interface", so the borrow IS the interface and the caller takes IDEMIP_NETIF_COUNT of
  * them; two interfaces share not one byte.
  *
@@ -365,43 +365,43 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const neighbor_find)(uint8_t *restrict work);
-    void (*const neighbor_set)(uint8_t *restrict work);
-    void (*const neighbor_confirm)(uint8_t *restrict work);
-    void (*const neighbor_used)(uint8_t *restrict work);
-    void (*const neighbor_remove)(uint8_t *restrict work);
-    void (*const dest_find)(uint8_t *restrict work);
-    void (*const dest_set)(uint8_t *restrict work);
-    void (*const prefix_set)(uint8_t *restrict work);
-    void (*const prefix_on_link)(uint8_t *restrict work);
-    void (*const router_set)(uint8_t *restrict work);
-    void (*const router_select)(uint8_t *restrict work);
-    void (*const pending_push)(uint8_t *restrict work);
-    void (*const pending_pop)(uint8_t *restrict work);
-    void (*const params_set)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const neighbor_find)(uint8_t *work);
+    void (*const neighbor_set)(uint8_t *work);
+    void (*const neighbor_confirm)(uint8_t *work);
+    void (*const neighbor_used)(uint8_t *work);
+    void (*const neighbor_remove)(uint8_t *work);
+    void (*const dest_find)(uint8_t *work);
+    void (*const dest_set)(uint8_t *work);
+    void (*const prefix_set)(uint8_t *work);
+    void (*const prefix_on_link)(uint8_t *work);
+    void (*const router_set)(uint8_t *work);
+    void (*const router_select)(uint8_t *work);
+    void (*const pending_push)(uint8_t *work);
+    void (*const pending_pop)(uint8_t *work);
+    void (*const params_set)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
 } Nd6Ns;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_nd6_clear(uint8_t *restrict work);
-void idemip_nd6_neighbor_find(uint8_t *restrict work);
-void idemip_nd6_neighbor_set(uint8_t *restrict work);
-void idemip_nd6_neighbor_confirm(uint8_t *restrict work);
-void idemip_nd6_neighbor_used(uint8_t *restrict work);
-void idemip_nd6_neighbor_remove(uint8_t *restrict work);
-void idemip_nd6_dest_find(uint8_t *restrict work);
-void idemip_nd6_dest_set(uint8_t *restrict work);
-void idemip_nd6_prefix_set(uint8_t *restrict work);
-void idemip_nd6_prefix_on_link(uint8_t *restrict work);
-void idemip_nd6_router_set(uint8_t *restrict work);
-void idemip_nd6_router_select(uint8_t *restrict work);
-void idemip_nd6_pending_push(uint8_t *restrict work);
-void idemip_nd6_pending_pop(uint8_t *restrict work);
-void idemip_nd6_params_set(uint8_t *restrict work);
-void idemip_nd6_tick(uint8_t *restrict work);
+void idemip_nd6_clear(uint8_t *work);
+void idemip_nd6_neighbor_find(uint8_t *work);
+void idemip_nd6_neighbor_set(uint8_t *work);
+void idemip_nd6_neighbor_confirm(uint8_t *work);
+void idemip_nd6_neighbor_used(uint8_t *work);
+void idemip_nd6_neighbor_remove(uint8_t *work);
+void idemip_nd6_dest_find(uint8_t *work);
+void idemip_nd6_dest_set(uint8_t *work);
+void idemip_nd6_prefix_set(uint8_t *work);
+void idemip_nd6_prefix_on_link(uint8_t *work);
+void idemip_nd6_router_set(uint8_t *work);
+void idemip_nd6_router_select(uint8_t *work);
+void idemip_nd6_pending_push(uint8_t *work);
+void idemip_nd6_pending_pop(uint8_t *work);
+void idemip_nd6_params_set(uint8_t *work);
+void idemip_nd6_tick(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

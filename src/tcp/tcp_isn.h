@@ -155,8 +155,8 @@ typedef struct
  *   TcpIsn.generate(work);
  *   if (IDEMIP_TCP_ISN_IO(work)->status == IDEMIP_OK) { iss = IDEMIP_TCP_ISN_IO(work)->isn; }
  *
- * @c work is IDEMIP_TCP_ISN_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_TCP_ISN_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the instance, so two
  * generators are two borrows and share not one byte, which is what keeps one connection's
  * connection-id out of another's.
@@ -175,17 +175,17 @@ typedef struct
  */
 typedef struct
 {
-    void (*const reset)(uint8_t *restrict work);
-    void (*const seed)(uint8_t *restrict work);
-    void (*const generate)(uint8_t *restrict work);
+    void (*const reset)(uint8_t *work);
+    void (*const seed)(uint8_t *work);
+    void (*const generate)(uint8_t *work);
 } TcpIsnNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_tcp_isn_reset(uint8_t *restrict work);
-void idemip_tcp_isn_seed(uint8_t *restrict work);
-void idemip_tcp_isn_generate(uint8_t *restrict work);
+void idemip_tcp_isn_reset(uint8_t *work);
+void idemip_tcp_isn_seed(uint8_t *work);
+void idemip_tcp_isn_generate(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

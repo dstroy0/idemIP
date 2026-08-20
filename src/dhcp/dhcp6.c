@@ -391,9 +391,9 @@ static size_t dhcp6_put(uint8_t *out, size_t cap, size_t at, uint16_t code, cons
 // sec 21.4, Figure 15: IAID, T1, T2, then IA_NA-options. sec 21.4 has a client send T1 and T2 as 0,
 // and sec 21.6 has it send both lifetimes as 0, so the held address rides in an IAADDR of zeroed
 // lifetimes when @p with_addr asks for it.
-static size_t dhcp6_put_ia_na(uint8_t *restrict work, uint8_t *out, size_t cap, size_t at, idemip_bool with_addr)
+static size_t dhcp6_put_ia_na(uint8_t *work, uint8_t *out, size_t cap, size_t at, idemip_bool with_addr)
 {
-    Dhcp6Ctx *ctx = DHCP6_CTX(work);
+    const Dhcp6Ctx *ctx = DHCP6_CTX(work);
     uint16_t body = IDEMIP_DHCP6_IA_NA_FIXED_LEN;
     if (with_addr)
     {
@@ -431,9 +431,9 @@ static idemip_bool dhcp6_has_addr(const Dhcp6Ctx *ctx)
 
 // sec 8, Figure 2, then the sec 21 options each sec 18.2 exchange names. Returns the octets written,
 // or 0 when the caller's buffer cannot carry them.
-static size_t dhcp6_write(uint8_t *restrict work, uint8_t type, uint8_t *out, size_t cap)
+static size_t dhcp6_write(uint8_t *work, uint8_t type, uint8_t *out, size_t cap)
 {
-    Dhcp6Ctx *ctx = DHCP6_CTX(work);
+    const Dhcp6Ctx *ctx = DHCP6_CTX(work);
 
     // sec 8: msg-type is one octet and transaction-id is the three that follow it.
     out[IDEMIP_DHCP6_MSG_OFF_TYPE] = type;
@@ -522,7 +522,7 @@ static size_t dhcp6_write(uint8_t *restrict work, uint8_t type, uint8_t *out, si
 // --- the state machine ---------------------------------------------------
 
 // The context's view of the exchange and the lease, out to the operand block the caller reads.
-static void dhcp6_publish(uint8_t *restrict work)
+static void dhcp6_publish(uint8_t *work)
 {
     Dhcp6Io *io = DHCP6_IO(work);
     const Dhcp6Ctx *ctx = DHCP6_CTX(work);
@@ -538,7 +538,7 @@ static void dhcp6_publish(uint8_t *restrict work)
 }
 
 // The lease and the server it came from, dropped.
-static void dhcp6_forget_lease(uint8_t *restrict work)
+static void dhcp6_forget_lease(uint8_t *work)
 {
     Dhcp6Ctx *ctx = DHCP6_CTX(work);
     memset(ctx->addr, 0, IDEMIP_IP6_ADDR_LEN);
@@ -641,7 +641,7 @@ static void dhcp6_take_max_rt(Dhcp6Ctx *ctx, const uint8_t *opts, size_t olen)
 
 // sec 21.3, the server's DUID out of the message and into its own region. sec 11.1 bounds it at
 // "at least 1 octet and at most 128 octets" behind a 2-octet type code.
-static idemip_bool dhcp6_take_server_duid(uint8_t *restrict work, const uint8_t *opts, size_t olen)
+static idemip_bool dhcp6_take_server_duid(uint8_t *work, const uint8_t *opts, size_t olen)
 {
     Dhcp6Ctx *ctx = DHCP6_CTX(work);
     uint16_t dlen = 0u;
@@ -683,7 +683,7 @@ static uint16_t dhcp6_status_of(const uint8_t *opts, size_t olen)
 
 // RFC 3646 sec 3: the DNS Recursive Name Server option carries one 16-octet address per server and its
 // "option-len ... must be a multiple of 16". The addresses stay in the caller's message octets.
-static void dhcp6_take_dns(uint8_t *restrict work, const uint8_t *opts, size_t olen)
+static void dhcp6_take_dns(uint8_t *work, const uint8_t *opts, size_t olen)
 {
     Dhcp6Io *io = DHCP6_IO(work);
     uint16_t dlen = 0u;
@@ -720,7 +720,7 @@ static uint32_t dhcp6_take_info_refresh(const uint8_t *opts, size_t olen)
 // IA_NA whose T1 is past T2 with both nonzero; sec 18.2.10.1 discards a lease of valid lifetime 0; and
 // sec 21.6 discards an address "for which the preferred lifetime is greater than the valid lifetime".
 // sec 14.2 has the client pick T1 and T2 itself when the server sent 0.
-static idemip_bool dhcp6_take_lease(uint8_t *restrict work, const uint8_t *opts, size_t olen)
+static idemip_bool dhcp6_take_lease(uint8_t *work, const uint8_t *opts, size_t olen)
 {
     Dhcp6Ctx *ctx = DHCP6_CTX(work);
     uint16_t dlen = 0u;
@@ -815,7 +815,7 @@ static idemip_bool dhcp6_take_lease(uint8_t *restrict work, const uint8_t *opts,
 // sec 18.2.9: an Advertise is recorded when it carries an address, "Those Advertise messages with the
 // highest server preference value SHOULD be preferred over all other Advertise messages", and sec 21.8
 // gives an Advertise with no Preference option a preference of 0.
-static idemip_bool dhcp6_take_advertise(uint8_t *restrict work, const uint8_t *opts, size_t olen)
+static idemip_bool dhcp6_take_advertise(uint8_t *work, const uint8_t *opts, size_t olen)
 {
     Dhcp6Ctx *ctx = DHCP6_CTX(work);
     uint16_t plen = 0u;
@@ -848,7 +848,7 @@ static idemip_bool dhcp6_take_advertise(uint8_t *restrict work, const uint8_t *o
 
 // Every byte of the borrow, the operand block and the DUID region included, which leaves the state at
 // zero: IDLE, running no exchange.
-void idemip_dhcp6_clear(uint8_t *restrict work)
+void idemip_dhcp6_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -861,7 +861,7 @@ void idemip_dhcp6_clear(uint8_t *restrict work)
 // RFC 8415 sec 11.1 puts a DUID at "at least 1 octet and at most 128 octets" behind a 2-octet type
 // code, so a client DUID outside that, or a missing one, is refused here rather than written past at
 // the first build.
-void idemip_dhcp6_bind(uint8_t *restrict work)
+void idemip_dhcp6_bind(uint8_t *work)
 {
     if (!work)
     {
@@ -890,7 +890,7 @@ void idemip_dhcp6_bind(uint8_t *restrict work)
 // transaction-id sec 16.1 asks for and the word the first-message delay is drawn from both arrive as
 // operands, so this entry stays a function of the borrow. ERR from any state but IDLE: an exchange is
 // already running and repeating the call cannot change that.
-void idemip_dhcp6_start(uint8_t *restrict work)
+void idemip_dhcp6_start(uint8_t *work)
 {
     if (!work)
     {
@@ -924,7 +924,7 @@ void idemip_dhcp6_start(uint8_t *restrict work)
 
 // sec 18.2 names no stop, so this is the unit's off switch: the running exchange ends and no lease is
 // held. Idempotent, so an already-idle client reports OK.
-void idemip_dhcp6_stop(uint8_t *restrict work)
+void idemip_dhcp6_stop(uint8_t *work)
 {
     if (!work)
     {
@@ -956,7 +956,7 @@ void idemip_dhcp6_stop(uint8_t *restrict work)
 }
 
 // sec 18.2.10.1: a Reply that assigns leases takes the client to BOUND with T1 and T2 running.
-static void dhcp6_enter_bound(uint8_t *restrict work)
+static void dhcp6_enter_bound(uint8_t *work)
 {
     Dhcp6Ctx *ctx = DHCP6_CTX(work);
     ctx->state = IDEMIP_DHCP6_BOUND;
@@ -969,7 +969,7 @@ static void dhcp6_enter_bound(uint8_t *restrict work)
 // One received message, validated as sec 16 requires and acted on per sec 18.2.9 and sec 18.2.10. A
 // message the RFC has the client discard is ERR: the same octets can never be accepted, so there is
 // nothing for a caller to come back for.
-void idemip_dhcp6_input(uint8_t *restrict work)
+void idemip_dhcp6_input(uint8_t *work)
 {
     if (!work)
     {
@@ -1192,7 +1192,7 @@ void idemip_dhcp6_input(uint8_t *restrict work)
 // The message the state owes, into the caller's buffer. BUSY when nothing is owed, which is every call
 // until a tick arms one and every call after the message has been taken. A buffer too short for the
 // message is ERR: retrying the same buffer cannot make it fit.
-void idemip_dhcp6_build(uint8_t *restrict work)
+void idemip_dhcp6_build(uint8_t *work)
 {
     if (!work)
     {
@@ -1281,7 +1281,7 @@ static idemip_bool dhcp6_mrd_spent(const Dhcp6Ctx *ctx)
 // What each exchange does when sec 15's MRC or MRD runs out. sec 18.2.3 keeps the leases, sec 18.2.4
 // goes on to the Rebind of sec 18.2.5, sec 18.2.5 goes back to the Solicit of sec 18 with the leases
 // gone, and sec 18.2.2 takes one of the actions it lists, which here is that same discovery restart.
-static void dhcp6_exchange_failed(uint8_t *restrict work)
+static void dhcp6_exchange_failed(uint8_t *work)
 {
     Dhcp6Ctx *ctx = DHCP6_CTX(work);
     switch (ctx->state)
@@ -1309,7 +1309,7 @@ static void dhcp6_exchange_failed(uint8_t *restrict work)
 
 // The sec 15 retransmission timer and the sec 21.4 T1 and T2 deadlines. OK when the tick moved the
 // client on, BUSY when nothing was due yet, which is the ordinary answer on most ticks.
-void idemip_dhcp6_tick(uint8_t *restrict work)
+void idemip_dhcp6_tick(uint8_t *work)
 {
     if (!work)
     {
@@ -1430,7 +1430,7 @@ void idemip_dhcp6_tick(uint8_t *restrict work)
 // sec 18.2.3, the Confirm that asks whether the addresses still suit this link. It carries the IAs
 // "assigned to the interface", so ERR without a lease: there is nothing to confirm and repeating the
 // call cannot produce one.
-void idemip_dhcp6_confirm(uint8_t *restrict work)
+void idemip_dhcp6_confirm(uint8_t *work)
 {
     if (!work)
     {
@@ -1455,7 +1455,7 @@ void idemip_dhcp6_confirm(uint8_t *restrict work)
 
 // sec 18.2.7, the Release to the server that assigned the leases. The Server Identifier of sec 21.3 is
 // a MUST here, so a client that never recorded one is refused.
-void idemip_dhcp6_release(uint8_t *restrict work)
+void idemip_dhcp6_release(uint8_t *work)
 {
     if (!work)
     {
@@ -1480,7 +1480,7 @@ void idemip_dhcp6_release(uint8_t *restrict work)
 
 // sec 18.2.8, the Decline for an address already in use on the link. It names the server that
 // allocated the address in a sec 21.3 Server Identifier, so a client without one is refused.
-void idemip_dhcp6_decline(uint8_t *restrict work)
+void idemip_dhcp6_decline(uint8_t *work)
 {
     if (!work)
     {

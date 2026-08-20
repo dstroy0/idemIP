@@ -80,7 +80,7 @@ static_assert(IDEMIP_ACD_ANNOUNCE_NUM >= 1u,
 #define ACD_CONFLICTS_MAX 0xFFu
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool acd_ready(uint8_t *restrict work)
+static idemip_bool acd_ready(uint8_t *work)
 {
     return (idemip_bool)(ACD_CTX(work)->ready == ACD_READY);
 }
@@ -92,7 +92,7 @@ static idemip_bool acd_ready(uint8_t *restrict work)
 // wrap at 2^32.
 static idemip_bool acd_due(uint32_t now, uint32_t deadline)
 {
-    return (idemip_bool)((uint32_t)(now - deadline) < 0x80000000u);
+    return (idemip_bool)((now - deadline) < 0x80000000u);
 }
 
 // A draw over [0, span]. sec 2.1.1 selects the first delay "uniformly in the range zero to PROBE_WAIT
@@ -107,7 +107,7 @@ static uint32_t acd_draw(uint32_t rand, uint32_t span)
 // --- the machine -----------------------------------------------------------
 
 // The context, into the result members of the operand block.
-static void acd_publish(uint8_t *restrict work)
+static void acd_publish(uint8_t *work)
 {
     AcdIo *io = ACD_IO(work);
     const AcdCtx *ctx = ACD_CTX(work);
@@ -149,7 +149,7 @@ static void acd_count_conflict(AcdCtx *ctx, uint32_t now_ms)
 // sec 2.4: "immediately cease using this address and signal an error to the configuring agent". The
 // address leaves the machine and abandon carries the signal. sec 2.1.1 holds the next attempt for
 // RATE_LIMIT_INTERVAL once MAX_CONFLICTS conflicts stand on the interface.
-static void acd_abandon(uint8_t *restrict work, uint32_t now_ms)
+static void acd_abandon(uint8_t *work, uint32_t now_ms)
 {
     AcdCtx *ctx = ACD_CTX(work);
     acd_count_conflict(ctx, now_ms);
@@ -203,7 +203,7 @@ static idemip_bool acd_ongoing_conflict(const AcdCtx *ctx, const uint8_t *packet
 // conflicting packet was recorded "within the last DEFEND_INTERVAL seconds". Inside that interval (b)
 // "MUST immediately cease using this address", while (c) "MUST NOT send another defensive ARP
 // Announcement" and keeps the address.
-static void acd_defend(uint8_t *restrict work, uint32_t now_ms)
+static void acd_defend(uint8_t *work, uint32_t now_ms)
 {
     AcdIo *io = ACD_IO(work);
     AcdCtx *ctx = ACD_CTX(work);
@@ -214,7 +214,7 @@ static void acd_defend(uint8_t *restrict work, uint32_t now_ms)
         return;
     }
 
-    idemip_bool recent = (idemip_bool)(ctx->defended && (uint32_t)(now_ms - ctx->last_defend_ms) <
+    idemip_bool recent = (idemip_bool)(ctx->defended && (now_ms - ctx->last_defend_ms) <
                                                             (uint32_t)IDEMIP_ACD_DEFEND_INTERVAL_MS);
     if (recent)
     {
@@ -237,10 +237,10 @@ static void acd_defend(uint8_t *restrict work, uint32_t now_ms)
 // One received ARP packet, against sec 2.1.1's probe tests while the address is being claimed and
 // sec 2.4's ongoing test once it is in use. sec 2.3 puts the address in use "immediately after sending
 // the first of the two ARP Announcements", so ANNOUNCING takes the sec 2.4 test.
-static void acd_receive(uint8_t *restrict work)
+static void acd_receive(uint8_t *work)
 {
     AcdIo *io = ACD_IO(work);
-    AcdCtx *ctx = ACD_CTX(work);
+    const AcdCtx *ctx = ACD_CTX(work);
     const uint8_t *packet = io->arp_in_args.packet;
     uint32_t now_ms = io->arp_in_args.now_ms;
 
@@ -283,7 +283,7 @@ static void acd_receive(uint8_t *restrict work)
 
 // sec 2.1.1: PROBE_NUM probe packets, "each of these probe packets spaced randomly and uniformly,
 // PROBE_MIN to PROBE_MAX seconds apart", then ANNOUNCE_WAIT after the last one.
-static void acd_send_probe(uint8_t *restrict work, uint32_t now_ms, uint32_t rand)
+static void acd_send_probe(uint8_t *work, uint32_t now_ms, uint32_t rand)
 {
     AcdIo *io = ACD_IO(work);
     AcdCtx *ctx = ACD_CTX(work);
@@ -303,7 +303,7 @@ static void acd_send_probe(uint8_t *restrict work, uint32_t now_ms, uint32_t ran
 
 // sec 2.3: ANNOUNCE_NUM ARP Announcements "spaced ANNOUNCE_INTERVAL seconds apart", after which the
 // address is in use and sec 2.4's ongoing detection carries it with no deadline of its own.
-static void acd_send_announce(uint8_t *restrict work, uint32_t now_ms)
+static void acd_send_announce(uint8_t *work, uint32_t now_ms)
 {
     AcdIo *io = ACD_IO(work);
     AcdCtx *ctx = ACD_CTX(work);
@@ -326,7 +326,7 @@ static void acd_send_announce(uint8_t *restrict work, uint32_t now_ms)
 // A deadline still ahead reports BUSY, since the same call on a later tick fires it. OFF holds no
 // address and ONGOING waits on a packet rather than a clock, so neither carries a deadline and both
 // report OK with nothing due.
-static void acd_fire(uint8_t *restrict work)
+static void acd_fire(uint8_t *work)
 {
     AcdIo *io = ACD_IO(work);
     AcdCtx *ctx = ACD_CTX(work);
@@ -374,7 +374,7 @@ static void acd_fire(uint8_t *restrict work)
 // The conflict count is not reset here. sec 2.1.1 counts "MAX_CONFLICTS or more address conflicts on a
 // given interface" and applies the limit "not only to conflicts experienced during the initial probing
 // phase, but also to conflicts experienced later", so only clear takes the count back to zero.
-static void acd_claim(uint8_t *restrict work)
+static void acd_claim(uint8_t *work)
 {
     AcdIo *io = ACD_IO(work);
     AcdCtx *ctx = ACD_CTX(work);
@@ -413,7 +413,7 @@ static void acd_claim(uint8_t *restrict work)
 //
 // A standing RATE_LIMIT holds no address, so the state and its deadline are left as they stand and the
 // interval runs out under a tick.
-static void acd_cease(uint8_t *restrict work)
+static void acd_cease(uint8_t *work)
 {
     AcdIo *io = ACD_IO(work);
     AcdCtx *ctx = ACD_CTX(work);
@@ -434,7 +434,7 @@ static void acd_cease(uint8_t *restrict work)
 
 // The context, zeroed, then the mark. A zeroed context is IDEMIP_ACD_STATE_OFF with no address in it.
 // The operand block is the caller's and is left as it stands.
-void idemip_acd_clear(uint8_t *restrict work)
+void idemip_acd_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -445,7 +445,7 @@ void idemip_acd_clear(uint8_t *restrict work)
     ACD_IO(work)->status = IDEMIP_OK;
 }
 
-void idemip_acd_start(uint8_t *restrict work)
+void idemip_acd_start(uint8_t *work)
 {
     if (!work)
     {
@@ -462,7 +462,7 @@ void idemip_acd_start(uint8_t *restrict work)
     acd_claim(work);
 }
 
-void idemip_acd_stop(uint8_t *restrict work)
+void idemip_acd_stop(uint8_t *work)
 {
     if (!work)
     {
@@ -478,7 +478,7 @@ void idemip_acd_stop(uint8_t *restrict work)
     acd_cease(work);
 }
 
-void idemip_acd_arp_in(uint8_t *restrict work)
+void idemip_acd_arp_in(uint8_t *work)
 {
     if (!work)
     {
@@ -494,7 +494,7 @@ void idemip_acd_arp_in(uint8_t *restrict work)
     acd_receive(work);
 }
 
-void idemip_acd_tick(uint8_t *restrict work)
+void idemip_acd_tick(uint8_t *work)
 {
     if (!work)
     {

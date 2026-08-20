@@ -211,8 +211,8 @@ typedef struct
  *   RawPcb.open(work);
  *   if (IDEMIP_RAW_PCB_IO(work)->status == IDEMIP_OK) { ... }
  *
- * @c work is IDEMIP_RAW_PCB_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_RAW_PCB_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the instance, so two
  * tables are two borrows and share not one byte.
  *
@@ -238,29 +238,29 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const open)(uint8_t *restrict work);
-    void (*const close)(uint8_t *restrict work);
-    void (*const bind)(uint8_t *restrict work);
-    void (*const connect)(uint8_t *restrict work);
-    void (*const disconnect)(uint8_t *restrict work);
-    void (*const set_opts)(uint8_t *restrict work);
-    void (*const load)(uint8_t *restrict work);
-    void (*const find)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const open)(uint8_t *work);
+    void (*const close)(uint8_t *work);
+    void (*const bind)(uint8_t *work);
+    void (*const connect)(uint8_t *work);
+    void (*const disconnect)(uint8_t *work);
+    void (*const set_opts)(uint8_t *work);
+    void (*const load)(uint8_t *work);
+    void (*const find)(uint8_t *work);
 } RawPcbNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_raw_pcb_clear(uint8_t *restrict work);
-void idemip_raw_pcb_open(uint8_t *restrict work);
-void idemip_raw_pcb_close(uint8_t *restrict work);
-void idemip_raw_pcb_bind(uint8_t *restrict work);
-void idemip_raw_pcb_connect(uint8_t *restrict work);
-void idemip_raw_pcb_disconnect(uint8_t *restrict work);
-void idemip_raw_pcb_set_opts(uint8_t *restrict work);
-void idemip_raw_pcb_load(uint8_t *restrict work);
-void idemip_raw_pcb_find(uint8_t *restrict work);
+void idemip_raw_pcb_clear(uint8_t *work);
+void idemip_raw_pcb_open(uint8_t *work);
+void idemip_raw_pcb_close(uint8_t *work);
+void idemip_raw_pcb_bind(uint8_t *work);
+void idemip_raw_pcb_connect(uint8_t *work);
+void idemip_raw_pcb_disconnect(uint8_t *work);
+void idemip_raw_pcb_set_opts(uint8_t *work);
+void idemip_raw_pcb_load(uint8_t *work);
+void idemip_raw_pcb_find(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

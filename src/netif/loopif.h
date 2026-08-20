@@ -140,8 +140,8 @@ typedef struct
  *   IDEMIP_LOOPIF_IO(work)->output_args.len = n;
  *   Loopif.output(work);
  *
- * @c work is IDEMIP_LOOPIF_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_LOOPIF_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the interface, so two
  * loopback interfaces are two borrows and share not one byte.
  *
@@ -165,28 +165,28 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const bind)(uint8_t *restrict work);
-    void (*const output)(uint8_t *restrict work);
-    void (*const claim)(uint8_t *restrict work);
-    void (*const release)(uint8_t *restrict work);
-    void (*const owns4)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const bind)(uint8_t *work);
+    void (*const output)(uint8_t *work);
+    void (*const claim)(uint8_t *work);
+    void (*const release)(uint8_t *work);
+    void (*const owns4)(uint8_t *work);
 #if IDEMIP_ENABLE_IPV6
-    void (*const owns6)(uint8_t *restrict work);
+    void (*const owns6)(uint8_t *work);
 #endif
 } LoopifNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_loopif_clear(uint8_t *restrict work);
-void idemip_loopif_bind(uint8_t *restrict work);
-void idemip_loopif_output(uint8_t *restrict work);
-void idemip_loopif_claim(uint8_t *restrict work);
-void idemip_loopif_release(uint8_t *restrict work);
-void idemip_loopif_owns4(uint8_t *restrict work);
+void idemip_loopif_clear(uint8_t *work);
+void idemip_loopif_bind(uint8_t *work);
+void idemip_loopif_output(uint8_t *work);
+void idemip_loopif_claim(uint8_t *work);
+void idemip_loopif_release(uint8_t *work);
+void idemip_loopif_owns4(uint8_t *work);
 #if IDEMIP_ENABLE_IPV6
-void idemip_loopif_owns6(uint8_t *restrict work);
+void idemip_loopif_owns6(uint8_t *work);
 #endif
 
 /**

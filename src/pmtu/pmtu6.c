@@ -66,7 +66,7 @@ static_assert(IDEMIP_IPV6_MIN_MTU == 1280u, "the IPv6 minimum link MTU is RFC 82
     ((Pmtu6Stamp *)(void *)((w) + IDEMIP_PMTU6_OFF_STAMPS + ((size_t)(i) << IDEMIP_PMTU6_ENTRY_SHIFT)))
 
 // A borrow clear has not run on carries no stamps, so every entry but clear refuses it.
-static idemip_bool pmtu6_ready(uint8_t *restrict work)
+static idemip_bool pmtu6_ready(uint8_t *work)
 {
     return (idemip_bool)(PMTU6_CTX(work)->ready == PMTU6_READY);
 }
@@ -75,7 +75,7 @@ static idemip_bool pmtu6_ready(uint8_t *restrict work)
 
 static idemip_bool pmtu6_addr_eq(const uint8_t *a, const uint8_t *b)
 {
-    return (idemip_bool)(idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
+    return (idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
 }
 
 // RFC 8201 sec 5.2 names the path a message applies to: "if the destination address is used as the
@@ -118,7 +118,7 @@ static const uint8_t *pmtu6_path(const uint8_t *pkt, size_t len)
 
 // --- the stamps ------------------------------------------------------------
 
-static uint8_t pmtu6_find(uint8_t *restrict work, const uint8_t *dst)
+static uint8_t pmtu6_find(uint8_t *work, const uint8_t *dst)
 {
     for (uint8_t i = 0; i < (uint8_t)IDEMIP_PMTU6_PATHS; i++)
     {
@@ -133,7 +133,7 @@ static uint8_t pmtu6_find(uint8_t *restrict work, const uint8_t *dst)
 
 // The stamp this path already holds, else the lowest free row, else the row whose clock has run
 // longest: that one is nearest the sec 5.3 interval, so its probe is the one already overdue.
-static uint8_t pmtu6_take(uint8_t *restrict work, const uint8_t *dst, uint32_t now_ms)
+static uint8_t pmtu6_take(uint8_t *work, const uint8_t *dst, uint32_t now_ms)
 {
     uint8_t free_row = (uint8_t)IDEMIP_PMTU6_NONE;
     uint8_t oldest_row = 0;
@@ -153,7 +153,7 @@ static uint8_t pmtu6_take(uint8_t *restrict work, const uint8_t *dst, uint32_t n
         {
             return i;
         }
-        uint32_t age = (uint32_t)(now_ms - s->stamp_ms);
+        uint32_t age = (now_ms - s->stamp_ms);
         if (age >= oldest_age)
         {
             oldest_age = age;
@@ -167,13 +167,13 @@ static uint8_t pmtu6_take(uint8_t *restrict work, const uint8_t *dst, uint32_t n
 
 // The context and the stamps, zeroed, then the mark. The operand block is the caller's and is left
 // as it stands.
-void idemip_pmtu6_clear(uint8_t *restrict work)
+void idemip_pmtu6_clear(uint8_t *work)
 {
     if (!work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_PMTU6_OFF_CTX, 0, (size_t)IDEMIP_PMTU6_BORROW - (size_t)IDEMIP_PMTU6_OFF_CTX);
+    memset(work + IDEMIP_PMTU6_OFF_CTX, 0, (size_t)IDEMIP_PMTU6_BORROW - IDEMIP_PMTU6_OFF_CTX);
     PMTU6_CTX(work)->ready = PMTU6_READY;
     PMTU6_IO(work)->status = IDEMIP_OK;
 }
@@ -190,7 +190,7 @@ void idemip_pmtu6_clear(uint8_t *restrict work)
 // in sixteen bits is carried at that ceiling; the field as it arrived is reported whole.
 //
 // sec 5.3 ages by the last decrease, so a decrease is what stamps the path.
-void idemip_pmtu6_too_big(uint8_t *restrict work)
+void idemip_pmtu6_too_big(uint8_t *work)
 {
     if (!work)
     {
@@ -267,7 +267,7 @@ void idemip_pmtu6_too_big(uint8_t *restrict work)
 //
 // No path due is BUSY: a later tick or a later Packet Too Big makes one. A link MTU under the IPv6
 // minimum is ERR, RFC 8200 sec 5 admitting no such link.
-void idemip_pmtu6_tick(uint8_t *restrict work)
+void idemip_pmtu6_tick(uint8_t *work)
 {
     if (!work)
     {
@@ -291,7 +291,7 @@ void idemip_pmtu6_tick(uint8_t *restrict work)
     for (uint8_t i = 0; i < (uint8_t)IDEMIP_PMTU6_PATHS; i++)
     {
         Pmtu6Stamp *s = PMTU6_AT(work, i);
-        if (!s->used || (uint32_t)(io->now_ms - s->stamp_ms) < (uint32_t)IDEMIP_PMTU6_PROBE_MS)
+        if (!s->used || (io->now_ms - s->stamp_ms) < (uint32_t)IDEMIP_PMTU6_PROBE_MS)
         {
             continue;
         }
@@ -308,7 +308,7 @@ void idemip_pmtu6_tick(uint8_t *restrict work)
 
 // RFC 4861 sec 5.1 keeps the Destination Cache, and an entry leaving it takes the clock aging its
 // estimate with it. A path carrying no stamp is ERR: this table cannot grow that row on its own.
-void idemip_pmtu6_forget(uint8_t *restrict work)
+void idemip_pmtu6_forget(uint8_t *work)
 {
     if (!work)
     {

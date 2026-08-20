@@ -92,7 +92,7 @@ static void vlan_reset(VlanIo *io)
 
 // --- the entries -----------------------------------------------------------
 
-void idemip_vlan_clear(uint8_t *restrict work)
+void idemip_vlan_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -107,7 +107,7 @@ void idemip_vlan_clear(uint8_t *restrict work)
 // 6325 sec 4.1 Figure 7). An untagged frame is OK with tagged false: the caller reads the same
 // result members either way. A frame shorter than the header it claims is ERR, no retry over the
 // same octets reaching further.
-void idemip_vlan_parse(uint8_t *restrict work)
+void idemip_vlan_parse(uint8_t *work)
 {
     if (!work)
     {
@@ -179,7 +179,7 @@ void idemip_vlan_parse(uint8_t *restrict work)
 // Six octets at IDEMIP_VLAN_OFF_TPID: the C-Tag Ethertype, the Tag Control Information, then the
 // type code the payload is. The two addresses ahead of them are the caller's, and the data field
 // starts at IDEMIP_VLAN_OFF_PAYLOAD.
-void idemip_vlan_build(uint8_t *restrict work)
+void idemip_vlan_build(uint8_t *work)
 {
     if (!work)
     {
@@ -207,7 +207,7 @@ void idemip_vlan_build(uint8_t *restrict work)
 
 // The three fields into one Tag Control Information field, for a MAC that inserts the tag itself.
 // Refuses what a build refuses, the field being the same field.
-void idemip_vlan_pack(uint8_t *restrict work)
+void idemip_vlan_pack(uint8_t *work)
 {
     if (!work)
     {
@@ -226,7 +226,7 @@ void idemip_vlan_pack(uint8_t *restrict work)
 // One Tag Control Information field into its three, for a MAC that stripped the tag and reported
 // the field. Every 16-bit value splits, the reserved VLAN ID included, which is reported rather
 // than refused: the octets already arrived.
-void idemip_vlan_split(uint8_t *restrict work)
+void idemip_vlan_split(uint8_t *work)
 {
     if (!work)
     {

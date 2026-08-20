@@ -72,7 +72,7 @@ static_assert(IDEMIP_IP6_FORWARD_R_OK == 0, "IDEMIP_IP6_FORWARD_R_OK must be zer
 #define IP6_FORWARD_CTX(w) ((Ip6ForwardCtx *)(void *)((w) + IDEMIP_IP6_FORWARD_OFF_CTX))
 
 // A borrow clear has not run on carries no mark, so decide refuses it.
-static idemip_bool ip6_forward_ready(uint8_t *restrict work)
+static idemip_bool ip6_forward_ready(uint8_t *work)
 {
     return (idemip_bool)(IP6_FORWARD_CTX(work)->ready == IP6_FORWARD_READY);
 }
@@ -226,14 +226,14 @@ static idemip_bool ip6_forward_crosses_link(const Ip6ForwardArgs *a)
 // --- the entries -----------------------------------------------------------
 
 // The context, zeroed, then the mark. The operand block is the caller's and is left as it stands.
-void idemip_ip6_forward_clear(uint8_t *restrict work)
+void idemip_ip6_forward_clear(uint8_t *work)
 {
     if (!work)
     {
         return; // no borrow, so nowhere to report
     }
     memset(work + IDEMIP_IP6_FORWARD_OFF_CTX, 0,
-           (size_t)IDEMIP_IP6_FORWARD_BORROW - (size_t)IDEMIP_IP6_FORWARD_OFF_CTX);
+           (size_t)IDEMIP_IP6_FORWARD_BORROW - IDEMIP_IP6_FORWARD_OFF_CTX);
     IP6_FORWARD_CTX(work)->ready = IP6_FORWARD_READY;
     IP6_FORWARD_IO(work)->status = IDEMIP_OK;
 }
@@ -246,7 +246,7 @@ void idemip_ip6_forward_clear(uint8_t *restrict work)
 // IDEMIP_NETIF_COUNT, a routed call with no next hop, or an outgoing MTU under the 1280 octets RFC
 // 8200 sec 5 requires of every link. Nothing here is BUSY: the same operands decide the same way
 // forever, so a retry can never change the answer.
-void idemip_ip6_forward_decide(uint8_t *restrict work)
+void idemip_ip6_forward_decide(uint8_t *work)
 {
     if (!work)
     {
@@ -388,7 +388,7 @@ void idemip_ip6_forward_decide(uint8_t *restrict work)
     // routers". A next hop that is neither is not a target this may name, so no redirect is asked for.
     if (a->src_neighbor && !ip6_forward_crosses_link(a) && !ip6_forward_is_multicast(dst))
     {
-        const idemip_bool target_is_dst = (idemip_bool)(idemip_bytes_eq(a->next_hop, dst, IDEMIP_IP6_ADDR_LEN));
+        const idemip_bool target_is_dst = (idemip_bytes_eq(a->next_hop, dst, IDEMIP_IP6_ADDR_LEN));
         if (target_is_dst || ip6_forward_is_link_local(a->next_hop))
         {
             io->redirect = IDEMIP_TRUE;

@@ -254,8 +254,8 @@ typedef struct
  *   TcpIn.segment(work);
  *   if (IDEMIP_TCP_IN_IO(work)->res.act & IDEMIP_TCP_IN_ACT_ACK) { ... }
  *
- * @c work is IDEMIP_TCP_IN_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_TCP_IN_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the instance, so two
  * segment paths are two borrows and share not one byte.
  *
@@ -282,25 +282,25 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const parse)(uint8_t *restrict work);
-    void (*const acceptable)(uint8_t *restrict work);
-    void (*const closed)(uint8_t *restrict work);
-    void (*const listen)(uint8_t *restrict work);
-    void (*const syn_sent)(uint8_t *restrict work);
-    void (*const segment)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const parse)(uint8_t *work);
+    void (*const acceptable)(uint8_t *work);
+    void (*const closed)(uint8_t *work);
+    void (*const listen)(uint8_t *work);
+    void (*const syn_sent)(uint8_t *work);
+    void (*const segment)(uint8_t *work);
 } TcpInNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_tcp_in_clear(uint8_t *restrict work);
-void idemip_tcp_in_parse(uint8_t *restrict work);
-void idemip_tcp_in_acceptable(uint8_t *restrict work);
-void idemip_tcp_in_closed(uint8_t *restrict work);
-void idemip_tcp_in_listen(uint8_t *restrict work);
-void idemip_tcp_in_syn_sent(uint8_t *restrict work);
-void idemip_tcp_in_segment(uint8_t *restrict work);
+void idemip_tcp_in_clear(uint8_t *work);
+void idemip_tcp_in_parse(uint8_t *work);
+void idemip_tcp_in_acceptable(uint8_t *work);
+void idemip_tcp_in_closed(uint8_t *work);
+void idemip_tcp_in_listen(uint8_t *work);
+void idemip_tcp_in_syn_sent(uint8_t *work);
+void idemip_tcp_in_segment(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

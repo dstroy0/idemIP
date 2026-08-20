@@ -263,7 +263,7 @@ static idemip_bool nd6_due(uint32_t now_ms, uint32_t deadline_ms)
 // Milliseconds still to run on a deadline, and zero once it is due.
 static uint32_t nd6_remaining(uint32_t now_ms, uint32_t deadline_ms)
 {
-    return nd6_due(now_ms, deadline_ms) ? 0u : (uint32_t)(deadline_ms - now_ms);
+    return nd6_due(now_ms, deadline_ms) ? 0u : (deadline_ms - now_ms);
 }
 
 // RFC 4861 sec 4.6.2 and sec 4.2 state a lifetime in seconds, and sec 5.1 makes it the entry's
@@ -317,7 +317,7 @@ static uint32_t nd6_retrans_ms(const Nd6Ctx *ctx)
     return (ms > ND6_RETRANS_MAX_MS) ? ND6_RETRANS_MAX_MS : ms;
 }
 
-// RFC 2464 sec 2: "The default MTU size for IPv6 packets on an Ethernet is 1500 octets."
+// RFC 2464 sec 2: "The default MTU size for IPv6 ... packets on an Ethernet is 1500 octets."
 static uint32_t nd6_link_mtu(const Nd6Ctx *ctx)
 {
     return (ctx->link_mtu != 0u) ? ctx->link_mtu : (uint32_t)IDEMIP_ETH_MAX_PAYLOAD;
@@ -330,7 +330,7 @@ static uint8_t nd6_cur_hop_limit(const Nd6Ctx *ctx)
 
 // --- the neighbor cache ----------------------------------------------------
 
-static uint8_t nd6_neighbor_lookup(uint8_t *restrict work, const uint8_t *addr)
+static uint8_t nd6_neighbor_lookup(uint8_t *work, const uint8_t *addr)
 {
     for (uint8_t i = 0u; i < ND6_NEIGHBORS; i++)
     {
@@ -376,7 +376,7 @@ static idemip_bool nd6_has_timer(const Nd6Neighbor *n)
 // RFC 4861 sec 5.2: with no entry for the next hop "the sender creates one, sets its state to
 // INCOMPLETE, initiates Address Resolution". A full cache reports IDEMIP_ND6_NONE, since sec 7.3.3
 // frees a slot as solicitations go unanswered.
-static uint8_t nd6_create_neighbor(uint8_t *restrict work, const uint8_t *addr, const uint8_t *lladdr,
+static uint8_t nd6_create_neighbor(uint8_t *work, const uint8_t *addr, const uint8_t *lladdr,
                                    IdemIpNd6State state, idemip_bool is_router)
 {
     Nd6Ctx *ctx = ND6_CTX(work);
@@ -404,7 +404,7 @@ static uint8_t nd6_create_neighbor(uint8_t *restrict work, const uint8_t *addr, 
     return IDEMIP_ND6_NONE;
 }
 
-static void nd6_report_neighbor(uint8_t *restrict work, uint8_t i)
+static void nd6_report_neighbor(uint8_t *work, uint8_t i)
 {
     Nd6Io *io = ND6_IO(work);
     const Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, i);
@@ -419,7 +419,7 @@ static void nd6_report_neighbor(uint8_t *restrict work, uint8_t i)
 // --- the queued frames -----------------------------------------------------
 
 // RFC 4861 sec 7.2.2 keeps the queue in arrival order, so a push lands at the tail.
-static void nd6_pending_link(uint8_t *restrict work, uint8_t ni, uint8_t pi)
+static void nd6_pending_link(uint8_t *work, uint8_t ni, uint8_t pi)
 {
     Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, ni);
     ND6_PENDING_AT(work, pi)->next = IDEMIP_ND6_NONE;
@@ -436,7 +436,7 @@ static void nd6_pending_link(uint8_t *restrict work, uint8_t ni, uint8_t pi)
     ND6_PENDING_AT(work, t)->next = pi;
 }
 
-static void nd6_pending_unlink(uint8_t *restrict work, uint8_t ni, uint8_t pi)
+static void nd6_pending_unlink(uint8_t *work, uint8_t ni, uint8_t pi)
 {
     Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, ni);
     if (n->pending_head == pi)
@@ -460,7 +460,7 @@ static void nd6_pending_unlink(uint8_t *restrict work, uint8_t ni, uint8_t pi)
 // Takes one frame off its neighbor's queue and reports the descriptor it pins, so the caller unpins
 // it and, where address resolution failed, answers RFC 4861 sec 7.2.2's ICMP Destination Unreachable
 // code 3.
-static void nd6_release_pending(uint8_t *restrict work, uint8_t pi)
+static void nd6_release_pending(uint8_t *work, uint8_t pi)
 {
     Nd6Io *io = ND6_IO(work);
     Nd6Ctx *ctx = ND6_CTX(work);
@@ -491,7 +491,7 @@ static void nd6_release_pending(uint8_t *restrict work, uint8_t pi)
 // RFC 4861 sec 6.3.5: on removing a router "the node MUST update the Destination Cache in such a way
 // that all entries using the router perform next-hop determination again", which the entry's slot
 // going free forces.
-static void nd6_drop_destinations_via(uint8_t *restrict work, uint8_t ni)
+static void nd6_drop_destinations_via(uint8_t *work, uint8_t ni)
 {
     Nd6Ctx *ctx = ND6_CTX(work);
     for (uint8_t i = 0u; i < ND6_DESTINATIONS; i++)
@@ -509,7 +509,7 @@ static void nd6_drop_destinations_via(uint8_t *restrict work, uint8_t ni)
     }
 }
 
-static void nd6_drop_router(uint8_t *restrict work, uint8_t ri)
+static void nd6_drop_router(uint8_t *work, uint8_t ri)
 {
     Nd6Ctx *ctx = ND6_CTX(work);
     Nd6Router *r = ND6_ROUTER_AT(work, ri);
@@ -536,7 +536,7 @@ static void nd6_drop_router(uint8_t *restrict work, uint8_t ri)
 // RFC 4861 sec 7.2.5: when IsRouter goes from TRUE to FALSE "the node MUST remove that router from
 // the Default Router List and update the Destination Cache entries for all destinations using that
 // neighbor as a router".
-static void nd6_drop_router_of(uint8_t *restrict work, uint8_t ni)
+static void nd6_drop_router_of(uint8_t *work, uint8_t ni)
 {
     for (uint8_t i = 0u; i < ND6_ROUTERS; i++)
     {
@@ -552,7 +552,7 @@ static void nd6_drop_router_of(uint8_t *restrict work, uint8_t ni)
 
 // RFC 4861 sec 7.3.3: "Neighbor Unreachability Detection signals the need for next-hop determination
 // by deleting a Neighbor Cache entry", so every structure pointing at it goes with it.
-static void nd6_free_neighbor(uint8_t *restrict work, uint8_t ni)
+static void nd6_free_neighbor(uint8_t *work, uint8_t ni)
 {
     Nd6Ctx *ctx = ND6_CTX(work);
     Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, ni);
@@ -569,7 +569,7 @@ static void nd6_free_neighbor(uint8_t *restrict work, uint8_t ni)
 
 // Zeroes the context and the five tables, then marks the borrow this module's. The operand block is
 // the caller's and is left alone.
-void idemip_nd6_clear(uint8_t *restrict work)
+void idemip_nd6_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -581,7 +581,7 @@ void idemip_nd6_clear(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_nd6_neighbor_find(uint8_t *restrict work)
+void idemip_nd6_neighbor_find(uint8_t *work)
 {
     if (!work)
     {
@@ -612,10 +612,10 @@ void idemip_nd6_neighbor_find(uint8_t *restrict work)
 // missing entry is created in the state the caller names, and an entry that is there is revised by
 // sec 7.2.5's two rules. A full cache is BUSY, since sec 7.3.3 deletes an entry whose solicitations
 // go unanswered.
-static void nd6_set_neighbor(uint8_t *restrict work)
+static void nd6_set_neighbor(uint8_t *work)
 {
     Nd6Io *io = ND6_IO(work);
-    Nd6Ctx *ctx = ND6_CTX(work);
+    const Nd6Ctx *ctx = ND6_CTX(work);
     const Nd6NeighborArgs *a = &io->neighbor_args;
     uint8_t i = nd6_neighbor_lookup(work, a->addr);
 
@@ -696,7 +696,7 @@ static void nd6_set_neighbor(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_nd6_neighbor_set(uint8_t *restrict work)
+void idemip_nd6_neighbor_set(uint8_t *work)
 {
     if (!work)
     {
@@ -714,7 +714,7 @@ void idemip_nd6_neighbor_set(uint8_t *restrict work)
     nd6_set_neighbor(work);
 }
 
-void idemip_nd6_neighbor_confirm(uint8_t *restrict work)
+void idemip_nd6_neighbor_confirm(uint8_t *work)
 {
     if (!work)
     {
@@ -746,7 +746,7 @@ void idemip_nd6_neighbor_confirm(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_nd6_neighbor_used(uint8_t *restrict work)
+void idemip_nd6_neighbor_used(uint8_t *work)
 {
     if (!work)
     {
@@ -778,7 +778,7 @@ void idemip_nd6_neighbor_used(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_nd6_neighbor_remove(uint8_t *restrict work)
+void idemip_nd6_neighbor_remove(uint8_t *work)
 {
     if (!work)
     {
@@ -799,7 +799,7 @@ void idemip_nd6_neighbor_remove(uint8_t *restrict work)
     // code 3. One queued frame comes back per call and reports BUSY, so its descriptor is unpinned
     // before the entry goes; the call that finds the queue empty frees the entry and reports OK.
     uint8_t ni = io->neighbor_args.index;
-    Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, ni);
+    const Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, ni);
     if (!n->used)
     {
         return;
@@ -816,7 +816,7 @@ void idemip_nd6_neighbor_remove(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_nd6_dest_find(uint8_t *restrict work)
+void idemip_nd6_dest_find(uint8_t *work)
 {
     if (!work)
     {
@@ -851,7 +851,7 @@ void idemip_nd6_dest_find(uint8_t *restrict work)
     }
 }
 
-void idemip_nd6_dest_set(uint8_t *restrict work)
+void idemip_nd6_dest_set(uint8_t *work)
 {
     if (!work)
     {
@@ -925,7 +925,7 @@ void idemip_nd6_dest_set(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_nd6_prefix_set(uint8_t *restrict work)
+void idemip_nd6_prefix_set(uint8_t *work)
 {
     if (!work)
     {
@@ -1008,7 +1008,7 @@ void idemip_nd6_prefix_set(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_nd6_prefix_on_link(uint8_t *restrict work)
+void idemip_nd6_prefix_on_link(uint8_t *work)
 {
     if (!work)
     {
@@ -1060,7 +1060,7 @@ void idemip_nd6_prefix_on_link(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_nd6_router_set(uint8_t *restrict work)
+void idemip_nd6_router_set(uint8_t *work)
 {
     if (!work)
     {
@@ -1182,7 +1182,7 @@ void idemip_nd6_router_set(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_nd6_router_select(uint8_t *restrict work)
+void idemip_nd6_router_select(uint8_t *work)
 {
     if (!work)
     {
@@ -1269,7 +1269,7 @@ void idemip_nd6_router_select(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_nd6_pending_push(uint8_t *restrict work)
+void idemip_nd6_pending_push(uint8_t *work)
 {
     if (!work)
     {
@@ -1292,7 +1292,7 @@ void idemip_nd6_pending_push(uint8_t *restrict work)
     // with nothing of this neighbor's in it is BUSY, since another neighbor's resolution completes or
     // times out.
     uint8_t ni = io->pending_args.neighbor;
-    Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, ni);
+    const Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, ni);
     if (!n->used)
     {
         return;
@@ -1333,7 +1333,7 @@ void idemip_nd6_pending_push(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_nd6_pending_pop(uint8_t *restrict work)
+void idemip_nd6_pending_pop(uint8_t *work)
 {
     if (!work)
     {
@@ -1353,7 +1353,7 @@ void idemip_nd6_pending_pop(uint8_t *restrict work)
     // The queue is in arrival order, so this takes the head. An empty queue is ERR, which is what
     // ends the caller's drain.
     uint8_t ni = io->pending_args.neighbor;
-    Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, ni);
+    const Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, ni);
     if (!n->used || n->pending_head >= ND6_PENDINGS)
     {
         return;
@@ -1363,7 +1363,7 @@ void idemip_nd6_pending_pop(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_nd6_params_set(uint8_t *restrict work)
+void idemip_nd6_params_set(uint8_t *work)
 {
     if (!work)
     {
@@ -1416,7 +1416,7 @@ void idemip_nd6_params_set(uint8_t *restrict work)
 // RFC 4861 sec 6.3.5 ages the Prefix List and the Default Router List, and sec 7.3.3 walks the
 // reachability machine. One event comes back per sweep, a released frame before a due solicitation,
 // since a released frame carries the descriptor the caller has to unpin.
-static void nd6_sweep(uint8_t *restrict work)
+static void nd6_sweep(uint8_t *work)
 {
     Nd6Io *io = ND6_IO(work);
     Nd6Ctx *ctx = ND6_CTX(work);
@@ -1512,7 +1512,7 @@ static void nd6_sweep(uint8_t *restrict work)
     idemip_bool reported = IDEMIP_FALSE;
     for (uint8_t i = 0u; i < ND6_NEIGHBORS && !reported; i++)
     {
-        Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, i);
+        const Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, i);
         if (!n->used || !nd6_due(now, n->next_event_ms))
         {
             continue;
@@ -1613,7 +1613,7 @@ static void nd6_sweep(uint8_t *restrict work)
     io->status = (expired != 0u || reported) ? IDEMIP_OK : IDEMIP_BUSY;
 }
 
-void idemip_nd6_tick(uint8_t *restrict work)
+void idemip_nd6_tick(uint8_t *work)
 {
     if (!work)
     {

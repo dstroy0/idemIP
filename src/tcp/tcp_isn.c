@@ -142,7 +142,7 @@ static uint32_t tcp_isn_ssig1(uint32_t x)
 // sixteen words rather than sixty-four: round r reads W[r] and the four places it needs are r-16,
 // r-15, r-7 and r-2, all inside a sixteen-wide window, so the slot being written still holds W[r-16]
 // when the other three are read. The window is a power of two, so a place is reached with a mask.
-static void tcp_isn_sha_block(uint8_t *restrict work, const uint8_t *blk)
+static void tcp_isn_sha_block(uint8_t *work, const uint8_t *blk)
 {
     uint32_t *h = TCP_ISN_STATE(work);
     uint32_t *sched = TCP_ISN_SCHED(work);
@@ -196,7 +196,7 @@ static void tcp_isn_sha_block(uint8_t *restrict work, const uint8_t *blk)
 // tail is composed in the padded block: what is left, the mark, zeros, and the message length in
 // bits as the last eight octets (FIPS 180-4 sec 5.1.1). A tail that leaves no room for the length
 // takes a block of its own.
-static void tcp_isn_prf(uint8_t *restrict work, size_t len)
+static void tcp_isn_prf(uint8_t *work, size_t len)
 {
     uint32_t *h = TCP_ISN_STATE(work);
     uint8_t *pad = TCP_ISN_PAD(work);
@@ -251,7 +251,7 @@ static size_t tcp_isn_addr_len(uint8_t ip_version)
 // sec 3.1 puts on the wire. The two families span different lengths, and FIPS 180-4 sec 5.1.1 digests
 // the length with the message, so a four-octet pair and a sixteen-octet pair sharing leading octets
 // still reach different digests.
-static size_t tcp_isn_lay(uint8_t *restrict work, size_t addr_len)
+static size_t tcp_isn_lay(uint8_t *work, size_t addr_len)
 {
     const TcpIsnIo *io = TCP_ISN_IO(work);
     const TcpIsnCtx *ctx = TCP_ISN_CTX(work);
@@ -279,7 +279,7 @@ static size_t tcp_isn_lay(uint8_t *restrict work, size_t addr_len)
 //
 // The concatenated key and the compression state are scratch, so both are zeroed once F is read and
 // nothing of either is left in the borrow.
-static uint32_t tcp_isn_derive(uint8_t *restrict work, size_t addr_len)
+static uint32_t tcp_isn_derive(uint8_t *work, size_t addr_len)
 {
     size_t len = tcp_isn_lay(work, addr_len);
     tcp_isn_prf(work, len);
@@ -299,7 +299,7 @@ static uint32_t tcp_isn_derive(uint8_t *restrict work, size_t addr_len)
 // IDEMIP_TCP_ISN_OFF_CTX to the end of the borrow, so one store covers them all and no octet of a
 // former key survives. The operand block is the caller's and is left as it was found, except for the
 // members a call reports through.
-void idemip_tcp_isn_reset(uint8_t *restrict work)
+void idemip_tcp_isn_reset(uint8_t *work)
 {
     if (!work)
     {
@@ -312,7 +312,7 @@ void idemip_tcp_isn_reset(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_tcp_isn_seed(uint8_t *restrict work)
+void idemip_tcp_isn_seed(uint8_t *work)
 {
     if (!work)
     {
@@ -339,7 +339,7 @@ void idemip_tcp_isn_seed(uint8_t *restrict work)
 // RFC 6528 sec 3's ISN = M + F(localip, localport, remoteip, remoteport, secretkey). Nothing here
 // waits on anything, so there is no BUSY: the PRF runs to completion on the operands it was given,
 // and every refusal above is a state or an operand the same call can never fix.
-void idemip_tcp_isn_generate(uint8_t *restrict work)
+void idemip_tcp_isn_generate(uint8_t *work)
 {
     if (!work)
     {

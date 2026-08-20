@@ -265,7 +265,7 @@ static void icmp_in_query_arrived(IcmpInIo *io, const uint8_t *msg, size_t msg_l
 
 // --- the entries -----------------------------------------------------------
 
-void idemip_icmp_in_clear(uint8_t *restrict work)
+void idemip_icmp_in_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -304,7 +304,7 @@ static void icmp_in_result_clear(IcmpInIo *io)
 // own checksum sum to all ones, so the verify is that sum against zero. A message the sum refuses,
 // one shorter than its type needs, and one of a type RFC 1122 sec 3.2.2 does not name are all
 // discarded: "If an ICMP message of unknown type is received, it MUST be silently discarded."
-void idemip_icmp_in_recv(uint8_t *restrict work)
+void idemip_icmp_in_recv(uint8_t *work)
 {
     if (!work)
     {
@@ -441,7 +441,7 @@ static void icmp_in_refill(IcmpInCtx *ctx, uint32_t now_ms)
 // RFC 1122 sec 3.2.2 requires "the Internet header and at least the first 8 data octets of the
 // datagram that triggered the error; ... this header and data MUST be unchanged from the received
 // datagram."
-void idemip_icmp_in_error(uint8_t *restrict work)
+void idemip_icmp_in_error(uint8_t *work)
 {
     if (!work)
     {

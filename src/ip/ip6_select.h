@@ -259,8 +259,8 @@ typedef struct
  *   Ip6Select.source_select(work);
  *   if (IDEMIP_IP6_SELECT_IO(work)->found) { ... IDEMIP_IP6_SELECT_IO(work)->source ... }
  *
- * @c work is IDEMIP_IP6_SELECT_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. The borrow IS the
+ * @c work is IDEMIP_IP6_SELECT_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. The borrow IS the
  * instance, so two selections in flight are two borrows and share not one byte.
  *
  * A borrow is refused until @ref Ip6SelectNs::clear has run on it: clear zeroes the context and the
@@ -290,31 +290,31 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const policy_set)(uint8_t *restrict work);
-    void (*const policy_lookup)(uint8_t *restrict work);
-    void (*const scope_of)(uint8_t *restrict work);
-    void (*const common_prefix)(uint8_t *restrict work);
-    void (*const source_add)(uint8_t *restrict work);
-    void (*const dest_add)(uint8_t *restrict work);
-    void (*const source_select)(uint8_t *restrict work);
-    void (*const dest_sort)(uint8_t *restrict work);
-    void (*const dest_at)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const policy_set)(uint8_t *work);
+    void (*const policy_lookup)(uint8_t *work);
+    void (*const scope_of)(uint8_t *work);
+    void (*const common_prefix)(uint8_t *work);
+    void (*const source_add)(uint8_t *work);
+    void (*const dest_add)(uint8_t *work);
+    void (*const source_select)(uint8_t *work);
+    void (*const dest_sort)(uint8_t *work);
+    void (*const dest_at)(uint8_t *work);
 } Ip6SelectNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_ip6_select_clear(uint8_t *restrict work);
-void idemip_ip6_select_policy_set(uint8_t *restrict work);
-void idemip_ip6_select_policy_lookup(uint8_t *restrict work);
-void idemip_ip6_select_scope_of(uint8_t *restrict work);
-void idemip_ip6_select_common_prefix_entry(uint8_t *restrict work);
-void idemip_ip6_select_source_add(uint8_t *restrict work);
-void idemip_ip6_select_dest_add(uint8_t *restrict work);
-void idemip_ip6_select_source_select(uint8_t *restrict work);
-void idemip_ip6_select_dest_sort(uint8_t *restrict work);
-void idemip_ip6_select_dest_at(uint8_t *restrict work);
+void idemip_ip6_select_clear(uint8_t *work);
+void idemip_ip6_select_policy_set(uint8_t *work);
+void idemip_ip6_select_policy_lookup(uint8_t *work);
+void idemip_ip6_select_scope_of(uint8_t *work);
+void idemip_ip6_select_common_prefix_entry(uint8_t *work);
+void idemip_ip6_select_source_add(uint8_t *work);
+void idemip_ip6_select_dest_add(uint8_t *work);
+void idemip_ip6_select_source_select(uint8_t *work);
+void idemip_ip6_select_dest_sort(uint8_t *work);
+void idemip_ip6_select_dest_at(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

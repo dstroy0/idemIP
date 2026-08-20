@@ -253,8 +253,8 @@ typedef struct
  *   IcmpIn.recv(work);
  *   if (IDEMIP_ICMP_IN_IO(work)->act & IDEMIP_ICMP_IN_ACT_REPLY) { ... }
  *
- * @c work is IDEMIP_ICMP_IN_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_ICMP_IN_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the instance, so two
  * message paths are two borrows and share not one byte.
  *
@@ -276,17 +276,17 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const recv)(uint8_t *restrict work);
-    void (*const error)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const recv)(uint8_t *work);
+    void (*const error)(uint8_t *work);
 } IcmpInNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_icmp_in_clear(uint8_t *restrict work);
-void idemip_icmp_in_recv(uint8_t *restrict work);
-void idemip_icmp_in_error(uint8_t *restrict work);
+void idemip_icmp_in_clear(uint8_t *work);
+void idemip_icmp_in_recv(uint8_t *work);
+void idemip_icmp_in_error(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

@@ -3,7 +3,7 @@
 
 /**
  * @file tick.c
- * @brief The three phases, in the one order PLAN.md sec 3.4b fixes, over the borrows the caller bound.
+ * @brief The three phases, in the one order tick.h fixes, over the borrows the caller bound.
  *
  * The context is this file's. Every entry is a function of the one pointer it is handed: the operand
  * block, the context and the per-interface rows are regions of that borrow at compile-time offsets.
@@ -92,7 +92,7 @@ static_assert(IDEMIP_TICK_OFF_END <= IDEMIP_TICK_BORROW,
 #define T_CTX(w) ((TickCtx *)(void *)((w) + IDEMIP_TICK_OFF_CTX))
 #define T_IF_AT(w, i) ((TickIfRow *)(void *)((w) + IDEMIP_TICK_OFF_IF + ((size_t)(i) << IDEMIP_TICK_IF_ENTRY_SHIFT)))
 
-static idemip_bool t_ready(uint8_t *restrict work)
+static idemip_bool t_ready(uint8_t *work)
 {
     return (idemip_bool)(T_CTX(work)->ready == TICK_READY);
 }
@@ -124,7 +124,7 @@ static uint8_t t_desc_netif(uint16_t handle)
                                                  : IDEMIP_DISPATCH_DESC_NETIF(handle);
 }
 
-static void t_unpin(uint8_t *restrict work, uint8_t netif, uint16_t desc)
+static void t_unpin(uint8_t *work, uint8_t netif, uint16_t desc)
 {
     if (netif >= IDEMIP_NETIF_COUNT || desc == IDEMIP_DISPATCH_DESC_NONE)
     {
@@ -141,7 +141,7 @@ static void t_unpin(uint8_t *restrict work, uint8_t netif, uint16_t desc)
 
 // The descriptor the last step reported goes back now, the caller having had the call between the
 // two to read it.
-static void t_drop_hold(uint8_t *restrict work)
+static void t_drop_hold(uint8_t *work)
 {
     TickCtx *ctx = T_CTX(work);
     t_unpin(work, ctx->hold_netif, ctx->hold_desc);
@@ -149,7 +149,7 @@ static void t_drop_hold(uint8_t *restrict work)
     ctx->hold_netif = IDEMIP_DISPATCH_NETIF_NONE;
 }
 
-static void t_hold(uint8_t *restrict work, uint8_t netif, uint16_t desc, uint16_t len)
+static void t_hold(uint8_t *work, uint8_t netif, uint16_t desc, uint16_t len)
 {
     TickCtx *ctx = T_CTX(work);
     TickIo *io = T_IO(work);
@@ -164,7 +164,7 @@ static void t_hold(uint8_t *restrict work, uint8_t netif, uint16_t desc, uint16_
 
 // One frame off one ring, dispatched. A frame a retaining unit pinned stays out of the ring; every
 // other one goes straight back.
-static idemip_bool t_drain_one(uint8_t *restrict work, uint8_t netif)
+static idemip_bool t_drain_one(uint8_t *work, uint8_t netif)
 {
     TickCtx *ctx = T_CTX(work);
     TickIo *io = T_IO(work);
@@ -174,7 +174,7 @@ static idemip_bool t_drain_one(uint8_t *restrict work, uint8_t netif)
         return IDEMIP_FALSE;
     }
     Dma.rx_take(row->f.dma);
-    DmaIo *dm = IDEMIP_DMA_IO(row->f.dma);
+    const DmaIo *dm = IDEMIP_DMA_IO(row->f.dma);
     if (dm->status != IDEMIP_OK || dm->buf == NULL)
     {
         return IDEMIP_FALSE;
@@ -217,7 +217,7 @@ static idemip_bool t_drain_one(uint8_t *restrict work, uint8_t netif)
 // RFC 826 resolution ages first, because the queues that wait on it read what it releases. A tick
 // report carrying a nonzero length is a held frame's descriptor; one carrying zero is an address a
 // REQUEST is due for.
-static idemip_bool t_service_arp(uint8_t *restrict work)
+static idemip_bool t_service_arp(uint8_t *work)
 {
     TickCtx *ctx = T_CTX(work);
     TickIo *io = T_IO(work);
@@ -245,7 +245,7 @@ static idemip_bool t_service_arp(uint8_t *restrict work)
 // MUST be discarded and an ICMP Time Exceeded message sent to the source host (if fragment zero has
 // been received)." The sweep reports the source and that mark, and both are carried out so the caller
 // can build the message.
-static idemip_bool t_service_ip4_reass(uint8_t *restrict work)
+static idemip_bool t_service_ip4_reass(uint8_t *work)
 {
     TickCtx *ctx = T_CTX(work);
     TickIo *io = T_IO(work);
@@ -267,7 +267,7 @@ static idemip_bool t_service_ip4_reass(uint8_t *restrict work)
     return IDEMIP_TRUE;
 }
 
-static idemip_bool t_service_igmp(uint8_t *restrict work)
+static idemip_bool t_service_igmp(uint8_t *work)
 {
     TickCtx *ctx = T_CTX(work);
     if (ctx->igmp == NULL)
@@ -286,9 +286,9 @@ static idemip_bool t_service_igmp(uint8_t *restrict work)
 
 // RFC 4861 sec 7.3.3, one interface's neighbor machine. Like ARP, a report carrying a length is a
 // frame it held until resolution finished.
-static idemip_bool t_service_nd6(uint8_t *restrict work, uint8_t netif)
+static idemip_bool t_service_nd6(uint8_t *work, uint8_t netif)
 {
-    TickCtx *ctx = T_CTX(work);
+    const TickCtx *ctx = T_CTX(work);
     TickIo *io = T_IO(work);
     TickIfRow *row = T_IF_AT(work, netif);
     if (row->f.nd6 == NULL)
@@ -314,7 +314,7 @@ static idemip_bool t_service_nd6(uint8_t *restrict work, uint8_t netif)
 // abandoned, not the ones this sweep moved, so it answers the same non-zero count until something
 // frees them. Freeing them is t_flush_ip6_reass's, which runs a phase later and calls this same
 // tick itself. A step reported here is one the cursor never advances past.
-static idemip_bool t_service_ip6_reass(uint8_t *restrict work)
+static idemip_bool t_service_ip6_reass(uint8_t *work)
 {
     TickCtx *ctx = T_CTX(work);
     if (ctx->ip6_reass == NULL)
@@ -326,7 +326,7 @@ static idemip_bool t_service_ip6_reass(uint8_t *restrict work)
     return IDEMIP_FALSE;
 }
 
-static idemip_bool t_service_mld6(uint8_t *restrict work)
+static idemip_bool t_service_mld6(uint8_t *work)
 {
     TickCtx *ctx = T_CTX(work);
     if (ctx->mld6 == NULL)
@@ -342,7 +342,7 @@ static idemip_bool t_service_mld6(uint8_t *restrict work)
 #endif // IDEMIP_ENABLE_IPV6
 
 // RFC 4862 sec 5.5.4, the address lifetimes.
-static idemip_bool t_service_netif(uint8_t *restrict work)
+static idemip_bool t_service_netif(uint8_t *work)
 {
 #if IDEMIP_ENABLE_IPV6
     TickCtx *ctx = T_CTX(work);
@@ -362,7 +362,7 @@ static idemip_bool t_service_netif(uint8_t *restrict work)
 
 // The deadline list. An expiry names a unit and an index into that unit's own table; the units this
 // scheduler drives have already run above, and the pair is reported so a caller drives the rest.
-static idemip_bool t_service_timeouts(uint8_t *restrict work)
+static idemip_bool t_service_timeouts(uint8_t *work)
 {
     TickCtx *ctx = T_CTX(work);
     TickIo *io = T_IO(work);
@@ -371,7 +371,7 @@ static idemip_bool t_service_timeouts(uint8_t *restrict work)
         return IDEMIP_FALSE;
     }
     Timeouts.expire(ctx->timeouts);
-    TimeoutsIo *to = IDEMIP_TIMEOUTS_IO(ctx->timeouts);
+    const TimeoutsIo *to = IDEMIP_TIMEOUTS_IO(ctx->timeouts);
     if (to->status != IDEMIP_OK)
     {
         return IDEMIP_FALSE;
@@ -387,7 +387,7 @@ static idemip_bool t_service_timeouts(uint8_t *restrict work)
 
 // A frame ARP held until the REPLY arrived. Its descriptor is handed back on the step after this
 // one, so the caller sends the frame in between.
-static idemip_bool t_flush_arp(uint8_t *restrict work)
+static idemip_bool t_flush_arp(uint8_t *work)
 {
     TickCtx *ctx = T_CTX(work);
     TickIo *io = T_IO(work);
@@ -409,7 +409,7 @@ static idemip_bool t_flush_arp(uint8_t *restrict work)
 
 // RFC 791 sec 3.2 step (16), "free all reassembly resources for this BUFID": the descriptors a
 // released or timed-out row held go back to the ring.
-static idemip_bool t_flush_ip4_reass(uint8_t *restrict work)
+static idemip_bool t_flush_ip4_reass(uint8_t *work)
 {
     TickCtx *ctx = T_CTX(work);
     if (ctx->ip4_reass == NULL)
@@ -441,7 +441,7 @@ static idemip_bool t_flush_ip4_reass(uint8_t *restrict work)
 // RFC 8200 sec 4.5: "reassembly of that packet must be abandoned and all the fragments that have been
 // received for that packet must be discarded." Each fragment's descriptor is unpinned before the
 // datagram's slot is freed, nothing being left to read out of a datagram given up on.
-static idemip_bool t_flush_ip6_reass(uint8_t *restrict work)
+static idemip_bool t_flush_ip6_reass(uint8_t *work)
 {
     TickCtx *ctx = T_CTX(work);
     TickIo *io = T_IO(work);
@@ -507,7 +507,7 @@ static idemip_bool t_flush_ip6_reass(uint8_t *restrict work)
 
 // RFC 9293 sec 3.10.7.4 (MUST-59): the batch is through, so the acknowledgments it aggregated go out
 // now, one per connection.
-static idemip_bool t_flush_tcp_ack(uint8_t *restrict work)
+static idemip_bool t_flush_tcp_ack(uint8_t *work)
 {
     TickCtx *ctx = T_CTX(work);
     TickIo *io = T_IO(work);
@@ -528,7 +528,7 @@ static idemip_bool t_flush_tcp_ack(uint8_t *restrict work)
 
 // --- the entries -----------------------------------------------------------
 
-void idemip_tick_clear(uint8_t *restrict work)
+void idemip_tick_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -549,7 +549,7 @@ void idemip_tick_clear(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_tick_bind(uint8_t *restrict work)
+void idemip_tick_bind(uint8_t *work)
 {
     if (!work)
     {
@@ -579,7 +579,7 @@ void idemip_tick_bind(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_tick_if_bind(uint8_t *restrict work)
+void idemip_tick_if_bind(uint8_t *work)
 {
     if (!work)
     {
@@ -603,7 +603,7 @@ void idemip_tick_if_bind(uint8_t *restrict work)
 
 // The clock arrives from the caller and every deadline this tick compares is measured from it, so
 // one tick is one instant however long its phases take.
-void idemip_tick_open(uint8_t *restrict work)
+void idemip_tick_open(uint8_t *work)
 {
     if (!work)
     {
@@ -638,7 +638,7 @@ void idemip_tick_open(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_tick_drain(uint8_t *restrict work)
+void idemip_tick_drain(uint8_t *work)
 {
     if (!work)
     {
@@ -675,7 +675,7 @@ void idemip_tick_drain(uint8_t *restrict work)
 
 // One step of one service. A unit that reported work stays under the cursor, so it is asked again
 // before the next unit runs; one that reported none moves the cursor on.
-void idemip_tick_service(uint8_t *restrict work)
+void idemip_tick_service(uint8_t *work)
 {
     if (!work)
     {
@@ -754,7 +754,7 @@ void idemip_tick_service(uint8_t *restrict work)
     io->status = IDEMIP_BUSY;
 }
 
-void idemip_tick_flush(uint8_t *restrict work)
+void idemip_tick_flush(uint8_t *work)
 {
     if (!work)
     {

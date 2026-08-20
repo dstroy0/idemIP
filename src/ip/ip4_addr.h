@@ -337,8 +337,8 @@ typedef struct
  *   Ip4Addr.classify(work);
  *   if (IDEMIP_IP4_ADDR_IO(work)->type == IDEMIP_IP4_TYPE_MULTICAST) { ... }
  *
- * @c work is IDEMIP_IP4_ADDR_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. The borrow IS the
+ * @c work is IDEMIP_IP4_ADDR_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. The borrow IS the
  * instance, so two callers are two borrows and share not one byte.
  *
  * A borrow is refused until @ref Ip4AddrNs::clear has run on it: clear zeroes the context and
@@ -358,19 +358,19 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const classify)(uint8_t *restrict work);
-    void (*const match)(uint8_t *restrict work);
-    void (*const mcast_mac)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const classify)(uint8_t *work);
+    void (*const match)(uint8_t *work);
+    void (*const mcast_mac)(uint8_t *work);
 } Ip4AddrNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_ip4_addr_clear(uint8_t *restrict work);
-void idemip_ip4_addr_classify(uint8_t *restrict work);
-void idemip_ip4_addr_match(uint8_t *restrict work);
-void idemip_ip4_addr_mcast_mac_io(uint8_t *restrict work);
+void idemip_ip4_addr_clear(uint8_t *work);
+void idemip_ip4_addr_classify(uint8_t *work);
+void idemip_ip4_addr_match(uint8_t *work);
+void idemip_ip4_addr_mcast_mac_io(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

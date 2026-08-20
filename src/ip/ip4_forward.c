@@ -84,7 +84,7 @@ static_assert(IDEMIP_IP4_FORWARD_R_OK == 0, "IDEMIP_IP4_FORWARD_R_OK must be zer
 #define IP4_FORWARD_CTX(w) ((Ip4ForwardCtx *)(void *)((w) + IDEMIP_IP4_FORWARD_OFF_CTX))
 
 // A borrow clear has not run on carries no switches, so every entry but clear refuses it.
-static idemip_bool ip4_forward_ready(uint8_t *restrict work)
+static idemip_bool ip4_forward_ready(uint8_t *work)
 {
     return (idemip_bool)(IP4_FORWARD_CTX(work)->ready == IP4_FORWARD_READY);
 }
@@ -346,14 +346,14 @@ static void ip4_forward_drop_icmp(Ip4ForwardIo *io, IdemIpIp4ForwardReason reaso
 // The context, zeroed, then the mark and the two switches RFC 1812 defaults on: sec 5.3.7's address
 // checks and sec 5.3.5.2's directed broadcast forwarding. The operand block is the caller's and is
 // left as it stands.
-void idemip_ip4_forward_clear(uint8_t *restrict work)
+void idemip_ip4_forward_clear(uint8_t *work)
 {
     if (!work)
     {
         return; // no borrow, so nowhere to report
     }
     memset(work + IDEMIP_IP4_FORWARD_OFF_CTX, 0,
-           (size_t)IDEMIP_IP4_FORWARD_BORROW - (size_t)IDEMIP_IP4_FORWARD_OFF_CTX);
+           (size_t)IDEMIP_IP4_FORWARD_BORROW - IDEMIP_IP4_FORWARD_OFF_CTX);
     Ip4ForwardCtx *ctx = IP4_FORWARD_CTX(work);
     ctx->ready = IP4_FORWARD_READY;
     ctx->policy = IDEMIP_IP4_FORWARD_P_MASK;
@@ -363,7 +363,7 @@ void idemip_ip4_forward_clear(uint8_t *restrict work)
 
 // The switches raised, then the switches lowered. A bit outside IDEMIP_IP4_FORWARD_P_MASK is ERR: it
 // names no switch, so no later call gives it one.
-void idemip_ip4_forward_set_policy(uint8_t *restrict work)
+void idemip_ip4_forward_set_policy(uint8_t *work)
 {
     if (!work)
     {
@@ -394,7 +394,7 @@ void idemip_ip4_forward_set_policy(uint8_t *restrict work)
 // IDEMIP_NETIF_COUNT, or an outgoing MTU under the 68 octets RFC 791 sec 3.2 requires every internet
 // module to forward. Nothing here is BUSY: the same operands decide the same way forever, so a retry
 // can never change the answer.
-void idemip_ip4_forward_decide(uint8_t *restrict work)
+void idemip_ip4_forward_decide(uint8_t *work)
 {
     if (!work)
     {

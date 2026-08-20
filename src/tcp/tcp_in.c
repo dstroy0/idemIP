@@ -157,7 +157,7 @@ static void tcp_in_put_rst(TcpInIo *io)
 // RFC 5961 sec 7: "in any 5 second window, no more than 10 challenge ACKs should be sent", counted
 // with "a timestamp and a counter". A challenge past the limit is reported and not sent, so the
 // segment is still dropped and the exchange sec 10 warns about is bounded.
-static void tcp_in_put_challenge(uint8_t *restrict work, TcpInIo *io)
+static void tcp_in_put_challenge(uint8_t *work, TcpInIo *io)
 {
     TcpInCtx *ctx = TCP_IN_CTX(work);
     io->res.act |= IDEMIP_TCP_IN_ACT_CHALLENGE;
@@ -202,7 +202,7 @@ static void tcp_in_result_clear(TcpInIo *io)
 
 // The context is the whole borrow past the operand block, so one store covers it. The operand block
 // is the caller's and is left as it was found, except for the members a call reports through.
-void idemip_tcp_in_clear(uint8_t *restrict work)
+void idemip_tcp_in_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -223,7 +223,7 @@ void idemip_tcp_in_clear(uint8_t *restrict work)
 // SEG.LEN is the data octets "counting SYN and FIN" (sec 3.4). RFC 7323 sec 2.3: "The window field
 // (SEG.WND) in the header of every incoming segment, with the exception of <SYN> segments, MUST be
 // left-shifted by Snd.Wind.Shift bits."
-void idemip_tcp_in_parse(uint8_t *restrict work)
+void idemip_tcp_in_parse(uint8_t *work)
 {
     if (!work)
     {
@@ -323,7 +323,7 @@ void idemip_tcp_in_parse(uint8_t *restrict work)
 
 // RFC 9293 sec 3.4's "A segment is judged to occupy a portion of valid receive sequence space", in
 // the four cases sec 3.10.7.4 Table 6 lays out.
-void idemip_tcp_in_acceptable(uint8_t *restrict work)
+void idemip_tcp_in_acceptable(uint8_t *work)
 {
     if (!work)
     {
@@ -343,7 +343,7 @@ void idemip_tcp_in_acceptable(uint8_t *restrict work)
 // RFC 9293 sec 3.10.7.1: "If the state is CLOSED (i.e., TCB does not exist) ... An incoming segment
 // containing a RST is discarded. An incoming segment not containing a RST causes a RST to be sent in
 // response."
-void idemip_tcp_in_closed(uint8_t *restrict work)
+void idemip_tcp_in_closed(uint8_t *work)
 {
     if (!work)
     {
@@ -366,7 +366,7 @@ void idemip_tcp_in_closed(uint8_t *restrict work)
 
 // RFC 9293 sec 3.10.7.2 LISTEN STATE, its four checks in order. The ISS the third needs is
 // @ref IdemIpTcpVars::iss, which the caller draws through tcp_isn.h before the call.
-void idemip_tcp_in_listen(uint8_t *restrict work)
+void idemip_tcp_in_listen(uint8_t *work)
 {
     if (!work)
     {
@@ -467,7 +467,7 @@ static void tcp_in_check_fin(TcpInIo *io);
 
 // RFC 9293 sec 3.10.7.3 SYN-SENT STATE, its five checks in order. The third, the security and
 // compartment of Appendix A.1, has nothing in a TCB here to compare and is not made.
-void idemip_tcp_in_syn_sent(uint8_t *restrict work)
+void idemip_tcp_in_syn_sent(uint8_t *work)
 {
     if (!work)
     {
@@ -573,7 +573,7 @@ void idemip_tcp_in_syn_sent(uint8_t *restrict work)
 
 // RFC 9293 sec 3.10.7.4 second, in the three steps that section takes from RFC 5961 sec 3.2.
 // Reports true when processing stops here.
-static idemip_bool tcp_in_check_rst(uint8_t *restrict work, TcpInIo *io)
+static idemip_bool tcp_in_check_rst(uint8_t *work, TcpInIo *io)
 {
     if ((io->seg.flags & IDEMIP_TCP_RST) == 0u)
     {
@@ -643,7 +643,7 @@ static idemip_bool tcp_in_check_rst(uint8_t *restrict work, TcpInIo *io)
 // irrespective of the sequence number, TCP MUST send an ACK (also referred to as challenge ACK) to
 // the remote peer ... After sending the acknowledgment, TCP MUST drop the unacceptable segment and
 // stop processing further." Reports true when processing stops here.
-static idemip_bool tcp_in_check_syn(uint8_t *restrict work, TcpInIo *io)
+static idemip_bool tcp_in_check_syn(uint8_t *work, TcpInIo *io)
 {
     if ((io->seg.flags & IDEMIP_TCP_SYN) == 0u)
     {
@@ -946,7 +946,7 @@ static void tcp_in_check_fin(TcpInIo *io)
 // RFC 9293 sec 3.10.7.4 Other States, its eight checks in the order that section lists them. The
 // third, the security and compartment of Appendix A.1, has nothing in a TCB here to compare and is
 // not made; every other check is.
-void idemip_tcp_in_segment(uint8_t *restrict work)
+void idemip_tcp_in_segment(uint8_t *work)
 {
     if (!work)
     {

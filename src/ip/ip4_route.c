@@ -88,7 +88,7 @@ static_assert(IDEMIP_IP4_MIN_FORWARD_MTU > 0u, "a pmtu of zero must not be a leg
     ((Ip4RouteEntry *)(void *)((w) + IDEMIP_IP4_ROUTE_OFF_TAB + ((size_t)(i) << IDEMIP_IP4_ROUTE_ENTRY_SHIFT)))
 
 // A borrow clear has not run on carries no table, so every entry but clear refuses it.
-static idemip_bool ip4_route_ready(uint8_t *restrict work)
+static idemip_bool ip4_route_ready(uint8_t *work)
 {
     return (idemip_bool)(IP4_ROUTE_CTX(work)->ready == IP4_ROUTE_READY);
 }
@@ -116,11 +116,11 @@ static uint8_t ip4_route_prefix_len(uint32_t mask)
 // The row carrying exactly these four RFC 1122 sec 3.3.1.3 fields, or the terminator. Field (4) is
 // part of the key because sec 3.3.1.2 states "The IP layer MUST support multiple default gateways",
 // and two default gateways differ in nothing else.
-static uint8_t ip4_route_find_key(uint8_t *restrict work, uint32_t dst, uint32_t mask, uint8_t tos, uint32_t gw)
+static uint8_t ip4_route_find_key(uint8_t *work, uint32_t dst, uint32_t mask, uint8_t tos, uint32_t gw)
 {
     for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP4_ROUTES; i++)
     {
-        Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
+        const Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
         if (e->state == IDEMIP_IP4_ROUTE_USED && e->mask == mask && e->dst == (dst & mask) && e->tos == tos &&
             e->gw == gw)
         {
@@ -131,7 +131,7 @@ static uint8_t ip4_route_find_key(uint8_t *restrict work, uint32_t dst, uint32_t
 }
 
 // The lowest row holding no route, or the terminator.
-static uint8_t ip4_route_find_free(uint8_t *restrict work)
+static uint8_t ip4_route_find_free(uint8_t *work)
 {
     for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP4_ROUTES; i++)
     {
@@ -162,14 +162,14 @@ typedef struct
 // whole table: rule 1 Basic Match and rule 2 Longest Match fix the prefix length, rule 3 Weak TOS
 // picks the type of service inside that length, rule 4 Best Metric picks among what is left. Rule 5
 // Vendor Policy is the lowest surviving row.
-static uint8_t ip4_route_best(uint8_t *restrict work, uint32_t dst, uint8_t tos, Ip4RouteBest *out)
+static uint8_t ip4_route_best(uint8_t *work, uint32_t dst, uint8_t tos, Ip4RouteBest *out)
 {
     // Rules 1 and 2: the largest route.length among the rows that basic-match.
     uint8_t best_len = 0;
     idemip_bool matched = IDEMIP_FALSE;
     for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP4_ROUTES; i++)
     {
-        Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
+        const Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
         if (!ip4_route_basic_match(e, dst))
         {
             continue;
@@ -197,7 +197,7 @@ static uint8_t ip4_route_best(uint8_t *restrict work, uint32_t dst, uint8_t tos,
     idemip_bool exact = IDEMIP_FALSE;
     for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP4_ROUTES; i++)
     {
-        Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
+        const Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
         if (ip4_route_basic_match(e, dst) && e->plen == best_len && e->tos == tos)
         {
             exact = IDEMIP_TRUE;
@@ -211,7 +211,7 @@ static uint8_t ip4_route_best(uint8_t *restrict work, uint32_t dst, uint8_t tos,
     uint16_t best_metric = 0;
     for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP4_ROUTES; i++)
     {
-        Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
+        const Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
         if (!ip4_route_basic_match(e, dst) || e->plen != best_len || e->tos != want)
         {
             continue;
@@ -228,7 +228,7 @@ static uint8_t ip4_route_best(uint8_t *restrict work, uint32_t dst, uint8_t tos,
     {
         for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP4_ROUTES; i++)
         {
-            Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
+            const Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
             if (ip4_route_basic_match(e, dst) && e->plen == best_len &&
                 (e->flags & (uint8_t)IDEMIP_IP4_ROUTE_F_GATEWAY) == 0u)
             {
@@ -261,14 +261,14 @@ static void ip4_route_derive_host(Ip4RouteEntry *e, const Ip4RouteEntry *from, u
 
 // The context and the table, zeroed, then the mark. The operand block is the caller's and is left as
 // it stands.
-void idemip_ip4_route_clear(uint8_t *restrict work)
+void idemip_ip4_route_clear(uint8_t *work)
 {
     if (!work)
     {
         return; // no borrow, so nowhere to report
     }
     memset(work + IDEMIP_IP4_ROUTE_OFF_CTX, 0,
-           (size_t)IDEMIP_IP4_ROUTE_BORROW - (size_t)IDEMIP_IP4_ROUTE_OFF_CTX);
+           (size_t)IDEMIP_IP4_ROUTE_BORROW - IDEMIP_IP4_ROUTE_OFF_CTX);
     IP4_ROUTE_CTX(work)->ready = IP4_ROUTE_READY;
     IP4_ROUTE_IO(work)->status = IDEMIP_OK;
 }
@@ -279,7 +279,7 @@ void idemip_ip4_route_clear(uint8_t *restrict work)
 // of service and gateway is rewritten in place, so the table holds one route per key. A full table is
 // BUSY: a remove frees a row. A mask with a gap, or a gateway route naming no gateway, is ERR: the
 // same operands can never be written.
-void idemip_ip4_route_add(uint8_t *restrict work)
+void idemip_ip4_route_add(uint8_t *work)
 {
     if (!work)
     {
@@ -341,7 +341,7 @@ void idemip_ip4_route_add(uint8_t *restrict work)
 // since RemoveArgs names no type of service. RFC 1191 sec 6.3: "PMTU estimates may disappear from the
 // routing table if the per-host routes are removed", so the estimate goes with the row. A destination
 // and mask no row holds is ERR: the table cannot grow that row on its own.
-void idemip_ip4_route_remove(uint8_t *restrict work)
+void idemip_ip4_route_remove(uint8_t *work)
 {
     if (!work)
     {
@@ -377,7 +377,7 @@ void idemip_ip4_route_remove(uint8_t *restrict work)
 // is to be transmitted directly to the destination host", so the next hop is the destination itself;
 // with it, case (c) sends to field (4). No row matching and no default gateway is BUSY: sec 3.3.1.2
 // builds rows as datagrams flow, and an added route or a Redirect makes the same lookup succeed.
-void idemip_ip4_route_lookup(uint8_t *restrict work)
+void idemip_ip4_route_lookup(uint8_t *work)
 {
     if (!work)
     {
@@ -408,7 +408,7 @@ void idemip_ip4_route_lookup(uint8_t *restrict work)
         return;
     }
 
-    Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
+    const Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
     io->index = i;
     io->netif = e->netif;
     io->pmtu = e->pmtu;
@@ -429,7 +429,7 @@ void idemip_ip4_route_lookup(uint8_t *restrict work)
 // A gateway of zero, a gateway off every connected net, and a route sec 3.3.1.2 flagged static without
 // flagging it overridable are all ERR: the same Redirect can never be applied. A table with no row for
 // the destination, or no free row to create one in, is BUSY.
-void idemip_ip4_route_redirect(uint8_t *restrict work)
+void idemip_ip4_route_redirect(uint8_t *work)
 {
     if (!work)
     {
@@ -461,7 +461,7 @@ void idemip_ip4_route_redirect(uint8_t *restrict work)
         io->status = IDEMIP_BUSY; // nothing routes the destination yet, and an added route does
         return;
     }
-    Ip4RouteEntry *c = IP4_ROUTE_AT(work, cur);
+    const Ip4RouteEntry *c = IP4_ROUTE_AT(work, cur);
     if ((c->flags & (uint8_t)IDEMIP_IP4_ROUTE_F_STATIC) != 0u &&
         (c->flags & (uint8_t)IDEMIP_IP4_ROUTE_F_REDIRECT_OK) == 0u)
     {
@@ -501,7 +501,7 @@ void idemip_ip4_route_redirect(uint8_t *restrict work)
 // An estimate below the RFC 791 sec 3.2 minimum is ERR: sec 4 states the field "will never contain a
 // value less than 68". No row routing the destination, and no free row to hold the per-host route,
 // are BUSY.
-void idemip_ip4_route_set_pmtu(uint8_t *restrict work)
+void idemip_ip4_route_set_pmtu(uint8_t *work)
 {
     if (!work)
     {
@@ -557,7 +557,7 @@ void idemip_ip4_route_set_pmtu(uint8_t *restrict work)
 // estimate is set to the MTU of the associated first hop." A row carrying no estimate reports the
 // first-hop MTU to its caller, so clearing the estimate is that assignment. A sweep that is not due
 // is BUSY: the next tick past the period runs it.
-void idemip_ip4_route_tick(uint8_t *restrict work)
+void idemip_ip4_route_tick(uint8_t *work)
 {
     if (!work)
     {
@@ -571,7 +571,7 @@ void idemip_ip4_route_tick(uint8_t *restrict work)
         return;
     }
     Ip4RouteCtx *ctx = IP4_ROUTE_CTX(work);
-    if ((uint32_t)(io->now_ms - ctx->tick_ms) < (uint32_t)IDEMIP_IP4_ROUTE_PMTU_SWEEP_MS)
+    if ((io->now_ms - ctx->tick_ms) < (uint32_t)IDEMIP_IP4_ROUTE_PMTU_SWEEP_MS)
     {
         io->status = IDEMIP_BUSY;
         return;
@@ -585,7 +585,7 @@ void idemip_ip4_route_tick(uint8_t *restrict work)
         {
             continue;
         }
-        if ((uint32_t)(io->now_ms - e->pmtu_ms) < (uint32_t)IDEMIP_IP4_ROUTE_PMTU_TIMEOUT_MS)
+        if ((io->now_ms - e->pmtu_ms) < (uint32_t)IDEMIP_IP4_ROUTE_PMTU_TIMEOUT_MS)
         {
             continue;
         }

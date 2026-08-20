@@ -176,8 +176,8 @@ typedef struct
  *       Ip4Route.set_pmtu(route);
  *   }
  *
- * @c work is IDEMIP_PMTU4_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_PMTU4_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the discovery
  * process, so two of them share not one byte.
  *
@@ -207,21 +207,21 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const too_big)(uint8_t *restrict work);
-    void (*const plateau_below)(uint8_t *restrict work);
-    void (*const plateau_above)(uint8_t *restrict work);
-    void (*const age)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const too_big)(uint8_t *work);
+    void (*const plateau_below)(uint8_t *work);
+    void (*const plateau_above)(uint8_t *work);
+    void (*const age)(uint8_t *work);
 } Pmtu4Ns;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_pmtu4_clear(uint8_t *restrict work);
-void idemip_pmtu4_too_big(uint8_t *restrict work);
-void idemip_pmtu4_plateau_below(uint8_t *restrict work);
-void idemip_pmtu4_plateau_above(uint8_t *restrict work);
-void idemip_pmtu4_age(uint8_t *restrict work);
+void idemip_pmtu4_clear(uint8_t *work);
+void idemip_pmtu4_too_big(uint8_t *work);
+void idemip_pmtu4_plateau_below(uint8_t *work);
+void idemip_pmtu4_plateau_above(uint8_t *work);
+void idemip_pmtu4_age(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

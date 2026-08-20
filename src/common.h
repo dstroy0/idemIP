@@ -155,9 +155,9 @@ IDEMIP_INLINE IdemIpWord idemip_span_tail(const uint8_t *p, size_t r)
     const IdemIpWord mask =
         (IdemIpWord) ~(((((IdemIpWord)1u) << (8u * (sizeof(IdemIpWord) - r - 1u))) << 8u) - 1u);
 #else
-    const IdemIpWord mask = (IdemIpWord)((((IdemIpWord)1u) << (8u * r)) - 1u);
+    const IdemIpWord mask = ((((IdemIpWord)1u) << (8u * r)) - 1u);
 #endif
-    return (IdemIpWord)(w & mask);
+    return (w & mask);
 }
 
 /**
@@ -199,13 +199,13 @@ IDEMIP_INLINE idemip_bool idemip_bytes_eq(const uint8_t *a, const uint8_t *b, si
         IdemIpWord v;
         memcpy(&u, a + i, sizeof u);
         memcpy(&v, b + i, sizeof v);
-        diff |= (IdemIpWord)(u ^ v);
+        diff |= (u ^ v);
         i += sizeof u;
     }
     // The same tail on both spans. Each is masked to the same octets before they are differenced, so
     // the octets past the span are zero on both sides and cancel, and a difference inside it cannot
     // cancel against one at another offset: the two words are aligned to the same position.
-    diff |= (IdemIpWord)(idemip_span_tail(a + i, n - i) ^ idemip_span_tail(b + i, n - i));
+    diff |= (idemip_span_tail(a + i, n - i) ^ idemip_span_tail(b + i, n - i));
     return (idemip_bool)(diff == 0u);
 }
 

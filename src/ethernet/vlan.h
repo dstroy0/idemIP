@@ -239,8 +239,8 @@ typedef struct
  *   Vlan.parse(work);
  *   if (IDEMIP_VLAN_IO(work)->tagged) { ... IDEMIP_VLAN_IO(work)->vid ... }
  *
- * @c work is IDEMIP_VLAN_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. The borrow IS the
+ * @c work is IDEMIP_VLAN_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. The borrow IS the
  * instance, so two frames read at once are two borrows and share not one byte.
  *
  * A borrow is refused until @ref VlanNs::clear has run on it: clear zeroes the context region and
@@ -266,21 +266,21 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const parse)(uint8_t *restrict work);
-    void (*const build)(uint8_t *restrict work);
-    void (*const pack)(uint8_t *restrict work);
-    void (*const split)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const parse)(uint8_t *work);
+    void (*const build)(uint8_t *work);
+    void (*const pack)(uint8_t *work);
+    void (*const split)(uint8_t *work);
 } VlanNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_vlan_clear(uint8_t *restrict work);
-void idemip_vlan_parse(uint8_t *restrict work);
-void idemip_vlan_build(uint8_t *restrict work);
-void idemip_vlan_pack(uint8_t *restrict work);
-void idemip_vlan_split(uint8_t *restrict work);
+void idemip_vlan_clear(uint8_t *work);
+void idemip_vlan_parse(uint8_t *work);
+void idemip_vlan_build(uint8_t *work);
+void idemip_vlan_pack(uint8_t *work);
+void idemip_vlan_split(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

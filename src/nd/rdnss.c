@@ -75,7 +75,7 @@ static_assert(IDEMIP_RDNSS_OFF_END <= IDEMIP_RDNSS_BORROW,
 // 5.1's 32-bit Lifetime field can name is representable and none is held at a bound.
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool rdnss_ready(uint8_t *restrict work)
+static idemip_bool rdnss_ready(uint8_t *work)
 {
     return (idemip_bool)(RDNSS_CTX(work)->ready == RDNSS_READY);
 }
@@ -84,7 +84,7 @@ static idemip_bool rdnss_ready(uint8_t *restrict work)
 
 static idemip_bool rdnss_addr_eq(const uint8_t *a, const uint8_t *b)
 {
-    return (idemip_bool)(idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
+    return (idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
 }
 
 // sec 5.3.1 checks "the validity of the RDNSS option ... with the 'Addresses of IPv6 Recursive DNS
@@ -122,7 +122,7 @@ static IdemIpMs rdnss_expiration(IdemIpMs now, uint32_t lifetime_s)
 // The list is packed from slot zero, so a walk over the slots reads the servers in the order sec 6.2
 // puts them in the Resolver Repository.
 
-static uint8_t rdnss_count(uint8_t *restrict work)
+static uint8_t rdnss_count(uint8_t *work)
 {
     uint8_t n = 0u;
     while (n < RDNSS_ENTRIES && RDNSS_AT(work, n)->used)
@@ -132,7 +132,7 @@ static uint8_t rdnss_count(uint8_t *restrict work)
     return n;
 }
 
-static uint8_t rdnss_find_addr(uint8_t *restrict work, const uint8_t *addr)
+static uint8_t rdnss_find_addr(uint8_t *work, const uint8_t *addr)
 {
     uint8_t count = rdnss_count(work);
     for (uint8_t i = 0; i < count; i++)
@@ -146,7 +146,7 @@ static uint8_t rdnss_find_addr(uint8_t *restrict work, const uint8_t *addr)
 }
 
 // One entry out of the list, the ones behind it closing up so the order holds.
-static void rdnss_delete_at(uint8_t *restrict work, uint8_t index)
+static void rdnss_delete_at(uint8_t *work, uint8_t index)
 {
     uint8_t count = rdnss_count(work);
     if (index >= count)
@@ -163,7 +163,7 @@ static void rdnss_delete_at(uint8_t *restrict work, uint8_t index)
 // sec 6.2 step (d): "delete from the DNS Server List the entry with the shortest Expiration-time
 // (i.e., the entry that will expire first)". An infinite one expires last, so it is never the choice
 // while a finite one stands.
-static uint8_t rdnss_soonest(uint8_t *restrict work, IdemIpMs now)
+static uint8_t rdnss_soonest(uint8_t *work, IdemIpMs now)
 {
     uint8_t count = rdnss_count(work);
     uint8_t best = (uint8_t)IDEMIP_RDNSS_NONE;
@@ -172,7 +172,7 @@ static uint8_t rdnss_soonest(uint8_t *restrict work, IdemIpMs now)
     for (uint8_t i = 0; i < count; i++)
     {
         const RdnssEntry *e = RDNSS_AT(work, i);
-        IdemIpMs left = rdnss_due(now, e->expire_at) ? 0u : (IdemIpMs)(e->expire_at - now);
+        IdemIpMs left = rdnss_due(now, e->expire_at) ? 0u : (e->expire_at - now);
         idemip_bool take;
         if (best == (uint8_t)IDEMIP_RDNSS_NONE)
         {
@@ -198,7 +198,7 @@ static uint8_t rdnss_soonest(uint8_t *restrict work, IdemIpMs now)
 
 // One address into the list at @p index, the ones from there back shifting one slot along, which is
 // what sec 6.2 step (d) means by inserting "as the first one in the Resolver Repository".
-static void rdnss_insert_at(uint8_t *restrict work, uint8_t index, const uint8_t *addr, uint32_t lifetime_s,
+static void rdnss_insert_at(uint8_t *work, uint8_t index, const uint8_t *addr, uint32_t lifetime_s,
                             IdemIpMs now)
 {
     uint8_t count = rdnss_count(work);
@@ -233,7 +233,7 @@ static void rdnss_clear_results(RdnssIo *io)
 
 // One entry, into the result members of the operand block. The address is copied rather than pointed
 // at, so an expired one is still readable after its slot is freed.
-static void rdnss_publish(uint8_t *restrict work, uint8_t index)
+static void rdnss_publish(uint8_t *work, uint8_t index)
 {
     RdnssIo *io = RDNSS_IO(work);
     const RdnssEntry *e = RDNSS_AT(work, index);
@@ -262,7 +262,7 @@ static void rdnss_publish(uint8_t *restrict work, uint8_t index)
  * An address that is not in the list and carries a zero Lifetime is not registered: sec 5.1 states
  * "A value of zero means that the RDNSS addresses MUST no longer be used."
  */
-static void rdnss_apply(uint8_t *restrict work, const uint8_t *addr, uint32_t lifetime_s, IdemIpMs now,
+static void rdnss_apply(uint8_t *work, const uint8_t *addr, uint32_t lifetime_s, IdemIpMs now,
                         uint8_t *cursor)
 {
     RdnssIo *io = RDNSS_IO(work);
@@ -310,7 +310,7 @@ static void rdnss_apply(uint8_t *restrict work, const uint8_t *addr, uint32_t li
 
 // The context and the list, zeroed, then the mark. The operand block is the caller's and is left as
 // it stands.
-void idemip_rdnss_clear(uint8_t *restrict work)
+void idemip_rdnss_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -328,7 +328,7 @@ void idemip_rdnss_clear(uint8_t *restrict work)
 // equal to the minimum value (3) and satisfies the requirement that (Length - 1) % 2 == 0", and the
 // addresses "should be unicast addresses". An option that fails is discarded whole, since "Otherwise,
 // the host MUST discard the options."
-void idemip_rdnss_option_in(uint8_t *restrict work)
+void idemip_rdnss_option_in(uint8_t *work)
 {
     if (!work)
     {
@@ -392,7 +392,7 @@ void idemip_rdnss_option_in(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_rdnss_get(uint8_t *restrict work)
+void idemip_rdnss_get(uint8_t *work)
 {
     if (!work)
     {
@@ -414,7 +414,7 @@ void idemip_rdnss_get(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_rdnss_find(uint8_t *restrict work)
+void idemip_rdnss_find(uint8_t *work)
 {
     if (!work)
     {
@@ -438,7 +438,7 @@ void idemip_rdnss_find(uint8_t *restrict work)
 }
 
 // sec 6.2 step (b) deletes an entry "in order to prevent the RDNSS address from being used any more".
-void idemip_rdnss_remove(uint8_t *restrict work)
+void idemip_rdnss_remove(uint8_t *work)
 {
     if (!work)
     {
@@ -469,7 +469,7 @@ void idemip_rdnss_remove(uint8_t *restrict work)
 // Repository." One per call, the address reported so the caller drops it from the resolver too.
 //
 // Nothing expired reports BUSY, since the same call on a later tick fires one.
-void idemip_rdnss_tick(uint8_t *restrict work)
+void idemip_rdnss_tick(uint8_t *work)
 {
     if (!work)
     {

@@ -306,8 +306,8 @@ typedef struct
  *   IDEMIP_NETIF_IO(work)->bind_args.mtu = 1500u;
  *   Netif.bind(work);
  *
- * @c work is IDEMIP_NETIF_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_NETIF_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the table, so two
  * stacks are two borrows and share not one byte.
  *
@@ -348,44 +348,44 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const bind)(uint8_t *restrict work);
-    void (*const unbind)(uint8_t *restrict work);
-    void (*const set_addr4)(uint8_t *restrict work);
-    void (*const set_mtu)(uint8_t *restrict work);
-    void (*const set_flags)(uint8_t *restrict work);
-    void (*const set_offload)(uint8_t *restrict work);
-    void (*const get)(uint8_t *restrict work);
-    void (*const find4)(uint8_t *restrict work);
-    void (*const local4)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const bind)(uint8_t *work);
+    void (*const unbind)(uint8_t *work);
+    void (*const set_addr4)(uint8_t *work);
+    void (*const set_mtu)(uint8_t *work);
+    void (*const set_flags)(uint8_t *work);
+    void (*const set_offload)(uint8_t *work);
+    void (*const get)(uint8_t *work);
+    void (*const find4)(uint8_t *work);
+    void (*const local4)(uint8_t *work);
 #if IDEMIP_ENABLE_IPV6
-    void (*const add_addr6)(uint8_t *restrict work);
-    void (*const remove_addr6)(uint8_t *restrict work);
-    void (*const find_addr6)(uint8_t *restrict work);
-    void (*const get_addr6)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
+    void (*const add_addr6)(uint8_t *work);
+    void (*const remove_addr6)(uint8_t *work);
+    void (*const find_addr6)(uint8_t *work);
+    void (*const get_addr6)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
 #endif
 } NetifNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_netif_clear(uint8_t *restrict work);
-void idemip_netif_bind(uint8_t *restrict work);
-void idemip_netif_unbind(uint8_t *restrict work);
-void idemip_netif_set_addr4(uint8_t *restrict work);
-void idemip_netif_set_mtu(uint8_t *restrict work);
-void idemip_netif_set_flags(uint8_t *restrict work);
-void idemip_netif_set_offload(uint8_t *restrict work);
-void idemip_netif_get(uint8_t *restrict work);
-void idemip_netif_find4(uint8_t *restrict work);
-void idemip_netif_local4(uint8_t *restrict work);
+void idemip_netif_clear(uint8_t *work);
+void idemip_netif_bind(uint8_t *work);
+void idemip_netif_unbind(uint8_t *work);
+void idemip_netif_set_addr4(uint8_t *work);
+void idemip_netif_set_mtu(uint8_t *work);
+void idemip_netif_set_flags(uint8_t *work);
+void idemip_netif_set_offload(uint8_t *work);
+void idemip_netif_get(uint8_t *work);
+void idemip_netif_find4(uint8_t *work);
+void idemip_netif_local4(uint8_t *work);
 #if IDEMIP_ENABLE_IPV6
-void idemip_netif_add_addr6(uint8_t *restrict work);
-void idemip_netif_remove_addr6(uint8_t *restrict work);
-void idemip_netif_find_addr6(uint8_t *restrict work);
-void idemip_netif_get_addr6(uint8_t *restrict work);
-void idemip_netif_tick(uint8_t *restrict work);
+void idemip_netif_add_addr6(uint8_t *work);
+void idemip_netif_remove_addr6(uint8_t *work);
+void idemip_netif_find_addr6(uint8_t *work);
+void idemip_netif_get_addr6(uint8_t *work);
+void idemip_netif_tick(uint8_t *work);
 #endif
 
 /**

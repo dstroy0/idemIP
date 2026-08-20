@@ -178,8 +178,8 @@ typedef struct
  *   for (i = 0; i < IDEMIP_RDNSS_SERVERS; i++) { IDEMIP_RDNSS_IO(work)->addr_args.index = i;
  *                                                Rdnss.get(work); ... }
  *
- * @c work is IDEMIP_RDNSS_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_RDNSS_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. sec 6.1 keys an entry's refresh on
  * "the same interface", and sec 5.3.2 warns that "different DNS information ... provided on different
  * network interfaces ... can lead to inconsistent behavior", so the borrow IS the interface and two
@@ -212,23 +212,23 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const option_in)(uint8_t *restrict work);
-    void (*const get)(uint8_t *restrict work);
-    void (*const find)(uint8_t *restrict work);
-    void (*const remove)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const option_in)(uint8_t *work);
+    void (*const get)(uint8_t *work);
+    void (*const find)(uint8_t *work);
+    void (*const remove)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
 } RdnssNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_rdnss_clear(uint8_t *restrict work);
-void idemip_rdnss_option_in(uint8_t *restrict work);
-void idemip_rdnss_get(uint8_t *restrict work);
-void idemip_rdnss_find(uint8_t *restrict work);
-void idemip_rdnss_remove(uint8_t *restrict work);
-void idemip_rdnss_tick(uint8_t *restrict work);
+void idemip_rdnss_clear(uint8_t *work);
+void idemip_rdnss_option_in(uint8_t *work);
+void idemip_rdnss_get(uint8_t *work);
+void idemip_rdnss_find(uint8_t *work);
+void idemip_rdnss_remove(uint8_t *work);
+void idemip_rdnss_tick(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

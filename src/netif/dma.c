@@ -95,7 +95,7 @@ static_assert(IDEMIP_ETH_FRAME_MAX <= IDEMIP_DMA_FRAME_MAX,
 // was pointed at that address. bind gave descriptor i the address base + i strides, so the address
 // the driver hands back names the descriptor. The walk starts at @p start, where the last one left
 // off, is bounded by the count and wraps with a mask.
-static uint32_t dma_slot_of(uint8_t *restrict work, size_t off, uint32_t count, uint32_t start, const uint8_t *addr)
+static uint32_t dma_slot_of(uint8_t *work, size_t off, uint32_t count, uint32_t start, const uint8_t *addr)
 {
     for (uint32_t n = 0u; n < count; n++)
     {
@@ -110,9 +110,9 @@ static uint32_t dma_slot_of(uint8_t *restrict work, size_t off, uint32_t count, 
 
 // Hands one receive descriptor back to the engine: the driver's release, then the length, then the
 // ownership store, which is the order PLAN sec 3.5 states for the fields and the OWN bit.
-static void dma_rx_give_back(uint8_t *restrict work, DmaDesc *d)
+static void dma_rx_give_back(uint8_t *work, DmaDesc *d)
 {
-    DmaCtx *ctx = DMA_CTX(work);
+    const DmaCtx *ctx = DMA_CTX(work);
     ctx->drv->rx_release();
     d->len = 0u;
     d->flags = (uint16_t)IDEMIP_DMA_FLAG_OWN;
@@ -123,20 +123,20 @@ static void dma_rx_give_back(uint8_t *restrict work, DmaDesc *d)
 // Zeroes the context and both rings, then stamps the context. A zeroed descriptor holds a null
 // buffer, no flags and no pins, which is the state every other entry reads as the engine not owning
 // it. The operand block is the caller's and is left alone.
-void idemip_dma_clear(uint8_t *restrict work)
+void idemip_dma_clear(uint8_t *work)
 {
     if (!work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_DMA_OFF_CTX, 0, (size_t)IDEMIP_DMA_OFF_END - (size_t)IDEMIP_DMA_OFF_CTX);
+    memset(work + IDEMIP_DMA_OFF_CTX, 0, (size_t)IDEMIP_DMA_OFF_END - IDEMIP_DMA_OFF_CTX);
     DMA_CTX(work)->ready = DMA_READY;
     DMA_IO(work)->status = IDEMIP_OK;
 }
 
 // Both cache hooks are called without a null test on the frame path, so an incomplete driver is
 // refused here rather than faulting at the first frame.
-void idemip_dma_bind(uint8_t *restrict work)
+void idemip_dma_bind(uint8_t *work)
 {
     if (!work)
     {
@@ -197,7 +197,7 @@ void idemip_dma_bind(uint8_t *restrict work)
 // later tick finds a frame. A frame longer than one buffer goes straight back to the engine, and a
 // buffer this ring never handed out or one whose descriptor this side still holds is left where it
 // is: all three are ERR, and no retry makes any of them right.
-void idemip_dma_rx_take(uint8_t *restrict work)
+void idemip_dma_rx_take(uint8_t *work)
 {
     if (!work)
     {
@@ -258,7 +258,7 @@ void idemip_dma_rx_take(uint8_t *restrict work)
 // A descriptor still pinned stays out of the engine's hands: the hold ends, the pin does not, and
 // the last unpin returns it. A descriptor the engine already owns carries no hold, so a second post
 // and a post of a descriptor never taken are both ERR: neither becomes right on a retry.
-void idemip_dma_rx_post(uint8_t *restrict work)
+void idemip_dma_rx_post(uint8_t *work)
 {
     if (!work)
     {
@@ -296,7 +296,7 @@ void idemip_dma_rx_post(uint8_t *restrict work)
 // Raises the pin count on a descriptor this side holds. A pin past IDEMIP_MAX_PINNED_FRAMES is BUSY,
 // because every retaining unit drops its pins on its own timer and the retry then succeeds. A
 // descriptor the engine owns was never taken, and no retry makes it retainable, so that is ERR.
-void idemip_dma_pin(uint8_t *restrict work)
+void idemip_dma_pin(uint8_t *work)
 {
     if (!work)
     {
@@ -336,7 +336,7 @@ void idemip_dma_pin(uint8_t *restrict work)
 
 // Lowers it, and the descriptor goes back to the engine when the last pin goes and the hold is
 // already over. An unpin of a descriptor no unit holds is ERR: no retry gives it a pin to drop.
-void idemip_dma_unpin(uint8_t *restrict work)
+void idemip_dma_unpin(uint8_t *work)
 {
     if (!work)
     {
@@ -374,7 +374,7 @@ void idemip_dma_unpin(uint8_t *restrict work)
 // length afterwards and tx_post bounds it against RFC 894 then. A driver with no room is BUSY: a
 // later tick finds a freed descriptor. A buffer outside the array bind was handed, and one already
 // handed out, are ERR.
-void idemip_dma_tx_take(uint8_t *restrict work)
+void idemip_dma_tx_take(uint8_t *work)
 {
     if (!work)
     {
@@ -392,7 +392,7 @@ void idemip_dma_tx_take(uint8_t *restrict work)
         return;
     }
     DmaCtx *ctx = DMA_CTX(work);
-    uint8_t *buf = ctx->drv->tx_claim((size_t)IDEMIP_DMA_FRAME_MAX);
+    const uint8_t *buf = ctx->drv->tx_claim((size_t)IDEMIP_DMA_FRAME_MAX);
     if (buf == NULL)
     {
         io->status = IDEMIP_BUSY;
@@ -424,7 +424,7 @@ void idemip_dma_tx_take(uint8_t *restrict work)
 // A driver that could not queue it leaves the hold in place, so the same descriptor is posted again
 // on a later tick, which is BUSY. A length no frame can carry (RFC 894) and a descriptor never taken
 // are ERR.
-void idemip_dma_tx_post(uint8_t *restrict work)
+void idemip_dma_tx_post(uint8_t *work)
 {
     if (!work)
     {
@@ -438,7 +438,7 @@ void idemip_dma_tx_post(uint8_t *restrict work)
     {
         return;
     }
-    DmaCtx *ctx = DMA_CTX(work);
+    const DmaCtx *ctx = DMA_CTX(work);
     DmaDesc *d = DMA_TX_AT(work, io->desc_args.index);
     if ((d->flags & (uint16_t)IDEMIP_DMA_FLAG_HELD) == 0u || d->buf == NULL)
     {
@@ -463,7 +463,7 @@ void idemip_dma_tx_post(uint8_t *restrict work)
 // Walks the whole transmit ring from tx_tail, clearing every descriptor the engine owns back to a
 // buffer this side may build into. Nothing to take back is BUSY, the same answer a full ring gives:
 // the caller comes back on a later tick.
-void idemip_dma_tx_reap(uint8_t *restrict work)
+void idemip_dma_tx_reap(uint8_t *work)
 {
     if (!work)
     {
@@ -500,7 +500,7 @@ void idemip_dma_tx_reap(uint8_t *restrict work)
 }
 
 // The pins over the whole receive ring, which is the count IDEMIP_MAX_PINNED_FRAMES bounds.
-void idemip_dma_pinned(uint8_t *restrict work)
+void idemip_dma_pinned(uint8_t *work)
 {
     if (!work)
     {

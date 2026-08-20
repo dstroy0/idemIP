@@ -204,7 +204,7 @@ static uint32_t dhcp4_backoff(const Dhcp4Ctx *ctx, uint32_t rand)
 // What the caller reads after a call: the sec 4.4 state, the sec 4.1 'xid', and the lease the machine
 // holds. The received option 6 addresses are not here: they live in the caller's message octets and
 // only input reports them.
-static void dhcp4_publish(uint8_t *restrict work)
+static void dhcp4_publish(uint8_t *work)
 {
     Dhcp4Io *io = DHCP4_IO(work);
     const Dhcp4Ctx *ctx = DHCP4_CTX(work);
@@ -222,7 +222,7 @@ static void dhcp4_publish(uint8_t *restrict work)
 // sec 4.4.5's "Halt network" and its lease expiry, and Figure 5's DHCPNAK restart: the machine returns
 // to the INIT of sec 4.4.1 holding no address, so nothing of the lease is left for a later message to
 // quote. The retransmission deadline is left alone, since the wait after a DHCPDECLINE outlives it.
-static void dhcp4_halt(uint8_t *restrict work)
+static void dhcp4_halt(uint8_t *work)
 {
     Dhcp4Ctx *ctx = DHCP4_CTX(work);
     ctx->state = IDEMIP_DHCP4_INIT;
@@ -418,7 +418,7 @@ static idemip_bool dhcp4_parse(const uint8_t *msg, size_t len, Dhcp4Opts *o)
 // The parameters a DHCPOFFER or DHCPACK carried. An option the message left out leaves what the
 // machine already holds: RFC 2132 sec 9.7 makes the server identifier optional in a DHCPACK, and
 // sec 3.1 says an ACK's parameters "SHOULD NOT conflict with those in the earlier DHCPOFFER".
-static void dhcp4_adopt(uint8_t *restrict work, const Dhcp4Opts *o)
+static void dhcp4_adopt(uint8_t *work, const Dhcp4Opts *o)
 {
     Dhcp4Io *io = DHCP4_IO(work);
     Dhcp4Ctx *ctx = DHCP4_CTX(work);
@@ -445,7 +445,7 @@ static void dhcp4_adopt(uint8_t *restrict work, const Dhcp4Opts *o)
 // duration_of_lease)" and "(0.875 * duration_of_lease)", both exact as shifts, and sec 4.4.5 requires
 // "T1 MUST be earlier than T2, which, in turn, MUST be earlier than the time at which the client's
 // lease will expire", so an offered pair that is not is replaced by the defaults.
-static void dhcp4_lease(uint8_t *restrict work, const Dhcp4Opts *o, const uint8_t *msg)
+static void dhcp4_lease(uint8_t *work, const Dhcp4Opts *o, const uint8_t *msg)
 {
     Dhcp4Ctx *ctx = DHCP4_CTX(work);
     ctx->offered_ip = idemip_rd32(msg + IDEMIP_DHCP4_MSG_OFF_YIADDR); // sec 2, 'yiaddr'
@@ -497,7 +497,7 @@ static void dhcp4_lease(uint8_t *restrict work, const Dhcp4Opts *o, const uint8_
 // sec 4.4.1: an offer is collected in SELECTING, and the selected one supplies the 'server identifier'
 // that sec 3.1 makes the DHCPREQUEST carry, so an offer without option 54 cannot be selected. The
 // first acceptable offer is taken, which sec 4.4.1 permits: "e.g., the first DHCPOFFER message".
-static idemip_bool dhcp4_offer(uint8_t *restrict work, const Dhcp4Opts *o, const uint8_t *msg)
+static idemip_bool dhcp4_offer(uint8_t *work, const Dhcp4Opts *o, const uint8_t *msg)
 {
     Dhcp4Ctx *ctx = DHCP4_CTX(work);
     if (ctx->state != IDEMIP_DHCP4_SELECTING)
@@ -526,7 +526,7 @@ static idemip_bool dhcp4_offer(uint8_t *restrict work, const Dhcp4Opts *o, const
 // REBINDING. sec 4.4.3's DHCPACK answering a DHCPINFORM carries no lease, so it sets the parameters
 // alone: "Once a DHCPACK message with an 'xid' field matching that in the client's DHCPINFORM message
 // arrives from any server, the client is initialized."
-static idemip_bool dhcp4_ack(uint8_t *restrict work, const Dhcp4Opts *o, const uint8_t *msg)
+static idemip_bool dhcp4_ack(uint8_t *work, const Dhcp4Opts *o, const uint8_t *msg)
 {
     Dhcp4Ctx *ctx = DHCP4_CTX(work);
     if (ctx->sent == (uint8_t)IDEMIP_DHCP4_INFORM)
@@ -551,9 +551,9 @@ static idemip_bool dhcp4_ack(uint8_t *restrict work, const Dhcp4Opts *o, const u
 // and REBINDING, both of which hold no lease afterwards. sec 3.2: a client that cannot reuse its
 // remembered address "must instead request a new address by restarting the configuration process",
 // which is start with the fresh 'xid' sec 4.4.1 requires of it.
-static idemip_bool dhcp4_nak(uint8_t *restrict work)
+static idemip_bool dhcp4_nak(uint8_t *work)
 {
-    Dhcp4Ctx *ctx = DHCP4_CTX(work);
+    const Dhcp4Ctx *ctx = DHCP4_CTX(work);
     if ((ctx->state != IDEMIP_DHCP4_REQUESTING) && (ctx->state != IDEMIP_DHCP4_REBOOTING) &&
         (ctx->state != IDEMIP_DHCP4_RENEWING) && (ctx->state != IDEMIP_DHCP4_REBINDING))
     {
@@ -566,10 +566,10 @@ static idemip_bool dhcp4_nak(uint8_t *restrict work)
 // One received message. RFC 1542 sec 2.1 discards a message whose 'op' is neither code, sec 4.1 makes
 // 'xid' what a reply is matched on, and sec 4.2 makes 'chaddr' the client's identity when no 'client
 // identifier' was sent. A message that fails any test, or that this state discards, changes nothing.
-static idemip_bool dhcp4_take(uint8_t *restrict work)
+static idemip_bool dhcp4_take(uint8_t *work)
 {
     Dhcp4Io *io = DHCP4_IO(work);
-    Dhcp4Ctx *ctx = DHCP4_CTX(work);
+    const Dhcp4Ctx *ctx = DHCP4_CTX(work);
     const IdemIpDhcp4Cfg *cfg = ctx->cfg;
     const uint8_t *msg = io->input_args.msg;
     // RFC 1542 sec 2.1: "The IP Total Length and UDP Length must be large enough to contain the
@@ -657,7 +657,7 @@ static size_t dhcp4_opt_u32(uint8_t *out, size_t at, uint8_t code, uint32_t v)
 // The message the state owes, as RFC 2131 Table 4 and Table 5 give its fields and options. Every
 // octet past the last option is a sec 3.1 pad, left by the zeroing above, and the message spans the
 // 300 octets RFC 1542 sec 2.1 checks for.
-static void dhcp4_write(uint8_t *restrict work)
+static void dhcp4_write(uint8_t *work)
 {
     Dhcp4Io *io = DHCP4_IO(work);
     Dhcp4Ctx *ctx = DHCP4_CTX(work);
@@ -828,7 +828,7 @@ static void dhcp4_write(uint8_t *restrict work)
 // A retransmission of the request still outstanding, or the end of the transmissions sec 3.1 allows
 // it. sec 3.1: "If the client receives neither a DHCPACK or a DHCPNAK message after employing the
 // retransmission algorithm, the client reverts to INIT state and restarts the initialization process."
-static idemip_bool dhcp4_retry(uint8_t *restrict work, uint8_t tries)
+static idemip_bool dhcp4_retry(uint8_t *work, uint8_t tries)
 {
     Dhcp4Ctx *ctx = DHCP4_CTX(work);
     if ((tries != 0u) && (ctx->retries >= tries))
@@ -841,7 +841,7 @@ static idemip_bool dhcp4_retry(uint8_t *restrict work, uint8_t tries)
 }
 
 // The deadline that has passed, in the state it passed in.
-static idemip_bool dhcp4_run(uint8_t *restrict work)
+static idemip_bool dhcp4_run(uint8_t *work)
 {
     Dhcp4Ctx *ctx = DHCP4_CTX(work);
     if (ctx->owed != 0u)
@@ -939,7 +939,7 @@ static idemip_bool dhcp4_run(uint8_t *restrict work)
 
 // Every byte of the borrow, the operand block included, which leaves the state at zero: the INIT
 // sec 4.4.1 begins in.
-void idemip_dhcp4_clear(uint8_t *restrict work)
+void idemip_dhcp4_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -951,7 +951,7 @@ void idemip_dhcp4_clear(uint8_t *restrict work)
 
 // 'chaddr' is 16 octets and 'hlen' counts how many of them carry the address (RFC 2131 sec 2), so a
 // length past that, or a missing address, is refused here rather than read past at the first build.
-void idemip_dhcp4_bind(uint8_t *restrict work)
+void idemip_dhcp4_bind(uint8_t *work)
 {
     if (!work)
     {
@@ -972,7 +972,7 @@ void idemip_dhcp4_bind(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_dhcp4_start(uint8_t *restrict work)
+void idemip_dhcp4_start(uint8_t *work)
 {
     if (!work)
     {
@@ -1028,7 +1028,7 @@ void idemip_dhcp4_start(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_dhcp4_stop(uint8_t *restrict work)
+void idemip_dhcp4_stop(uint8_t *work)
 {
     if (!work)
     {
@@ -1048,14 +1048,14 @@ void idemip_dhcp4_stop(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_dhcp4_input(uint8_t *restrict work)
+void idemip_dhcp4_input(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     Dhcp4Io *io = DHCP4_IO(work);
-    Dhcp4Ctx *ctx = DHCP4_CTX(work);
+    const Dhcp4Ctx *ctx = DHCP4_CTX(work);
     io->msg_type = 0u;
     io->dns = NULL;
     io->dns_count = 0u;
@@ -1071,14 +1071,14 @@ void idemip_dhcp4_input(uint8_t *restrict work)
     io->status = took ? IDEMIP_OK : IDEMIP_ERR;
 }
 
-void idemip_dhcp4_build(uint8_t *restrict work)
+void idemip_dhcp4_build(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     Dhcp4Io *io = DHCP4_IO(work);
-    Dhcp4Ctx *ctx = DHCP4_CTX(work);
+    const Dhcp4Ctx *ctx = DHCP4_CTX(work);
     io->len = 0;
     if (ctx->cfg == NULL)
     {
@@ -1112,7 +1112,7 @@ void idemip_dhcp4_build(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_dhcp4_tick(uint8_t *restrict work)
+void idemip_dhcp4_tick(uint8_t *work)
 {
     if (!work)
     {
@@ -1132,7 +1132,7 @@ void idemip_dhcp4_tick(uint8_t *restrict work)
     io->status = moved ? IDEMIP_OK : IDEMIP_BUSY;
 }
 
-void idemip_dhcp4_release(uint8_t *restrict work)
+void idemip_dhcp4_release(uint8_t *work)
 {
     if (!work)
     {
@@ -1161,7 +1161,7 @@ void idemip_dhcp4_release(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_dhcp4_decline(uint8_t *restrict work)
+void idemip_dhcp4_decline(uint8_t *work)
 {
     if (!work)
     {
@@ -1188,7 +1188,7 @@ void idemip_dhcp4_decline(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_dhcp4_inform(uint8_t *restrict work)
+void idemip_dhcp4_inform(uint8_t *work)
 {
     if (!work)
     {

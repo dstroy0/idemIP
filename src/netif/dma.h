@@ -138,8 +138,8 @@ typedef struct
  *   Dma.rx_take(work);
  *   if (IDEMIP_DMA_IO(work)->status == IDEMIP_OK) { ... Dma.rx_post(work); }
  *
- * @c work is IDEMIP_DMA_BORROW bytes the CALLER took, at an address it knows. It arrives @c restrict
- * and is not held past the call, so nothing here aliases it. How those bytes are carved is this
+ * @c work is IDEMIP_DMA_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved is this
  * module's and is never named here beyond the map above. The borrow IS the ring pair, so two
  * interfaces are two borrows and share not one byte.
  *
@@ -167,31 +167,31 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const bind)(uint8_t *restrict work);
-    void (*const rx_take)(uint8_t *restrict work);
-    void (*const rx_post)(uint8_t *restrict work);
-    void (*const pin)(uint8_t *restrict work);
-    void (*const unpin)(uint8_t *restrict work);
-    void (*const tx_take)(uint8_t *restrict work);
-    void (*const tx_post)(uint8_t *restrict work);
-    void (*const tx_reap)(uint8_t *restrict work);
-    void (*const pinned)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const bind)(uint8_t *work);
+    void (*const rx_take)(uint8_t *work);
+    void (*const rx_post)(uint8_t *work);
+    void (*const pin)(uint8_t *work);
+    void (*const unpin)(uint8_t *work);
+    void (*const tx_take)(uint8_t *work);
+    void (*const tx_post)(uint8_t *work);
+    void (*const tx_reap)(uint8_t *work);
+    void (*const pinned)(uint8_t *work);
 } DmaNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_dma_clear(uint8_t *restrict work);
-void idemip_dma_bind(uint8_t *restrict work);
-void idemip_dma_rx_take(uint8_t *restrict work);
-void idemip_dma_rx_post(uint8_t *restrict work);
-void idemip_dma_pin(uint8_t *restrict work);
-void idemip_dma_unpin(uint8_t *restrict work);
-void idemip_dma_tx_take(uint8_t *restrict work);
-void idemip_dma_tx_post(uint8_t *restrict work);
-void idemip_dma_tx_reap(uint8_t *restrict work);
-void idemip_dma_pinned(uint8_t *restrict work);
+void idemip_dma_clear(uint8_t *work);
+void idemip_dma_bind(uint8_t *work);
+void idemip_dma_rx_take(uint8_t *work);
+void idemip_dma_rx_post(uint8_t *work);
+void idemip_dma_pin(uint8_t *work);
+void idemip_dma_unpin(uint8_t *work);
+void idemip_dma_tx_take(uint8_t *work);
+void idemip_dma_tx_post(uint8_t *work);
+void idemip_dma_tx_reap(uint8_t *work);
+void idemip_dma_pinned(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

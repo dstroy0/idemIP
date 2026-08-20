@@ -223,7 +223,7 @@ static uint8_t ip6_select_common_prefix(const uint8_t *s, const uint8_t *d)
  * table entry only matches against an address during a lookup if the zone index also matches the
  * address's zone index", which a row left at the default index does not ask for.
  */
-static uint8_t ip6_select_policy_find(uint8_t *restrict work, const uint8_t *addr, uint32_t zone)
+static uint8_t ip6_select_policy_find(uint8_t *work, const uint8_t *addr, uint32_t zone)
 {
     uint8_t best = IDEMIP_IP6_SELECT_NONE;
     uint8_t best_len = 0u;
@@ -252,7 +252,7 @@ static uint8_t ip6_select_policy_find(uint8_t *restrict work, const uint8_t *add
 }
 
 // Precedence(A) of sec 2.1, and zero where no row matches.
-static uint8_t ip6_select_precedence(uint8_t *restrict work, const uint8_t *addr, uint32_t zone)
+static uint8_t ip6_select_precedence(uint8_t *work, const uint8_t *addr, uint32_t zone)
 {
     uint8_t row = ip6_select_policy_find(work, addr, zone);
     return (row == IDEMIP_IP6_SELECT_NONE) ? 0u : IP6_SELECT_POLICY_AT(work, row)->precedence;
@@ -260,7 +260,7 @@ static uint8_t ip6_select_precedence(uint8_t *restrict work, const uint8_t *addr
 
 // Label(A) of sec 2.1. A row that matches nothing carries a label no row's label equals, so the two
 // Rule 6 and Rule 5 comparisons that match labels never call an unlabeled pair equal.
-static uint8_t ip6_select_label(uint8_t *restrict work, const uint8_t *addr, uint32_t zone)
+static uint8_t ip6_select_label(uint8_t *work, const uint8_t *addr, uint32_t zone)
 {
     uint8_t row = ip6_select_policy_find(work, addr, zone);
     return (row == IDEMIP_IP6_SELECT_NONE) ? IDEMIP_IP6_SELECT_NONE : IP6_SELECT_POLICY_AT(work, row)->label;
@@ -331,7 +331,7 @@ static idemip_bool ip6_select_candidate_ok(const Ip6SelectSource *src, const uin
  * sec 5 opens "a list of eight pair-wise comparison rules" and then numbers nine of them, Rule 5.5
  * sitting between Rule 5 and Rule 6; every one of them is applied here, in the printed order.
  */
-static int ip6_select_cmp_source(uint8_t *restrict work, uint8_t ia, uint8_t ib, const uint8_t *d, uint32_t d_zone,
+static int ip6_select_cmp_source(uint8_t *work, uint8_t ia, uint8_t ib, const uint8_t *d, uint32_t d_zone,
                                  uint8_t d_netif, uint8_t *rule)
 {
     const Ip6SelectSource *sa = IP6_SELECT_SOURCE_AT(work, ia);
@@ -451,7 +451,7 @@ static int ip6_select_cmp_source(uint8_t *restrict work, uint8_t ia, uint8_t ib,
 // sort the set; it need only identify the 'maximum' value". IDEMIP_IP6_SELECT_NONE when the
 // candidate set has nothing sec 4 admits for this destination, which sec 6 calls Source(D)
 // undefined.
-static uint8_t ip6_select_best_source(uint8_t *restrict work, const uint8_t *d, uint32_t d_zone, uint8_t d_netif,
+static uint8_t ip6_select_best_source(uint8_t *work, const uint8_t *d, uint32_t d_zone, uint8_t d_netif,
                                       uint8_t *rule)
 {
     uint8_t best = IDEMIP_IP6_SELECT_NONE;
@@ -492,7 +492,7 @@ static uint8_t ip6_select_best_source(uint8_t *restrict work, const uint8_t *d, 
  * Rules 2 through 5 and Rule 9 all read Source(D), so a pair in which either side has none skips
  * past them to Rule 8; Rule 1 has already preferred the usable one whenever exactly one is usable.
  */
-static int ip6_select_cmp_dest(uint8_t *restrict work, uint8_t ia, uint8_t ib, uint8_t *rule)
+static int ip6_select_cmp_dest(uint8_t *work, uint8_t ia, uint8_t ib, uint8_t *rule)
 {
     const Ip6SelectDest *da = IP6_SELECT_DEST_AT(work, ia);
     const Ip6SelectDest *db = IP6_SELECT_DEST_AT(work, ib);
@@ -627,7 +627,7 @@ static int ip6_select_cmp_dest(uint8_t *restrict work, uint8_t ia, uint8_t ib, u
 // implementation: "If an implementation is not configurable or has not been configured, then it
 // SHOULD operate according to the algorithms specified here in conjunction with the following
 // default policy table".
-void idemip_ip6_select_clear(uint8_t *restrict work)
+void idemip_ip6_select_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -658,7 +658,7 @@ void idemip_ip6_select_clear(uint8_t *restrict work)
 // A row whose prefix and length already sit in the table is overwritten, so a caller reconfigures
 // one of sec 2.1's defaults rather than adding a second row that shadows it. A table with no free
 // row is ERR: nothing frees one on a later tick, so the same call would fail the same way.
-void idemip_ip6_select_policy_set(uint8_t *restrict work)
+void idemip_ip6_select_policy_set(uint8_t *work)
 {
     if (!work)
     {
@@ -676,7 +676,7 @@ void idemip_ip6_select_policy_set(uint8_t *restrict work)
     uint8_t slot = IDEMIP_IP6_SELECT_NONE;
     for (uint8_t i = 0u; i < IP6_SELECT_POLICIES; i++)
     {
-        Ip6SelectPolicy *row = IP6_SELECT_POLICY_AT(work, i);
+        const Ip6SelectPolicy *row = IP6_SELECT_POLICY_AT(work, i);
         if (row->used && row->prefix_len == io->policy_args.prefix_len && row->zone == io->policy_args.zone &&
             idemip_bytes_eq(row->prefix, prefix, IDEMIP_IP6_ADDR_LEN))
         {
@@ -708,7 +708,7 @@ void idemip_ip6_select_policy_set(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_ip6_select_policy_lookup(uint8_t *restrict work)
+void idemip_ip6_select_policy_lookup(uint8_t *work)
 {
     if (!work)
     {
@@ -739,7 +739,7 @@ void idemip_ip6_select_policy_lookup(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_ip6_select_scope_of(uint8_t *restrict work)
+void idemip_ip6_select_scope_of(uint8_t *work)
 {
     if (!work)
     {
@@ -757,7 +757,7 @@ void idemip_ip6_select_scope_of(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_ip6_select_common_prefix_entry(uint8_t *restrict work)
+void idemip_ip6_select_common_prefix_entry(uint8_t *work)
 {
     if (!work)
     {
@@ -777,7 +777,7 @@ void idemip_ip6_select_common_prefix_entry(uint8_t *restrict work)
 // RFC 6724 sec 4: "In any case, multicast addresses and the unspecified address MUST NOT be included
 // in a candidate set." Both are ERR, since no later call makes either eligible. A full candidate set
 // is ERR for the same reason: only clear empties it.
-void idemip_ip6_select_source_add(uint8_t *restrict work)
+void idemip_ip6_select_source_add(uint8_t *work)
 {
     if (!work)
     {
@@ -817,7 +817,7 @@ void idemip_ip6_select_source_add(uint8_t *restrict work)
 
 // The list keeps the order it was added in, which is the "original list" sec 6 Rule 10 falls back
 // to. A full list is ERR: only clear empties it.
-void idemip_ip6_select_dest_add(uint8_t *restrict work)
+void idemip_ip6_select_dest_add(uint8_t *work)
 {
     if (!work)
     {
@@ -850,7 +850,7 @@ void idemip_ip6_select_dest_add(uint8_t *restrict work)
 
 // A destination with no eligible candidate is sec 6's "Source(D) is undefined", which is an answer
 // rather than a fault: the call reports OK with found clear.
-void idemip_ip6_select_source_select(uint8_t *restrict work)
+void idemip_ip6_select_source_select(uint8_t *work)
 {
     if (!work)
     {
@@ -887,7 +887,7 @@ void idemip_ip6_select_source_select(uint8_t *restrict work)
 // sec 6 runs the source algorithm per destination first, then orders the list. A selection sort over
 // the order region walks a fixed count of pairs and moves no entry, so the destinations keep the
 // original positions Rule 10 compares.
-void idemip_ip6_select_dest_sort(uint8_t *restrict work)
+void idemip_ip6_select_dest_sort(uint8_t *work)
 {
     if (!work)
     {
@@ -932,14 +932,14 @@ void idemip_ip6_select_dest_sort(uint8_t *restrict work)
 
 // Reads one place of the sorted list. A list no sort has run over, and a place past its end, are
 // both ERR: neither becomes readable on a later tick without a call the caller makes.
-void idemip_ip6_select_dest_at(uint8_t *restrict work)
+void idemip_ip6_select_dest_at(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     Ip6SelectIo *io = IP6_SELECT_IO(work);
-    Ip6SelectCtx *ctx = IP6_SELECT_CTX(work);
+    const Ip6SelectCtx *ctx = IP6_SELECT_CTX(work);
     io->status = IDEMIP_ERR;
     io->dest = NULL;
     io->source = NULL;

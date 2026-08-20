@@ -243,8 +243,8 @@ typedef struct
  *   Dad.tick(work);
  *   if (IDEMIP_DAD_IO(work)->send_ns) { ... }
  *
- * @c work is IDEMIP_DAD_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_DAD_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. sec 5 runs autoconfiguration "on a
  * per-interface basis", so the borrow IS the interface and two interfaces share not one byte.
  *
@@ -272,27 +272,27 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const bind)(uint8_t *restrict work);
-    void (*const start)(uint8_t *restrict work);
-    void (*const stop)(uint8_t *restrict work);
-    void (*const find)(uint8_t *restrict work);
-    void (*const ns_in)(uint8_t *restrict work);
-    void (*const na_in)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const bind)(uint8_t *work);
+    void (*const start)(uint8_t *work);
+    void (*const stop)(uint8_t *work);
+    void (*const find)(uint8_t *work);
+    void (*const ns_in)(uint8_t *work);
+    void (*const na_in)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
 } DadNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_dad_clear(uint8_t *restrict work);
-void idemip_dad_bind(uint8_t *restrict work);
-void idemip_dad_start(uint8_t *restrict work);
-void idemip_dad_stop(uint8_t *restrict work);
-void idemip_dad_find(uint8_t *restrict work);
-void idemip_dad_ns_in(uint8_t *restrict work);
-void idemip_dad_na_in(uint8_t *restrict work);
-void idemip_dad_tick(uint8_t *restrict work);
+void idemip_dad_clear(uint8_t *work);
+void idemip_dad_bind(uint8_t *work);
+void idemip_dad_start(uint8_t *work);
+void idemip_dad_stop(uint8_t *work);
+void idemip_dad_find(uint8_t *work);
+void idemip_dad_ns_in(uint8_t *work);
+void idemip_dad_na_in(uint8_t *work);
+void idemip_dad_tick(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

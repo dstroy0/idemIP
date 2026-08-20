@@ -474,7 +474,7 @@ IDEMIP_INLINE uint8_t idemip_ip4_addr_mask_ones(uint32_t mask)
  */
 IDEMIP_INLINE idemip_bool idemip_ip4_addr_mask_contiguous(uint32_t mask)
 {
-    uint32_t host = (uint32_t)(~mask) + 1u;
+    uint32_t host = (~mask) + 1u;
     return ((host & (host - 1u)) == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 

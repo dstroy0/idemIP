@@ -207,8 +207,8 @@ static_assert(IDEMIP_ARP_PENDING < IDEMIP_ARP_INDEX_NONE,
  *   IDEMIP_ARP_IO(work)->add_args.sha = idemip_arp_sha(packet);
  *   ArpTable.add(work);
  *
- * @c work is IDEMIP_ARP_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_ARP_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the table, so two
  * tables are two borrows and share not one byte.
  *
@@ -247,27 +247,27 @@ static_assert(IDEMIP_ARP_PENDING < IDEMIP_ARP_INDEX_NONE,
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const add)(uint8_t *restrict work);
-    void (*const find)(uint8_t *restrict work);
-    void (*const remove)(uint8_t *restrict work);
-    void (*const input)(uint8_t *restrict work);
-    void (*const queue)(uint8_t *restrict work);
-    void (*const dequeue)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const add)(uint8_t *work);
+    void (*const find)(uint8_t *work);
+    void (*const remove)(uint8_t *work);
+    void (*const input)(uint8_t *work);
+    void (*const queue)(uint8_t *work);
+    void (*const dequeue)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
 } ArpTableNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_arp_clear(uint8_t *restrict work);
-void idemip_arp_add(uint8_t *restrict work);
-void idemip_arp_find(uint8_t *restrict work);
-void idemip_arp_remove(uint8_t *restrict work);
-void idemip_arp_input(uint8_t *restrict work);
-void idemip_arp_queue(uint8_t *restrict work);
-void idemip_arp_dequeue(uint8_t *restrict work);
-void idemip_arp_tick(uint8_t *restrict work);
+void idemip_arp_clear(uint8_t *work);
+void idemip_arp_add(uint8_t *work);
+void idemip_arp_find(uint8_t *work);
+void idemip_arp_remove(uint8_t *work);
+void idemip_arp_input(uint8_t *work);
+void idemip_arp_queue(uint8_t *work);
+void idemip_arp_dequeue(uint8_t *work);
+void idemip_arp_tick(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

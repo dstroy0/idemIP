@@ -158,8 +158,8 @@ typedef struct
  *   AutoIp.start(work);
  *   if (IDEMIP_AUTOIP_IO(work)->claim) { ... Acd.start(acd_work) ... }
  *
- * @c work is IDEMIP_AUTOIP_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_AUTOIP_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the interface, so two
  * interfaces are two borrows and share not one byte.
  *
@@ -182,23 +182,23 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const start)(uint8_t *restrict work);
-    void (*const conflict)(uint8_t *restrict work);
-    void (*const bound)(uint8_t *restrict work);
-    void (*const stop)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const start)(uint8_t *work);
+    void (*const conflict)(uint8_t *work);
+    void (*const bound)(uint8_t *work);
+    void (*const stop)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
 } AutoIpNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_autoip_clear(uint8_t *restrict work);
-void idemip_autoip_start(uint8_t *restrict work);
-void idemip_autoip_conflict(uint8_t *restrict work);
-void idemip_autoip_bound(uint8_t *restrict work);
-void idemip_autoip_stop(uint8_t *restrict work);
-void idemip_autoip_tick(uint8_t *restrict work);
+void idemip_autoip_clear(uint8_t *work);
+void idemip_autoip_start(uint8_t *work);
+void idemip_autoip_conflict(uint8_t *work);
+void idemip_autoip_bound(uint8_t *work);
+void idemip_autoip_stop(uint8_t *work);
+void idemip_autoip_tick(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

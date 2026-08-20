@@ -33,11 +33,11 @@
  *            takes the same driver and the two buffer arrays; Netif.bind takes the phy borrow, the
  *            hardware address and the link MTU. Netif.set_addr4 takes the address, mask and
  *            gateway. TcpIsn.seed takes the RFC 6528 sec 3 secret.
- * 3. tick    the three stages of PLAN.md sec 3.4b, in order, on a millisecond clock the caller
+ * 3. tick    the three stages below, in order, on a millisecond clock the caller
  *            reads once per pass: drain receive, run each service's timers, flush deferred
  *            transmit. A later stage consumes what an earlier one produced.
  *
- * Every entry is `void (*const)(uint8_t *restrict work)` and reports OK, BUSY or ERR in its
+ * Every entry is `void (*const)(uint8_t *work)` and reports OK, BUSY or ERR in its
  * operand block. Nothing blocks: BUSY is a retry on a later tick, ERR is not.
  *
  * Millisecond deadlines wrap, so every comparison against one is the signed-difference form
@@ -244,6 +244,6 @@
 // --- scheduling ----------------------------------------------------------------------------------
 // Last, because these two drive every unit above and are the only ones that decide what runs when.
 #include "src/core/dispatch.h" // one frame in, one decision out
-#include "src/core/tick.h"     // PLAN.md sec 3.4b's drain, service and flush, in that order
+#include "src/core/tick.h"     // drain, service and flush, in that order
 
 #endif // IDEMIP_IDEMIP_H

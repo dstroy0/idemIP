@@ -122,7 +122,7 @@ static_assert(IDEMIP_DISPATCH_OFF_END <= IDEMIP_DISPATCH_BORROW,
 #define D_PCB_AT(w, i)                                                                                                 \
     ((DispatchPcbRow *)(void *)((w) + IDEMIP_DISPATCH_OFF_PCB + ((size_t)(i) << IDEMIP_DISPATCH_PCB_ENTRY_SHIFT)))
 
-static idemip_bool d_ready(uint8_t *restrict work)
+static idemip_bool d_ready(uint8_t *work)
 {
     return (idemip_bool)(D_CTX(work)->ready == DISPATCH_READY);
 }
@@ -131,7 +131,7 @@ static idemip_bool d_ready(uint8_t *restrict work)
 // RFC 1213 sec 6.4 and sec 6.6. A build with no counter set bound still dispatches; the count is
 // simply not kept.
 
-static void d_bump(uint8_t *restrict work, IdemIpStatsCounter id)
+static void d_bump(uint8_t *work, IdemIpStatsCounter id)
 {
     DispatchCtx *ctx = D_CTX(work);
     if (ctx->stats == NULL)
@@ -143,7 +143,7 @@ static void d_bump(uint8_t *restrict work, IdemIpStatsCounter id)
     Stats.bump(ctx->stats);
 }
 
-static void d_if_bump(uint8_t *restrict work, uint8_t netif, IdemIpStatsIfCounter id, uint32_t value)
+static void d_if_bump(uint8_t *work, uint8_t netif, IdemIpStatsIfCounter id, uint32_t value)
 {
     DispatchCtx *ctx = D_CTX(work);
     if (ctx->stats == NULL || netif >= IDEMIP_NETIF_COUNT)
@@ -158,7 +158,7 @@ static void d_if_bump(uint8_t *restrict work, uint8_t netif, IdemIpStatsIfCounte
 
 // The frame goes no further. IDEMIP_STAT_IF_COUNT names no counter, so a reason that is the caller's
 // own configuration fault bumps none.
-static void d_drop(uint8_t *restrict work, IdemIpDispatchDrop why, IdemIpStatsIfCounter if_ctr)
+static void d_drop(uint8_t *work, IdemIpDispatchDrop why, IdemIpStatsIfCounter if_ctr)
 {
     DispatchIo *io = D_IO(work);
     io->drop = why;
@@ -175,7 +175,7 @@ static void d_drop(uint8_t *restrict work, IdemIpDispatchDrop why, IdemIpStatsIf
 // type this library carries, RFC 1122 sec 3.2.2.9 leaving it optional, so those two counters have no
 // Type to reach them.
 #if IDEMIP_ENABLE_IPV4
-static void d_icmp4_type_bump(uint8_t *restrict work, uint8_t type)
+static void d_icmp4_type_bump(uint8_t *work, uint8_t type)
 {
     switch (type)
     {
@@ -224,7 +224,7 @@ static void d_icmp4_type_bump(uint8_t *restrict work, uint8_t type)
 // administratively prohibited messages received", RFC 4443 sec 3.1's Code 1. Such a message is a
 // Destination Unreachable, so it is counted in both, the way ipv6IfIcmpInMsgs "includes all those
 // counted by ipv6IfIcmpInErrors".
-static void d_icmp6_type_bump(uint8_t *restrict work, const uint8_t *msg)
+static void d_icmp6_type_bump(uint8_t *work, const uint8_t *msg)
 {
     switch (idemip_icmp6_type(msg))
     {
@@ -284,9 +284,9 @@ static void d_icmp6_type_bump(uint8_t *restrict work, const uint8_t *msg)
 // subnetwork-unicast packets delivered to a higher-layer protocol", ifInNUcastPkts the non-unicast
 // ones. The subnetwork address decides which, so the Ethernet Destination Address is read: the low
 // bit of its first octet is the group bit every multicast and the RFC 894 broadcast carry.
-static void d_delivered(uint8_t *restrict work, const uint8_t *frame)
+static void d_delivered(uint8_t *work, const uint8_t *frame)
 {
-    DispatchIo *io = D_IO(work);
+    const DispatchIo *io = D_IO(work);
     const uint8_t *dst = idemip_eth_dst(frame);
     idemip_bool group = (idemip_bool)((dst[0] & 1u) != 0u);
     d_if_bump(work, io->netif, group ? IDEMIP_STAT_IF_IN_NUCAST_PKTS : IDEMIP_STAT_IF_IN_UCAST_PKTS, 1u);
@@ -300,7 +300,7 @@ static void d_delivered(uint8_t *restrict work, const uint8_t *frame)
 // module can reach, so the descriptor is the caller's own token: it is recorded and reported and
 // nothing is pinned, the caller keeping it out of whatever holds it. A frame in no descriptor at all
 // cannot be held either way.
-static idemip_bool d_pin(uint8_t *restrict work, uint8_t netif, uint16_t desc)
+static idemip_bool d_pin(uint8_t *work, uint8_t netif, uint16_t desc)
 {
     if (netif >= IDEMIP_NETIF_COUNT || desc == IDEMIP_DISPATCH_DESC_NONE)
     {
@@ -316,7 +316,7 @@ static idemip_bool d_pin(uint8_t *restrict work, uint8_t netif, uint16_t desc)
     return (idemip_bool)(IDEMIP_DMA_IO(row->dma)->status == IDEMIP_OK);
 }
 
-static void d_unpin(uint8_t *restrict work, uint8_t netif, uint16_t desc)
+static void d_unpin(uint8_t *work, uint8_t netif, uint16_t desc)
 {
     if (netif >= IDEMIP_NETIF_COUNT || desc == IDEMIP_DISPATCH_DESC_NONE)
     {
@@ -335,7 +335,7 @@ static void d_unpin(uint8_t *restrict work, uint8_t netif, uint16_t desc)
 
 // Reads one interface's own record into the netif operand block, which stays there until the next
 // netif call. False when no interface table is bound or the index names none.
-static idemip_bool d_netif_get(uint8_t *restrict work, uint8_t index)
+static idemip_bool d_netif_get(uint8_t *work, uint8_t index)
 {
     DispatchCtx *ctx = D_CTX(work);
     if (ctx->netif == NULL)
@@ -397,7 +397,7 @@ static IdemIpStatsCounter d_ip_ctr(uint8_t ip_version, IdemIpStatsCounter v4, Id
 
 // RFC 1122 sec 3.2's raw interface, which binds a protocol number rather than a port, so it is asked
 // for every protocol no built-in module claimed.
-static void d_raw(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t *remote_ip, uint8_t ip_version)
+static void d_raw(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_ip, uint8_t ip_version)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
@@ -482,7 +482,7 @@ static idemip_bool d_udp_cksum_ok(const uint8_t *udp, const uint8_t *local_ip, c
     return (idemip_cksum_final(idemip_cksum_accum(sum, udp, len)) == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
-static void d_udp(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t *remote_ip, uint8_t ip_version,
+static void d_udp(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_ip, uint8_t ip_version,
                   idemip_bool lite)
 {
     DispatchCtx *ctx = D_CTX(work);
@@ -593,10 +593,10 @@ static uint32_t d_seq_from(uint32_t seq, uint32_t edge)
 
 // Copy the connection's state between the two operand blocks. tcp_in reads a whole TCB's worth of
 // RFC 9293 sec 3.3.1 variables and hands them back changed; tcp_pcb holds them.
-static void d_tcp_load_in(uint8_t *restrict work, uint16_t listener, uint32_t now_ms)
+static void d_tcp_load_in(uint8_t *work, uint16_t listener, uint32_t now_ms)
 {
     DispatchCtx *ctx = D_CTX(work);
-    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(ctx->tcp_pcb);
+    const TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(ctx->tcp_pcb);
     TcpInIo *ti = IDEMIP_TCP_IN_IO(ctx->tcp_in);
     ti->vars = tp->vars;
     ti->ctl = tp->ctl;
@@ -605,11 +605,11 @@ static void d_tcp_load_in(uint8_t *restrict work, uint16_t listener, uint32_t no
     ti->now_ms = now_ms;
 }
 
-static void d_tcp_store(uint8_t *restrict work, uint16_t pcb)
+static void d_tcp_store(uint8_t *work, uint16_t pcb)
 {
     DispatchCtx *ctx = D_CTX(work);
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(ctx->tcp_pcb);
-    TcpInIo *ti = IDEMIP_TCP_IN_IO(ctx->tcp_in);
+    const TcpInIo *ti = IDEMIP_TCP_IN_IO(ctx->tcp_in);
     tp->vars = ti->vars;
     tp->ctl = ti->ctl;
     tp->state = ti->state;
@@ -620,11 +620,11 @@ static void d_tcp_store(uint8_t *restrict work, uint16_t pcb)
 // RFC 9293 sec 3.10.7.4 SHLD-31: "Segments with higher beginning sequence numbers SHOULD be held for
 // later processing." Holding one is pinning the receive descriptor it lies in and linking the entry
 // into the connection's out-of-order queue in sequence order.
-static void d_tcp_hold(uint8_t *restrict work, uint16_t pcb)
+static void d_tcp_hold(uint8_t *work, uint16_t pcb)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
-    TcpInIo *ti = IDEMIP_TCP_IN_IO(ctx->tcp_in);
+    const TcpInIo *ti = IDEMIP_TCP_IN_IO(ctx->tcp_in);
     const DispatchInputArgs *a = &io->input_args;
 
     if (ti->res.text_len == 0u || a->desc == IDEMIP_DISPATCH_DESC_NONE)
@@ -661,11 +661,11 @@ static void d_tcp_hold(uint8_t *restrict work, uint16_t pcb)
 // series of queued segments, it MUST process them all before sending any ACK segments." So an
 // ordinary acknowledgment is recorded against the connection and taken once by tcp_ack; the RFC 5961
 // challenge and every reset are not aggregated, each being an answer to one specific segment.
-static void d_tcp_reply(uint8_t *restrict work, uint16_t pcb)
+static void d_tcp_reply(uint8_t *work, uint16_t pcb)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
-    TcpInIo *ti = IDEMIP_TCP_IN_IO(ctx->tcp_in);
+    const TcpInIo *ti = IDEMIP_TCP_IN_IO(ctx->tcp_in);
 
     io->reply = ti->reply;
     io->tcp_act = ti->res.act;
@@ -687,7 +687,7 @@ static void d_tcp_reply(uint8_t *restrict work, uint16_t pcb)
 }
 
 // RFC 9293 sec 3.10.7, over the connection an arriving segment's four-tuple names.
-static void d_tcp(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t *remote_ip, uint8_t ip_version)
+static void d_tcp(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_ip, uint8_t ip_version)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
@@ -938,10 +938,10 @@ typedef enum
 // destination address of loopback must never be sent outside of a single node and must never be
 // forwarded by an IPv6 router." RFC 6890 Table 4 records 127.0.0.0/8 with Destination False. So a
 // loopback address names this host only on the interface no wire reaches.
-static idemip_bool d_on_loopback(uint8_t *restrict work)
+static idemip_bool d_on_loopback(uint8_t *work)
 {
     DispatchCtx *ctx = D_CTX(work);
-    DispatchIo *io = D_IO(work);
+    const DispatchIo *io = D_IO(work);
     if (!d_netif_get(work, io->netif))
     {
         return IDEMIP_FALSE;
@@ -953,10 +953,10 @@ static idemip_bool d_on_loopback(uint8_t *restrict work)
 // class D group this node joined (RFC 1112 sec 4), case (g) "{ 127, <any> }" loopback, any
 // interface's own address, and case (e) "{ <Network-number>, <Subnet-number>, -1 }" directed
 // broadcast on the receiving interface's subnet.
-static DispatchDest d_ip4_dest(uint8_t *restrict work, uint32_t dst)
+static DispatchDest d_ip4_dest(uint8_t *work, uint32_t dst)
 {
     DispatchCtx *ctx = D_CTX(work);
-    DispatchIo *io = D_IO(work);
+    const DispatchIo *io = D_IO(work);
 
     if (idemip_ip4_addr_type(dst) == IDEMIP_IP4_TYPE_BROADCAST)
     {
@@ -1028,7 +1028,7 @@ static DispatchDest d_ip4_dest(uint8_t *restrict work, uint32_t dst)
 }
 
 // RFC 792, over the caller's transmit buffer.
-static void d_icmp4(uint8_t *restrict work, const uint8_t *ip4, size_t total_len)
+static void d_icmp4(uint8_t *work, const uint8_t *ip4, size_t total_len)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
@@ -1122,7 +1122,7 @@ static void d_icmp4(uint8_t *restrict work, const uint8_t *ip4, size_t total_len
 
 // RFC 2236, over the group table. sec 2.2: the Max Resp Time field is "in units of 1/10 second";
 // sec 4 makes a Query carrying zero there a Version 1 Query.
-static void d_igmp(uint8_t *restrict work, const uint8_t *msg)
+static void d_igmp(uint8_t *work, const uint8_t *msg)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
@@ -1198,7 +1198,7 @@ static void d_igmp(uint8_t *restrict work, const uint8_t *msg)
 
 // RFC 1122 sec 3.1 (5), "passes the encapsulated message to the appropriate transport-layer protocol
 // module".
-static void d_ip4_proto(uint8_t *restrict work, const uint8_t *ip4, size_t hdr_len, size_t total_len)
+static void d_ip4_proto(uint8_t *work, const uint8_t *ip4, size_t hdr_len, size_t total_len)
 {
     DispatchIo *io = D_IO(work);
     const uint8_t *local_ip = ip4 + IDEMIP_IP4_OFF_DST;
@@ -1237,7 +1237,7 @@ static void d_ip4_proto(uint8_t *restrict work, const uint8_t *ip4, size_t hdr_l
 
 // RFC 1122 sec 3.1 (4), "reassembles the datagram if necessary". A held fragment stays in the buffer
 // the engine wrote it to, so its descriptor is pinned before the reassembler is handed it.
-static void d_ip4_frag(uint8_t *restrict work, const uint8_t *ip4, size_t total_len)
+static void d_ip4_frag(uint8_t *work, const uint8_t *ip4, size_t total_len)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
@@ -1293,10 +1293,10 @@ static void d_ip4_frag(uint8_t *restrict work, const uint8_t *ip4, size_t total_
 // initialization procedure by which the host learns its own IP address", which is what a DHCP
 // client's first datagram carries. A directed broadcast is only recognizable against the receiving
 // interface's own mask, so an interface with no address bars nothing but the forms above.
-static idemip_bool d_ip4_src_invalid(uint8_t *restrict work, uint32_t src)
+static idemip_bool d_ip4_src_invalid(uint8_t *work, uint32_t src)
 {
     DispatchCtx *ctx = D_CTX(work);
-    DispatchIo *io = D_IO(work);
+    const DispatchIo *io = D_IO(work);
     IdemIpIp4AddrType type = idemip_ip4_addr_type(src);
     if (type == IDEMIP_IP4_TYPE_BROADCAST || type == IDEMIP_IP4_TYPE_MULTICAST)
     {
@@ -1327,7 +1327,7 @@ static idemip_bool d_ip4_src_invalid(uint8_t *restrict work, uint32_t src)
 }
 
 // RFC 1122 sec 3.1, steps (1), (2), (4) and (5) over one IPv4 datagram.
-static void d_ip4(uint8_t *restrict work, const uint8_t *ip4, size_t avail)
+static void d_ip4(uint8_t *work, const uint8_t *ip4, size_t avail)
 {
     DispatchIo *io = D_IO(work);
     io->ip_version = IDEMIP_IP4_VERSION;
@@ -1386,7 +1386,7 @@ static void d_ip4(uint8_t *restrict work, const uint8_t *ip4, size_t avail)
 
 // RFC 826 "Packet Reception", over the address this interface holds. A REQUEST for it owes a REPLY,
 // which is built into the caller's transmit buffer.
-static void d_arp(uint8_t *restrict work, const uint8_t *packet, size_t avail)
+static void d_arp(uint8_t *work, const uint8_t *packet, size_t avail)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
@@ -1473,10 +1473,10 @@ static void d_arp(uint8_t *restrict work, const uint8_t *packet, size_t avail)
 // routers and therefore do not forward datagrams, this counter includes datagrams discarded because
 // the destination address was not a local address." A multicast group this node does not hold is
 // that address; a unicast address of some other node is a valid address elsewhere and forwards.
-static DispatchDest d_ip6_dest(uint8_t *restrict work, const uint8_t *dst)
+static DispatchDest d_ip6_dest(uint8_t *work, const uint8_t *dst)
 {
     DispatchCtx *ctx = D_CTX(work);
-    DispatchIo *io = D_IO(work);
+    const DispatchIo *io = D_IO(work);
 
     if (ctx->netif != NULL)
     {
@@ -1569,7 +1569,7 @@ static DispatchDest d_ip6_dest(uint8_t *restrict work, const uint8_t *dst)
 // Target Address not being multicast, the source being link-local, the Solicited flag against a
 // multicast destination, and the Redirect naming the current first-hop router. That is the division
 // arp_table and d_arp already use.
-static void d_icmp6_nd(uint8_t *restrict work, const uint8_t *ip6, const uint8_t *msg, size_t msg_len, uint8_t type)
+static void d_icmp6_nd(uint8_t *work, const uint8_t *ip6, const uint8_t *msg, size_t msg_len, uint8_t type)
 {
     DispatchIo *io = D_IO(work);
     const DispatchInputArgs *a = &io->input_args;
@@ -1631,7 +1631,7 @@ static void d_icmp6_nd(uint8_t *restrict work, const uint8_t *ip6, const uint8_t
     d_delivered(work, a->frame);
 }
 
-static void d_icmp6(uint8_t *restrict work, const uint8_t *ip6, size_t total_len)
+static void d_icmp6(uint8_t *work, const uint8_t *ip6, size_t total_len)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
@@ -1735,7 +1735,7 @@ static void d_icmp6(uint8_t *restrict work, const uint8_t *ip6, size_t total_len
 }
 
 // RFC 8200 sec 4.5, over the reassembler. A held fragment pins its receive descriptor.
-static void d_ip6_frag(uint8_t *restrict work, const uint8_t *ip6, size_t total_len, size_t frag_hdr)
+static void d_ip6_frag(uint8_t *work, const uint8_t *ip6, size_t total_len, size_t frag_hdr)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
@@ -1781,7 +1781,7 @@ static void d_ip6_frag(uint8_t *restrict work, const uint8_t *ip6, size_t total_
 
 // RFC 8200 sec 4: the chain is walked to the upper-layer header, then RFC 1122 sec 3.1 (5) hands the
 // message to the module that owns it.
-static void d_ip6(uint8_t *restrict work, const uint8_t *ip6, size_t avail)
+static void d_ip6(uint8_t *work, const uint8_t *ip6, size_t avail)
 {
     DispatchIo *io = D_IO(work);
     io->ip_version = IDEMIP_IP6_VERSION;
@@ -1924,7 +1924,7 @@ static void d_ip6(uint8_t *restrict work, const uint8_t *ip6, size_t avail)
 // ===========================================================================
 
 // True when the frame goes on. A false answer has already bumped its counter and set the reason.
-static idemip_bool d_link(uint8_t *restrict work, size_t *payload_off)
+static idemip_bool d_link(uint8_t *work, size_t *payload_off)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
@@ -1994,7 +1994,7 @@ static idemip_bool d_link(uint8_t *restrict work, size_t *payload_off)
 
 // --- the entries -----------------------------------------------------------
 
-void idemip_dispatch_clear(uint8_t *restrict work)
+void idemip_dispatch_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -2014,7 +2014,7 @@ void idemip_dispatch_clear(uint8_t *restrict work)
     D_IO(work)->status = IDEMIP_OK;
 }
 
-void idemip_dispatch_bind(uint8_t *restrict work)
+void idemip_dispatch_bind(uint8_t *work)
 {
     if (!work)
     {
@@ -2061,7 +2061,7 @@ void idemip_dispatch_bind(uint8_t *restrict work)
 
 // An interface is a member of one VLAN or of none. RFC 6325 sec 4.1.1 runs the usable range 0x001
 // through 0xFFE, so a membership outside it names no VLAN and is refused.
-void idemip_dispatch_if_bind(uint8_t *restrict work)
+void idemip_dispatch_if_bind(uint8_t *work)
 {
     if (!work)
     {
@@ -2085,7 +2085,7 @@ void idemip_dispatch_if_bind(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_dispatch_if_get(uint8_t *restrict work)
+void idemip_dispatch_if_get(uint8_t *work)
 {
     if (!work)
     {
@@ -2097,7 +2097,7 @@ void idemip_dispatch_if_get(uint8_t *restrict work)
     {
         return;
     }
-    DispatchIfRow *row = D_IF_AT(work, io->if_args.index);
+    const DispatchIfRow *row = D_IF_AT(work, io->if_args.index);
     io->netif = io->if_args.index;
     io->vid = row->vid;
     io->tagged = (idemip_bool)(row->tagged != 0u);
@@ -2105,7 +2105,7 @@ void idemip_dispatch_if_get(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_dispatch_input(uint8_t *restrict work)
+void idemip_dispatch_input(uint8_t *work)
 {
     if (!work)
     {
@@ -2170,7 +2170,7 @@ void idemip_dispatch_input(uint8_t *restrict work)
 //
 // The descriptor the delivery names stays pinned until the call after, so the caller reads the
 // octets between the two calls.
-void idemip_dispatch_tcp_deliver(uint8_t *restrict work)
+void idemip_dispatch_tcp_deliver(uint8_t *work)
 {
     if (!work)
     {
@@ -2249,7 +2249,7 @@ void idemip_dispatch_tcp_deliver(uint8_t *restrict work)
 
 // RFC 9293 sec 3.10.7.4 (MUST-58, MUST-59). One acknowledgment per connection per batch, of the
 // sec 3.10.7.4 seventh form "<SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK>".
-void idemip_dispatch_tcp_ack(uint8_t *restrict work)
+void idemip_dispatch_tcp_ack(uint8_t *work)
 {
     if (!work)
     {

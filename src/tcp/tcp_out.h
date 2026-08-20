@@ -244,8 +244,8 @@ typedef struct
  *   TcpOut.build(work);
  *   if (IDEMIP_TCP_OUT_IO(work)->status == IDEMIP_OK) { ... res.built octets ... }
  *
- * @c work is IDEMIP_TCP_OUT_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_TCP_OUT_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the instance, so two
  * send paths are two borrows and share not one byte.
  *
@@ -284,39 +284,39 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const build)(uint8_t *restrict work);
-    void (*const send)(uint8_t *restrict work);
-    void (*const ack)(uint8_t *restrict work);
-    void (*const rst)(uint8_t *restrict work);
-    void (*const rtt)(uint8_t *restrict work);
-    void (*const rtx_arm)(uint8_t *restrict work);
-    void (*const rtx_stop)(uint8_t *restrict work);
-    void (*const rtx_restart)(uint8_t *restrict work);
-    void (*const rtx_expire)(uint8_t *restrict work);
-    void (*const cc_init)(uint8_t *restrict work);
-    void (*const cc_ack)(uint8_t *restrict work);
-    void (*const cc_dupack)(uint8_t *restrict work);
-    void (*const cc_recover)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const build)(uint8_t *work);
+    void (*const send)(uint8_t *work);
+    void (*const ack)(uint8_t *work);
+    void (*const rst)(uint8_t *work);
+    void (*const rtt)(uint8_t *work);
+    void (*const rtx_arm)(uint8_t *work);
+    void (*const rtx_stop)(uint8_t *work);
+    void (*const rtx_restart)(uint8_t *work);
+    void (*const rtx_expire)(uint8_t *work);
+    void (*const cc_init)(uint8_t *work);
+    void (*const cc_ack)(uint8_t *work);
+    void (*const cc_dupack)(uint8_t *work);
+    void (*const cc_recover)(uint8_t *work);
 } TcpOutNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_tcp_out_clear(uint8_t *restrict work);
-void idemip_tcp_out_build(uint8_t *restrict work);
-void idemip_tcp_out_send(uint8_t *restrict work);
-void idemip_tcp_out_ack(uint8_t *restrict work);
-void idemip_tcp_out_rst(uint8_t *restrict work);
-void idemip_tcp_out_rtt(uint8_t *restrict work);
-void idemip_tcp_out_rtx_arm(uint8_t *restrict work);
-void idemip_tcp_out_rtx_stop(uint8_t *restrict work);
-void idemip_tcp_out_rtx_restart(uint8_t *restrict work);
-void idemip_tcp_out_rtx_expire(uint8_t *restrict work);
-void idemip_tcp_out_cc_init(uint8_t *restrict work);
-void idemip_tcp_out_cc_ack(uint8_t *restrict work);
-void idemip_tcp_out_cc_dupack(uint8_t *restrict work);
-void idemip_tcp_out_cc_recover(uint8_t *restrict work);
+void idemip_tcp_out_clear(uint8_t *work);
+void idemip_tcp_out_build(uint8_t *work);
+void idemip_tcp_out_send(uint8_t *work);
+void idemip_tcp_out_ack(uint8_t *work);
+void idemip_tcp_out_rst(uint8_t *work);
+void idemip_tcp_out_rtt(uint8_t *work);
+void idemip_tcp_out_rtx_arm(uint8_t *work);
+void idemip_tcp_out_rtx_stop(uint8_t *work);
+void idemip_tcp_out_rtx_restart(uint8_t *work);
+void idemip_tcp_out_rtx_expire(uint8_t *work);
+void idemip_tcp_out_cc_init(uint8_t *work);
+void idemip_tcp_out_cc_ack(uint8_t *work);
+void idemip_tcp_out_cc_dupack(uint8_t *work);
+void idemip_tcp_out_cc_recover(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

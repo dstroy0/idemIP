@@ -589,7 +589,7 @@ static void dns_advance(uint8_t *work, DnsQuery *q)
 
 // Every byte of the borrow, the operand block included, which leaves every query and every cached
 // answer at state zero: free.
-void idemip_dns_clear(uint8_t *restrict work)
+void idemip_dns_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -599,7 +599,7 @@ void idemip_dns_clear(uint8_t *restrict work)
     DNS_IO(work)->status = IDEMIP_OK;
 }
 
-void idemip_dns_bind(uint8_t *restrict work)
+void idemip_dns_bind(uint8_t *work)
 {
     if (!work)
     {
@@ -620,14 +620,14 @@ void idemip_dns_bind(uint8_t *restrict work)
 
 // An IPv4 server occupies the first IDEMIP_DNS_A_RDLEN octets of the entry and an IPv6 one all
 // IDEMIP_DNS_ADDR_LEN of them, so the entry is zeroed first and the rest of it stays zero.
-void idemip_dns_set_server(uint8_t *restrict work)
+void idemip_dns_set_server(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     DnsIo *io = DNS_IO(work);
-    DnsCtx *ctx = DNS_CTX(work);
+    const DnsCtx *ctx = DNS_CTX(work);
     io->status = IDEMIP_ERR;
     if (ctx->cfg == NULL)
     {
@@ -656,7 +656,7 @@ void idemip_dns_set_server(uint8_t *restrict work)
  * server", so a second ask for a question already on the wire returns that slot and draws nothing.
  * A slot whose exchange finished is asked again with the new ID and port.
  */
-static void dns_query_register(uint8_t *restrict work)
+static void dns_query_register(uint8_t *work)
 {
     DnsIo *io = DNS_IO(work);
     DnsCtx *ctx = DNS_CTX(work);
@@ -684,7 +684,7 @@ static void dns_query_register(uint8_t *restrict work)
     uint8_t slot = dns_query_find(work, a->name, a->type);
     if (slot < IDEMIP_DNS_QUERIES)
     {
-        DnsQuery *held = DNS_QUERY_AT(work, slot);
+        const DnsQuery *held = DNS_QUERY_AT(work, slot);
         if ((held->state == IDEMIP_DNS_QUERY_NEW) || (held->state == IDEMIP_DNS_QUERY_SENT))
         {
             io->query = slot;
@@ -739,14 +739,14 @@ static void dns_query_register(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_dns_query(uint8_t *restrict work)
+void idemip_dns_query(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     DnsIo *io = DNS_IO(work);
-    DnsCtx *ctx = DNS_CTX(work);
+    const DnsCtx *ctx = DNS_CTX(work);
     if (ctx->cfg == NULL)
     {
         io->status = IDEMIP_ERR;
@@ -758,7 +758,7 @@ void idemip_dns_query(uint8_t *restrict work)
 // RFC 1035 sec 2.3.3, a cached answer matched on a case-insensitive name and its TYPE. A name that is
 // not cached is BUSY, so a caller polls; io->query names the question working on it, or
 // IDEMIP_DNS_QUERIES when nobody asked.
-static void dns_lookup_cached(uint8_t *restrict work)
+static void dns_lookup_cached(uint8_t *work)
 {
     DnsIo *io = DNS_IO(work);
     const DnsLookupArgs *a = &io->lookup_args;
@@ -816,14 +816,14 @@ static void dns_lookup_cached(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_dns_lookup(uint8_t *restrict work)
+void idemip_dns_lookup(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     DnsIo *io = DNS_IO(work);
-    DnsCtx *ctx = DNS_CTX(work);
+    const DnsCtx *ctx = DNS_CTX(work);
     if (ctx->cfg == NULL)
     {
         io->status = IDEMIP_ERR;
@@ -839,7 +839,7 @@ void idemip_dns_lookup(uint8_t *restrict work)
  * pursue the query recursively", the only way a stub resolver gets an answer. QDCOUNT is one and the
  * other three counts are zero, since a query carries no records.
  */
-static void dns_build_query(uint8_t *restrict work)
+static void dns_build_query(uint8_t *work)
 {
     DnsIo *io = DNS_IO(work);
     const DnsBuildArgs *a = &io->build_args;
@@ -955,14 +955,14 @@ static void dns_build_query(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_dns_build(uint8_t *restrict work)
+void idemip_dns_build(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     DnsIo *io = DNS_IO(work);
-    DnsCtx *ctx = DNS_CTX(work);
+    const DnsCtx *ctx = DNS_CTX(work);
     io->len = 0;
     if (ctx->cfg == NULL)
     {
@@ -1105,7 +1105,7 @@ static idemip_bool dns_answers_read(const uint8_t *msg, size_t len, size_t at, u
  * 9.1's "A mismatch and the response MUST be considered invalid" requires: a forgery must not retire
  * the question the real answer is still coming for.
  */
-static void dns_take(uint8_t *restrict work)
+static void dns_take(uint8_t *work)
 {
     DnsIo *io = DNS_IO(work);
     const DnsInputArgs *a = &io->input_args;
@@ -1235,14 +1235,14 @@ static void dns_take(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_dns_input(uint8_t *restrict work)
+void idemip_dns_input(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     DnsIo *io = DNS_IO(work);
-    DnsCtx *ctx = DNS_CTX(work);
+    const DnsCtx *ctx = DNS_CTX(work);
     if (ctx->cfg == NULL)
     {
         io->status = IDEMIP_ERR;
@@ -1281,14 +1281,14 @@ static void dns_sweep(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_dns_tick(uint8_t *restrict work)
+void idemip_dns_tick(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     DnsIo *io = DNS_IO(work);
-    DnsCtx *ctx = DNS_CTX(work);
+    const DnsCtx *ctx = DNS_CTX(work);
     if (ctx->cfg == NULL)
     {
         io->status = IDEMIP_ERR;
@@ -1299,20 +1299,20 @@ void idemip_dns_tick(uint8_t *restrict work)
 
 // A slot holding no question has nothing to drop, and asking again cannot change that, so it is ERR
 // rather than BUSY.
-void idemip_dns_cancel(uint8_t *restrict work)
+void idemip_dns_cancel(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     DnsIo *io = DNS_IO(work);
-    DnsCtx *ctx = DNS_CTX(work);
+    const DnsCtx *ctx = DNS_CTX(work);
     io->status = IDEMIP_ERR;
     if (ctx->cfg == NULL || io->cancel_args.query >= IDEMIP_DNS_QUERIES)
     {
         return;
     }
-    DnsQuery *q = DNS_QUERY_AT(work, io->cancel_args.query);
+    const DnsQuery *q = DNS_QUERY_AT(work, io->cancel_args.query);
     if (q->state == IDEMIP_DNS_QUERY_FREE)
     {
         return;
@@ -1323,14 +1323,14 @@ void idemip_dns_cancel(uint8_t *restrict work)
 
 // The answer table and the name regions the answers own, which are the ones at and above
 // IDEMIP_DNS_QUERIES. The questions and the servers are left as they are.
-void idemip_dns_flush(uint8_t *restrict work)
+void idemip_dns_flush(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     DnsIo *io = DNS_IO(work);
-    DnsCtx *ctx = DNS_CTX(work);
+    const DnsCtx *ctx = DNS_CTX(work);
     io->status = IDEMIP_ERR;
     if (ctx->cfg == NULL)
     {

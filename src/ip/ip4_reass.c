@@ -137,7 +137,7 @@ static_assert(IDEMIP_IP4_TOTAL_LEN_MAX - IDEMIP_IPV4_HDR_LEN < IDEMIP_IP4_REASS_
     ((Ip4ReassHole *)(void *)((w) + IDEMIP_IP4_REASS_OFF_HOLE + ((size_t)(i) << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT)))
 
 // A borrow clear has not run on holds no list terminator, so every entry but clear refuses it.
-static idemip_bool ip4_reass_ready(uint8_t *restrict work)
+static idemip_bool ip4_reass_ready(uint8_t *work)
 {
     return (idemip_bool)(IP4_REASS_CTX(work)->ready == IP4_REASS_READY);
 }
@@ -149,12 +149,12 @@ static idemip_bool ip4_reass_ready(uint8_t *restrict work)
 // as reached.
 static idemip_bool ip4_reass_reached(uint32_t now_ms, uint32_t deadline_ms)
 {
-    return (idemip_bool)((uint32_t)(now_ms - deadline_ms) < 0x80000000u);
+    return (idemip_bool)((now_ms - deadline_ms) < 0x80000000u);
 }
 
 // The row still gathering fragments under this RFC 791 sec 3.2 buffer identifier, "the concatenation
 // of the source, destination, protocol, and identification fields".
-static uint8_t ip4_reass_find(uint8_t *restrict work, uint32_t src, uint32_t dst, uint8_t proto, uint16_t id)
+static uint8_t ip4_reass_find(uint8_t *work, uint32_t src, uint32_t dst, uint8_t proto, uint16_t id)
 {
     for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
     {
@@ -172,7 +172,7 @@ static uint8_t ip4_reass_find(uint8_t *restrict work, uint32_t src, uint32_t dst
 }
 
 // The first row in the zero state, claimed as gathering so a second call cannot reach it.
-static uint8_t ip4_reass_row_alloc(uint8_t *restrict work)
+static uint8_t ip4_reass_row_alloc(uint8_t *work)
 {
     for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
     {
@@ -191,7 +191,7 @@ static uint8_t ip4_reass_row_alloc(uint8_t *restrict work)
     return IP4_REASS_NONE;
 }
 
-static uint8_t ip4_reass_frag_alloc(uint8_t *restrict work)
+static uint8_t ip4_reass_frag_alloc(uint8_t *work)
 {
     for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_FRAGS; i++)
     {
@@ -206,7 +206,7 @@ static uint8_t ip4_reass_frag_alloc(uint8_t *restrict work)
     return IP4_REASS_NONE;
 }
 
-static uint8_t ip4_reass_hole_alloc(uint8_t *restrict work, uint32_t first, uint32_t last)
+static uint8_t ip4_reass_hole_alloc(uint8_t *work, uint32_t first, uint32_t last)
 {
     for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_HOLES; i++)
     {
@@ -225,7 +225,7 @@ static uint8_t ip4_reass_hole_alloc(uint8_t *restrict work, uint32_t first, uint
 
 // RFC 791 sec 3.2 step (16), "free all reassembly resources for this BUFID": the hole list goes back
 // to the table, and the row waits on reclaim while its fragments still pin receive descriptors.
-static void ip4_reass_free_holes(uint8_t *restrict work, Ip4ReassDatagram *row)
+static void ip4_reass_free_holes(uint8_t *work, Ip4ReassDatagram *row)
 {
     uint8_t h = row->hole_head;
     while (h != IP4_REASS_NONE)
@@ -240,7 +240,7 @@ static void ip4_reass_free_holes(uint8_t *restrict work, Ip4ReassDatagram *row)
     row->cursor = IP4_REASS_NONE;
 }
 
-static void ip4_reass_flush(uint8_t *restrict work, uint8_t index)
+static void ip4_reass_flush(uint8_t *work, uint8_t index)
 {
     Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, index);
     ip4_reass_free_holes(work, row);
@@ -253,7 +253,7 @@ static void ip4_reass_flush(uint8_t *restrict work, uint8_t index)
 // fragment of the same datagram lands on the dead row rather than opening a fresh one - which is the
 // disposition RFC 5722 sec 4 states for the IPv6 twin, "any constituent fragments, including those
 // not yet received". The fragments stay pinned until release and reclaim hand their descriptors back.
-static void ip4_reass_abandon(uint8_t *restrict work, uint8_t index)
+static void ip4_reass_abandon(uint8_t *work, uint8_t index)
 {
     Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, index);
     ip4_reass_free_holes(work, row);
@@ -263,7 +263,7 @@ static void ip4_reass_abandon(uint8_t *restrict work, uint8_t index)
 // Octets of [first, last] that lie in a hole, which is what this fragment would contribute. RFC 815
 // sec 2 keeps the holes disjoint and ascending, so summing the intersections counts every octet once
 // and the answer is between zero and the fragment's own length.
-static uint32_t ip4_reass_fills(uint8_t *restrict work, uint8_t index, uint32_t first, uint32_t last)
+static uint32_t ip4_reass_fills(uint8_t *work, uint8_t index, uint32_t first, uint32_t last)
 {
     uint32_t fills = 0u;
     uint8_t h = IP4_REASS_DGRAM_AT(work, index)->hole_head;
@@ -282,7 +282,7 @@ static uint32_t ip4_reass_fills(uint8_t *restrict work, uint8_t index, uint32_t 
 }
 
 // The fragment list in ascending fragment offset, which is the order next reports it in.
-static void ip4_reass_frag_link(uint8_t *restrict work, uint8_t index, uint8_t frag)
+static void ip4_reass_frag_link(uint8_t *work, uint8_t index, uint8_t frag)
 {
     Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, index);
     Ip4ReassFrag *added = IP4_REASS_FRAG_AT(work, frag);
@@ -305,7 +305,7 @@ static void ip4_reass_frag_link(uint8_t *restrict work, uint8_t index, uint8_t f
 }
 
 // The octet past the last one any held fragment of this row covers.
-static uint32_t ip4_reass_end(uint8_t *restrict work, uint8_t index)
+static uint32_t ip4_reass_end(uint8_t *work, uint8_t index)
 {
     uint32_t end = 0u;
     uint8_t f = IP4_REASS_DGRAM_AT(work, index)->frag_head;
@@ -324,7 +324,7 @@ static uint32_t ip4_reass_end(uint8_t *restrict work, uint8_t index)
 
 // RFC 815 sec 4 threads the hole descriptors onto a list, so the entry after @p at is whatever @p to
 // names, and an empty @p at is the head of the row's list.
-static void ip4_reass_hole_thread(uint8_t *restrict work, uint8_t index, uint8_t at, uint8_t to)
+static void ip4_reass_hole_thread(uint8_t *work, uint8_t index, uint8_t at, uint8_t to)
 {
     if (at == IP4_REASS_NONE)
     {
@@ -341,7 +341,7 @@ static void ip4_reass_hole_thread(uint8_t *restrict work, uint8_t index, uint8_t
 // the fragment". Reports the holes step 4 deleted, so zero means steps 2 and 3 passed over every
 // hole and the fragment covers nothing missing, and IP4_REASS_NONE means the hole table ran out.
 // Step 8 is the caller's: it reads hole_head.
-static uint8_t ip4_reass_holes(uint8_t *restrict work, uint8_t index, uint32_t first, uint32_t last, idemip_bool mf)
+static uint8_t ip4_reass_holes(uint8_t *work, uint8_t index, uint32_t first, uint32_t last, idemip_bool mf)
 {
     uint8_t prev = IP4_REASS_NONE;
     uint8_t h = IP4_REASS_DGRAM_AT(work, index)->hole_head;
@@ -403,7 +403,7 @@ static uint8_t ip4_reass_holes(uint8_t *restrict work, uint8_t index, uint32_t f
 
 // RFC 791 sec 3.2 steps (3) and (4): every row carrying this buffer identifier is flushed, and its
 // pinned descriptors go to reclaim. Reports the first row flushed.
-static uint8_t ip4_reass_flush_bufid(uint8_t *restrict work, uint32_t src, uint32_t dst, uint8_t proto, uint16_t id)
+static uint8_t ip4_reass_flush_bufid(uint8_t *work, uint32_t src, uint32_t dst, uint8_t proto, uint16_t id)
 {
     uint8_t first = IP4_REASS_NONE;
     for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
@@ -430,7 +430,7 @@ static uint8_t ip4_reass_flush_bufid(uint8_t *restrict work, uint32_t src, uint3
 // RFC 815 sec 3 eight steps run over its hole list, and the receive descriptor stays pinned in the
 // fragment table until reclaim hands it back. The operand block arrives with status ERR set, so
 // every refusal is a return.
-static void ip4_reass_take(uint8_t *restrict work)
+static void ip4_reass_take(uint8_t *work)
 {
     Ip4ReassIo *io = IP4_REASS_IO(work);
     Ip4ReassCtx *ctx = IP4_REASS_CTX(work);
@@ -639,7 +639,7 @@ static void ip4_reass_take(uint8_t *restrict work)
 // RFC 791 sec 3.2 step (15), "Submit datagram to next step": one held fragment per call, in ascending
 // fragment offset, so the caller reads the octets out of the buffers the engine wrote them to. The
 // walk starts over once every fragment has been reported.
-static void ip4_reass_report(uint8_t *restrict work)
+static void ip4_reass_report(uint8_t *work)
 {
     Ip4ReassIo *io = IP4_REASS_IO(work);
     const uint8_t index = io->next_args.index;
@@ -679,7 +679,7 @@ static void ip4_reass_report(uint8_t *restrict work)
 
 // RFC 791 sec 3.2 step (16), "free all reassembly resources for this BUFID". The hole list goes back
 // and the row waits on reclaim, because its fragments still pin receive descriptors.
-static void ip4_reass_done(uint8_t *restrict work)
+static void ip4_reass_done(uint8_t *work)
 {
     Ip4ReassIo *io = IP4_REASS_IO(work);
     const uint8_t index = io->release_args.index;
@@ -687,7 +687,7 @@ static void ip4_reass_done(uint8_t *restrict work)
     {
         return;
     }
-    Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, index);
+    const Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, index);
     if (row->state != (uint8_t)IDEMIP_IP4_REASS_HOLDING && row->state != (uint8_t)IDEMIP_IP4_REASS_COMPLETE &&
         row->state != (uint8_t)IDEMIP_IP4_REASS_ABANDONED)
     {
@@ -702,7 +702,7 @@ static void ip4_reass_done(uint8_t *restrict work)
 // PLAN sec 3.5: "A pinned descriptor is released when the retaining unit is done with it: reassembly
 // on completion or timeout". One descriptor per call, off the front of a released or timed-out row's
 // fragment list, and the row is free once its last one has gone back.
-static void ip4_reass_unpin(uint8_t *restrict work)
+static void ip4_reass_unpin(uint8_t *work)
 {
     Ip4ReassIo *io = IP4_REASS_IO(work);
     Ip4ReassCtx *ctx = IP4_REASS_CTX(work);
@@ -740,12 +740,12 @@ static void ip4_reass_unpin(uint8_t *restrict work)
 // so RFC 1122 sec 3.3.2's "an ICMP Time Exceeded message sent to the source host (if fragment zero has
 // been received)" can be built for each: the source and the fragment-zero mark are read out of the
 // row before the flush clears it. BUSY once no row the clock has reached is left.
-static void ip4_reass_expire(uint8_t *restrict work)
+static void ip4_reass_expire(uint8_t *work)
 {
     Ip4ReassIo *io = IP4_REASS_IO(work);
     for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
     {
-        Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, i);
+        const Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, i);
         const idemip_bool abandoned = (idemip_bool)(row->state == (uint8_t)IDEMIP_IP4_REASS_ABANDONED);
         if (row->state != (uint8_t)IDEMIP_IP4_REASS_HOLDING && row->state != (uint8_t)IDEMIP_IP4_REASS_COMPLETE &&
             !abandoned)
@@ -777,19 +777,19 @@ static void ip4_reass_expire(uint8_t *restrict work)
 
 // The context and all three tables, zeroed, then the mark. The operand block is the caller's and is
 // left as it stands.
-void idemip_ip4_reass_clear(uint8_t *restrict work)
+void idemip_ip4_reass_clear(uint8_t *work)
 {
     if (!work)
     {
         return; // no borrow, so nowhere to report
     }
     memset(work + IDEMIP_IP4_REASS_OFF_CTX, 0,
-           (size_t)IDEMIP_IP4_REASS_BORROW - (size_t)IDEMIP_IP4_REASS_OFF_CTX);
+           (size_t)IDEMIP_IP4_REASS_BORROW - IDEMIP_IP4_REASS_OFF_CTX);
     IP4_REASS_CTX(work)->ready = IP4_REASS_READY;
     IP4_REASS_IO(work)->status = IDEMIP_OK;
 }
 
-void idemip_ip4_reass_hold(uint8_t *restrict work)
+void idemip_ip4_reass_hold(uint8_t *work)
 {
     if (!work)
     {
@@ -808,7 +808,7 @@ void idemip_ip4_reass_hold(uint8_t *restrict work)
     ip4_reass_take(work);
 }
 
-void idemip_ip4_reass_next(uint8_t *restrict work)
+void idemip_ip4_reass_next(uint8_t *work)
 {
     if (!work)
     {
@@ -829,7 +829,7 @@ void idemip_ip4_reass_next(uint8_t *restrict work)
     ip4_reass_report(work);
 }
 
-void idemip_ip4_reass_release(uint8_t *restrict work)
+void idemip_ip4_reass_release(uint8_t *work)
 {
     if (!work)
     {
@@ -846,7 +846,7 @@ void idemip_ip4_reass_release(uint8_t *restrict work)
     ip4_reass_done(work);
 }
 
-void idemip_ip4_reass_reclaim(uint8_t *restrict work)
+void idemip_ip4_reass_reclaim(uint8_t *work)
 {
     if (!work)
     {
@@ -864,7 +864,7 @@ void idemip_ip4_reass_reclaim(uint8_t *restrict work)
     ip4_reass_unpin(work);
 }
 
-void idemip_ip4_reass_tick(uint8_t *restrict work)
+void idemip_ip4_reass_tick(uint8_t *work)
 {
     if (!work)
     {

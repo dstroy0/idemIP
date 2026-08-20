@@ -427,8 +427,8 @@ typedef struct
  *   Ip6Addr.classify(work);
  *   if (IDEMIP_IP6_ADDR_IO(work)->type == IDEMIP_IP6_TYPE_MULTICAST) { ... }
  *
- * @c work is IDEMIP_IP6_ADDR_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. The borrow IS the
+ * @c work is IDEMIP_IP6_ADDR_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. The borrow IS the
  * instance, so two callers are two borrows and share not one byte.
  *
  * A borrow is refused until @ref Ip6AddrNs::clear has run on it: clear zeroes the context and
@@ -447,21 +447,21 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const classify)(uint8_t *restrict work);
-    void (*const solicited)(uint8_t *restrict work);
-    void (*const zone)(uint8_t *restrict work);
-    void (*const match)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const classify)(uint8_t *work);
+    void (*const solicited)(uint8_t *work);
+    void (*const zone)(uint8_t *work);
+    void (*const match)(uint8_t *work);
 } Ip6AddrNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_ip6_addr_clear(uint8_t *restrict work);
-void idemip_ip6_addr_classify(uint8_t *restrict work);
-void idemip_ip6_addr_solicited_io(uint8_t *restrict work);
-void idemip_ip6_addr_zone(uint8_t *restrict work);
-void idemip_ip6_addr_match(uint8_t *restrict work);
+void idemip_ip6_addr_clear(uint8_t *work);
+void idemip_ip6_addr_classify(uint8_t *work);
+void idemip_ip6_addr_solicited_io(uint8_t *work);
+void idemip_ip6_addr_zone(uint8_t *work);
+void idemip_ip6_addr_match(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

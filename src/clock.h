@@ -251,7 +251,7 @@ IDEMIP_INLINE uint32_t idemip_clock_stamp(const IdemIpClock *c)
  */
 IDEMIP_INLINE uint32_t idemip_clock_elapsed(const IdemIpClock *c)
 {
-    return (uint32_t)(c->reading - c->stamp);
+    return (c->reading - c->stamp);
 }
 
 /** @brief epoch(): now() carried across its wraps. This is time; deadlines are these. */
@@ -329,7 +329,7 @@ IDEMIP_INLINE uint32_t idemip_determinism_tick_stamp(const IdemIpClock *c)
 /** @brief What this pass has cost so far, in the pad's unit. What a pad is tuned against. */
 IDEMIP_INLINE uint32_t idemip_determinism_spent(const IdemIpClock *c)
 {
-    return (uint32_t)(idemip_determinism_tick(c) - idemip_determinism_tick_stamp(c));
+    return (idemip_determinism_tick(c) - idemip_determinism_tick_stamp(c));
 }
 
 /** @brief The pad out of that word, for a caller that wants the milliseconds alone. */
@@ -438,7 +438,7 @@ IDEMIP_INLINE uint32_t idemip_determinism_tune(uint32_t pad, IdemIpClockPad stat
     const uint32_t up = settled & (uint32_t)(seen == (uint32_t)IDEMIP_CLOCK_PAD_OVER) & (uint32_t)(ms < hi);
     const uint32_t down = settled & (uint32_t)(seen == (uint32_t)IDEMIP_CLOCK_PAD_EARLY) & (uint32_t)(ms > lo);
 
-    const uint32_t next = (uint32_t)(ms + up - down);
+    const uint32_t next = (ms + up - down);
     return (uint32_t)((seen << IDEMIP_CLOCK_PAD_SHIFT) | (next & IDEMIP_CLOCK_PAD_MASK));
 #endif
 }

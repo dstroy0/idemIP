@@ -22,6 +22,29 @@
 #include <string.h> // memcpy, memset, memcmp
 
 // ---------------------------------------------------------------------------
+// Version
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief This library's version, as three numbers a consumer can compare and one string it can
+ *        print.
+ *
+ * A consumer that has to know whether an entry exists asks the preprocessor rather than the build
+ * system, because a header is what it includes and a CMake variable is not:
+ *
+ *     #if IDEMIP_VERSION_MAJOR > 0 || IDEMIP_VERSION_MINOR >= 1
+ *
+ * The four are held together and moved together. `.bumpversion.cfg` names this block, the two
+ * manifests and `CMakeLists.txt` as the places a version lives, so `bump2version` writes all four
+ * at once and none of them can drift from the others. The banner at the head of every file in the
+ * tree is the fifth place, and `tools/dev_env/version.py` carries the version out to those.
+ */
+#define IDEMIP_VERSION_MAJOR 0
+#define IDEMIP_VERSION_MINOR 1
+#define IDEMIP_VERSION_PATCH 0
+#define IDEMIP_VERSION_STRING "0.1.0"
+
+// ---------------------------------------------------------------------------
 // Vocabulary
 // ---------------------------------------------------------------------------
 
@@ -114,6 +137,35 @@ typedef enum IDEMIP_ENUM_PACKED
 
 /** @brief Round @p n up to the next multiple of @p a, which must be a power of two. */
 #define IDEMIP_ROUND_UP(n, a) (((size_t)(n) + ((size_t)(a) - 1u)) & ~((size_t)(a) - 1u))
+
+// ---------------------------------------------------------------------------
+// Aggregate calls
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief Call an entry with a compound literal, so the aggregate never appears at the call site.
+ *
+ *     typedef struct { uint8_t *w; const uint8_t *addr; uint8_t netif; } SrcAddArgs;
+ *     static void src_add_ctx(const SrcAddArgs *a);
+ *     #define src_add(...) IDEMIP_CALL(src_add_ctx, SrcAddArgs, __VA_ARGS__)
+ *
+ *     src_add(work, addr, 1u);              // positional, what the call site already wrote
+ *     src_add(.w = work, .addr = addr);     // designated, and netif is zero without saying so
+ *
+ * A long argument list is passed in as many registers as it has, and spills the rest to the stack
+ * at every call; one pointer to a block the caller already laid out is one register, whatever the
+ * arity. That is the reason to prefer this shape, not the line length.
+ *
+ * Two properties come from the standard rather than from a compiler, so they hold on every target
+ * this tree builds for: a field the initialiser does not name is zero initialised, which is how a
+ * default costs nothing and is never spelled; and a compound literal in argument position lives
+ * until the end of the enclosing block, so the entry may hold the pointer for the whole call.
+ *
+ * The entry takes a pointer-to-const, so what the caller laid out is an operand block and not a
+ * return path. An entry that has to report something takes the borrow and writes its @c Io block,
+ * which is the same way every other result in this tree is returned.
+ */
+#define IDEMIP_CALL(entry, ArgsType, ...) entry(&(ArgsType){__VA_ARGS__})
 
 // ---------------------------------------------------------------------------
 // Link
@@ -1034,7 +1086,7 @@ static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
 #endif
 #define IDEMIP_LOOPIF_BORROW (IDEMIP_LOOPIF_CTX_BYTES + (IDEMIP_LOOPIF_FRAMES << IDEMIP_LOOPIF_FRAME_SHIFT))
 
-// --- dma: PLAN.md sec 3.5, PER INTERFACE ---------------------------------------------------------
+// --- dma: PER INTERFACE --------------------------------------------------------------------------
 // One descriptor ring belongs to one MAC, so this borrow is per interface. An entry holds the
 // address of the frame buffer the driver owns, the length, the ownership and status flags, and the
 // pin count that keeps a retained receive buffer out of the engine's hands. The buffers themselves
@@ -1560,7 +1612,7 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 #endif
 #define IDEMIP_TIMEOUTS_BORROW (IDEMIP_TIMEOUTS_CTX_BYTES + (IDEMIP_TIMEOUTS << IDEMIP_TIMEOUT_ENTRY_SHIFT))
 
-// --- tick: PLAN.md sec 3.4b ----------------------------------------------------------------------
+// --- tick ----------------------------------------------------------------------------------------
 // The scheduler. Its context holds the millisecond the tick was entered at, the phase the fixed order
 // has reached, the cursor into that order, and the descriptor a flush step reported and unpins on the
 // step after. One entry per interface holds the nd6 borrow that interface's neighbor machine runs in,

@@ -66,7 +66,7 @@ static_assert(IDEMIP_IP4_MIN_FORWARD_MTU == 68u,
               "RFC 1191 sec 3 floors the estimate at 68 octets, which is RFC 791's minimum");
 
 // A borrow clear has not run on carries no mark, so every entry but clear refuses it.
-static idemip_bool pmtu4_ready(uint8_t *restrict work)
+static idemip_bool pmtu4_ready(uint8_t *work)
 {
     return (idemip_bool)(PMTU4_CTX(work)->ready == PMTU4_READY);
 }
@@ -104,13 +104,13 @@ static uint16_t pmtu4_above(uint16_t size)
 // --- the entries -----------------------------------------------------------
 
 // The context, zeroed, then the mark. The operand block is the caller's and is left as it stands.
-void idemip_pmtu4_clear(uint8_t *restrict work)
+void idemip_pmtu4_clear(uint8_t *work)
 {
     if (!work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_PMTU4_OFF_CTX, 0, (size_t)IDEMIP_PMTU4_BORROW - (size_t)IDEMIP_PMTU4_OFF_CTX);
+    memset(work + IDEMIP_PMTU4_OFF_CTX, 0, (size_t)IDEMIP_PMTU4_BORROW - IDEMIP_PMTU4_OFF_CTX);
     PMTU4_CTX(work)->ready = PMTU4_READY;
     PMTU4_IO(work)->status = IDEMIP_OK;
 }
@@ -129,7 +129,7 @@ void idemip_pmtu4_clear(uint8_t *restrict work)
 // an internet header, a next-hop MTU below the 68 octets sec 4 states the field never falls under,
 // and a search that lands under that floor are all ERR: none of them can be applied, now or on a
 // later call. Nothing here waits on a resource, so nothing here is BUSY.
-void idemip_pmtu4_too_big(uint8_t *restrict work)
+void idemip_pmtu4_too_big(uint8_t *work)
 {
     if (!work)
     {
@@ -227,7 +227,7 @@ void idemip_pmtu4_too_big(uint8_t *restrict work)
 
 // sec 5's search over Table 7-1, on its own. A size at or under the last row is ERR: no plateau lies
 // below it, and sec 3 floors the estimate there anyway.
-void idemip_pmtu4_plateau_below(uint8_t *restrict work)
+void idemip_pmtu4_plateau_below(uint8_t *work)
 {
     if (!work)
     {
@@ -252,7 +252,7 @@ void idemip_pmtu4_plateau_below(uint8_t *restrict work)
 // sec 7.1's raise: "periodically increase the PMTU estimate to the next-highest value in the plateau
 // table (or the first-hop MTU, if that is smaller)". A size already at the top of the table and one
 // already at the first hop's MTU are both ERR: the table holds nothing above either.
-void idemip_pmtu4_plateau_above(uint8_t *restrict work)
+void idemip_pmtu4_plateau_above(uint8_t *work)
 {
     if (!work)
     {
@@ -289,7 +289,7 @@ void idemip_pmtu4_plateau_above(uint8_t *restrict work)
 // BUSY, sec 3 forbidding the attempt before it. An estimate already at the first hop's MTU is BUSY,
 // since a later decrease is what leaves something to raise. A first hop that cannot carry RFC 791's
 // 68 octets is ERR.
-void idemip_pmtu4_age(uint8_t *restrict work)
+void idemip_pmtu4_age(uint8_t *work)
 {
     if (!work)
     {
@@ -316,13 +316,13 @@ void idemip_pmtu4_age(uint8_t *restrict work)
     // sec 3's two minimum intervals: "An attempt to detect an increase ... MUST NOT be done less than
     // 5 minutes after a Datagram Too Big message has been received for the given destination, or less
     // than 1 minute after a previous, successful attempted increase."
-    if ((uint32_t)(io->now_ms - io->age_args.stamp_ms) < (uint32_t)IDEMIP_PMTU4_INCREASE_MS)
+    if ((io->now_ms - io->age_args.stamp_ms) < (uint32_t)IDEMIP_PMTU4_INCREASE_MS)
     {
         io->status = IDEMIP_BUSY;
         return;
     }
     if (io->age_args.raise_ms != 0u &&
-        (uint32_t)(io->now_ms - io->age_args.raise_ms) < (uint32_t)IDEMIP_PMTU4_RAISE_MS)
+        (io->now_ms - io->age_args.raise_ms) < (uint32_t)IDEMIP_PMTU4_RAISE_MS)
     {
         io->status = IDEMIP_BUSY;
         return;

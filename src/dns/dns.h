@@ -446,8 +446,8 @@ typedef struct
  *   IDEMIP_DNS_IO(work)->query_args.src_port = my_random_port;
  *   Dns.query(work);
  *
- * @c work is IDEMIP_DNS_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_DNS_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the resolver, so two
  * of them share not one byte.
  *
@@ -488,31 +488,31 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const bind)(uint8_t *restrict work);
-    void (*const set_server)(uint8_t *restrict work);
-    void (*const query)(uint8_t *restrict work);
-    void (*const lookup)(uint8_t *restrict work);
-    void (*const build)(uint8_t *restrict work);
-    void (*const input)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
-    void (*const cancel)(uint8_t *restrict work);
-    void (*const flush)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const bind)(uint8_t *work);
+    void (*const set_server)(uint8_t *work);
+    void (*const query)(uint8_t *work);
+    void (*const lookup)(uint8_t *work);
+    void (*const build)(uint8_t *work);
+    void (*const input)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
+    void (*const cancel)(uint8_t *work);
+    void (*const flush)(uint8_t *work);
 } DnsNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_dns_clear(uint8_t *restrict work);
-void idemip_dns_bind(uint8_t *restrict work);
-void idemip_dns_set_server(uint8_t *restrict work);
-void idemip_dns_query(uint8_t *restrict work);
-void idemip_dns_lookup(uint8_t *restrict work);
-void idemip_dns_build(uint8_t *restrict work);
-void idemip_dns_input(uint8_t *restrict work);
-void idemip_dns_tick(uint8_t *restrict work);
-void idemip_dns_cancel(uint8_t *restrict work);
-void idemip_dns_flush(uint8_t *restrict work);
+void idemip_dns_clear(uint8_t *work);
+void idemip_dns_bind(uint8_t *work);
+void idemip_dns_set_server(uint8_t *work);
+void idemip_dns_query(uint8_t *work);
+void idemip_dns_lookup(uint8_t *work);
+void idemip_dns_build(uint8_t *work);
+void idemip_dns_input(uint8_t *work);
+void idemip_dns_tick(uint8_t *work);
+void idemip_dns_cancel(uint8_t *work);
+void idemip_dns_flush(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

@@ -212,8 +212,8 @@ typedef struct
  * @var TcpPcbCtl::r2_syn        the same threshold while the SYN is unacknowledged, which sec 3.8.3
  *                               MUST-23 bounds below: "R2 for a SYN segment MUST be set large enough
  *                               to provide retransmission of the segment for at least 3 minutes"
- * @var TcpPcbCtl::backoff       RFC 6298 sec 5.5 doublings of RTO, "the value of RTO SHOULD be
- *                               doubled"
+ * @var TcpPcbCtl::backoff       RFC 6298 sec 5.5 doublings of RTO, "The host MUST set RTO <- RTO * 2
+ *                               ('back off the timer')", bounded above by sec 2.5's maximum
  * @var TcpPcbCtl::dupacks       duplicate acknowledgments counted toward RFC 5681 sec 3.2's
  *                               threshold
  * @var TcpPcbCtl::keep_cnt_sent keep-alive probes sent since the last segment from the peer
@@ -619,8 +619,8 @@ typedef struct
  *   TcpPcb.open(work);
  *   if (IDEMIP_TCP_PCB_IO(work)->status == IDEMIP_OK) { ... }
  *
- * @c work is IDEMIP_TCP_PCB_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_TCP_PCB_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the instance, so two
  * tables are two borrows and share not one byte.
  *
@@ -695,51 +695,51 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const open)(uint8_t *restrict work);
-    void (*const opt)(uint8_t *restrict work);
-    void (*const close)(uint8_t *restrict work);
-    void (*const bind)(uint8_t *restrict work);
-    void (*const connect)(uint8_t *restrict work);
-    void (*const load)(uint8_t *restrict work);
-    void (*const store)(uint8_t *restrict work);
-    void (*const accept)(uint8_t *restrict work);
-    void (*const listen)(uint8_t *restrict work);
-    void (*const unlisten)(uint8_t *restrict work);
-    void (*const find)(uint8_t *restrict work);
-    void (*const find_listener)(uint8_t *restrict work);
-    void (*const seg_alloc)(uint8_t *restrict work);
-    void (*const seg_load)(uint8_t *restrict work);
-    void (*const seg_sent)(uint8_t *restrict work);
-    void (*const seg_free)(uint8_t *restrict work);
-    void (*const oos_alloc)(uint8_t *restrict work);
-    void (*const oos_load)(uint8_t *restrict work);
-    void (*const oos_free)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const open)(uint8_t *work);
+    void (*const opt)(uint8_t *work);
+    void (*const close)(uint8_t *work);
+    void (*const bind)(uint8_t *work);
+    void (*const connect)(uint8_t *work);
+    void (*const load)(uint8_t *work);
+    void (*const store)(uint8_t *work);
+    void (*const accept)(uint8_t *work);
+    void (*const listen)(uint8_t *work);
+    void (*const unlisten)(uint8_t *work);
+    void (*const find)(uint8_t *work);
+    void (*const find_listener)(uint8_t *work);
+    void (*const seg_alloc)(uint8_t *work);
+    void (*const seg_load)(uint8_t *work);
+    void (*const seg_sent)(uint8_t *work);
+    void (*const seg_free)(uint8_t *work);
+    void (*const oos_alloc)(uint8_t *work);
+    void (*const oos_load)(uint8_t *work);
+    void (*const oos_free)(uint8_t *work);
 } TcpPcbNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_tcp_pcb_clear(uint8_t *restrict work);
-void idemip_tcp_pcb_open(uint8_t *restrict work);
-void idemip_tcp_pcb_opt(uint8_t *restrict work);
-void idemip_tcp_pcb_close(uint8_t *restrict work);
-void idemip_tcp_pcb_bind(uint8_t *restrict work);
-void idemip_tcp_pcb_connect(uint8_t *restrict work);
-void idemip_tcp_pcb_load(uint8_t *restrict work);
-void idemip_tcp_pcb_store(uint8_t *restrict work);
-void idemip_tcp_pcb_accept(uint8_t *restrict work);
-void idemip_tcp_pcb_listen(uint8_t *restrict work);
-void idemip_tcp_pcb_unlisten(uint8_t *restrict work);
-void idemip_tcp_pcb_find(uint8_t *restrict work);
-void idemip_tcp_pcb_find_listener(uint8_t *restrict work);
-void idemip_tcp_pcb_seg_alloc(uint8_t *restrict work);
-void idemip_tcp_pcb_seg_load(uint8_t *restrict work);
-void idemip_tcp_pcb_seg_sent(uint8_t *restrict work);
-void idemip_tcp_pcb_seg_free(uint8_t *restrict work);
-void idemip_tcp_pcb_oos_alloc(uint8_t *restrict work);
-void idemip_tcp_pcb_oos_load(uint8_t *restrict work);
-void idemip_tcp_pcb_oos_free(uint8_t *restrict work);
+void idemip_tcp_pcb_clear(uint8_t *work);
+void idemip_tcp_pcb_open(uint8_t *work);
+void idemip_tcp_pcb_opt(uint8_t *work);
+void idemip_tcp_pcb_close(uint8_t *work);
+void idemip_tcp_pcb_bind(uint8_t *work);
+void idemip_tcp_pcb_connect(uint8_t *work);
+void idemip_tcp_pcb_load(uint8_t *work);
+void idemip_tcp_pcb_store(uint8_t *work);
+void idemip_tcp_pcb_accept(uint8_t *work);
+void idemip_tcp_pcb_listen(uint8_t *work);
+void idemip_tcp_pcb_unlisten(uint8_t *work);
+void idemip_tcp_pcb_find(uint8_t *work);
+void idemip_tcp_pcb_find_listener(uint8_t *work);
+void idemip_tcp_pcb_seg_alloc(uint8_t *work);
+void idemip_tcp_pcb_seg_load(uint8_t *work);
+void idemip_tcp_pcb_seg_sent(uint8_t *work);
+void idemip_tcp_pcb_seg_free(uint8_t *work);
+void idemip_tcp_pcb_oos_alloc(uint8_t *work);
+void idemip_tcp_pcb_oos_load(uint8_t *work);
+void idemip_tcp_pcb_oos_free(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

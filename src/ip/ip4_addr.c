@@ -46,7 +46,7 @@ static_assert(IDEMIP_IP4_ADDR_OFF_END <= IDEMIP_IP4_ADDR_BORROW,
 
 // --- the entries -----------------------------------------------------------
 
-void idemip_ip4_addr_clear(uint8_t *restrict work)
+void idemip_ip4_addr_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -57,7 +57,7 @@ void idemip_ip4_addr_clear(uint8_t *restrict work)
     IP4_ADDR_IO(work)->status = IDEMIP_OK;
 }
 
-void idemip_ip4_addr_classify(uint8_t *restrict work)
+void idemip_ip4_addr_classify(uint8_t *work)
 {
     if (!work)
     {
@@ -79,7 +79,7 @@ void idemip_ip4_addr_classify(uint8_t *restrict work)
 // the specified subnet", is the network number with every masked-off bit set. A mask of all ones
 // leaves no host field, and the same section requires each field "will be at least two bits long",
 // so a /32 has no directed broadcast and only the limited one of case (c) answers.
-void idemip_ip4_addr_match(uint8_t *restrict work)
+void idemip_ip4_addr_match(uint8_t *work)
 {
     if (!work)
     {
@@ -104,8 +104,8 @@ void idemip_ip4_addr_match(uint8_t *restrict work)
     // RFC 3021 sec 2.2.1: on a 31-bit prefix a directed broadcast "is not possible", sec 2.1 making
     // both of the link's addresses host addresses. A 32-bit prefix names one host and no subnet.
     idemip_bool has_bcast = (mask != 0xFFFFFFFFu && mask != 0xFFFFFFFEu) ? IDEMIP_TRUE : IDEMIP_FALSE;
-    io->broadcast = has_bcast ? (io->network | (uint32_t)(~mask)) : 0u;
-    io->host = addr & (uint32_t)(~mask);
+    io->broadcast = has_bcast ? (io->network | (~mask)) : 0u;
+    io->host = addr & (~mask);
     io->prefix_len = idemip_ip4_addr_mask_ones(mask);
     io->contiguous = idemip_ip4_addr_mask_contiguous(mask);
     io->on_subnet = (((addr ^ io->match_args.net) & mask) == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
@@ -118,7 +118,7 @@ void idemip_ip4_addr_match(uint8_t *restrict work)
 
 // RFC 1112 sec 6.4 maps a host group address, which sec 4 fixes at class D. An address outside it
 // has no mapping at all, so it is ERR: no later call maps it either.
-void idemip_ip4_addr_mcast_mac_io(uint8_t *restrict work)
+void idemip_ip4_addr_mcast_mac_io(uint8_t *work)
 {
     if (!work)
     {

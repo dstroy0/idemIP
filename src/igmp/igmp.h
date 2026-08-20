@@ -272,8 +272,8 @@ typedef struct
  *   Igmp.join(work);
  *   if (IDEMIP_IGMP_IO(work)->send_report) { ... }
  *
- * @c work is IDEMIP_IGMP_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved is
+ * @c work is IDEMIP_IGMP_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved is
  * this module's and is never named here beyond the map above. The borrow IS the instance, so two
  * tables are two borrows and share not one byte.
  *
@@ -303,25 +303,25 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const join)(uint8_t *restrict work);
-    void (*const leave)(uint8_t *restrict work);
-    void (*const find)(uint8_t *restrict work);
-    void (*const query_in)(uint8_t *restrict work);
-    void (*const report_in)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const join)(uint8_t *work);
+    void (*const leave)(uint8_t *work);
+    void (*const find)(uint8_t *work);
+    void (*const query_in)(uint8_t *work);
+    void (*const report_in)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
 } IgmpNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_igmp_clear(uint8_t *restrict work);
-void idemip_igmp_join(uint8_t *restrict work);
-void idemip_igmp_leave(uint8_t *restrict work);
-void idemip_igmp_find(uint8_t *restrict work);
-void idemip_igmp_query_in(uint8_t *restrict work);
-void idemip_igmp_report_in(uint8_t *restrict work);
-void idemip_igmp_tick(uint8_t *restrict work);
+void idemip_igmp_clear(uint8_t *work);
+void idemip_igmp_join(uint8_t *work);
+void idemip_igmp_leave(uint8_t *work);
+void idemip_igmp_find(uint8_t *work);
+void idemip_igmp_query_in(uint8_t *work);
+void idemip_igmp_report_in(uint8_t *work);
+void idemip_igmp_tick(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

@@ -148,7 +148,7 @@ static_assert(IDEMIP_IP6_REASS_HOLES >= IDEMIP_IP6_REASS_DATAGRAMS + IDEMIP_IP6_
 
 // The first free entry of a table, or IDEMIP_IP6_REASS_NONE. The context's count answers a full table
 // without a walk, and otherwise the walk is bounded by the compile-time count.
-static uint8_t ip6_reass_take_datagram(uint8_t *restrict work)
+static uint8_t ip6_reass_take_datagram(uint8_t *work)
 {
     if (IP6_REASS_CTX(work)->datagrams >= IDEMIP_IP6_REASS_DATAGRAMS)
     {
@@ -169,7 +169,7 @@ static uint8_t ip6_reass_take_datagram(uint8_t *restrict work)
     return IDEMIP_IP6_REASS_NONE;
 }
 
-static uint8_t ip6_reass_take_frag(uint8_t *restrict work)
+static uint8_t ip6_reass_take_frag(uint8_t *work)
 {
     if (IP6_REASS_CTX(work)->frags >= IDEMIP_IP6_REASS_FRAGS)
     {
@@ -189,7 +189,7 @@ static uint8_t ip6_reass_take_frag(uint8_t *restrict work)
     return IDEMIP_IP6_REASS_NONE;
 }
 
-static uint8_t ip6_reass_take_hole(uint8_t *restrict work)
+static uint8_t ip6_reass_take_hole(uint8_t *work)
 {
     if (IP6_REASS_CTX(work)->holes >= IDEMIP_IP6_REASS_HOLES)
     {
@@ -211,7 +211,7 @@ static uint8_t ip6_reass_take_hole(uint8_t *restrict work)
 
 // RFC 8200 sec 4.5: "all the fragments that have been received for that packet must be discarded".
 // The fragment and hole entries go back to their tables and the datagram entry goes free.
-static void ip6_reass_put_datagram(uint8_t *restrict work, uint8_t d)
+static void ip6_reass_put_datagram(uint8_t *work, uint8_t d)
 {
     Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
     Ip6ReassCtx *ctx = IP6_REASS_CTX(work);
@@ -239,11 +239,11 @@ static void ip6_reass_put_datagram(uint8_t *restrict work, uint8_t d)
 // Source Address, Destination Address, and Fragment Identification." An abandoned entry still matches
 // its key, because RFC 5722 sec 4 discards "any constituent fragments, including those not yet
 // received", so a later fragment of a poisoned datagram must not open a fresh reassembly.
-static uint8_t ip6_reass_match(uint8_t *restrict work, const uint8_t *src, const uint8_t *dst, uint32_t ident)
+static uint8_t ip6_reass_match(uint8_t *work, const uint8_t *src, const uint8_t *dst, uint32_t ident)
 {
     for (uint8_t i = 0u; i < IDEMIP_IP6_REASS_DATAGRAMS; i++)
     {
-        Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, i);
+        const Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, i);
         if (dg->used && (dg->state == IP6_REASS_HOLDING || dg->state == IP6_REASS_ABANDONED) && dg->ident == ident &&
             idemip_bytes_eq(dg->src, src, IDEMIP_IP6_ADDR_LEN) && idemip_bytes_eq(dg->dst, dst, IDEMIP_IP6_ADDR_LEN))
         {
@@ -259,16 +259,16 @@ static uint8_t ip6_reass_match(uint8_t *restrict work, const uint8_t *src, const
 // choose to detect this case and drop exact duplicate fragments while keeping the other fragments".
 // A network that duplicates a packet delivers the same fragment twice, so taking that exception is
 // what keeps reassembly working under ordinary duplication.
-static uint8_t ip6_reass_scan(uint8_t *restrict work, uint8_t d, uint16_t offset, uint16_t frag_len, uint8_t *prev_out)
+static uint8_t ip6_reass_scan(uint8_t *work, uint8_t d, uint16_t offset, uint16_t frag_len, uint8_t *prev_out)
 {
-    Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
+    const Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
     uint32_t first = offset;
     uint32_t end = (uint32_t)offset + (uint32_t)frag_len;
     uint8_t prev = IDEMIP_IP6_REASS_NONE;
     uint8_t cur = dg->frag_head;
     while (cur != IDEMIP_IP6_REASS_NONE)
     {
-        Ip6ReassFrag *fr = IP6_REASS_FRAG_AT(work, cur);
+        const Ip6ReassFrag *fr = IP6_REASS_FRAG_AT(work, cur);
         if (fr->offset == offset && fr->len == frag_len)
         {
             return IP6_REASS_SCAN_DUP;
@@ -292,7 +292,7 @@ static uint8_t ip6_reass_scan(uint8_t *restrict work, uint8_t d, uint16_t offset
 // it, the second only "if fragment.more fragments is true". The fragment is [first, end), so RFC
 // 815's fragment.last is end - 1 and its two tests read as end <= hole.first and end <= hole.last.
 // Returns false when the second replacement has no free descriptor.
-static idemip_bool ip6_reass_carve(uint8_t *restrict work, uint8_t d, uint32_t first, uint32_t end, idemip_bool more)
+static idemip_bool ip6_reass_carve(uint8_t *work, uint8_t d, uint32_t first, uint32_t end, idemip_bool more)
 {
     Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
     uint8_t prev = IDEMIP_IP6_REASS_NONE;
@@ -360,7 +360,7 @@ static idemip_bool ip6_reass_carve(uint8_t *restrict work, uint8_t d, uint32_t f
 // RFC 815 sec 3 step six's reason for testing more fragments: "that hole descriptor which reaches
 // from the last octet of the buffer to infinity can be discarded". The last fragment fixes the end
 // of the Fragmentable Part at end, so no hole survives at or past it and none crosses it.
-static void ip6_reass_trim(uint8_t *restrict work, uint8_t d, uint32_t end)
+static void ip6_reass_trim(uint8_t *work, uint8_t d, uint32_t end)
 {
     Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
     uint8_t prev = IDEMIP_IP6_REASS_NONE;
@@ -400,7 +400,7 @@ static void ip6_reass_trim(uint8_t *restrict work, uint8_t d, uint32_t end)
 // zero fragment, whose hdr_len is PL.first - FL.first plus the fixed header, and frag_end is
 // 8 * FO.last + FL.last, taken from the fragment that carried the M flag clear rather than from
 // whichever entry the list ends on.
-static uint32_t ip6_reass_payload_len(uint8_t *restrict work, uint8_t d)
+static uint32_t ip6_reass_payload_len(uint8_t *work, uint8_t d)
 {
     const Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
     const Ip6ReassFrag *head = IP6_REASS_FRAG_AT(work, dg->frag_head);
@@ -410,7 +410,7 @@ static uint32_t ip6_reass_payload_len(uint8_t *restrict work, uint8_t d)
 // Whether any fragment already held reaches past @p end. RFC 8200 sec 4.5 computes the reassembled
 // Payload Length from "the length and offset of the last fragment", so the M flag zero fragment fixes
 // where the Fragmentable Part ends and nothing of the same packet can lie beyond it.
-static idemip_bool ip6_reass_past_end(uint8_t *restrict work, uint8_t d, uint32_t end)
+static idemip_bool ip6_reass_past_end(uint8_t *work, uint8_t d, uint32_t end)
 {
     uint8_t cur = IP6_REASS_DATAGRAM_AT(work, d)->frag_head;
     while (cur != IDEMIP_IP6_REASS_NONE)
@@ -472,7 +472,7 @@ static idemip_bool ip6_reass_fields(const uint8_t *pkt, size_t len, size_t fh, I
 
 // The whole of RFC 8200 sec 4.5 input: the three error conditions a fragment carries on its own, the
 // match, the overlap rule, the RFC 815 hole list, and the completed packet's Payload Length.
-static void ip6_reass_file(uint8_t *restrict work)
+static void ip6_reass_file(uint8_t *work)
 {
     Ip6ReassIo *io = IP6_REASS_IO(work);
     const uint8_t *pkt = io->input_args.pkt;
@@ -699,7 +699,7 @@ static void ip6_reass_file(uint8_t *restrict work)
 
 // Zeroes the context and the three tables, then marks the borrow this module's. The operand block is
 // the caller's and is left alone.
-void idemip_ip6_reass_clear(uint8_t *restrict work)
+void idemip_ip6_reass_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -714,7 +714,7 @@ void idemip_ip6_reass_clear(uint8_t *restrict work)
 // A table with no free entry is BUSY: one frees when a datagram is dropped after completing or
 // ageing out, so the same fragment lands on a later tick. Everything sec 4.5 says to discard is ERR
 // with err naming the ICMP answer, since no retry of that fragment can ever be taken.
-void idemip_ip6_reass_input(uint8_t *restrict work)
+void idemip_ip6_reass_input(uint8_t *work)
 {
     if (!work)
     {
@@ -740,14 +740,14 @@ void idemip_ip6_reass_input(uint8_t *restrict work)
 // RFC 8200 sec 4.5, whose Fragmentable Part "is constructed from the fragments following the Fragment
 // headers", each fragment's "relative position in Fragmentable Part computed from its Fragment Offset
 // value". The list rises with Fragment Offset, so index is that position.
-void idemip_ip6_reass_frag_at(uint8_t *restrict work)
+void idemip_ip6_reass_frag_at(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     Ip6ReassIo *io = IP6_REASS_IO(work);
-    Ip6ReassCtx *ctx = IP6_REASS_CTX(work);
+    const Ip6ReassCtx *ctx = IP6_REASS_CTX(work);
     io->status = IDEMIP_ERR;
     io->frag_desc = 0u;
     io->frag_offset = 0u;
@@ -758,7 +758,7 @@ void idemip_ip6_reass_frag_at(uint8_t *restrict work)
     {
         return;
     }
-    Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, io->frag_args.datagram);
+    const Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, io->frag_args.datagram);
     if (!dg->used || io->frag_args.index >= dg->frag_count)
     {
         return;
@@ -768,7 +768,7 @@ void idemip_ip6_reass_frag_at(uint8_t *restrict work)
     {
         cur = IP6_REASS_FRAG_AT(work, cur)->next;
     }
-    Ip6ReassFrag *fr = IP6_REASS_FRAG_AT(work, cur);
+    const Ip6ReassFrag *fr = IP6_REASS_FRAG_AT(work, cur);
     io->frag_desc = fr->desc;
     io->frag_offset = fr->offset;
     io->frag_len = fr->len;
@@ -778,14 +778,14 @@ void idemip_ip6_reass_frag_at(uint8_t *restrict work)
 
 // RFC 8200 sec 4.5, which discards "all the fragments that have been received for that packet" when
 // reassembly is abandoned. A datagram no entry holds is ERR: it names nothing to give up.
-void idemip_ip6_reass_drop(uint8_t *restrict work)
+void idemip_ip6_reass_drop(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     Ip6ReassIo *io = IP6_REASS_IO(work);
-    Ip6ReassCtx *ctx = IP6_REASS_CTX(work);
+    const Ip6ReassCtx *ctx = IP6_REASS_CTX(work);
     io->status = IDEMIP_ERR;
     if (!ctx->ready || io->drop_args.datagram >= IDEMIP_IP6_REASS_DATAGRAMS)
     {
@@ -803,7 +803,7 @@ void idemip_ip6_reass_drop(uint8_t *restrict work)
 // be given up, with the Time Exceeded sec 4.5 answers it with when "the first fragment (i.e., the one
 // with a Fragment Offset of zero) has been received". Nothing is freed here: the caller walks the
 // fragments out to unpin them and calls drop, and the next sweep names the next one.
-void idemip_ip6_reass_tick(uint8_t *restrict work)
+void idemip_ip6_reass_tick(uint8_t *work)
 {
     if (!work)
     {

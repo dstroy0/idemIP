@@ -153,8 +153,8 @@ typedef struct
  *   Timeouts.tick(work);
  *   while (Timeouts.expire(work), IDEMIP_TIMEOUTS_IO(work)->status == IDEMIP_OK) { ... }
  *
- * @c work is IDEMIP_TIMEOUTS_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_TIMEOUTS_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the list, so two
  * lists are two borrows and share not one byte.
  *
@@ -179,21 +179,21 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const arm)(uint8_t *restrict work);
-    void (*const cancel)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
-    void (*const expire)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const arm)(uint8_t *work);
+    void (*const cancel)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
+    void (*const expire)(uint8_t *work);
 } TimeoutsNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_timeouts_clear(uint8_t *restrict work);
-void idemip_timeouts_arm(uint8_t *restrict work);
-void idemip_timeouts_cancel(uint8_t *restrict work);
-void idemip_timeouts_tick(uint8_t *restrict work);
-void idemip_timeouts_expire(uint8_t *restrict work);
+void idemip_timeouts_clear(uint8_t *work);
+void idemip_timeouts_arm(uint8_t *work);
+void idemip_timeouts_cancel(uint8_t *work);
+void idemip_timeouts_tick(uint8_t *work);
+void idemip_timeouts_expire(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

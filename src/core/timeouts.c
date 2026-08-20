@@ -76,11 +76,11 @@ static_assert(IDEMIP_TIMEOUTS_OFF_TAB + TIMEOUTS_TAB_BYTES <= IDEMIP_TIMEOUTS_BO
 // upper half of the range. A plain a < b calls every deadline past the wrap due at once.
 static idemip_bool timeouts_before(uint32_t a, uint32_t b)
 {
-    return (idemip_bool)((uint32_t)(a - b) > TIMEOUTS_HALF_PERIOD_MS);
+    return (idemip_bool)((a - b) > TIMEOUTS_HALF_PERIOD_MS);
 }
 
 // The index of the armed slot holding unit and arg, TIMEOUTS_NONE when none does.
-static uint8_t timeouts_find(uint8_t *restrict work, IdemIpTimeoutUnit unit, uint8_t arg)
+static uint8_t timeouts_find(uint8_t *work, IdemIpTimeoutUnit unit, uint8_t arg)
 {
     for (uint8_t i = 0; i < (uint8_t)(IDEMIP_TIMEOUTS); i++)
     {
@@ -94,7 +94,7 @@ static uint8_t timeouts_find(uint8_t *restrict work, IdemIpTimeoutUnit unit, uin
 }
 
 // The index of the first slot carrying no ARMED bit, TIMEOUTS_NONE when every slot is armed.
-static uint8_t timeouts_free(uint8_t *restrict work)
+static uint8_t timeouts_free(uint8_t *work)
 {
     for (uint8_t i = 0; i < (uint8_t)(IDEMIP_TIMEOUTS); i++)
     {
@@ -108,7 +108,7 @@ static uint8_t timeouts_free(uint8_t *restrict work)
 
 // Threads slot i into the deadline order, ahead of the first slot whose deadline it precedes. The
 // compare is a difference of two deadlines, so the order does not move as now_ms advances.
-static void timeouts_link(uint8_t *restrict work, uint8_t i)
+static void timeouts_link(uint8_t *work, uint8_t i)
 {
     TimeoutsCtx *ctx = TIMEOUTS_CTX(work);
     TimeoutEntry *ins = TIMEOUTS_AT(work, i);
@@ -129,7 +129,7 @@ static void timeouts_link(uint8_t *restrict work, uint8_t i)
 }
 
 // Takes slot i out of the deadline order, leaving its fields alone.
-static void timeouts_unlink(uint8_t *restrict work, uint8_t i)
+static void timeouts_unlink(uint8_t *work, uint8_t i)
 {
     TimeoutsCtx *ctx = TIMEOUTS_CTX(work);
     if (ctx->head == i)
@@ -149,7 +149,7 @@ static void timeouts_unlink(uint8_t *restrict work, uint8_t i)
 }
 
 // Unlinks slot i and zeroes it, so a dropped deadline leaves the slot as clear left it.
-static void timeouts_drop(uint8_t *restrict work, uint8_t i)
+static void timeouts_drop(uint8_t *work, uint8_t i)
 {
     timeouts_unlink(work, i);
     memset(TIMEOUTS_AT(work, i), 0, sizeof(TimeoutEntry));
@@ -158,9 +158,9 @@ static void timeouts_drop(uint8_t *restrict work, uint8_t i)
 
 // Writes what the list holds and the milliseconds from the recorded count to the earliest deadline:
 // 0 when one is due, IDEMIP_TIMEOUT_FOREVER when the list is empty.
-static void timeouts_report(uint8_t *restrict work)
+static void timeouts_report(uint8_t *work)
 {
-    TimeoutsCtx *ctx = TIMEOUTS_CTX(work);
+    const TimeoutsCtx *ctx = TIMEOUTS_CTX(work);
     TimeoutsIo *io = TIMEOUTS_IO(work);
     io->armed = ctx->armed;
     if (ctx->head == TIMEOUTS_NONE)
@@ -169,14 +169,14 @@ static void timeouts_report(uint8_t *restrict work)
         return;
     }
     uint32_t deadline = TIMEOUTS_AT(work, ctx->head)->deadline_ms;
-    io->until_ms = timeouts_before(ctx->now_ms, deadline) ? (uint32_t)(deadline - ctx->now_ms) : 0u;
+    io->until_ms = timeouts_before(ctx->now_ms, deadline) ? (deadline - ctx->now_ms) : 0u;
 }
 
 // --- the entries -----------------------------------------------------------
 
 // Zeroes the table and the context, then marks the borrow bound. A zeroed slot carries
 // IDEMIP_TIMEOUT_UNIT_NONE and no ARMED bit, so the list is empty and every slot is free.
-void idemip_timeouts_clear(uint8_t *restrict work)
+void idemip_timeouts_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -194,7 +194,7 @@ void idemip_timeouts_clear(uint8_t *restrict work)
 // Keys a slot on the unit and argument index and holds the deadline in milliseconds. A slot already
 // holding that pair is rearmed in place, moving to the deadline the caller now names. A list with
 // every slot armed is BUSY: a cancel or an expire frees one, so the retry can succeed.
-void idemip_timeouts_arm(uint8_t *restrict work)
+void idemip_timeouts_arm(uint8_t *work)
 {
     if (!work)
     {
@@ -236,7 +236,7 @@ void idemip_timeouts_arm(uint8_t *restrict work)
 
 // Drops the deadline the unit and argument index name and frees its slot, leaving the order of the
 // rest as it was. No slot holding that pair reports BUSY, which is what timeouts.h states for it.
-void idemip_timeouts_cancel(uint8_t *restrict work)
+void idemip_timeouts_cancel(uint8_t *work)
 {
     if (!work)
     {
@@ -244,7 +244,7 @@ void idemip_timeouts_cancel(uint8_t *restrict work)
     }
     TimeoutsIo *io = TIMEOUTS_IO(work);
     io->status = IDEMIP_ERR;
-    TimeoutsCtx *ctx = TIMEOUTS_CTX(work);
+    const TimeoutsCtx *ctx = TIMEOUTS_CTX(work);
     if (ctx->magic != TIMEOUTS_MAGIC || io->cancel_args.unit == IDEMIP_TIMEOUT_UNIT_NONE ||
         io->cancel_args.unit >= IDEMIP_TIMEOUT_UNIT_COUNT)
     {
@@ -264,7 +264,7 @@ void idemip_timeouts_cancel(uint8_t *restrict work)
 
 // Records the caller's millisecond count, which is the count expire compares each deadline against,
 // and reports the wait to the earliest one. It drops nothing, so the list is unchanged.
-void idemip_timeouts_tick(uint8_t *restrict work)
+void idemip_timeouts_tick(uint8_t *work)
 {
     if (!work)
     {
@@ -285,7 +285,7 @@ void idemip_timeouts_tick(uint8_t *restrict work)
 // Takes the head of the deadline order when the recorded count has reached its deadline, reports the
 // unit and argument index that named it, and frees the slot. Called again it takes the next one, so a
 // caller drains every due deadline in order. Nothing due is BUSY: a later tick makes the head due.
-void idemip_timeouts_expire(uint8_t *restrict work)
+void idemip_timeouts_expire(uint8_t *work)
 {
     if (!work)
     {
@@ -296,7 +296,7 @@ void idemip_timeouts_expire(uint8_t *restrict work)
     io->unit = IDEMIP_TIMEOUT_UNIT_NONE;
     io->arg = 0;
     io->deadline_ms = 0;
-    TimeoutsCtx *ctx = TIMEOUTS_CTX(work);
+    const TimeoutsCtx *ctx = TIMEOUTS_CTX(work);
     if (ctx->magic != TIMEOUTS_MAGIC)
     {
         return;

@@ -28,7 +28,7 @@ IDEMIP_BEGIN_DECLS
 // sec 2, the link's MTU
 // ---------------------------------------------------------------------------
 
-/** @brief RFC 2464 sec 2: "The default MTU size for IPv6 packets on an Ethernet is 1500 octets." */
+/** @brief RFC 2464 sec 2: "The default MTU size for IPv6 ... packets on an Ethernet is 1500 octets." */
 #define IDEMIP_ETHIP6_MTU 1500u
 
 // ---------------------------------------------------------------------------
@@ -198,8 +198,8 @@ typedef struct
  *   Ethip6.linklocal(work);
  *   if (IDEMIP_ETHIP6_IO(work)->status == IDEMIP_OK) { ... IDEMIP_ETHIP6_IO(work)->addr ... }
  *
- * @c work is IDEMIP_ETHIP6_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. The borrow IS the
+ * @c work is IDEMIP_ETHIP6_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. The borrow IS the
  * instance, so two derivations in flight are two borrows and share not one byte.
  *
  * A borrow is refused until @ref Ethip6Ns::clear has run on it: clear zeroes the context region and
@@ -218,19 +218,19 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const multicast_map)(uint8_t *restrict work);
-    void (*const eui64)(uint8_t *restrict work);
-    void (*const linklocal)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const multicast_map)(uint8_t *work);
+    void (*const eui64)(uint8_t *work);
+    void (*const linklocal)(uint8_t *work);
 } Ethip6Ns;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_ethip6_clear(uint8_t *restrict work);
-void idemip_ethip6_multicast_map(uint8_t *restrict work);
-void idemip_ethip6_eui64(uint8_t *restrict work);
-void idemip_ethip6_linklocal(uint8_t *restrict work);
+void idemip_ethip6_clear(uint8_t *work);
+void idemip_ethip6_multicast_map(uint8_t *work);
+void idemip_ethip6_eui64(uint8_t *work);
+void idemip_ethip6_linklocal(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

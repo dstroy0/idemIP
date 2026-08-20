@@ -96,7 +96,7 @@ static idemip_bool loopif_is_lo6(const uint8_t *addr)
 // --- the queue -------------------------------------------------------------
 
 // Copies the frame into the region tail names, records its length there, and steps tail.
-static void loopif_push(uint8_t *restrict work, const uint8_t *frame, size_t len)
+static void loopif_push(uint8_t *work, const uint8_t *frame, size_t len)
 {
     LoopifCtx *ctx = LOOPIF_CTX(work);
     LoopifIo *io = LOOPIF_IO(work);
@@ -111,7 +111,7 @@ static void loopif_push(uint8_t *restrict work, const uint8_t *frame, size_t len
 
 // Reports the region head names where it lies and marks it out, so a second claim is refused until
 // release steps head past it.
-static void loopif_peek(uint8_t *restrict work)
+static void loopif_peek(uint8_t *work)
 {
     LoopifCtx *ctx = LOOPIF_CTX(work);
     LoopifIo *io = LOOPIF_IO(work);
@@ -123,7 +123,7 @@ static void loopif_peek(uint8_t *restrict work)
 }
 
 // Drops the claimed region's length, steps head past it and ends the claim.
-static void loopif_pop(uint8_t *restrict work)
+static void loopif_pop(uint8_t *work)
 {
     LoopifCtx *ctx = LOOPIF_CTX(work);
     LoopifIo *io = LOOPIF_IO(work);
@@ -143,18 +143,18 @@ static void loopif_pop(uint8_t *restrict work)
 // Zeroes the context and every frame region, then stamps the context. A zeroed context holds no
 // address, an empty queue and no claim, which is the state every other entry reads as unbound. The
 // operand block is the caller's and is left alone.
-void idemip_loopif_clear(uint8_t *restrict work)
+void idemip_loopif_clear(uint8_t *work)
 {
     if (!work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_LOOPIF_OFF_CTX, 0, (size_t)IDEMIP_LOOPIF_OFF_END - (size_t)IDEMIP_LOOPIF_OFF_CTX);
+    memset(work + IDEMIP_LOOPIF_OFF_CTX, 0, (size_t)IDEMIP_LOOPIF_OFF_END - IDEMIP_LOOPIF_OFF_CTX);
     LOOPIF_CTX(work)->ready = LOOPIF_READY;
     LOOPIF_IO(work)->status = IDEMIP_OK;
 }
 
-void idemip_loopif_bind(uint8_t *restrict work)
+void idemip_loopif_bind(uint8_t *work)
 {
     if (!work)
     {
@@ -191,14 +191,14 @@ void idemip_loopif_bind(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_loopif_output(uint8_t *restrict work)
+void idemip_loopif_output(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     LoopifIo *io = LOOPIF_IO(work);
-    LoopifCtx *ctx = LOOPIF_CTX(work);
+    const LoopifCtx *ctx = LOOPIF_CTX(work);
     io->status = IDEMIP_ERR;
     io->slot = 0u;
     io->held = 0u;
@@ -228,14 +228,14 @@ void idemip_loopif_output(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_loopif_claim(uint8_t *restrict work)
+void idemip_loopif_claim(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     LoopifIo *io = LOOPIF_IO(work);
-    LoopifCtx *ctx = LOOPIF_CTX(work);
+    const LoopifCtx *ctx = LOOPIF_CTX(work);
     io->status = IDEMIP_ERR;
     io->frame = NULL;
     io->len = 0u;
@@ -261,14 +261,14 @@ void idemip_loopif_claim(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_loopif_release(uint8_t *restrict work)
+void idemip_loopif_release(uint8_t *work)
 {
     if (!work)
     {
         return;
     }
     LoopifIo *io = LOOPIF_IO(work);
-    LoopifCtx *ctx = LOOPIF_CTX(work);
+    const LoopifCtx *ctx = LOOPIF_CTX(work);
     io->status = IDEMIP_ERR;
     io->slot = 0u;
     io->held = 0u;
@@ -286,7 +286,7 @@ void idemip_loopif_release(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_loopif_owns4(uint8_t *restrict work)
+void idemip_loopif_owns4(uint8_t *work)
 {
     if (!work)
     {
@@ -307,7 +307,7 @@ void idemip_loopif_owns4(uint8_t *restrict work)
 
 #if IDEMIP_ENABLE_IPV6
 
-void idemip_loopif_owns6(uint8_t *restrict work)
+void idemip_loopif_owns6(uint8_t *work)
 {
     if (!work)
     {

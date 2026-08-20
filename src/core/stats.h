@@ -25,8 +25,9 @@
  * Discovery types, the three RFC 2710 Multicast Listener types, and Destination Unreachable Code 1.
  *
  * RFC 1213 imports Counter and Gauge from RFC 1155; RFC 2465 and RFC 2466 use RFC 2578's Counter32,
- * "which increases monotonically until it reaches a maximum value of 2^32-1, when it wraps around
- * and starts increasing again from zero" (sec 7.1.6) - the same object under a later name. A
+ * which "monotonically increases until it reaches a maximum value of 2^32-1 (4294967295 decimal),
+ * when it wraps around and starts increasing again from zero" (sec 7.1.6) - the same object under a
+ * later name. A
  * Counter is what @ref StatsNs::bump does. A Gauge "may increase or decrease, but ... latches at a
  * maximum value" (RFC 1155 sec 3.2.3.4), which is what @ref StatsNs::set does. ifSpeed, ifOutQLen
  * and tcpCurrEstab are the three gauges.
@@ -305,8 +306,8 @@ typedef struct
  *   Stats.read(work);
  *   if (IDEMIP_STATS_IO(work)->status == IDEMIP_OK) { ... IDEMIP_STATS_IO(work)->value ... }
  *
- * @c work is IDEMIP_STATS_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_STATS_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the counter set, so
  * two sets are two borrows and share not one byte.
  *
@@ -328,24 +329,24 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const bump)(uint8_t *restrict work);
-    void (*const set)(uint8_t *restrict work);
-    void (*const read)(uint8_t *restrict work);
-    void (*const if_bump)(uint8_t *restrict work);
-    void (*const if_set)(uint8_t *restrict work);
-    void (*const if_read)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const bump)(uint8_t *work);
+    void (*const set)(uint8_t *work);
+    void (*const read)(uint8_t *work);
+    void (*const if_bump)(uint8_t *work);
+    void (*const if_set)(uint8_t *work);
+    void (*const if_read)(uint8_t *work);
 } StatsNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an entry reads is an
 // operand in the block at IDEMIP_STATS_OFF_IO, or a region of the borrow at a fixed offset.
-void idemip_stats_clear(uint8_t *restrict work);
-void idemip_stats_bump(uint8_t *restrict work);
-void idemip_stats_set(uint8_t *restrict work);
-void idemip_stats_read(uint8_t *restrict work);
-void idemip_stats_if_bump(uint8_t *restrict work);
-void idemip_stats_if_set(uint8_t *restrict work);
-void idemip_stats_if_read(uint8_t *restrict work);
+void idemip_stats_clear(uint8_t *work);
+void idemip_stats_bump(uint8_t *work);
+void idemip_stats_set(uint8_t *work);
+void idemip_stats_read(uint8_t *work);
+void idemip_stats_if_bump(uint8_t *work);
+void idemip_stats_if_set(uint8_t *work);
+void idemip_stats_if_read(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

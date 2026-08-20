@@ -135,7 +135,7 @@ IDEMIP_BEGIN_DECLS
 /**
  * @brief Why a frame went no further, and which RFC 1213 sec 6.4 counter that bumped.
  *
- * The three link-layer reasons are the ones PLAN.md sec 3.4b fixes. Each names a counter whose own
+ * The three link-layer reasons are the ones the phase order fixes. Each names a counter whose own
  * RFC 1213 wording is the reason it is the right one.
  */
 typedef enum IDEMIP_ENUM_PACKED
@@ -458,8 +458,8 @@ typedef struct
  *   Dispatch.input(work);
  *   if (IDEMIP_DISPATCH_IO(work)->act & IDEMIP_DISPATCH_ACT_DELIVER) { ... }
  *
- * @c work is IDEMIP_DISPATCH_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_DISPATCH_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the instance, so two
  * receive paths are two borrows and share not one byte.
  *
@@ -490,28 +490,28 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const bind)(uint8_t *restrict work);
-    void (*const if_bind)(uint8_t *restrict work);
-    void (*const if_get)(uint8_t *restrict work);
-    void (*const input)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const bind)(uint8_t *work);
+    void (*const if_bind)(uint8_t *work);
+    void (*const if_get)(uint8_t *work);
+    void (*const input)(uint8_t *work);
 #if IDEMIP_ENABLE_TCP
-    void (*const tcp_deliver)(uint8_t *restrict work);
-    void (*const tcp_ack)(uint8_t *restrict work);
+    void (*const tcp_deliver)(uint8_t *work);
+    void (*const tcp_ack)(uint8_t *work);
 #endif
 } DispatchNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_dispatch_clear(uint8_t *restrict work);
-void idemip_dispatch_bind(uint8_t *restrict work);
-void idemip_dispatch_if_bind(uint8_t *restrict work);
-void idemip_dispatch_if_get(uint8_t *restrict work);
-void idemip_dispatch_input(uint8_t *restrict work);
+void idemip_dispatch_clear(uint8_t *work);
+void idemip_dispatch_bind(uint8_t *work);
+void idemip_dispatch_if_bind(uint8_t *work);
+void idemip_dispatch_if_get(uint8_t *work);
+void idemip_dispatch_input(uint8_t *work);
 #if IDEMIP_ENABLE_TCP
-void idemip_dispatch_tcp_deliver(uint8_t *restrict work);
-void idemip_dispatch_tcp_ack(uint8_t *restrict work);
+void idemip_dispatch_tcp_deliver(uint8_t *work);
+void idemip_dispatch_tcp_ack(uint8_t *work);
 #endif
 
 /**

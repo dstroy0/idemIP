@@ -215,8 +215,8 @@ static_assert(IDEMIP_IP4_REASS_INFINITY >= IDEMIP_IP4_TOTAL_LEN_MAX - 1u,
  *   Ip4Reass.hold(work);
  *   if (IDEMIP_IP4_REASS_IO(work)->complete) { ... Ip4Reass.next(work); ... }
  *
- * @c work is IDEMIP_IP4_REASS_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_IP4_REASS_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the reassembler, so
  * two of them are two borrows and share not one byte.
  *
@@ -253,23 +253,23 @@ static_assert(IDEMIP_IP4_REASS_INFINITY >= IDEMIP_IP4_TOTAL_LEN_MAX - 1u,
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const hold)(uint8_t *restrict work);
-    void (*const next)(uint8_t *restrict work);
-    void (*const release)(uint8_t *restrict work);
-    void (*const reclaim)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const hold)(uint8_t *work);
+    void (*const next)(uint8_t *work);
+    void (*const release)(uint8_t *work);
+    void (*const reclaim)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
 } Ip4ReassNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_ip4_reass_clear(uint8_t *restrict work);
-void idemip_ip4_reass_hold(uint8_t *restrict work);
-void idemip_ip4_reass_next(uint8_t *restrict work);
-void idemip_ip4_reass_release(uint8_t *restrict work);
-void idemip_ip4_reass_reclaim(uint8_t *restrict work);
-void idemip_ip4_reass_tick(uint8_t *restrict work);
+void idemip_ip4_reass_clear(uint8_t *work);
+void idemip_ip4_reass_hold(uint8_t *work);
+void idemip_ip4_reass_next(uint8_t *work);
+void idemip_ip4_reass_release(uint8_t *work);
+void idemip_ip4_reass_reclaim(uint8_t *work);
+void idemip_ip4_reass_tick(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

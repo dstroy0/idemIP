@@ -5,9 +5,10 @@
  * @file checksum.h
  * @brief The internet checksum, RFC 1071.
  *
- * "the 16-bit 1's complement of the 1's complement sum of all 16-bit words". Every header here
- * carries one: the IPv4 header over itself (RFC 791 sec 3.1), ICMP over its message (RFC 792), and
- * TCP and UDP over a pseudo-header and their payload.
+ * RFC 791 sec 3.1 states the field this computes: "the 16 bit one's complement of the one's
+ * complement sum of all 16 bit words in the header". RFC 1071 is where the arithmetic that gets
+ * there is set out. Every header here carries one: the IPv4 header over itself (RFC 791 sec 3.1),
+ * ICMP over its message (RFC 792), and TCP and UDP over a pseudo-header and their payload.
  *
  * Reads the caller's bytes and returns a number. Holds nothing.
  */
@@ -141,12 +142,12 @@ IDEMIP_INLINE uint32_t idemip_cksum_accum(uint32_t sum, const uint8_t *p, size_t
 
     while (i + 1u < len)
     {
-        sum += (uint32_t)(((uint32_t)p[i] << 8) | (uint32_t)p[i + 1u]);
+        sum += (((uint32_t)p[i] << 8) | (uint32_t)p[i + 1u]);
         i += 2u;
     }
     if (i < len)
     {
-        sum += (uint32_t)((uint32_t)p[i] << 8); // [Z,0]: the odd byte is the high half
+        sum += ((uint32_t)p[i] << 8); // [Z,0]: the odd byte is the high half
     }
     // sec 1's end-around carry, applied before the sum is handed back, so the value a call reports
     // is the same whatever route it took through the span: RFC 1071 sec 3 tabulates the deferred sum

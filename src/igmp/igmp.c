@@ -93,7 +93,7 @@ static_assert(IGMP_MAX_RESP_MS_MAX <= 0xFFFFu && IDEMIP_IGMP_UNSOLICITED_REPORT_
 #define IGMP_STATE_BYTES ((size_t)IDEMIP_IGMP_OFF_END - (size_t)IDEMIP_IGMP_OFF_CTX)
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool igmp_ready(uint8_t *restrict work)
+static idemip_bool igmp_ready(uint8_t *work)
 {
     return (idemip_bool)(IGMP_CTX(work)->ready == IGMP_READY);
 }
@@ -112,13 +112,13 @@ static idemip_bool igmp_group_ok(uint32_t group)
 // tested against the half range, so a clock that wrapped past 0xFFFFFFFF still compares.
 static idemip_bool igmp_passed(uint32_t now_ms, uint32_t deadline_ms)
 {
-    return (idemip_bool)((uint32_t)(now_ms - deadline_ms) < 0x80000000u);
+    return (idemip_bool)((now_ms - deadline_ms) < 0x80000000u);
 }
 
 // Milliseconds left on a running timer, zero once it has passed.
 static uint32_t igmp_remaining(uint32_t now_ms, uint32_t deadline_ms)
 {
-    return igmp_passed(now_ms, deadline_ms) ? 0u : (uint32_t)(deadline_ms - now_ms);
+    return igmp_passed(now_ms, deadline_ms) ? 0u : (deadline_ms - now_ms);
 }
 
 // A delay in RFC 2236 sec 6's interval (0, max_ms], "chosen uniformly": the high 16 bits of the word
@@ -138,9 +138,9 @@ static uint32_t igmp_draw(uint32_t rand, uint32_t max_ms)
 static uint32_t igmp_step(uint32_t x)
 {
     uint32_t v = (x == 0u) ? IGMP_READY : x;
-    v ^= (uint32_t)(v << 13);
-    v ^= (uint32_t)(v >> 17);
-    v ^= (uint32_t)(v << 5);
+    v ^= (v << 13);
+    v ^= (v >> 17);
+    v ^= (v << 5);
     return v;
 }
 
@@ -149,7 +149,7 @@ static uint32_t igmp_step(uint32_t x)
 // The entry a group on an interface occupies, or IDEMIP_IGMP_NONE. RFC 2236 sec 6 holds one state
 // "with respect to any single IP multicast group on any single network interface", so the pair keys
 // the table.
-static uint8_t igmp_lookup(uint8_t *restrict work, uint32_t group, uint8_t netif)
+static uint8_t igmp_lookup(uint8_t *work, uint32_t group, uint8_t netif)
 {
     for (uint32_t i = 0u; i < IDEMIP_IGMP_GROUPS; i++)
     {
@@ -164,7 +164,7 @@ static uint8_t igmp_lookup(uint8_t *restrict work, uint32_t group, uint8_t netif
 
 // The first entry in the sec 6 Non-Member state, which "requires no storage in the host", or
 // IDEMIP_IGMP_NONE when the table is full.
-static uint8_t igmp_free_slot(uint8_t *restrict work)
+static uint8_t igmp_free_slot(uint8_t *work)
 {
     for (uint32_t i = 0u; i < IDEMIP_IGMP_GROUPS; i++)
     {
@@ -194,10 +194,10 @@ static void igmp_report_entry(IgmpIo *io, const IgmpGroup *entry, uint8_t index)
 // "chosen uniformly from the interval (0, [Unsolicited Report Interval] ]". sec 4's per-interface
 // record decides the report's version, since that variable "MUST be used to decide what type of
 // Membership Reports to send for unsolicited Membership Reports as well".
-static void igmp_do_join(uint8_t *restrict work)
+static void igmp_do_join(uint8_t *work)
 {
     IgmpIo *io = IGMP_IO(work);
-    IgmpCtx *ctx = IGMP_CTX(work);
+    const IgmpCtx *ctx = IGMP_CTX(work);
     const uint32_t group = io->group_args.group;
     const uint8_t netif = io->group_args.netif;
     // RFC 1112 sec 7.2 notifies the local network module only "On the first request to join and the
@@ -242,10 +242,10 @@ static void igmp_do_join(uint8_t *restrict work)
 // group not in the table is refused. Both arcs run "send leave if flag set" and land in Non-Member,
 // and sec 6's send leave "SHOULD be skipped" where "the interface state says the Querier is running
 // IGMPv1". Zeroing the entry stops the timer and frees it.
-static void igmp_do_leave(uint8_t *restrict work)
+static void igmp_do_leave(uint8_t *work)
 {
     IgmpIo *io = IGMP_IO(work);
-    IgmpCtx *ctx = IGMP_CTX(work);
+    const IgmpCtx *ctx = IGMP_CTX(work);
     const uint8_t index = igmp_lookup(work, io->group_args.group, io->group_args.netif);
     if (index == IDEMIP_IGMP_NONE)
     {
@@ -270,7 +270,7 @@ static void igmp_do_leave(uint8_t *restrict work)
 }
 
 // RFC 2236 sec 6 holds one state per multicast group per interface, and this reports it.
-static void igmp_do_find(uint8_t *restrict work)
+static void igmp_do_find(uint8_t *work)
 {
     IgmpIo *io = IGMP_IO(work);
     const uint8_t index = igmp_lookup(work, io->group_args.group, io->group_args.netif);
@@ -291,7 +291,7 @@ static void igmp_do_find(uint8_t *restrict work)
 // the table does not hold is left alone rather than refused. sec 6's "IGMPv1 query received" is a
 // Query "with the Max Response Time field set to 0", which sec 4 reads as 100 units and which sets
 // the per-interface timer "to its maximum value [Version 1 Router Present Timeout]".
-static void igmp_do_query_in(uint8_t *restrict work)
+static void igmp_do_query_in(uint8_t *work)
 {
     IgmpIo *io = IGMP_IO(work);
     IgmpCtx *ctx = IGMP_CTX(work);
@@ -345,7 +345,7 @@ static void igmp_do_query_in(uint8_t *restrict work)
 // Non-Member or Idle Member state", so both of those are a completed call that changed nothing. sec 5
 // requires the suppression to work for "either a Version 1 Membership Report or a Version 2
 // Membership Report", so no version is read here.
-static void igmp_do_report_in(uint8_t *restrict work)
+static void igmp_do_report_in(uint8_t *work)
 {
     IgmpIo *io = IGMP_IO(work);
     const uint8_t index = igmp_lookup(work, io->report_args.group, io->report_args.netif);
@@ -372,7 +372,7 @@ static void igmp_do_report_in(uint8_t *restrict work)
 // report, set flag" into Idle Member. expired counts every timer this sweep found due; the lowest
 // entry among them is the one fired, so a caller that sends one Report per call ticks again while
 // expired is non-zero and each call hands it exactly one group.
-static void igmp_do_tick(uint8_t *restrict work)
+static void igmp_do_tick(uint8_t *work)
 {
     IgmpIo *io = IGMP_IO(work);
     IgmpCtx *ctx = IGMP_CTX(work);
@@ -411,7 +411,7 @@ static void igmp_do_tick(uint8_t *restrict work)
 
 // The context and the table, zeroed, then the mark. A zeroed entry is in the sec 6 Non-Member state,
 // which "requires no storage in the host". The operand block is the caller's and is left as it stands.
-void idemip_igmp_clear(uint8_t *restrict work)
+void idemip_igmp_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -444,7 +444,7 @@ static void igmp_result_clear(IgmpIo *io)
 // A full table is BUSY: leave frees an entry, so the retry succeeds once a membership is dropped. A
 // bad address, an interface this build does not carry, an uncleared borrow and a group already joined
 // are ERR, since no later call changes any of them.
-void idemip_igmp_join(uint8_t *restrict work)
+void idemip_igmp_join(uint8_t *work)
 {
     if (!work)
     {
@@ -462,7 +462,7 @@ void idemip_igmp_join(uint8_t *restrict work)
 
 // A group that is not joined is ERR: sec 6's leave group event "may occur only in the Delaying Member
 // and Idle Member states", and no retry puts it in one.
-void idemip_igmp_leave(uint8_t *restrict work)
+void idemip_igmp_leave(uint8_t *work)
 {
     if (!work)
     {
@@ -478,7 +478,7 @@ void idemip_igmp_leave(uint8_t *restrict work)
     igmp_do_leave(work);
 }
 
-void idemip_igmp_find(uint8_t *restrict work)
+void idemip_igmp_find(uint8_t *work)
 {
     if (!work)
     {
@@ -497,7 +497,7 @@ void idemip_igmp_find(uint8_t *restrict work)
 // A Max Response Time wider than the sec 2.2 field can carry is ERR: the field is 8 bits "in units of
 // 1/10 second", so no arriving Query produces one and no retry makes it legal. A Query the host holds
 // no membership for is OK, since sec 6 ignores it rather than refusing it.
-void idemip_igmp_query_in(uint8_t *restrict work)
+void idemip_igmp_query_in(uint8_t *work)
 {
     if (!work)
     {
@@ -517,7 +517,7 @@ void idemip_igmp_query_in(uint8_t *restrict work)
 
 // A Report for a group the host is not a member of is OK: sec 6 ignores it "for memberships in the
 // Non-Member or Idle Member state", which is a completed call that changed nothing.
-void idemip_igmp_report_in(uint8_t *restrict work)
+void idemip_igmp_report_in(uint8_t *work)
 {
     if (!work)
     {
@@ -534,7 +534,7 @@ void idemip_igmp_report_in(uint8_t *restrict work)
 }
 
 // A sweep that found nothing due is OK, not BUSY: it completed, and expired says nothing fired.
-void idemip_igmp_tick(uint8_t *restrict work)
+void idemip_igmp_tick(uint8_t *work)
 {
     if (!work)
     {

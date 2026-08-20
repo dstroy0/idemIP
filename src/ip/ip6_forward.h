@@ -205,8 +205,8 @@ typedef struct
  *   Ip6Forward.decide(work);
  *   if (IDEMIP_IP6_FORWARD_IO(work)->action == IDEMIP_IP6_FORWARD_SEND) { ... }
  *
- * @c work is IDEMIP_IP6_FORWARD_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_IP6_FORWARD_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the forwarder, so two
  * forwarders are two borrows and share not one byte.
  *
@@ -227,15 +227,15 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const decide)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const decide)(uint8_t *work);
 } Ip6ForwardNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_ip6_forward_clear(uint8_t *restrict work);
-void idemip_ip6_forward_decide(uint8_t *restrict work);
+void idemip_ip6_forward_clear(uint8_t *work);
+void idemip_ip6_forward_decide(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

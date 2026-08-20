@@ -185,7 +185,7 @@ static uint16_t tcp_out_put_opts(uint8_t *o, const TcpOutBuildArgs *a, const Tcp
 
 // The context is the whole borrow past the operand block, so one store covers it. The operand block
 // is the caller's and is left as it was found, except for the members a call reports through.
-void idemip_tcp_out_clear(uint8_t *restrict work)
+void idemip_tcp_out_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -203,7 +203,7 @@ void idemip_tcp_out_clear(uint8_t *restrict work)
 // checksum over the pseudo-header of sec 3.1 over IPv4 or of RFC 8200 sec 8.1 over IPv6. The Checksum
 // field goes out zeroed because sec 3.1 says "While computing the checksum, the checksum field itself
 // is replaced with zeros."
-void idemip_tcp_out_build(uint8_t *restrict work)
+void idemip_tcp_out_build(uint8_t *work)
 {
     if (!work)
     {
@@ -297,7 +297,7 @@ void idemip_tcp_out_build(uint8_t *restrict work)
 // of data sent but not acknowledged." sec 3.7.4: "In all cases, sending data is also subject to the
 // limitation imposed by the slow start algorithm", and RFC 5681 sec 3.1: "The minimum of cwnd and
 // rwnd governs data transmission", so U is held down to what cwnd leaves outstanding.
-void idemip_tcp_out_send(uint8_t *restrict work)
+void idemip_tcp_out_send(uint8_t *work)
 {
     if (!work)
     {
@@ -393,7 +393,7 @@ void idemip_tcp_out_send(uint8_t *restrict work)
 
 // RFC 9293 sec 3.10.7.4 first: "<SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK>". The same three fields are RFC
 // 5961 sec 3.2's and sec 4.2's challenge ACK, which tcp_in asks for.
-void idemip_tcp_out_ack(uint8_t *restrict work)
+void idemip_tcp_out_ack(uint8_t *work)
 {
     if (!work)
     {
@@ -415,7 +415,7 @@ void idemip_tcp_out_ack(uint8_t *restrict work)
 // RFC 9293 sec 3.5.2: "If the incoming segment has the ACK bit set, the reset takes its sequence
 // number from the ACK field of the segment; otherwise, the reset has sequence number zero and the ACK
 // field is set to the sum of the sequence number and segment length of the incoming segment."
-void idemip_tcp_out_rst(uint8_t *restrict work)
+void idemip_tcp_out_rst(uint8_t *work)
 {
     if (!work)
     {
@@ -446,7 +446,7 @@ void idemip_tcp_out_rst(uint8_t *restrict work)
 // "RTO <- SRTT + max (G, K*RTTVAR)". alpha is 1/8, beta is 1/4 and K is 4, so each is a shift.
 // A connection that has taken no measurement carries SRTT of zero, which (2.1) leaves at RTO of one
 // second.
-void idemip_tcp_out_rtt(uint8_t *restrict work)
+void idemip_tcp_out_rtt(uint8_t *work)
 {
     if (!work)
     {
@@ -494,7 +494,7 @@ void idemip_tcp_out_rtt(uint8_t *restrict work)
 
 // RFC 6298 (5.1): "Every time a packet containing data is sent (including a retransmission), if the
 // timer is not running, start it running so that it will expire after RTO seconds."
-void idemip_tcp_out_rtx_arm(uint8_t *restrict work)
+void idemip_tcp_out_rtx_arm(uint8_t *work)
 {
     if (!work)
     {
@@ -532,7 +532,7 @@ void idemip_tcp_out_rtx_arm(uint8_t *restrict work)
 
 // RFC 6298 (5.2): "When all outstanding data has been acknowledged, turn off the retransmission
 // timer."
-void idemip_tcp_out_rtx_stop(uint8_t *restrict work)
+void idemip_tcp_out_rtx_stop(uint8_t *work)
 {
     if (!work)
     {
@@ -553,7 +553,7 @@ void idemip_tcp_out_rtx_stop(uint8_t *restrict work)
 // RFC 6298 (5.3): "When an ACK is received that acknowledges new data, restart the retransmission
 // timer so that it will expire after RTO seconds (for the current value of RTO)." The segment at the
 // front of the queue is a different one now, so the retransmissions counted against it start over.
-void idemip_tcp_out_rtx_restart(uint8_t *restrict work)
+void idemip_tcp_out_rtx_restart(uint8_t *work)
 {
     if (!work)
     {
@@ -584,7 +584,7 @@ void idemip_tcp_out_rtx_restart(uint8_t *restrict work)
 // given segment has already been retransmitted by way of the retransmission timer at least once", in
 // which case "the value of ssthresh is held constant"; and "upon a timeout ... cwnd MUST be set to no
 // more than the loss window, LW, which equals 1 full-sized segment".
-void idemip_tcp_out_rtx_expire(uint8_t *restrict work)
+void idemip_tcp_out_rtx_expire(uint8_t *work)
 {
     if (!work)
     {
@@ -644,7 +644,7 @@ void idemip_tcp_out_rtx_expire(uint8_t *restrict work)
 // be set using the following guidelines as an upper bound", which tcp_out_iw applies, and "The
 // initial value of ssthresh SHOULD be set arbitrarily high (e.g., to the size of the largest possible
 // advertised window)", which puts the connection in slow start until the first loss.
-void idemip_tcp_out_cc_init(uint8_t *restrict work)
+void idemip_tcp_out_cc_init(uint8_t *work)
 {
     if (!work)
     {
@@ -676,7 +676,7 @@ void idemip_tcp_out_cc_init(uint8_t *restrict work)
 // 'bytes_acked' variable in the TCP control block. When bytes_acked becomes greater than or equal to
 // the value of the congestion window, bytes_acked is reduced by the value of cwnd. Next, cwnd is
 // incremented by a full-sized segment (SMSS)."
-void idemip_tcp_out_cc_ack(uint8_t *restrict work)
+void idemip_tcp_out_cc_ack(uint8_t *work)
 {
     if (!work)
     {
@@ -719,7 +719,7 @@ void idemip_tcp_out_cc_ack(uint8_t *restrict work)
 // 2, 2*SMSS)". "The lost segment starting at SND.UNA MUST be retransmitted and cwnd set to ssthresh
 // plus 3*SMSS." "For each additional duplicate ACK received (after the third), cwnd MUST be
 // incremented by SMSS."
-void idemip_tcp_out_cc_dupack(uint8_t *restrict work)
+void idemip_tcp_out_cc_dupack(uint8_t *work)
 {
     if (!work)
     {
@@ -754,7 +754,7 @@ void idemip_tcp_out_cc_dupack(uint8_t *restrict work)
 // RFC 5681 sec 3.2 step 6: "When the next ACK arrives that acknowledges previously unacknowledged
 // data, a TCP MUST set cwnd to ssthresh (the value set in step 2). This is termed 'deflating' the
 // window."
-void idemip_tcp_out_cc_recover(uint8_t *restrict work)
+void idemip_tcp_out_cc_recover(uint8_t *work)
 {
     if (!work)
     {

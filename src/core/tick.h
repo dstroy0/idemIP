@@ -5,8 +5,8 @@
  * @file tick.h
  * @brief The scheduler: the only thing in this tree that decides what runs when.
  *
- * Nothing here blocks, so something has to drive progress, and this is it. PLAN.md sec 3.4b fixes the
- * order and it is not a preference: a later phase consumes what an earlier one produced.
+ * Nothing here blocks, so something has to drive progress, and this is it. The order below is fixed
+ * and it is not a preference: a later phase consumes what an earlier one produced.
  *
  *   1. DRAIN   take frames off the receive rings while one reports OK, dispatching each and either
  *              releasing its descriptor or leaving it where a unit pinned it
@@ -248,8 +248,8 @@ typedef struct
  *   while (Tick.service(work), IDEMIP_TICK_IO(work)->status == IDEMIP_OK) { }
  *   while (Tick.flush(work), IDEMIP_TICK_IO(work)->status == IDEMIP_OK) { ... send it }
  *
- * @c work is IDEMIP_TICK_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_TICK_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the instance, so two
  * schedulers are two borrows and share not one byte.
  *
@@ -276,25 +276,25 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const bind)(uint8_t *restrict work);
-    void (*const if_bind)(uint8_t *restrict work);
-    void (*const open)(uint8_t *restrict work);
-    void (*const drain)(uint8_t *restrict work);
-    void (*const service)(uint8_t *restrict work);
-    void (*const flush)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const bind)(uint8_t *work);
+    void (*const if_bind)(uint8_t *work);
+    void (*const open)(uint8_t *work);
+    void (*const drain)(uint8_t *work);
+    void (*const service)(uint8_t *work);
+    void (*const flush)(uint8_t *work);
 } TickNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_tick_clear(uint8_t *restrict work);
-void idemip_tick_bind(uint8_t *restrict work);
-void idemip_tick_if_bind(uint8_t *restrict work);
-void idemip_tick_open(uint8_t *restrict work);
-void idemip_tick_drain(uint8_t *restrict work);
-void idemip_tick_service(uint8_t *restrict work);
-void idemip_tick_flush(uint8_t *restrict work);
+void idemip_tick_clear(uint8_t *work);
+void idemip_tick_bind(uint8_t *work);
+void idemip_tick_if_bind(uint8_t *work);
+void idemip_tick_open(uint8_t *work);
+void idemip_tick_drain(uint8_t *work);
+void idemip_tick_service(uint8_t *work);
+void idemip_tick_flush(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

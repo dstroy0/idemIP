@@ -62,7 +62,7 @@ static_assert((IDEMIP_IP6_FRAG_CTX_BYTES & (IDEMIP_ALIGN - 1u)) == 0u,
 #define IP6_FRAG_CTX(w) ((Ip6FragCtx *)(void *)((w) + IDEMIP_IP6_FRAG_OFF_CTX))
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool ip6_frag_ready(uint8_t *restrict work)
+static idemip_bool ip6_frag_ready(uint8_t *work)
 {
     return (idemip_bool)(IP6_FRAG_CTX(work)->ready == IP6_FRAG_READY);
 }
@@ -140,7 +140,7 @@ static Ip6FragChain ip6_frag_walk(const uint8_t *pkt, size_t len)
 // A packet that fits the path MTU is sent as it is: sec 4.5 inserts a Fragment header only "In order
 // to send a packet that is too large to fit in the MTU of the path to its destination". One that does
 // not is cut, and everything the cut needs is measured here once.
-static void ip6_frag_take(uint8_t *restrict work)
+static void ip6_frag_take(uint8_t *work)
 {
     Ip6FragIo *io = IP6_FRAG_IO(work);
     Ip6FragCtx *ctx = IP6_FRAG_CTX(work);
@@ -250,7 +250,7 @@ static void ip6_frag_emit(const Ip6FragCtx *ctx, uint8_t *out, uint16_t chunk, i
 }
 
 // The fragment packet the cursor stands on, into the caller's buffer.
-static void ip6_frag_write(uint8_t *restrict work)
+static void ip6_frag_write(uint8_t *work)
 {
     Ip6FragIo *io = IP6_FRAG_IO(work);
     Ip6FragCtx *ctx = IP6_FRAG_CTX(work);
@@ -306,18 +306,18 @@ static void ip6_frag_write(uint8_t *restrict work)
 
 // --- the entries -----------------------------------------------------------
 
-void idemip_ip6_frag_clear(uint8_t *restrict work)
+void idemip_ip6_frag_clear(uint8_t *work)
 {
     if (!work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IP6_FRAG_OFF_CTX, 0, (size_t)IDEMIP_IP6_FRAG_BORROW - (size_t)IDEMIP_IP6_FRAG_OFF_CTX);
+    memset(work + IDEMIP_IP6_FRAG_OFF_CTX, 0, (size_t)IDEMIP_IP6_FRAG_BORROW - IDEMIP_IP6_FRAG_OFF_CTX);
     IP6_FRAG_CTX(work)->ready = IP6_FRAG_READY;
     IP6_FRAG_IO(work)->status = IDEMIP_OK;
 }
 
-void idemip_ip6_frag_begin(uint8_t *restrict work)
+void idemip_ip6_frag_begin(uint8_t *work)
 {
     if (!work)
     {
@@ -343,7 +343,7 @@ void idemip_ip6_frag_begin(uint8_t *restrict work)
     ip6_frag_take(work);
 }
 
-void idemip_ip6_frag_next(uint8_t *restrict work)
+void idemip_ip6_frag_next(uint8_t *work)
 {
     if (!work)
     {

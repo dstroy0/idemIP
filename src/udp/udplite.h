@@ -135,9 +135,9 @@ typedef struct
  *                                 build
  * @var UdpLiteResult::cksum       the Checksum field, as read or as written
  * @var UdpLiteResult::covered     true when @ref UdpLiteResult::cov_bytes reaches the whole IP
- *                                 payload. RFC 3828 sec 3.3 has an application make "no assumptions
- *                                 regarding the correctness of the received data beyond the position
- *                                 indicated by the Checksum Coverage field".
+ *                                 payload. RFC 3828 sec 3.3: applications "should not make any
+ *                                 assumptions regarding the correctness of the received data beyond
+ *                                 the position indicated by the Checksum Coverage field".
  */
 typedef struct
 {
@@ -197,8 +197,8 @@ typedef struct
  *   UdpLite.check(work);
  *   if (IDEMIP_UDPLITE_IO(work)->status == IDEMIP_OK) { ... res.payload, res.cov_bytes ... }
  *
- * @c work is IDEMIP_UDPLITE_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_UDPLITE_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the instance, so two
  * of these are two borrows and share not one byte.
  *
@@ -223,19 +223,19 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const cover)(uint8_t *restrict work);
-    void (*const check)(uint8_t *restrict work);
-    void (*const build)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const cover)(uint8_t *work);
+    void (*const check)(uint8_t *work);
+    void (*const build)(uint8_t *work);
 } UdpLiteNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_udplite_clear(uint8_t *restrict work);
-void idemip_udplite_cover(uint8_t *restrict work);
-void idemip_udplite_check(uint8_t *restrict work);
-void idemip_udplite_build_io(uint8_t *restrict work);
+void idemip_udplite_clear(uint8_t *work);
+void idemip_udplite_cover(uint8_t *work);
+void idemip_udplite_check(uint8_t *work);
+void idemip_udplite_build_io(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

@@ -404,8 +404,8 @@ typedef struct
  *   Dhcp6.build(work);
  *   if (IDEMIP_DHCP6_IO(work)->status == IDEMIP_OK) { send IDEMIP_DHCP6_IO(work)->len octets }
  *
- * @c work is IDEMIP_DHCP6_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_DHCP6_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. One client runs per interface, so
  * the borrow IS the interface and two of them share not one byte.
  *
@@ -430,31 +430,31 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const bind)(uint8_t *restrict work);
-    void (*const start)(uint8_t *restrict work);
-    void (*const stop)(uint8_t *restrict work);
-    void (*const input)(uint8_t *restrict work);
-    void (*const build)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
-    void (*const confirm)(uint8_t *restrict work);
-    void (*const release)(uint8_t *restrict work);
-    void (*const decline)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const bind)(uint8_t *work);
+    void (*const start)(uint8_t *work);
+    void (*const stop)(uint8_t *work);
+    void (*const input)(uint8_t *work);
+    void (*const build)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
+    void (*const confirm)(uint8_t *work);
+    void (*const release)(uint8_t *work);
+    void (*const decline)(uint8_t *work);
 } Dhcp6Ns;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_dhcp6_clear(uint8_t *restrict work);
-void idemip_dhcp6_bind(uint8_t *restrict work);
-void idemip_dhcp6_start(uint8_t *restrict work);
-void idemip_dhcp6_stop(uint8_t *restrict work);
-void idemip_dhcp6_input(uint8_t *restrict work);
-void idemip_dhcp6_build(uint8_t *restrict work);
-void idemip_dhcp6_tick(uint8_t *restrict work);
-void idemip_dhcp6_confirm(uint8_t *restrict work);
-void idemip_dhcp6_release(uint8_t *restrict work);
-void idemip_dhcp6_decline(uint8_t *restrict work);
+void idemip_dhcp6_clear(uint8_t *work);
+void idemip_dhcp6_bind(uint8_t *work);
+void idemip_dhcp6_start(uint8_t *work);
+void idemip_dhcp6_stop(uint8_t *work);
+void idemip_dhcp6_input(uint8_t *work);
+void idemip_dhcp6_build(uint8_t *work);
+void idemip_dhcp6_tick(uint8_t *work);
+void idemip_dhcp6_confirm(uint8_t *work);
+void idemip_dhcp6_release(uint8_t *work);
+void idemip_dhcp6_decline(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

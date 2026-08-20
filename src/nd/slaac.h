@@ -222,8 +222,8 @@ typedef struct
  *   Slaac.prefix_in(work);
  *   if (IDEMIP_SLAAC_IO(work)->created) { ... }
  *
- * @c work is IDEMIP_SLAAC_BORROW bytes the CALLER took, at an address it knows. It arrives
- * @c restrict and is not held past the call, so nothing here aliases it. How those bytes are carved
+ * @c work is IDEMIP_SLAAC_BORROW bytes the CALLER took, at an address it knows. It is
+ * not held past the call, so nothing here aliases it. How those bytes are carved
  * is this module's and is never named here beyond the map above. The borrow IS the interface, so two
  * interfaces share not one byte.
  *
@@ -251,25 +251,25 @@ typedef struct
  */
 typedef struct
 {
-    void (*const clear)(uint8_t *restrict work);
-    void (*const link_local)(uint8_t *restrict work);
-    void (*const prefix_in)(uint8_t *restrict work);
-    void (*const find)(uint8_t *restrict work);
-    void (*const get)(uint8_t *restrict work);
-    void (*const remove)(uint8_t *restrict work);
-    void (*const tick)(uint8_t *restrict work);
+    void (*const clear)(uint8_t *work);
+    void (*const link_local)(uint8_t *work);
+    void (*const prefix_in)(uint8_t *work);
+    void (*const find)(uint8_t *work);
+    void (*const get)(uint8_t *work);
+    void (*const remove)(uint8_t *work);
+    void (*const tick)(uint8_t *work);
 } SlaacNs;
 
 // What the table binds. Each takes the one borrow and nothing else: everything an
 // entry reads is an operand in the block at offset zero, or a region of the borrow
 // at a fixed offset.
-void idemip_slaac_clear(uint8_t *restrict work);
-void idemip_slaac_link_local(uint8_t *restrict work);
-void idemip_slaac_prefix_in(uint8_t *restrict work);
-void idemip_slaac_find(uint8_t *restrict work);
-void idemip_slaac_get(uint8_t *restrict work);
-void idemip_slaac_remove(uint8_t *restrict work);
-void idemip_slaac_tick(uint8_t *restrict work);
+void idemip_slaac_clear(uint8_t *work);
+void idemip_slaac_link_local(uint8_t *work);
+void idemip_slaac_prefix_in(uint8_t *work);
+void idemip_slaac_find(uint8_t *work);
+void idemip_slaac_get(uint8_t *work);
+void idemip_slaac_remove(uint8_t *work);
+void idemip_slaac_tick(uint8_t *work);
 
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.

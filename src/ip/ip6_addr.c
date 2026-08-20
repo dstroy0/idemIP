@@ -46,7 +46,7 @@ static_assert(IDEMIP_IP6_ADDR_OFF_END <= IDEMIP_IP6_ADDR_BORROW,
 
 // --- the entries -----------------------------------------------------------
 
-void idemip_ip6_addr_clear(uint8_t *restrict work)
+void idemip_ip6_addr_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -57,7 +57,7 @@ void idemip_ip6_addr_clear(uint8_t *restrict work)
     IP6_ADDR_IO(work)->status = IDEMIP_OK;
 }
 
-void idemip_ip6_addr_classify(uint8_t *restrict work)
+void idemip_ip6_addr_classify(uint8_t *work)
 {
     if (!work)
     {
@@ -83,7 +83,7 @@ void idemip_ip6_addr_classify(uint8_t *restrict work)
 // anycast)". A multicast address is neither, and sec 2.5.2 says of the unspecified address that "it
 // must never be assigned to any node", so neither has a solicited-node form. Both are ERR: no later
 // call gives them one.
-void idemip_ip6_addr_solicited_io(uint8_t *restrict work)
+void idemip_ip6_addr_solicited_io(uint8_t *work)
 {
     if (!work)
     {
@@ -117,7 +117,7 @@ void idemip_ip6_addr_solicited_io(uint8_t *restrict work)
 // RFC 4291 sec 2.7 drops a multicast scop of 0 outright, so that is ERR, and treats scop F "the same
 // as packets destined to a global (scop E)", so that takes the single global zone. The unspecified
 // address has no scope (RFC 4007 sec 4) and so no zone either.
-void idemip_ip6_addr_zone(uint8_t *restrict work)
+void idemip_ip6_addr_zone(uint8_t *work)
 {
     if (!work)
     {
@@ -169,7 +169,7 @@ void idemip_ip6_addr_zone(uint8_t *restrict work)
 // address fe80::1." So two equal non-global addresses name the same interface only when their zones
 // agree. sec 6 reserves index zero to "use the default zone", so a default index matches whatever
 // zone the other address names.
-void idemip_ip6_addr_match(uint8_t *restrict work)
+void idemip_ip6_addr_match(uint8_t *work)
 {
     if (!work)
     {

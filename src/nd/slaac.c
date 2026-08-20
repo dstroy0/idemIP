@@ -91,7 +91,7 @@ static_assert(IDEMIP_SLAAC_ADDR_FREE == 0, "IDEMIP_SLAAC_ADDR_FREE must be zero:
 #define SLAAC_ADDR_BITS 128u
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool slaac_ready(uint8_t *restrict work)
+static idemip_bool slaac_ready(uint8_t *work)
 {
     return (idemip_bool)(SLAAC_CTX(work)->ready == SLAAC_READY);
 }
@@ -100,7 +100,7 @@ static idemip_bool slaac_ready(uint8_t *restrict work)
 
 static idemip_bool slaac_addr_eq(const uint8_t *a, const uint8_t *b)
 {
-    return (idemip_bool)(idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
+    return (idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
 }
 
 // sec 5.5.3 (d): "equal" over the first @p len bits. The (len >> 3) whole octets compare exactly, and
@@ -187,7 +187,7 @@ static IdemIpMs slaac_remaining(IdemIpMs now, IdemIpMs deadline)
 
 // --- the list --------------------------------------------------------------
 
-static uint8_t slaac_find_addr(uint8_t *restrict work, const uint8_t *addr)
+static uint8_t slaac_find_addr(uint8_t *work, const uint8_t *addr)
 {
     for (uint8_t i = 0; i < SLAAC_ENTRIES; i++)
     {
@@ -202,7 +202,7 @@ static uint8_t slaac_find_addr(uint8_t *restrict work, const uint8_t *addr)
 
 // sec 5.5.3 (d) and (e) match "the prefix of an address configured by stateless autoconfiguration
 // already in the list", which is the same prefix length and the same leading bits.
-static uint8_t slaac_find_prefix(uint8_t *restrict work, const uint8_t *prefix, uint8_t prefix_len)
+static uint8_t slaac_find_prefix(uint8_t *work, const uint8_t *prefix, uint8_t prefix_len)
 {
     for (uint8_t i = 0; i < SLAAC_ENTRIES; i++)
     {
@@ -215,7 +215,7 @@ static uint8_t slaac_find_prefix(uint8_t *restrict work, const uint8_t *prefix, 
     return (uint8_t)IDEMIP_SLAAC_NONE;
 }
 
-static uint8_t slaac_free_slot(uint8_t *restrict work)
+static uint8_t slaac_free_slot(uint8_t *work)
 {
     for (uint8_t i = 0; i < SLAAC_ENTRIES; i++)
     {
@@ -227,7 +227,7 @@ static uint8_t slaac_free_slot(uint8_t *restrict work)
     return (uint8_t)IDEMIP_SLAAC_NONE;
 }
 
-static uint8_t slaac_count(uint8_t *restrict work)
+static uint8_t slaac_count(uint8_t *work)
 {
     uint8_t n = 0u;
     for (uint8_t i = 0; i < SLAAC_ENTRIES; i++)
@@ -263,7 +263,7 @@ static void slaac_clear_results(SlaacIo *io)
 
 // One entry, into the result members of the operand block. The address is copied rather than pointed
 // at, so an invalidated one is still readable after its slot is freed.
-static void slaac_publish(uint8_t *restrict work, uint8_t index)
+static void slaac_publish(uint8_t *work, uint8_t index)
 {
     SlaacIo *io = SLAAC_IO(work);
     const SlaacEntry *e = SLAAC_AT(work, index);
@@ -314,7 +314,7 @@ static void slaac_set_valid(SlaacEntry *e, IdemIpMs now, uint32_t valid_s)
  * RemainingLifetime is neither less than the received lifetime nor at or under 2 hours, so it takes
  * rule 1 or rule 3.
  */
-static void slaac_two_hour_rule(uint8_t *restrict work, SlaacEntry *e, IdemIpMs now, uint32_t valid_s,
+static void slaac_two_hour_rule(uint8_t *work, SlaacEntry *e, IdemIpMs now, uint32_t valid_s,
                                 idemip_bool authenticated)
 {
     SlaacIo *io = SLAAC_IO(work);
@@ -349,7 +349,7 @@ static void slaac_two_hour_rule(uint8_t *restrict work, SlaacEntry *e, IdemIpMs 
 
 // The context and the list, zeroed, then the mark. A zeroed slot is IDEMIP_SLAAC_ADDR_FREE and holds
 // no address. The operand block is the caller's and is left as it stands.
-void idemip_slaac_clear(uint8_t *restrict work)
+void idemip_slaac_clear(uint8_t *work)
 {
     if (!work)
     {
@@ -363,7 +363,7 @@ void idemip_slaac_clear(uint8_t *restrict work)
 // sec 5.3: "A node forms a link-local address whenever an interface becomes enabled", and that
 // address "has an infinite preferred and valid lifetime; it is never timed out". An address already in
 // the list is reported rather than added twice.
-void idemip_slaac_link_local(uint8_t *restrict work)
+void idemip_slaac_link_local(uint8_t *work)
 {
     if (!work)
     {
@@ -404,7 +404,7 @@ void idemip_slaac_link_local(uint8_t *restrict work)
 // sec 5.5.3, one Prefix Information option, rule by rule. Rules (a), (b), (c) and the two tests in (d)
 // each "silently ignore the Prefix Information option", which is IDEMIP_OK with ignored set: the
 // option was well formed and this node has nothing to do with it.
-void idemip_slaac_prefix_in(uint8_t *restrict work)
+void idemip_slaac_prefix_in(uint8_t *work)
 {
     if (!work)
     {
@@ -492,7 +492,7 @@ void idemip_slaac_prefix_in(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_slaac_find(uint8_t *restrict work)
+void idemip_slaac_find(uint8_t *work)
 {
     if (!work)
     {
@@ -514,7 +514,7 @@ void idemip_slaac_find(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
-void idemip_slaac_get(uint8_t *restrict work)
+void idemip_slaac_get(uint8_t *work)
 {
     if (!work)
     {
@@ -533,7 +533,7 @@ void idemip_slaac_get(uint8_t *restrict work)
 
 // sec 5.5.4: an address "becomes invalid when its valid lifetime expires", and an invalid address is
 // "an address that is not assigned to any interface", so its slot is freed.
-void idemip_slaac_remove(uint8_t *restrict work)
+void idemip_slaac_remove(uint8_t *work)
 {
     if (!work)
     {
@@ -562,7 +562,7 @@ void idemip_slaac_remove(uint8_t *restrict work)
 // lifetime expires". A slot with both due is invalidated, the valid lifetime being the outer one.
 //
 // Nothing due reports BUSY, since the same call on a later tick fires one.
-void idemip_slaac_tick(uint8_t *restrict work)
+void idemip_slaac_tick(uint8_t *work)
 {
     if (!work)
     {
