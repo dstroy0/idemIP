@@ -1762,6 +1762,7 @@ void test_a_second_passive_open_on_one_socket_is_busy(void)
     TcpPcb.clear(work_a);
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = 80u;
+    IO(work_a)->listen_args.backlog = 1u;
     IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1774,6 +1775,7 @@ void test_a_second_passive_open_on_one_socket_is_busy(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = 80u;
+    IO(work_a)->listen_args.backlog = 1u;
     IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1787,6 +1789,7 @@ void test_a_full_listener_table_is_busy(void)
     {
         IO(work_a)->listen_args.ip = g_local;
         IO(work_a)->listen_args.port = (uint16_t)(1000u + i);
+        IO(work_a)->listen_args.backlog = 1u;
         IO(work_a)->listen_args.ip_version = G_IP_VERSION;
         TcpPcb.listen(work_a);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1807,6 +1810,7 @@ void test_a_bound_listener_is_matched_before_an_unspecified_one(void)
 
     IO(work_a)->listen_args.ip = any;
     IO(work_a)->listen_args.port = 80u;
+    IO(work_a)->listen_args.backlog = 1u;
     IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -2395,6 +2399,7 @@ void test_accept_records_the_listener_a_connection_came_through(void)
     TcpPcb.clear(work_a);
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = 80u;
+    IO(work_a)->listen_args.backlog = 1u;
     IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -2420,6 +2425,105 @@ void test_accept_records_the_listener_a_connection_came_through(void)
     IO(work_a)->pcb_args.index = idx;
     TcpPcb.load(work_a);
     TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->info.listener);
+}
+
+// Put the TCB @p idx into @p state, which is what a SYN or a handshake would have done to it.
+static void set_state(uint8_t *w, uint16_t idx, IdemIpTcpState state)
+{
+    IO(w)->pcb_args.index = idx;
+    TcpPcb.load(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(w)->status);
+    IO(w)->state = state;
+    IO(w)->pcb_args.index = idx;
+    TcpPcb.store(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(w)->status);
+}
+
+// The backlog a passive OPEN names bounds the connections that listener holds in SYN-RECEIVED, and
+// accept is the one place a connection is bound to a listener, so it is the one place the bound can
+// be applied. It was written at listen and read by nothing: with IDEMIP_TCP_PCBS connections in the
+// whole build and IDEMIP_TCP_LISTEN_PCBS listeners competing for them, one listener could take every
+// one whatever its passive OPEN had asked for.
+void test_a_listener_at_its_backlog_refuses_a_further_connection(void)
+{
+    TcpPcb.clear(work_a);
+    IO(work_a)->listen_args.ip = g_local;
+    IO(work_a)->listen_args.port = 80u;
+    IO(work_a)->listen_args.backlog = 2u;
+    IO(work_a)->listen_args.ip_version = G_IP_VERSION;
+    TcpPcb.listen(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    uint16_t lis = IO(work_a)->index;
+
+    uint16_t held[2];
+    for (unsigned i = 0u; i < 2u; i++)
+    {
+        held[i] = open_pcb(work_a);
+        IO(work_a)->accept_args.index = held[i];
+        IO(work_a)->accept_args.listener = lis;
+        TcpPcb.accept(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        set_state(work_a, held[i], IDEMIP_TCP_STATE_SYN_RECEIVED);
+    }
+
+    // BUSY and not ERR: the listener is real and the request is well formed, there is just no room
+    // for it now, and a place opening is what a retry waits on.
+    uint16_t third = open_pcb(work_a);
+    IO(work_a)->accept_args.index = third;
+    IO(work_a)->accept_args.listener = lis;
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status,
+                                  "a third connection went past a backlog of two");
+
+    // A connection that leaves SYN-RECEIVED frees a place at once, because the count is taken over
+    // the table rather than tallied: no close path can forget to give it back.
+    set_state(work_a, held[0], IDEMIP_TCP_STATE_ESTABLISHED);
+    IO(work_a)->accept_args.index = third;
+    IO(work_a)->accept_args.listener = lis;
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
+                                  "the place an established connection left was never freed");
+}
+
+// Accepting the same connection onto the same listener twice counts the same as once, so a listener
+// at its backlog does not refuse a connection it is already holding.
+void test_accepting_one_connection_twice_is_the_same_as_once(void)
+{
+    TcpPcb.clear(work_a);
+    IO(work_a)->listen_args.ip = g_local;
+    IO(work_a)->listen_args.port = 80u;
+    IO(work_a)->listen_args.backlog = 1u;
+    IO(work_a)->listen_args.ip_version = G_IP_VERSION;
+    TcpPcb.listen(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    uint16_t lis = IO(work_a)->index;
+
+    uint16_t idx = open_pcb(work_a);
+    IO(work_a)->accept_args.index = idx;
+    IO(work_a)->accept_args.listener = lis;
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    set_state(work_a, idx, IDEMIP_TCP_STATE_SYN_RECEIVED);
+
+    IO(work_a)->accept_args.index = idx;
+    IO(work_a)->accept_args.listener = lis;
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
+                                  "a connection was counted against the backlog it already holds a place in");
+}
+
+// A passive OPEN that can hold no connection in SYN-RECEIVED can never accept one, so it is refused
+// where a port of IDEMIP_TCP_PCB_PORT_ANY is: both name a listener that cannot listen.
+void test_listen_refuses_a_backlog_of_zero(void)
+{
+    TcpPcb.clear(work_a);
+    IO(work_a)->listen_args.ip = g_local;
+    IO(work_a)->listen_args.port = 80u;
+    IO(work_a)->listen_args.backlog = 0u;
+    IO(work_a)->listen_args.ip_version = G_IP_VERSION;
+    TcpPcb.listen(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->index);
 }
 
 // A listener no passive OPEN took names nothing for the connection to have arrived through, and no

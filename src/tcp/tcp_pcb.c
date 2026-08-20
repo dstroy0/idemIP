@@ -53,7 +53,6 @@ typedef struct
     uint8_t local_zone;
     uint8_t netif;
     uint8_t backlog;
-    uint8_t accepts_pending;
     uint8_t ip_version;
     IdemIpTcpState state;
     idemip_bool in_use;
@@ -862,11 +861,39 @@ void idemip_tcp_pcb_store(uint8_t *restrict work)
     io->status = IDEMIP_OK;
 }
 
+// How many connections a listener is already holding in SYN-RECEIVED, which is what its backlog
+// bounds. Counted over the table rather than tallied in the listener: a TCB names the listener its
+// SYN arrived on and carries its own sec 3.3.2 state, so the number is a property of the table and
+// not a running total some close path could fail to decrement. IDEMIP_TCP_PCBS TCBs is the whole
+// scan, and the count cannot exceed it. @p except is left out so accepting one TCB twice counts the
+// same as once.
+static uint8_t tcp_pcb_syn_received_on(uint8_t *restrict work, uint16_t listener, uint16_t except)
+{
+    uint8_t n = 0u;
+    for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_PCBS; i++)
+    {
+        const TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, i)->f;
+        if (i != except && t->in_use && t->listener == listener && t->state == IDEMIP_TCP_STATE_SYN_RECEIVED)
+        {
+            n = (uint8_t)(n + 1u);
+        }
+    }
+    return n;
+}
+
+static_assert(IDEMIP_TCP_PCBS <= 255u, "tcp_pcb_syn_received_on counts TCBs in a uint8_t");
+
 // RFC 9293 sec 3.5 (MUST-11): "a TCP implementation MUST keep track of whether a connection has
 // reached SYN-RECEIVED state as the result of a passive OPEN or an active OPEN". sec 3.10.7.2 creates
 // the connection out of the LISTEN state, so the listener it came through is recorded here and read
 // by sec 3.10.7.4's second and fourth checks, which return a passive connection to LISTEN.
 // IDEMIP_TCP_PCB_NONE is the active OPEN; any other index must name a taken listener.
+//
+// This is also the one place a connection is bound to a passive OPEN, so it is where that OPEN's
+// backlog is applied. A listener already holding its backlog in SYN-RECEIVED reports BUSY: the SYN
+// gets no connection, and the caller returns the TCB rather than making one the listener never
+// agreed to hold. Without it the field was written at listen and read nowhere, and one listener
+// could take every one of the IDEMIP_TCP_PCBS connections the whole build has.
 void idemip_tcp_pcb_accept(uint8_t *restrict work)
 {
     if (!work)
@@ -889,6 +916,12 @@ void idemip_tcp_pcb_accept(uint8_t *restrict work)
         if (io->accept_args.listener >= IDEMIP_TCP_LISTEN_PCBS ||
             !TCP_PCB_LISTEN_AT(work, io->accept_args.listener)->f.in_use)
         {
+            return;
+        }
+        const TcpPcbListenFields *l = &TCP_PCB_LISTEN_AT(work, io->accept_args.listener)->f;
+        if (tcp_pcb_syn_received_on(work, io->accept_args.listener, io->accept_args.index) >= l->backlog)
+        {
+            io->status = IDEMIP_BUSY;
             return;
         }
     }
@@ -915,7 +948,10 @@ void idemip_tcp_pcb_listen(uint8_t *restrict work)
         return;
     }
     uint8_t n = tcp_pcb_addr_bytes(io->listen_args.ip_version);
-    if (n == 0u || io->listen_args.port == IDEMIP_TCP_PCB_PORT_ANY)
+    // A backlog of zero holds no connection in SYN-RECEIVED, so it is a passive OPEN that can never
+    // accept one. Refused here rather than taken and left useless, the way a port of
+    // IDEMIP_TCP_PCB_PORT_ANY is: both name a listener that cannot do the one thing a listener does.
+    if (n == 0u || io->listen_args.port == IDEMIP_TCP_PCB_PORT_ANY || io->listen_args.backlog == 0u)
     {
         return;
     }

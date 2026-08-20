@@ -845,6 +845,22 @@ static void d_tcp(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t
         tp->accept_args.index = pcb;
         tp->accept_args.listener = listener;
         TcpPcb.accept(ctx->tcp_pcb);
+        if (tp->status != IDEMIP_OK)
+        {
+            // The listener is already holding the connections its passive OPEN asked to hold, so
+            // this SYN gets none. The TCB opened for it goes back rather than becoming a connection
+            // the listener never agreed to, and the segment is dropped without a reset: sec 3.10.7.4
+            // resets a segment that belongs to no connection, and this one belongs to a listener
+            // that simply has no room right now. The peer's own retransmission is what recovers it.
+            // Not tcpAttemptFails, for the reason the open path above gives: nothing transitioned.
+            tp->pcb_args.index = pcb;
+            TcpPcb.close(ctx->tcp_pcb);
+            io->pcb_kind = IDEMIP_DISPATCH_PCB_NONE;
+            io->tcp_act = 0u;
+            io->act &= ~(uint32_t)IDEMIP_DISPATCH_ACT_TCP;
+            d_drop(work, IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_STAT_IF_IN_DISCARDS);
+            return;
+        }
         ti->vars = vars;
         ti->reply = reply;
         ti->res.act = act;

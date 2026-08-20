@@ -2935,6 +2935,54 @@ void test_a_bare_rst_at_a_listener_creates_no_tcb(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_SYN_RECEIVED, tp->state);
 }
 
+// The backlog the passive OPEN named, applied where a SYN would take a connection. listen_on asks
+// for two, so the third SYN from a fresh peer gets none: no TCB, no tcpPassiveOpens, and no reset -
+// sec 3.10.7.4 resets a segment that belongs to no connection, and this one belongs to a listener
+// with no room for it right now, so the peer's own retransmission is what recovers it. The TCB
+// opened before the refusal goes back, which the opens after it prove: five in the build, two held,
+// three left. One leaked and there would be two.
+void test_a_syn_past_the_listeners_backlog_takes_no_connection(void)
+{
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    listen_on(5001u);
+
+    for (uint16_t port = 5000u; port < 5002u; port++)
+    {
+        size_t end = build_tcp4(g_frame, port, 5001u, 100u, 0u, (uint8_t)IDEMIP_TCP_SYN, 0u);
+        input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_TCP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                      "a SYN within the backlog was refused");
+    }
+
+    const uint32_t opens = ctr(IDEMIP_STAT_TCP_PASSIVE_OPENS);
+    const uint32_t rsts = ctr(IDEMIP_STAT_TCP_OUT_RSTS);
+    size_t end = build_tcp4(g_frame, 5002u, 5001u, 100u, 0u, (uint8_t)IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_NONE, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "a third SYN went past a backlog of two");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_FALSE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_TCP) != 0u);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(opens, ctr(IDEMIP_STAT_TCP_PASSIVE_OPENS),
+                                     "nothing transitioned to SYN-RECEIVED, so nothing is a passive open");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(rsts, ctr(IDEMIP_STAT_TCP_OUT_RSTS),
+                                     "a listener with no room reset a peer it should have left to retransmit");
+
+    uint16_t free_left = 0u;
+    for (;;)
+    {
+        tp->open_args.ip_version = 4u;
+        TcpPcb.open(tcp_pcb_mem);
+        if (tp->status != IDEMIP_OK)
+        {
+            break;
+        }
+        free_left++;
+    }
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE((uint16_t)(IDEMIP_TCP_PCBS - 2u), free_left,
+                                     "the connection the refused SYN opened was never given back");
+}
+
 // The second check: an ACK-bearing segment at a listener draws "<SEQ=SEG.ACK><CTL=RST>" and returns,
 // creating nothing. RFC 1213 sec 6.5 tcpPassiveOpens counts "the number of times TCP connections have
 // made a direct transition to the SYN-RCVD state from the LISTEN state", which this is not, and

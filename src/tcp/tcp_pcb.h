@@ -356,7 +356,9 @@ typedef struct
  * @var TcpPcbListenArgs::zone       the RFC 4007 sec 6 zone index of that address
  * @var TcpPcbListenArgs::netif      the interface to accept on, 0 for any
  * @var TcpPcbListenArgs::backlog    connections held in SYN-RECEIVED before a further request is
- *                                   refused
+ *                                   refused, which @ref TcpPcbNs::accept applies. Zero holds none
+ *                                   and is refused here, since a listener that can accept nothing
+ *                                   is not one.
  * @var TcpPcbListenArgs::ip_version 4 or 6
  */
 typedef struct
@@ -658,13 +660,16 @@ typedef struct
  * @var TcpPcbNs::accept        record on the TCB @ref TcpPcbAcceptArgs::index the listener its SYN
  *                              arrived on, which sec 3.5 (MUST-11) requires be kept. A listener that
  *                              is not taken is ERR; IDEMIP_TCP_PCB_NONE clears it, which is an
- *                              active OPEN.
+ *                              active OPEN. BUSY when that listener already holds
+ *                              @ref TcpPcbListenArgs::backlog connections in SYN-RECEIVED, which is
+ *                              where the passive OPEN's backlog is applied and the only place it is.
  * @var TcpPcbNs::listen        take a free listener for a passive OPEN, reporting it in
  *                              @ref TcpPcbIo::index. An all-zero address is sec 3.9.1.1's
  *                              unspecified "local IP address" parameter, which "will await an
  *                              incoming connection request to any local IP address". A port of
- *                              IDEMIP_TCP_PCB_PORT_ANY names no socket and is ERR. BUSY when every
- *                              listener is taken, and when another listener holds the same socket.
+ *                              IDEMIP_TCP_PCB_PORT_ANY names no socket and is ERR, and so is a
+ *                              backlog of zero. BUSY when every listener is taken, and when another
+ *                              listener holds the same socket.
  * @var TcpPcbNs::unlisten      release the listener @ref TcpPcbPcbArgs::index names
  * @var TcpPcbNs::find          match an arriving segment's four-tuple to a TCB, reporting it in
  *                              @ref TcpPcbIo::index. No TCB is ERR, which is the RFC 9293 sec 3.10.7.1
