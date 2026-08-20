@@ -40,7 +40,9 @@ IDEMIP_BEGIN_DECLS
  *
  * @var LoopifBindArgs::addr4 the RFC 1122 sec 3.2.1.3 case (g) address, host order
  * @var LoopifBindArgs::addr6 IDEMIP_IP6_ADDR_LEN octets, the RFC 4291 sec 2.5.3 loopback address
- * @var LoopifBindArgs::mtu   the octets one looped frame may span
+ * @var LoopifBindArgs::mtu   the octets of payload one looped frame may carry, at most
+ *                            IDEMIP_ETH_MAX_PAYLOAD. output refuses a frame past it plus the
+ *                            RFC 894 header, so an interface no bind has run on loops nothing.
  * @var LoopifBindArgs::index which interface record in the netif table this one occupies
  */
 typedef struct
@@ -147,7 +149,7 @@ typedef struct
  * the module occupies no RAM of its own.
  *
  * Nothing here blocks. Every region full is BUSY, and so is nothing waiting: the caller comes back
- * on a later tick. A frame longer than a region can hold, a claim already out, or a release with
+ * on a later tick. A frame the bound MTU cannot carry, a claim already out, or a release with
  * nothing claimed is ERR.
  *
  * @var LoopifNs::clear   zero the context and every frame region, which every other entry refuses

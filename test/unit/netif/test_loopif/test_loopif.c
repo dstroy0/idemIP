@@ -243,10 +243,14 @@ void test_an_uncleared_borrow_is_refused(void)
 }
 
 // A frame no Ethernet II frame can carry (RFC 894) will not fit a region either, and no retry makes
-// it fit, so it is ERR and not BUSY.
+// it fit, so it is ERR and not BUSY. Bound at the full IDEMIP_ETH_MAX_PAYLOAD, so what refuses this
+// frame is its length and not a narrower MTU.
 void test_output_refuses_a_frame_no_region_can_hold(void)
 {
     Loopif.clear(work_a);
+    set_bind_args(work_a);
+    Loopif.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
     IDEMIP_LOOPIF_IO(work_a)->output_args.frame = g_frame;
     IDEMIP_LOOPIF_IO(work_a)->output_args.len = (size_t)IDEMIP_ETH_FRAME_MAX + 1u;
     Loopif.output(work_a);
@@ -267,7 +271,9 @@ void test_output_refuses_a_null_frame_and_a_zero_length(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status);
 }
 
-// A frame longer than the MTU cannot be looped, and neither can a zero MTU be bound.
+// An MTU no Ethernet II link can carry, and one that carries nothing at all, are both refused at
+// bind. What the accepted figure then bounds is
+// test_output_refuses_a_frame_the_bound_mtu_cannot_carry, below.
 void test_bind_refuses_an_unusable_mtu(void)
 {
     Loopif.clear(work_a);
@@ -740,6 +746,51 @@ void test_the_longest_frame_round_trips(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
     TEST_ASSERT_EQUAL_size_t(sizeof sent, IDEMIP_LOOPIF_IO(work_a)->len);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(sent, IDEMIP_LOOPIF_IO(work_a)->frame, sizeof sent);
+}
+
+// The MTU bind takes is the octets of payload one looped frame may carry, so the frame it bounds is
+// that many plus the RFC 894 header. bind validated the figure, stored it, and then no entry read
+// it: a loopback bound at the RFC 8200 sec 5 minimum of 1280 looped a full 1514-octet frame without
+// a word. The bound is checked here at the octet either side of it.
+void test_output_refuses_a_frame_the_bound_mtu_cannot_carry(void)
+{
+    static uint8_t sent[IDEMIP_ETH_FRAME_MAX];
+    fill(sent, sizeof sent, 0xD0u);
+
+    Loopif.clear(work_a);
+    set_bind_args(work_a);
+    IDEMIP_LOOPIF_IO(work_a)->bind_args.mtu = (uint16_t)IDEMIP_IPV6_MIN_MTU;
+    Loopif.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+
+    // One past the MTU is ERR and not BUSY: no retry shortens that frame.
+    IDEMIP_LOOPIF_IO(work_a)->output_args.frame = sent;
+    IDEMIP_LOOPIF_IO(work_a)->output_args.len = (size_t)IDEMIP_IPV6_MIN_MTU + IDEMIP_ETH_HDR_LEN + 1u;
+    Loopif.output(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status,
+                                  "a frame past the bound MTU was looped");
+
+    // A full MTU of payload behind its header is exactly what the link carries.
+    output_ok(work_a, sent, (size_t)IDEMIP_IPV6_MIN_MTU + IDEMIP_ETH_HDR_LEN);
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_LOOPIF_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_size_t((size_t)IDEMIP_IPV6_MIN_MTU + IDEMIP_ETH_HDR_LEN, IDEMIP_LOOPIF_IO(work_a)->len);
+}
+
+// An interface no bind has run on has no address and no MTU, so there is nothing for a frame to be
+// within. clear alone leaves the borrow usable, not the interface configured.
+void test_output_before_a_bind_loops_nothing(void)
+{
+    uint8_t sent[64];
+    fill(sent, sizeof sent, 0xE0u);
+    Loopif.clear(work_a);
+    IDEMIP_LOOPIF_IO(work_a)->output_args.frame = sent;
+    IDEMIP_LOOPIF_IO(work_a)->output_args.len = sizeof sent;
+    Loopif.output(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status,
+                                  "a frame was looped on an interface with no MTU");
+    Loopif.claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_LOOPIF_IO(work_a)->status);
 }
 
 // The queue is in the borrow, so a frame written to one loopback interface is not waiting on the

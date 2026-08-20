@@ -204,8 +204,16 @@ void idemip_loopif_output(uint8_t *restrict work)
     io->status = IDEMIP_ERR;
     io->slot = 0u;
     io->held = 0u;
-    if (ctx->ready != LOOPIF_READY || io->output_args.frame == NULL || io->output_args.len == 0u ||
-        io->output_args.len > IDEMIP_ETH_FRAME_MAX)
+    if (ctx->ready != LOOPIF_READY || io->output_args.frame == NULL || io->output_args.len == 0u)
+    {
+        return;
+    }
+    // The MTU bind took, which is the octets of PAYLOAD one looped frame may carry, so the frame it
+    // bounds is that many plus the RFC 894 header. bind refuses an MTU above IDEMIP_ETH_MAX_PAYLOAD,
+    // so this is at or under IDEMIP_ETH_FRAME_MAX and the region assert above covers the copy. An
+    // interface no bind has run on has an MTU of zero and carries nothing, which is the right answer
+    // for a frame looped on an interface that has no address and no MTU either.
+    if (io->output_args.len > (size_t)ctx->mtu + (size_t)IDEMIP_ETH_HDR_LEN)
     {
         return;
     }
