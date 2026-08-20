@@ -539,7 +539,30 @@ static void netif_set_flags(uint8_t *restrict work)
     {
         return;
     }
-    entry->flags = (uint16_t)((entry->flags | io->if_args.set) & (uint16_t)~io->if_args.clear);
+    const uint16_t next = (uint16_t)((entry->flags | io->if_args.set) & (uint16_t)~io->if_args.clear);
+    // The loopback flag is what admitted the addresses this interface holds: RFC 1122 sec 3.2.1.3
+    // case (g) says a 127 address "MUST NOT appear outside a host", and RFC 4291 sec 2.5.3 says ::1
+    // "must not be assigned to any physical interface". Lowering the flag would leave those on an
+    // interface with a link, so the addresses are tested against the flags they would end up under
+    // and the call is refused rather than the addresses quietly becoming illegal.
+    if ((next & (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK) == 0u)
+    {
+        if (entry->addr != 0u && netif_addr4_barred(entry->addr, entry->mask, next))
+        {
+            return;
+        }
+#if IDEMIP_ENABLE_IPV6
+        for (uint8_t s = 0u; s < IDEMIP_IP6_ADDRESSES; s++)
+        {
+            const NetifAddr6Entry *addr6 = NETIF_ADDR6_AT(work, io->if_args.index, s);
+            if (addr6->state != (uint8_t)IDEMIP_NETIF_ADDR6_INVALID && netif_addr6_barred(addr6->addr, next))
+            {
+                return;
+            }
+        }
+#endif
+    }
+    entry->flags = next;
     io->status = IDEMIP_OK;
 }
 

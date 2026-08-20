@@ -72,14 +72,45 @@ static_assert(IDEMIP_IPV4_MIN_MTU - IDEMIP_IPV4_HDR_LEN - IDEMIP_TCP_HDR_LEN == 
 #define IDEMIP_MS_PER_S 1000u
 
 /**
+ * @brief The system's word: the width a load or a store is one instruction at.
+ *
+ * Every size below is a power of two multiple of it, so an access compiles to a plain load or store
+ * and the lanes a SWAR operation packs are the ones the register already holds.
+ */
+#ifndef IDEMIP_WORD_BITS
+#if UINTPTR_MAX == 0xFFFFFFFFFFFFFFFFu
+#define IDEMIP_WORD_BITS 64u
+#elif UINTPTR_MAX == 0xFFFFFFFFu
+#define IDEMIP_WORD_BITS 32u
+#else
+#define IDEMIP_WORD_BITS 16u
+#endif
+#endif
+
+#if IDEMIP_WORD_BITS == 64u
+typedef uint64_t IdemIpWord;
+#elif IDEMIP_WORD_BITS == 32u
+typedef uint32_t IdemIpWord;
+#else
+typedef uint16_t IdemIpWord;
+#endif
+
+static_assert((IDEMIP_WORD_BITS & (IDEMIP_WORD_BITS - 1u)) == 0u, "IDEMIP_WORD_BITS must be a power of two");
+static_assert(sizeof(IdemIpWord) * 8u == IDEMIP_WORD_BITS, "IdemIpWord must be IDEMIP_WORD_BITS wide");
+
+/**
  * @brief The clock everything is timed against: milliseconds, sixty-four bits.
  *
- * One word on a 64-bit target and two on a 32-bit one. Milliseconds throughout, so nothing is ever
- * rounded to a second, and a span of 584 million years, so a lifetime the RFCs state in a 32-bit
- * seconds field converts into it whole. It is one scalar, so an interval is one subtraction and a
- * correction is one addition.
+ * One word on a 64-bit target, two on a 32-bit one, four on a 16-bit one, so it is always a whole
+ * number of dumb loads. Milliseconds throughout, so nothing is ever rounded to a second, and a span
+ * of 584 million years, so a lifetime the RFCs state in a 32-bit seconds field converts into it
+ * whole. It is one scalar, so an interval is one subtraction and a correction for deterministic
+ * timing is one addition.
  */
 typedef uint64_t IdemIpMs;
+
+static_assert((sizeof(IdemIpMs) % sizeof(IdemIpWord)) == 0u,
+              "IdemIpMs must be a whole number of IdemIpWord, so an access is a plain load or store");
 
 /**
  * @brief Extend a caller's 32-bit millisecond clock across its wrap.

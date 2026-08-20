@@ -576,6 +576,48 @@ static uint8_t state_at(uint8_t *w, uint8_t index, uint8_t slot)
     return (uint8_t)IDEMIP_NETIF_IO(w)->addr6_state;
 }
 
+// RFC 1122 sec 3.2.1.3 case (g): a 127 address "MUST NOT appear outside a host", and RFC 4291 sec
+// 2.5.3: the loopback address "must not be assigned to any physical interface". The loopback flag is
+// what admitted them, so lowering it while they are held is refused rather than leaving an interface
+// with a link holding an address it may not have.
+void test_lowering_the_loopback_flag_is_refused_while_a_loopback_address_is_held(void)
+{
+    // IPv4: 127.0.0.1 goes on only because the flag is up, and the flag cannot then come down.
+    Netif.clear(work_a);
+    up(work_a, 0u, phy_a, g_mac_a, 1500u);
+    flags(work_a, 0u, (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status);
+    addr4(work_a, 0u, 0x7F000001u, 0xFF000000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status);
+
+    flags(work_a, 0u, 0u, (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "127/8 was left on an interface that is not the loopback");
+    get(work_a, 0u);
+    TEST_ASSERT_TRUE((IDEMIP_NETIF_IO(work_a)->flags & (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK) != 0u);
+
+#if IDEMIP_ENABLE_IPV6
+    // IPv6: the same for ::1.
+    static const uint8_t lo6[IDEMIP_IP6_ADDR_LEN] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    Netif.clear(work_a);
+    up(work_a, 0u, phy_a, g_mac_a, 1500u);
+    flags(work_a, 0u, (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK, 0u);
+    add6(work_a, 0u, lo6, IDEMIP_NETIF_ADDR6_PREFERRED, 600u, 600u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status);
+
+    flags(work_a, 0u, 0u, (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "::1 was left assigned to a physical interface");
+#endif
+
+    // The positive control: with no barred address held, the flag comes down.
+    Netif.clear(work_a);
+    up(work_a, 0u, phy_a, g_mac_a, 1500u);
+    flags(work_a, 0u, (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK, 0u);
+    flags(work_a, 0u, 0u, (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status);
+}
+
 // RFC 4862 sec 5.4.5: a duplicate address "MUST NOT be assigned to an interface", and sec 5.4 says a
 // tentative one "is not considered 'assigned to an interface' in the traditional sense" with packets
 // addressed to it "silently discarded". Neither answers an ordinary lookup; the sec 5.4.3 Target
