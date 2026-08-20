@@ -389,6 +389,27 @@ void test_every_fragment_but_the_last_carries_a_multiple_of_eight(void)
     TEST_ASSERT_FALSE(idemip_ip4_mf(g_frag[g_frags - 1]));
 }
 
+// "In the above procedure each fragment (except the last) was made the maximum allowable size."
+// RFC 1812 sec 4.2.2.7 makes that a requirement on a router: "When a router fragments an IP
+// datagram, it SHOULD minimize the number of fragments." Maximal is one more 8-octet unit not
+// fitting the MTU, which is a test neither the MTU nor either header width enters, so it covers the
+// first fragment behind the whole option area and the ones behind the reduced header alike. The
+// options are what put those two widths apart: 36 octets carried, 28 kept.
+void test_every_fragment_but_the_last_fills_the_mtu(void)
+{
+    make_dgram(1000u, g_opts, sizeof g_opts, 0u);
+    begin_ok(work_a, 300u);
+    drain(work_a);
+    TEST_ASSERT_GREATER_THAN_INT(2, g_frags);
+    for (int i = 0; i < g_frags - 1; i++)
+    {
+        const uint16_t total = idemip_ip4_total_len(g_frag[i]);
+        TEST_ASSERT_LESS_OR_EQUAL_UINT16(300u, total);
+        TEST_ASSERT_GREATER_THAN_UINT16_MESSAGE((uint16_t)(300u - IDEMIP_IP4_FRAG_UNIT), total,
+                                                "a fragment before the last left room for another 8-octet unit");
+    }
+}
+
 // "FO <- OFO + NFB": each fragment starts where the one before it ended, in units of eight octets.
 void test_offsets_are_contiguous_in_units_of_eight(void)
 {
