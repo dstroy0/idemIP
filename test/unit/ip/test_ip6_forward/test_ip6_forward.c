@@ -466,6 +466,28 @@ void test_a_loopback_destination_is_never_forwarded(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_R_DST_LOOP, IDEMIP_IP6_FORWARD_IO(work_a)->reason);
 }
 
+// sec 2.5.3 names one address. An address agreeing with it on the leading eight octets and on the
+// last is not it, and is forwarded like any other. Both cases above differ from LOOPBACK inside the
+// first eight octets, so neither would notice a test that read only that far.
+void test_an_address_that_only_resembles_loopback_is_forwarded(void)
+{
+    static const uint8_t NEAR_LOOPBACK[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x20, 1};
+
+    clear_ok(work_a);
+    size_t len = build_plain(NEAR_LOOPBACK, DOC_HOST_B, HOP_COMMON);
+    args_default(work_a, len);
+    Ip6Forward.decide(work_a);
+    TEST_ASSERT_NOT_EQUAL_INT_MESSAGE(IDEMIP_IP6_FORWARD_R_SRC_LOOP, IDEMIP_IP6_FORWARD_IO(work_a)->reason,
+                                      "a source that is not ::1 was refused as the loopback address");
+
+    clear_ok(work_a);
+    len = build_plain(DOC_HOST_A, NEAR_LOOPBACK, HOP_COMMON);
+    args_default(work_a, len);
+    Ip6Forward.decide(work_a);
+    TEST_ASSERT_NOT_EQUAL_INT_MESSAGE(IDEMIP_IP6_FORWARD_R_DST_LOOP, IDEMIP_IP6_FORWARD_IO(work_a)->reason,
+                                      "a destination that is not ::1 was refused as the loopback address");
+}
+
 // sec 2.5.6: "Routers must not forward any packets with Link-Local source or destination addresses to
 // other links."
 void test_a_link_local_destination_is_not_forwarded_to_another_link(void)

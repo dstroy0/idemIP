@@ -19,8 +19,19 @@
 #define SPAN 96u
 #define ALIGNS 9u
 
-static uint8_t buf[SPAN + ALIGNS];
-static uint8_t other[SPAN + ALIGNS];
+// Aligned to IDEMIP_ALIGN and a word longer than the longest span either helper is asked for, which
+// is what a borrow is: idemip.h declares every one of them `static _Alignas(IDEMIP_ALIGN) uint8_t`.
+// The base being aligned is what makes the nine offsets below mean anything - they are then every
+// alignment a word load can meet, rather than nine offsets from wherever the linker happened to put
+// the array.
+//
+// The slack is for the tail. It is taken as one whole word and masked, so a span ending short of a
+// word boundary is read out to the end of that word. In the library those octets are inside the
+// caller's own borrow; here the slack is what makes that true of these two arrays. The cases below
+// still set the octet immediately past each span, which the mask has to discard, so the slack
+// widens the buffer without weakening anything the suite proves.
+static _Alignas(IDEMIP_ALIGN) uint8_t buf[SPAN + ALIGNS + sizeof(IdemIpWord)];
+static _Alignas(IDEMIP_ALIGN) uint8_t other[SPAN + ALIGNS + sizeof(IdemIpWord)];
 
 void setUp(void)
 {

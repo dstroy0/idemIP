@@ -608,6 +608,21 @@ void test_lowering_the_loopback_flag_is_refused_while_a_loopback_address_is_held
     flags(work_a, 0u, 0u, (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
                                   "::1 was left assigned to a physical interface");
+
+    // The near miss. RFC 4291 sec 2.5.3 names one address, so an address agreeing with it on the
+    // leading eight octets and the last is still not it. A test that reads only as far as the first
+    // word would call this ::1 and refuse to lower the flag; nothing above would catch that, because
+    // every other case here differs from ::1 inside those first eight octets.
+    static const uint8_t near6[IDEMIP_IP6_ADDR_LEN] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x20, 1};
+    Netif.clear(work_a);
+    up(work_a, 0u, phy_a, g_mac_a, 1500u);
+    flags(work_a, 0u, (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK, 0u);
+    add6(work_a, 0u, near6, IDEMIP_NETIF_ADDR6_PREFERRED, 600u, 600u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status);
+
+    flags(work_a, 0u, 0u, (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status,
+                                  "an address that is not ::1 held the loopback flag up");
 #endif
 
     // The positive control: with no barred address held, the flag comes down.

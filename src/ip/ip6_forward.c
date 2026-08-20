@@ -97,14 +97,8 @@ static idemip_bool ip6_forward_is_unspecified(const uint8_t *a)
 // RFC 4291 sec 2.5.3: fifteen zero octets and a low octet of one.
 static idemip_bool ip6_forward_is_loopback(const uint8_t *a)
 {
-    for (size_t i = 0; i + 1u < IDEMIP_IP6_ADDR_LEN; i++)
-    {
-        if (a[i] != 0u)
-        {
-            return IDEMIP_FALSE;
-        }
-    }
-    return (idemip_bool)(a[IDEMIP_IP6_ADDR_LEN - 1u] == IP6_FORWARD_LOOPBACK_LOW);
+    return (idemip_bool)(idemip_bytes_zero(a, IDEMIP_IP6_ADDR_LEN - 1u) &&
+                         a[IDEMIP_IP6_ADDR_LEN - 1u] == IP6_FORWARD_LOOPBACK_LOW);
 }
 
 // RFC 4291 sec 2.7's scop nibble, the low half of the second octet.

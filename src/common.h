@@ -120,6 +120,38 @@ static_assert((IDEMIP_ALIGN & (IDEMIP_ALIGN - 1u)) == 0u, "IDEMIP_ALIGN must be 
 // octet landed in.
 
 /**
+ * @brief One word from @p p, and the mask that keeps @p r of its octets.
+ *
+ * The tail of a span is shorter than a word, and the two ways to take it are both worse than this
+ * one: a loop pays a compare and an increment per octet, and a switch over the seven remainders pays
+ * a dispatch and still reads at three widths. Both distil to a load and a mask.
+ *
+ * The load is a whole word wherever the span ends, so it reads up to sizeof(IdemIpWord) - 1 octets
+ * past it. Every span this tree passes lies inside a borrow the caller took, sized by a published
+ * IDEMIP_*_BORROW and mapped for the largest one, so those octets are the caller's own memory. They
+ * are read and then masked away, and never reach the answer.
+ *
+ * The mask is where byte order enters, and it is the only place it does: the octets of the tail are
+ * the low ones of the word on a little-endian part and the high ones on a big-endian part. Both arms
+ * shift by less than the width at every @p r a tail can hold, which is zero through
+ * sizeof(IdemIpWord) - 1: the little-endian shift reaches 8 * (sizeof - 1), and the big-endian one
+ * is split in two so that r == 0 shifts the top octet out rather than shifting by the width, which
+ * C11 sec 6.5.7p3 leaves undefined.
+ */
+IDEMIP_INLINE IdemIpWord idemip_span_tail(const uint8_t *p, size_t r)
+{
+    IdemIpWord w;
+    memcpy(&w, p, sizeof w);
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    const IdemIpWord mask =
+        (IdemIpWord) ~(((((IdemIpWord)1u) << (8u * (sizeof(IdemIpWord) - r - 1u))) << 8u) - 1u);
+#else
+    const IdemIpWord mask = (IdemIpWord)((((IdemIpWord)1u) << (8u * r)) - 1u);
+#endif
+    return (IdemIpWord)(w & mask);
+}
+
+/**
  * @brief True when the @p n octets at @p p are all zero.
  *
  * RFC 4291 sec 2.5.2's unspecified address is this over sixteen octets, "The address 0:0:0:0:0:0:0:0
@@ -138,12 +170,8 @@ IDEMIP_INLINE idemip_bool idemip_bytes_zero(const uint8_t *p, size_t n)
         any |= w;
         i += sizeof w;
     }
-    uint8_t tail = 0u;
-    for (; i < n; i++)
-    {
-        tail = (uint8_t)(tail | p[i]);
-    }
-    return (idemip_bool)((any == 0u) && (tail == 0u));
+    any |= idemip_span_tail(p + i, n - i);
+    return (idemip_bool)(any == 0u);
 }
 
 /**
@@ -165,12 +193,11 @@ IDEMIP_INLINE idemip_bool idemip_bytes_eq(const uint8_t *a, const uint8_t *b, si
         diff |= (IdemIpWord)(u ^ v);
         i += sizeof u;
     }
-    uint8_t tail = 0u;
-    for (; i < n; i++)
-    {
-        tail = (uint8_t)(tail | (uint8_t)(a[i] ^ b[i]));
-    }
-    return (idemip_bool)((diff == 0u) && (tail == 0u));
+    // The same tail on both spans. Each is masked to the same octets before they are differenced, so
+    // the octets past the span are zero on both sides and cancel, and a difference inside it cannot
+    // cancel against one at another offset: the two words are aligned to the same position.
+    diff |= (IdemIpWord)(idemip_span_tail(a + i, n - i) ^ idemip_span_tail(b + i, n - i));
+    return (idemip_bool)(diff == 0u);
 }
 
 /**

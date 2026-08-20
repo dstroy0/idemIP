@@ -194,26 +194,14 @@ static idemip_bool netif_ip6_unspecified(const uint8_t *addr)
 // interface".
 static idemip_bool netif_ip6_loopback(const uint8_t *addr)
 {
-    for (uint8_t i = 0u; i < (IDEMIP_IP6_ADDR_LEN - 1u); i++)
-    {
-        if (addr[i] != 0u)
-        {
-            return IDEMIP_FALSE;
-        }
-    }
-    return (addr[IDEMIP_IP6_ADDR_LEN - 1u] == 1u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN - 1u) && addr[IDEMIP_IP6_ADDR_LEN - 1u] == 1u)
+               ? IDEMIP_TRUE
+               : IDEMIP_FALSE;
 }
 
 static idemip_bool netif_ip6_same(const uint8_t *a, const uint8_t *b)
 {
-    for (uint8_t i = 0u; i < IDEMIP_IP6_ADDR_LEN; i++)
-    {
-        if (a[i] != b[i])
-        {
-            return IDEMIP_FALSE;
-        }
-    }
-    return IDEMIP_TRUE;
+    return idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN);
 }
 
 // The forms an address slot may not hold: RFC 4291 sec 2.5.2's unspecified address, sec 2.7's
