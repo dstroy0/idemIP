@@ -491,7 +491,15 @@ static void d_udp(uint8_t *restrict work, const uint8_t *local_ip, const uint8_t
         UdpLite.check(ctx->udplite);
         if (ul->status != IDEMIP_OK)
         {
-            d_drop(work, IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_STAT_IF_IN_ERRORS);
+            // udplite separates the two RFC 3828 sec 3.1 refusals, and so does the RFC 768 arm above:
+            // a Coverage the section bars is a length fault, and a sum that does not come out is a
+            // checksum fault. Both are udpInErrors either way; the reason is what says which happened.
+            const idemip_bool bad_sum = (ul->reason == IDEMIP_UDPLITE_REASON_CKSUM_BAD ||
+                                         ul->reason == IDEMIP_UDPLITE_REASON_CKSUM_ZERO)
+                                            ? IDEMIP_TRUE
+                                            : IDEMIP_FALSE;
+            d_drop(work, bad_sum ? IDEMIP_DISPATCH_DROP_CKSUM : IDEMIP_DISPATCH_DROP_SHORT,
+                   IDEMIP_STAT_IF_IN_ERRORS);
             d_bump(work, IDEMIP_STAT_UDP_IN_ERRORS);
             return;
         }

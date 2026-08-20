@@ -3080,6 +3080,43 @@ void test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded(void)
     input(work_a, off + IDEMIP_UDP_HDR_LEN + 4u, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_UDP_IN_ERRORS));
+    // A Coverage sec 3.1 bars is a fault in a length field, and that is what is reported.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "an illegal Coverage was not reported as a length fault");
+}
+
+// RFC 3828 sec 3.1: "Irrespective of the Checksum Coverage, the computed Checksum field MUST include
+// a pseudo-header". A datagram whose sum does not come out is a checksum fault, and the RFC 768 arm
+// beside this one already separates the two - a Length past the delivered octets is DROP_SHORT and a
+// sum that fails is DROP_CKSUM. Both are udpInErrors, so the counter alone cannot tell them apart.
+void test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    off = build_ip4(g_frame, off, (uint8_t)IDEMIP_UDPLITE_PROTO, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
+    memset(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
+
+    UdpLiteIo *ul = IDEMIP_UDPLITE_IO(udplite_mem);
+    ul->build_args.dgram = g_frame + off;
+    ul->build_args.src = g_frame + ip + IDEMIP_IP4_OFF_SRC;
+    ul->build_args.dst = g_frame + ip + IDEMIP_IP4_OFF_DST;
+    ul->build_args.ip_payload_len = (uint32_t)(IDEMIP_UDP_HDR_LEN + 4u);
+    ul->build_args.src_port = 4000u;
+    ul->build_args.dst_port = 4001u;
+    ul->build_args.cov = (uint16_t)IDEMIP_UDPLITE_COV_ALL; // the whole datagram, so the payload is covered
+    ul->build_args.ip_version = 4u;
+    UdpLite.build(udplite_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ul->status);
+
+    // One covered octet turned over. The Coverage field is untouched and still legal, so the only
+    // thing wrong with this datagram is its sum.
+    g_frame[off + IDEMIP_UDP_HDR_LEN] ^= 0xFFu;
+
+    input(work_a, off + IDEMIP_UDP_HDR_LEN + 4u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_UDP_IN_ERRORS));
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a failed UDP-Lite sum was reported as a length fault");
 }
 
 #endif // IDEMIP_ENABLE_UDP

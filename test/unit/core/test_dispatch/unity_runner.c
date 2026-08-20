@@ -128,6 +128,7 @@ extern void test_a_short_tcp_segment_is_an_error(void);
 extern void test_a_challenge_acknowledgment_is_not_aggregated(void);
 extern void test_a_udp_lite_datagram_reaches_a_lite_binding(void);
 extern void test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded(void);
+extern void test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault(void);
 extern void test_a_frame_with_no_vlan_borrow_is_refused(void);
 extern void test_an_ipv4_frame_with_an_unbound_unit_is_refused(void);
 extern void test_an_ipv6_frame_with_an_unbound_unit_is_refused(void);
@@ -308,11 +309,12 @@ int main(void)
   run_test(test_a_challenge_acknowledgment_is_not_aggregated, "test_a_challenge_acknowledgment_is_not_aggregated", 2995);
   run_test(test_a_udp_lite_datagram_reaches_a_lite_binding, "test_a_udp_lite_datagram_reaches_a_lite_binding", 3022);
   run_test(test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded, "test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded", 3074);
-  run_test(test_a_frame_with_no_vlan_borrow_is_refused, "test_a_frame_with_no_vlan_borrow_is_refused", 3110);
-  run_test(test_an_ipv4_frame_with_an_unbound_unit_is_refused, "test_an_ipv4_frame_with_an_unbound_unit_is_refused", 3121);
-  run_test(test_an_ipv6_frame_with_an_unbound_unit_is_refused, "test_an_ipv6_frame_with_an_unbound_unit_is_refused", 3165);
-  run_test(test_a_udp_datagram_with_an_unbound_unit_is_refused, "test_a_udp_datagram_with_an_unbound_unit_is_refused", 3191);
-  run_test(test_a_tcp_segment_with_an_unbound_unit_is_refused, "test_a_tcp_segment_with_an_unbound_unit_is_refused", 3222);
+  run_test(test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault, "test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault", 3092);
+  run_test(test_a_frame_with_no_vlan_borrow_is_refused, "test_a_frame_with_no_vlan_borrow_is_refused", 3147);
+  run_test(test_an_ipv4_frame_with_an_unbound_unit_is_refused, "test_an_ipv4_frame_with_an_unbound_unit_is_refused", 3158);
+  run_test(test_an_ipv6_frame_with_an_unbound_unit_is_refused, "test_an_ipv6_frame_with_an_unbound_unit_is_refused", 3202);
+  run_test(test_a_udp_datagram_with_an_unbound_unit_is_refused, "test_a_udp_datagram_with_an_unbound_unit_is_refused", 3228);
+  run_test(test_a_tcp_segment_with_an_unbound_unit_is_refused, "test_a_tcp_segment_with_an_unbound_unit_is_refused", 3259);
 
   return UNITY_END();
 }
