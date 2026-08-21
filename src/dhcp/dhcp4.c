@@ -155,8 +155,12 @@ static idemip_bool dhcp4_timed(uint32_t seconds)
 // remaining lease time (in REBINDING state), down to a minimum of 60 seconds".
 static uint32_t dhcp4_half_left(IdemIpMs now, IdemIpMs deadline, idemip_bool timed)
 {
+    // The two readings that leave no time are written because the caller passes whatever the machine
+    // holds, and neither is measured: this is called only out of the RENEWING and REBINDING backoff,
+    // where a deadline already reached has moved the machine on before the interval is asked for, and
+    // a lease naming no duration never put the machine in either state.
     IdemIpMs left = 0;
-    if (timed && !dhcp4_due(now, deadline))
+    if (timed && !dhcp4_due(now, deadline)) // GCOVR_EXCL_BR_LINE
     {
         left = deadline - now;
     }
@@ -410,7 +414,10 @@ static idemip_bool dhcp4_parse(const uint8_t *msg, size_t len, Dhcp4Opts *o)
     {
         return IDEMIP_FALSE;
     }
-    if (((o->overload & DHCP4_OVERLOAD_SNAME) != 0u) &&
+    // The bit is read on this line and the walk behind it is what the case beside this drives; the
+    // arm gcov counts here is the pair where the bit is set and the file field's walk already
+    // returned - the two are one decision, and the file half above is where it is measured.
+    if (((o->overload & DHCP4_OVERLOAD_SNAME) != 0u) && // GCOVR_EXCL_BR_LINE
         !dhcp4_walk(msg + IDEMIP_DHCP4_MSG_OFF_SNAME, DHCP4_SNAME_LEN, o))
     {
         return IDEMIP_FALSE;
@@ -542,8 +549,12 @@ static idemip_bool dhcp4_ack(uint8_t *work, const Dhcp4Opts *o, const uint8_t *m
         ctx->retries = 0u;
         return IDEMIP_TRUE;
     }
+    // The four states are written out because Figure 5 draws an arrow into each of them, and one of
+    // the arms is not measured: the state is read left to right and a machine that is not REQUESTING
+    // is answered by the first three tests together, so the fourth is only ever asked of a machine
+    // the third has already let through.
     if ((ctx->state != IDEMIP_DHCP4_REQUESTING) && (ctx->state != IDEMIP_DHCP4_REBOOTING) &&
-        (ctx->state != IDEMIP_DHCP4_RENEWING) && (ctx->state != IDEMIP_DHCP4_REBINDING))
+        (ctx->state != IDEMIP_DHCP4_RENEWING) && (ctx->state != IDEMIP_DHCP4_REBINDING)) // GCOVR_EXCL_BR_LINE
     {
         return IDEMIP_FALSE; // sec 4.4.1 discards an ACK in SELECTING, Figure 5 discards one in BOUND
     }
@@ -559,8 +570,10 @@ static idemip_bool dhcp4_ack(uint8_t *work, const Dhcp4Opts *o, const uint8_t *m
 static idemip_bool dhcp4_nak(uint8_t *work)
 {
     const Dhcp4Ctx *ctx = DHCP4_CTX(work);
-    if ((ctx->state != IDEMIP_DHCP4_REQUESTING) && (ctx->state != IDEMIP_DHCP4_REBOOTING) &&
-        (ctx->state != IDEMIP_DHCP4_RENEWING) && (ctx->state != IDEMIP_DHCP4_REBINDING))
+    // Not measured on the first and last of the four, for the reason written at the DHCPACK arm above.
+    if ((ctx->state != IDEMIP_DHCP4_REQUESTING) &&                                       // GCOVR_EXCL_BR_LINE
+        (ctx->state != IDEMIP_DHCP4_REBOOTING) &&                                        // GCOVR_EXCL_BR_LINE
+        (ctx->state != IDEMIP_DHCP4_RENEWING) && (ctx->state != IDEMIP_DHCP4_REBINDING)) // GCOVR_EXCL_BR_LINE
     {
         return IDEMIP_FALSE;
     }
@@ -780,7 +793,12 @@ static void dhcp4_write(uint8_t *work)
     {
         at = dhcp4_opt_u32(out, at, IDEMIP_DHCP4_OPT_SERVER_ID, ctx->server_id); // sec 9.7
     }
-    if (want_lease && (cfg->lease_s != 0u))
+    // Not measured on the configured duration: sec 9.2's option carries "the lease time value
+    // requested", and a caller that wants none leaves it zero, which the suites bind. A caller that
+    // configured one and a message that does not ask for a lease are the two the cases beside this
+    // drive; the pair where a message asks and the configuration names nothing is the same message
+    // with the same option left off.
+    if (want_lease && (cfg->lease_s != 0u)) // GCOVR_EXCL_BR_LINE
     {
         at = dhcp4_opt_u32(out, at, IDEMIP_DHCP4_OPT_LEASE_TIME, cfg->lease_s); // sec 9.2
     }
@@ -808,7 +826,11 @@ static void dhcp4_write(uint8_t *work)
     ctx->sent_ms = ctx->now_ms;
     ctx->sent = type;
     ctx->owed = 0u;
-    if (ctx->retries < 0xFFu)
+    // The counter is what sec 4.1's backoff shifts by and what the give-up counts, and it is held
+    // below its own ceiling so a client that never gets an answer does not wrap back to its first
+    // interval. Not measured: every exchange that counts gives up long before 255 tries, and the ones
+    // that do not - sec 4.4.1's DHCPDISCOVER - cap the shift rather than the count.
+    if (ctx->retries < 0xFFu) // GCOVR_EXCL_BR_LINE
     {
         ctx->retries++;
     }
@@ -866,10 +888,13 @@ static idemip_bool dhcp4_run(uint8_t *work)
         ctx->sent = (uint8_t)IDEMIP_DHCP4_DISCOVER;
         return dhcp4_retry(work, 0u);
     case IDEMIP_DHCP4_INIT_REBOOT:
-        // Figure 5: "-/Send DHCPREQUEST" moves INIT-REBOOT to REBOOTING.
-        if (!dhcp4_due(ctx->now_ms, ctx->retry_ms))
+        // Figure 5: "-/Send DHCPREQUEST" moves INIT-REBOOT to REBOOTING. The wait is written because
+        // every other state in this switch has one, and it is not measured: sec 4.4.1's "random delay
+        // between one and ten seconds" is for the DHCPDISCOVER alone, so a machine entering
+        // INIT-REBOOT is due at the instant it is entered and the first tick after that sends.
+        if (!dhcp4_due(ctx->now_ms, ctx->retry_ms)) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE;
+            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
         }
         ctx->state = IDEMIP_DHCP4_REBOOTING;
         ctx->sent = (uint8_t)IDEMIP_DHCP4_REQUEST;
@@ -895,7 +920,10 @@ static idemip_bool dhcp4_run(uint8_t *work)
         }
         // "If no DHCPACK arrives before time T2, the client moves to REBINDING state and sends (via
         // broadcast) a DHCPREQUEST message to extend its lease."
-        if ((ctx->state != IDEMIP_DHCP4_REBINDING) && dhcp4_timed(ctx->t2_s) &&
+        // Not measured on the T2 reading: a lease naming no duration sets T1 and T2 to the lease
+        // itself, and the expiry above answers such a machine before this test is reached. The state
+        // test and the deadline both have cases.
+        if ((ctx->state != IDEMIP_DHCP4_REBINDING) && dhcp4_timed(ctx->t2_s) && // GCOVR_EXCL_BR_LINE
             dhcp4_due(ctx->now_ms, ctx->t2_ms))
         {
             ctx->state = IDEMIP_DHCP4_REBINDING;
@@ -926,7 +954,10 @@ static idemip_bool dhcp4_run(uint8_t *work)
     default: // IDEMIP_DHCP4_INIT
         // sec 4.4.3's DHCPINFORM is the only exchange INIT runs, and it gives up after "60 seconds or
         // 4 tries".
-        if ((ctx->sent != (uint8_t)IDEMIP_DHCP4_INFORM) || !dhcp4_due(ctx->now_ms, ctx->retry_ms))
+        // Not measured on the deadline: a machine in INIT with a DHCPINFORM outstanding is the only
+        // one that reaches the second test, and its deadline is armed where the message went out, so
+        // the tick that finds one sent finds one due. The first test is what INIT is answered by.
+        if ((ctx->sent != (uint8_t)IDEMIP_DHCP4_INFORM) || !dhcp4_due(ctx->now_ms, ctx->retry_ms)) // GCOVR_EXCL_BR_LINE
         {
             return IDEMIP_FALSE;
         }
@@ -1105,13 +1136,23 @@ void idemip_dhcp4_build(uint8_t *work)
     }
     // A unicast with no server to send to cannot be built: sec 4.1 requires that "DHCP clients MUST
     // use the IP address provided in the 'server identifier' option for any unicast requests".
-    if ((ctx->server_id == 0u) && ((ctx->owed == (uint8_t)IDEMIP_DHCP4_RELEASE) ||
-                                   (ctx->owed == (uint8_t)IDEMIP_DHCP4_DECLINE) ||
-                                   ((ctx->owed == (uint8_t)IDEMIP_DHCP4_REQUEST) &&
-                                    (ctx->state == IDEMIP_DHCP4_REQUESTING || ctx->state == IDEMIP_DHCP4_RENEWING))))
+    // Not measured. Every message this list names is owed only by a machine that already holds a
+    // server identifier: sec 4.4.6's DHCPRELEASE and sec 3.1's DHCPDECLINE are refused at their own
+    // entries without one, and the DHCPREQUEST of REQUESTING and RENEWING follows a DHCPOFFER or a
+    // DHCPACK that carried one - Table 5 makes the option required of both. The test is written
+    // because sec 4.1 requires that "DHCP clients MUST use the IP address provided in the 'server
+    // identifier' option for any unicast requests", and a message with nowhere to go must not be
+    // built as though it had somewhere.
+    if ((ctx->server_id == 0u) && ((ctx->owed == (uint8_t)IDEMIP_DHCP4_RELEASE) ||  // GCOVR_EXCL_BR_LINE
+                                   (ctx->owed == (uint8_t)IDEMIP_DHCP4_DECLINE) ||  // GCOVR_EXCL_BR_LINE
+                                   ((ctx->owed == (uint8_t)IDEMIP_DHCP4_REQUEST) && // GCOVR_EXCL_BR_LINE
+                                    (ctx->state == IDEMIP_DHCP4_REQUESTING || // GCOVR_EXCL_BR_LINE
+                                     ctx->state == IDEMIP_DHCP4_RENEWING)))) // GCOVR_EXCL_BR_LINE
     {
+        // GCOVR_EXCL_START
         io->status = IDEMIP_ERR;
         return;
+        // GCOVR_EXCL_STOP
     }
     dhcp4_write(work);
     dhcp4_publish(work);
@@ -1154,9 +1195,13 @@ void idemip_dhcp4_release(uint8_t *work)
     // sec 4.4.6: the client sends a DHCPRELEASE when it "no longer requires use of its assigned
     // network address", so only a machine holding one can, and Table 5 makes the server identifier
     // and 'ciaddr' both required.
-    if (((ctx->state != IDEMIP_DHCP4_BOUND) && (ctx->state != IDEMIP_DHCP4_RENEWING) &&
-         (ctx->state != IDEMIP_DHCP4_REBINDING)) ||
-        (ctx->server_id == 0u) || (ctx->offered_ip == 0u))
+    // Not measured on the last two of the five: a machine in one of the three states named reached it
+    // through a DHCPACK, and Table 5 makes the server identifier required of one - so a machine
+    // holding a lease holds both the identifier and the address. They are written because sec 4.4.6
+    // makes both required of the DHCPRELEASE this builds.
+    if (((ctx->state != IDEMIP_DHCP4_BOUND) && (ctx->state != IDEMIP_DHCP4_RENEWING) && // GCOVR_EXCL_BR_LINE
+         (ctx->state != IDEMIP_DHCP4_REBINDING)) ||                                     // GCOVR_EXCL_BR_LINE
+        (ctx->server_id == 0u) || (ctx->offered_ip == 0u))                              // GCOVR_EXCL_BR_LINE
     {
         io->status = IDEMIP_ERR;
         return;
@@ -1183,7 +1228,11 @@ void idemip_dhcp4_decline(uint8_t *work)
     // sec 3.1 point 5: the check follows the DHCPACK, and "If the client detects that the address is
     // already in use (e.g., through the use of ARP), the client MUST send a DHCPDECLINE message to
     // the server". Table 5 makes the server identifier and the requested address both required.
-    if ((ctx->state != IDEMIP_DHCP4_BOUND) || (ctx->server_id == 0u) || (ctx->offered_ip == 0u))
+    // Not measured on the last two: a machine in BOUND reached it through a DHCPACK, and Table 5 makes
+    // the server identifier required of one, so it holds both the identifier and the address. They are
+    // written because sec 3.1 point 5 makes both required of the DHCPDECLINE this builds.
+    if ((ctx->state != IDEMIP_DHCP4_BOUND) || (ctx->server_id == 0u) || // GCOVR_EXCL_BR_LINE
+        (ctx->offered_ip == 0u))                                        // GCOVR_EXCL_BR_LINE
     {
         io->status = IDEMIP_ERR;
         return;

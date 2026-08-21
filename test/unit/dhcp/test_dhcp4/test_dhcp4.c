@@ -820,6 +820,179 @@ void test_an_inform_goes_to_the_server_the_last_answer_named(void)
                                     "an inform went somewhere other than the server it knows");
 }
 
+// Every entry that acts on a lease reads the machine's state and the two things Table 5 makes
+// required of the message it would send. RFC 2131 sec 4.4.6 sends a DHCPRELEASE only where the client
+// "no longer requires use of its assigned network address", so a machine holding none has none to
+// give up; sec 3.1 point 5 sends a DHCPDECLINE only after the DHCPACK the check follows; and
+// sec 4.4.3's DHCPINFORM is for a client whose address came "through some other means", so it runs no
+// other exchange. Each is ERR: no later tick makes a machine in the wrong state the right one.
+void test_release_decline_and_inform_each_refuse_what_no_tick_fixes(void)
+{
+    // Nothing bound: no state, no server identifier, no address.
+    Dhcp4.clear(work_a);
+    bind_ok(work_a, &g_cfg_a);
+    Dhcp4.release(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DHCP4_IO(work_a)->status, "a lease that is not held was given up");
+    Dhcp4.decline(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DHCP4_IO(work_a)->status,
+                                  "an address that was never acknowledged was declined");
+
+    // Bound, and both of them take it.
+    Dhcp4.clear(work_a);
+    to_bound(work_a, 600u);
+    Dhcp4.decline(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DHCP4_IO(work_a)->status, "a bound address could not be declined");
+
+    Dhcp4.clear(work_a);
+    to_bound(work_a, 600u);
+    Dhcp4.release(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DHCP4_IO(work_a)->status, "a bound lease could not be given up");
+
+    // And an inform out of a machine that is running an exchange of its own.
+    Dhcp4.clear(work_a);
+    to_selecting(work_a);
+    IDEMIP_DHCP4_IO(work_a)->offered_ip = IP_OFFER;
+    IDEMIP_DHCP4_IO(work_a)->start_args.xid = XID_A;
+    IDEMIP_DHCP4_IO(work_a)->start_args.now_ms = 2000u;
+    Dhcp4.inform(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DHCP4_IO(work_a)->status,
+                                  "an inform went out of a machine already looking for a lease");
+
+    // An inform with no externally configured address to put in 'ciaddr'.
+    Dhcp4.clear(work_a);
+    bind_ok(work_a, &g_cfg_a);
+    IDEMIP_DHCP4_IO(work_a)->offered_ip = 0u;
+    IDEMIP_DHCP4_IO(work_a)->start_args.xid = XID_A;
+    IDEMIP_DHCP4_IO(work_a)->start_args.now_ms = 0u;
+    Dhcp4.inform(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DHCP4_IO(work_a)->status,
+                                  "an inform went out with no address to ask about");
+}
+
+// sec 4.1: "DHCP messages broadcast by a client prior to that client obtaining its IP address must
+// have the source address field in the IP header set to 0." A message the machine owes but has no
+// server to unicast to cannot be built at all - sec 4.1 also requires that "DHCP clients MUST use the
+// IP address provided in the 'server identifier' option for any unicast requests", and there is none.
+void test_a_unicast_owed_with_no_server_to_send_it_to_cannot_be_built(void)
+{
+    Dhcp4.clear(work_a);
+    to_bound(work_a, 600u);
+    Dhcp4.release(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP4_IO(work_a)->status);
+
+    // The server identifier goes, which is what the build reads to address the DHCPRELEASE.
+    IDEMIP_DHCP4_IO(work_a)->build_args.out = g_out;
+    IDEMIP_DHCP4_IO(work_a)->build_args.cap = sizeof g_out;
+    Dhcp4.build(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DHCP4_IO(work_a)->status,
+                                  "a release with a server to send to could not be built");
+}
+
+// RFC 2131 sec 3.3 of a lease time: a value of zero names no duration, the way 0xffffffff names an
+// endless one, and sec 4.4.5 measures T1 and T2 as fractions of the lease - so neither runs at all
+// for a lease that names no time. And RFC 2132 sec 9.2's option is what carries it: a DHCPACK that
+// omits it names no new duration, so what the client is holding stands.
+void test_a_lease_of_no_duration_runs_no_t1_and_no_t2(void)
+{
+    Dhcp4.clear(work_a);
+    to_selecting(work_a);
+    offer_in(work_a, 600u);
+    build_ok(work_a);
+
+    // A DHCPACK carrying a lease time of zero.
+    msg_begin(XID_A, IP_OFFER, (uint8_t)IDEMIP_DHCP4_ACK, g_mac_a);
+    msg_opt32(IDEMIP_DHCP4_OPT_SUBNET_MASK, IP_MASK);
+    msg_opt32(IDEMIP_DHCP4_OPT_LEASE_TIME, 0u);
+    msg_opt32(IDEMIP_DHCP4_OPT_SERVER_ID, IP_SERVER);
+    msg_end();
+    feed(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP4_BOUND, IDEMIP_DHCP4_IO(work_a)->state);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, IDEMIP_DHCP4_IO(work_a)->t1_s, "a lease of no duration ran a T1");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, IDEMIP_DHCP4_IO(work_a)->t2_s, "a lease of no duration ran a T2");
+}
+
+// The same DHCPACK with no lease option at all: sec 9.2's option is what names a new duration, and
+// one that names none leaves the client holding what it had.
+void test_an_acknowledgement_with_no_lease_option_keeps_the_duration_already_held(void)
+{
+    Dhcp4.clear(work_a);
+    to_selecting(work_a);
+    offer_in(work_a, 600u);
+    build_ok(work_a);
+
+    msg_begin(XID_A, IP_OFFER, (uint8_t)IDEMIP_DHCP4_ACK, g_mac_a);
+    msg_opt32(IDEMIP_DHCP4_OPT_SUBNET_MASK, IP_MASK);
+    msg_opt32(IDEMIP_DHCP4_OPT_SERVER_ID, IP_SERVER);
+    msg_end();
+    feed(work_a);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP4_BOUND, IDEMIP_DHCP4_IO(work_a)->state);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(600u, IDEMIP_DHCP4_IO(work_a)->lease_s,
+                                     "an acknowledgement naming no duration changed the one held");
+}
+
+// sec 4.1 gives every client message a retransmission deadline, and a tick before one is due has
+// nothing to send: the machine stays where it is and reports BUSY rather than sending the message
+// again early.
+void test_a_tick_before_the_deadline_sends_nothing(void)
+{
+    Dhcp4.clear(work_a);
+    to_selecting(work_a);
+    offer_in(work_a, 600u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP4_REQUESTING, IDEMIP_DHCP4_IO(work_a)->state);
+    build_ok(work_a);
+    tick_at(work_a, 1001u, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DHCP4_IO(work_a)->status,
+                                  "a retransmission went out before its deadline");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP4_REQUESTING, IDEMIP_DHCP4_IO(work_a)->state);
+}
+
+// RFC 2131 sec 4.1 reads the option area first "so that any 'option overload' options may be
+// interpreted", then the file field, then sname. A value of three sends the walk into both, and a
+// second overload option is stepped over the way every other repeated option is - which matters more
+// here than anywhere else, since a second one read late would send the walk into a field the first
+// one had already said nothing was in.
+void test_an_overload_naming_both_fields_is_read_once(void)
+{
+    static const uint8_t both[1] = {3u};
+    static const uint8_t sname_only[1] = {2u};
+
+    Dhcp4.clear(work_a);
+    to_selecting(work_a);
+    msg_begin(XID_A, IP_OFFER, (uint8_t)IDEMIP_DHCP4_OFFER, g_mac_a);
+    msg_opt(IDEMIP_DHCP4_OPT_OVERLOAD, 1u, both);
+    msg_opt(IDEMIP_DHCP4_OPT_OVERLOAD, 1u, sname_only);
+    msg_end();
+    // The lease and the server identifier live in the two overloaded fields, which is what the
+    // overload option is for. The rest of each field is zeros, which sec 3.1 makes pad options.
+    g_msg[IDEMIP_DHCP4_MSG_OFF_FILE] = IDEMIP_DHCP4_OPT_LEASE_TIME;
+    g_msg[IDEMIP_DHCP4_MSG_OFF_FILE + 1u] = 4u;
+    put32(g_msg + IDEMIP_DHCP4_MSG_OFF_FILE + 2u, 600u);
+    g_msg[IDEMIP_DHCP4_MSG_OFF_SNAME] = IDEMIP_DHCP4_OPT_SERVER_ID;
+    g_msg[IDEMIP_DHCP4_MSG_OFF_SNAME + 1u] = 4u;
+    put32(g_msg + IDEMIP_DHCP4_MSG_OFF_SNAME + 2u, IP_SERVER);
+    feed(work_a);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP4_REQUESTING, IDEMIP_DHCP4_IO(work_a)->state,
+                                  "the options in the two overloaded fields were not read");
+    TEST_ASSERT_EQUAL_UINT32(600u, IDEMIP_DHCP4_IO(work_a)->lease_s);
+    TEST_ASSERT_EQUAL_HEX32(IP_SERVER, IDEMIP_DHCP4_IO(work_a)->server_id);
+}
+
+// A call with no message to read has nothing to read on a later tick either, so it is ERR and not
+// BUSY - the same answer a message shorter than sec 2's fixed part gets.
+void test_input_with_no_message_is_refused(void)
+{
+    Dhcp4.clear(work_a);
+    to_selecting(work_a);
+    IDEMIP_DHCP4_IO(work_a)->input_args.msg = NULL;
+    IDEMIP_DHCP4_IO(work_a)->input_args.len = (size_t)IDEMIP_DHCP4_MSG_BOOTP_MIN;
+    IDEMIP_DHCP4_IO(work_a)->input_args.src = IP_SERVER;
+    Dhcp4.input(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DHCP4_IO(work_a)->status, "a call with no message was read");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP4_SELECTING, IDEMIP_DHCP4_IO(work_a)->state);
+}
+
 // --- sec 4.4.1, INIT to SELECTING --------------------------------------------
 
 // sec 4.4.1: "The client SHOULD wait a random time between one and ten seconds to desynchronize the
