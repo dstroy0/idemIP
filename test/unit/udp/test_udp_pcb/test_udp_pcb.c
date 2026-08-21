@@ -275,7 +275,7 @@ static const uint8_t g_remote2[IDEMIP_UDP_PCB_ADDR_BYTES] = {192u, 0u, 2u, 10u};
 static const uint8_t g_any[IDEMIP_UDP_PCB_ADDR_BYTES] = {0u};
 
 // 192.0.2.1 with a tail no version-4 compare may read.
-static const uint8_t g_local_tail[IDEMIP_UDP_PCB_ADDR_BYTES] = {192u,  0u,   2u,   1u,   0xAAu, 0xBBu, 0xCCu, 0xDDu,
+static const uint8_t g_local_tail[IDEMIP_UDP_PCB_ADDR_BYTES] = {192u,  0u,    2u,    1u,    0xAAu, 0xBBu, 0xCCu, 0xDDu,
                                                                 0xEEu, 0xFFu, 0x11u, 0x22u, 0x33u, 0x44u, 0x55u, 0x66u};
 
 // RFC 3849 sec 2's documentation prefix. The first two differ in the last octet only, so a compare
@@ -537,7 +537,6 @@ void test_two_binds_of_port_any_settle_on_different_ports(void)
     bind_ok(work_a, b, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u);
     TEST_ASSERT_NOT_EQUAL_UINT16(first, io->port);
 }
-
 
 // RFC 6056 sec 3.3: "Ephemeral port selection algorithms SHOULD obfuscate the selection of their
 // ephemeral ports, since this helps to mitigate a number of attacks that depend on the attacker's
@@ -1045,8 +1044,7 @@ void test_find_discards_a_coverage_of_one_through_seven(void)
     // that made no such call takes no partial coverage, the header-only 8 included.
     set_datagram(work_a, 4u, g_local, 5004u, g_remote, 40000u, 8u, 1u);
     UdpPcb.find(work_a);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status,
-                                  "a binding that asked for nothing partial must mimic UDP");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "a binding that asked for nothing partial must mimic UDP");
     TEST_ASSERT_EQUAL_UINT16(IDEMIP_UDP_PCB_NONE, io->index);
 
     // sec 3.1: "A Checksum Coverage of zero indicates that the entire UDP-Lite packet is covered by
@@ -1265,4 +1263,288 @@ void test_two_tables_do_not_share_a_port(void)
     uint16_t b = open_binding(work_b, 4u, IDEMIP_FALSE);
     bind_ok(work_a, a, g_local, 161u, 0u, 0u);
     bind_ok(work_b, b, g_local, 161u, 0u, 0u);
+}
+
+// --- the five-tuple a connect claims -------------------------------------------
+
+// RFC 768 names a datagram by its Source Port, destination address and Destination Port, and a
+// connected binding claims one whole five-tuple. Two bindings differing in any part of it stand
+// together; two claiming the same one do not. A connect on a binding that has not been bound has no
+// local half to claim the tuple with, so nothing is claimed and nothing conflicts.
+void test_a_connect_claims_the_whole_five_tuple_and_not_a_part_of_it(void)
+{
+    UdpPcb.clear(work_a);
+
+    // Bound and connected: 192.0.2.1:5000 to 192.0.2.9:53.
+    const uint16_t first = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, first, g_local, 5000u, 0u, 0u);
+    connect_ok(work_a, first, g_remote, 53u);
+
+    // The same local port to another remote port stands beside it, and so does the same remote
+    // socket from another local address.
+    const uint16_t second = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, second, g_local, 5000u, 0u, 0u);
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = second;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_remote;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.port = 54u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.zone = 0u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.netif = 0u;
+    UdpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_UDP_PCB_IO(work_a)->status,
+                                  "a connect to another remote port was taken for the same five-tuple");
+
+    const uint16_t third = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, third, g_local2, 5000u, 0u, 0u);
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = third;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_remote;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.port = 53u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.zone = 0u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.netif = 0u;
+    UdpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_UDP_PCB_IO(work_a)->status,
+                                  "a connect from another local address was taken for the same five-tuple");
+
+    // The one that repeats all of it is refused.
+    const uint16_t fourth = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, fourth, g_local, 5000u, 0u, 0u);
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = fourth;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_remote;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.port = 53u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.zone = 0u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.netif = 0u;
+    UdpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_UDP_PCB_IO(work_a)->status,
+                                  "two bindings took the same five-tuple");
+
+    // A binding nobody bound has no local port to claim the tuple with.
+    const uint16_t loose = open_binding(work_a, 4u, IDEMIP_FALSE);
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = loose;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_remote;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.port = 53u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.zone = 0u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.netif = 0u;
+    UdpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_UDP_PCB_IO(work_a)->status,
+                                  "a connect on an unbound binding was refused");
+
+    // And an index past the table is refused whatever it names.
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = (uint16_t)IDEMIP_UDP_PCBS;
+    UdpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_UDP_PCB_IO(work_a)->status,
+                                  "a connect took an index past the table");
+}
+
+// A connect names the interface the binding sends and receives on where the caller gives one, and
+// keeps the one the bind set where it does not. Two bindings that are otherwise the same tuple but
+// pinned to interfaces that admit no common datagram are not the same binding.
+void test_a_connect_pins_the_interface_the_caller_names(void)
+{
+    UdpPcb.clear(work_a);
+    const uint16_t first = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, first, g_local, 5000u, 0u, 1u);
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = first;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_remote;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.port = 53u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.zone = 0u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.netif = 2u;
+    UdpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_UDP_PCB_IO(work_a)->status);
+    load_ok(work_a, first);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(2u, IDEMIP_UDP_PCB_IO(work_a)->info.netif,
+                                    "the connect did not pin the interface it was given");
+
+    // The same five-tuple on a third interface: no datagram reaches both, so both bindings stand.
+    const uint16_t second = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, second, g_local, 5000u, 0u, 3u);
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = second;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_remote;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.port = 53u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.zone = 0u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.netif = 0u;
+    UdpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_UDP_PCB_IO(work_a)->status,
+                                  "two bindings on interfaces that share no datagram collided");
+    load_ok(work_a, second);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(3u, IDEMIP_UDP_PCB_IO(work_a)->info.netif,
+                                    "a connect with no interface named dropped the one the bind set");
+}
+
+// RFC 4007 sec 6: an address is meaningful only inside its zone, so two bindings connected to the
+// same address in different zones are connected to different endpoints - and a datagram from one
+// zone does not answer the binding waiting on the other.
+void test_a_zone_is_part_of_the_endpoint_a_connect_names(void)
+{
+    UdpPcb.clear(work_a);
+    const uint16_t first = open_binding(work_a, 6u, IDEMIP_FALSE);
+    bind_ok(work_a, first, g_v6_a, 5000u, 1u, 0u);
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = first;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_v6_r;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.port = 53u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.zone = 1u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.netif = 0u;
+    UdpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_UDP_PCB_IO(work_a)->status);
+
+    // The same datagram out of another zone is not from the endpoint this binding connected to.
+    set_datagram(.w = work_a, .version = 6u, .local_ip = g_v6_a, .local_port = 5000u, .remote_ip = g_v6_r,
+                 .remote_port = 53u, .cksum_len = IDEMIP_UDPLITE_COV_ALL, .netif = 0u);
+    IDEMIP_UDP_PCB_IO(work_a)->find_args.local_zone = 1u;
+    IDEMIP_UDP_PCB_IO(work_a)->find_args.remote_zone = 2u;
+    UdpPcb.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_UDP_PCB_IO(work_a)->status,
+                                  "a datagram from another zone answered a connected binding");
+
+    // In its own zone it is the endpoint, and the binding takes it.
+    IDEMIP_UDP_PCB_IO(work_a)->find_args.remote_zone = 1u;
+    UdpPcb.find(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_UDP_PCB_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16(first, IDEMIP_UDP_PCB_IO(work_a)->index);
+}
+
+// A datagram reaching more than one binding goes to the most specific: RFC 1122 sec 4.1.3.5 has the
+// connected binding take it over the listening one, and a binding on the address it arrived for take
+// it over one on the wildcard. The walk keeps the best it has seen rather than the last.
+void test_the_most_specific_binding_takes_a_datagram_whatever_order_the_table_holds_them(void)
+{
+    UdpPcb.clear(work_a);
+
+    // The specific one first, so a walk that kept the last match would hand the datagram to the
+    // wildcard standing behind it.
+    const uint16_t specific = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, specific, g_local, 5000u, 0u, 0u);
+    const uint16_t wildcard = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, wildcard, g_any, 5000u, 0u, 0u);
+
+    set_datagram(.w = work_a, .version = 4u, .local_ip = g_local, .local_port = 5000u, .remote_ip = g_remote,
+                 .remote_port = 53u, .cksum_len = IDEMIP_UDPLITE_COV_ALL, .netif = 0u);
+    UdpPcb.find(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_UDP_PCB_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(specific, IDEMIP_UDP_PCB_IO(work_a)->index,
+                                     "the wildcard binding took a datagram the named one was waiting for");
+}
+
+// A lookup is over a datagram, and a datagram has a source as well as a destination: without one
+// there is nothing for RFC 1122 sec 4.1.3.5's connected binding to be matched against.
+void test_a_lookup_with_no_source_address_is_refused(void)
+{
+    UdpPcb.clear(work_a);
+    const uint16_t idx = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, idx, g_local, 5000u, 0u, 0u);
+
+    set_datagram(.w = work_a, .version = 4u, .local_ip = g_local, .local_port = 5000u, .remote_ip = g_remote,
+                 .remote_port = 53u, .cksum_len = IDEMIP_UDPLITE_COV_ALL, .netif = 0u);
+    IDEMIP_UDP_PCB_IO(work_a)->find_args.remote_ip = NULL;
+    UdpPcb.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_UDP_PCB_IO(work_a)->status,
+                                  "a datagram with no source was demultiplexed");
+}
+
+// RFC 3828 sec 3.1: "A Checksum Coverage of zero indicates that the entire UDP-Lite packet is covered
+// by the checksum", which is what an RFC 768 datagram reports too. A binding that is not UDP-Lite has
+// no partial coverage to set at either end of it, and sec 3.3's minimum is a UDP-Lite option.
+void test_a_binding_that_is_not_udp_lite_takes_no_partial_coverage_at_either_end(void)
+{
+    UdpPcb.clear(work_a);
+    const uint16_t idx = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, idx, g_local, 5000u, 0u, 0u);
+
+    for (unsigned k = 0; k < 2u; k++)
+    {
+        IDEMIP_UDP_PCB_IO(work_a)->opt_args.index = idx;
+        IDEMIP_UDP_PCB_IO(work_a)->opt_args.tos = 0u;
+        IDEMIP_UDP_PCB_IO(work_a)->opt_args.ttl = 64u;
+        IDEMIP_UDP_PCB_IO(work_a)->opt_args.mcast_ttl = 1u;
+        IDEMIP_UDP_PCB_IO(work_a)->opt_args.cksum_len_tx =
+            (k == 0u) ? (uint16_t)IDEMIP_UDPLITE_COV_MIN : (uint16_t)IDEMIP_UDPLITE_COV_ALL;
+        IDEMIP_UDP_PCB_IO(work_a)->opt_args.cksum_len_rx =
+            (k == 0u) ? (uint16_t)IDEMIP_UDPLITE_COV_ALL : (uint16_t)IDEMIP_UDPLITE_COV_MIN;
+        UdpPcb.set_opts(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_UDP_PCB_IO(work_a)->status,
+                                      "a partial coverage was set on a binding that is not UDP-Lite");
+    }
+}
+
+// A bind names a local endpoint, and a binding that is already connected keeps the remote half it
+// connected to. So a rebind is refused only where the five-tuple it would land on is one another
+// binding already holds: the same local endpoint with a different remote is not that, and the same
+// remote on a different local address was not that either until the rebind moved it.
+void test_a_rebind_of_a_connected_binding_is_refused_only_where_the_whole_tuple_would_repeat(void)
+{
+    UdpPcb.clear(work_a);
+    const uint16_t first = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, first, g_local, 5000u, 0u, 0u);
+    connect_ok(work_a, first, g_remote, 53u);
+
+    // A second binding on the same local endpoint, to another remote port.
+    const uint16_t second = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, second, g_local, 5000u, 0u, 0u);
+    connect_ok(work_a, second, g_remote, 54u);
+
+    // A third on that endpoint too, to another remote address altogether.
+    const uint16_t other = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, other, g_local, 5000u, 0u, 0u);
+    connect_ok(work_a, other, g_remote2, 53u);
+
+    // Rebinding the first to where it already stands: of the two bindings sharing its local
+    // endpoint, one differs in the remote port and the other in the remote address, so the tuple is
+    // still its own.
+    bind_ok(work_a, first, g_local, 5000u, 0u, 0u);
+
+    // A third on another local address, to the remote socket the first holds.
+    const uint16_t third = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, third, g_local2, 5000u, 0u, 0u);
+    connect_ok(work_a, third, g_remote, 53u);
+
+    // Moving it onto the first's local address would make the two the same five-tuple.
+    bind_rand(work_a, third, g_local, 5000u, 0u, 0u, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_UDP_PCB_IO(work_a)->status,
+                                  "a rebind landed a second binding on a five-tuple already held");
+}
+
+// The scan a connect makes is over the bindings that could be the same tuple, and it passes over the
+// ones that cannot: a binding of the other IP version is not on the same address at all, and one
+// that is not connected has no remote half to be the same as. RFC 4007 sec 6 keeps a pinned
+// interface part of the endpoint, so two bindings pinned to one interface share what two pinned to
+// different interfaces do not.
+void test_the_connect_scan_passes_over_what_cannot_be_the_same_tuple(void)
+{
+    UdpPcb.clear(work_a);
+
+    // The other version, on the same port and the same numbers as far as they go.
+    const uint16_t sixer = open_binding(work_a, 6u, IDEMIP_FALSE);
+    bind_ok(work_a, sixer, g_v6_a, 5000u, 0u, 0u);
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = sixer;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_v6_r;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.port = 53u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.zone = 0u;
+    IDEMIP_UDP_PCB_IO(work_a)->connect_args.netif = 0u;
+    UdpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_UDP_PCB_IO(work_a)->status);
+
+    // A binding on the same local port that nobody connected. Its address is another of this
+    // host's: two unconnected bindings on one endpoint rank the same in a find, so the table does
+    // not carry both, and it is the port the scan below walks past it on.
+    const uint16_t listening = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, listening, g_local2, 5000u, 0u, 0u);
+
+    // The connect that walks past both of them.
+    const uint16_t talker = open_binding(work_a, 4u, IDEMIP_FALSE);
+    bind_ok(work_a, talker, g_local, 5000u, 0u, 0u);
+    connect_ok(work_a, talker, g_remote, 53u);
+
+    // Two bindings pinned to one interface do share the endpoint, so the second is refused.
+    UdpPcb.clear(work_b);
+    const uint16_t pinned = open_binding(work_b, 4u, IDEMIP_FALSE);
+    bind_ok(work_b, pinned, g_local, 5000u, 0u, 2u);
+    connect_ok(work_b, pinned, g_remote, 53u);
+    const uint16_t same_pin = open_binding(work_b, 4u, IDEMIP_FALSE);
+    bind_ok(work_b, same_pin, g_local, 5000u, 0u, 2u);
+    IDEMIP_UDP_PCB_IO(work_b)->connect_args.index = same_pin;
+    IDEMIP_UDP_PCB_IO(work_b)->connect_args.ip = g_remote;
+    IDEMIP_UDP_PCB_IO(work_b)->connect_args.port = 53u;
+    IDEMIP_UDP_PCB_IO(work_b)->connect_args.zone = 0u;
+    IDEMIP_UDP_PCB_IO(work_b)->connect_args.netif = 2u;
+    UdpPcb.connect(work_b);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_UDP_PCB_IO(work_b)->status,
+                                  "two bindings on one interface took the same five-tuple");
 }

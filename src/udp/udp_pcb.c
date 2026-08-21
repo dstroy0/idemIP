@@ -43,8 +43,7 @@ typedef struct
 } UdpPcbFields;
 
 // Entry i sits at (i << IDEMIP_UDP_PCB_ENTRY_SHIFT), so the entry is exactly that wide.
-typedef union
-{
+typedef union {
     UdpPcbFields f;
     uint8_t raw[1u << IDEMIP_UDP_PCB_ENTRY_SHIFT];
 } UdpPcbEntry;
@@ -97,8 +96,7 @@ static_assert(IDEMIP_UDP_PCB_OFF_TAB + (IDEMIP_UDP_PCBS << IDEMIP_UDP_PCB_ENTRY_
 
 // Every index reported through the operand block is 16 bits, so the table may hold no more entries
 // than that, and IDEMIP_UDP_PCB_NONE must name none of them.
-static_assert(IDEMIP_UDP_PCBS < IDEMIP_UDP_PCB_NONE,
-              "the table outgrew the 16-bit index the operand block reports");
+static_assert(IDEMIP_UDP_PCBS < IDEMIP_UDP_PCB_NONE, "the table outgrew the 16-bit index the operand block reports");
 
 // The regions, at their offsets in the caller's borrow.
 #define UDP_PCB_CTX(w) ((UdpPcbCtx *)(void *)((w) + IDEMIP_UDP_PCB_OFF_CTX))
@@ -173,7 +171,12 @@ static idemip_bool udp_pcb_port_held(uint8_t *work, uint16_t port, uint16_t skip
 // assignment left off is guessable from one observed port.
 static uint16_t udp_pcb_free_port(uint8_t *work, uint16_t skip, uint32_t rand)
 {
-    for (uint16_t n = 0u; n <= (uint16_t)IDEMIP_UDP_PCBS; n++)
+    // Not measured where the walk runs out: it tries IDEMIP_UDP_PCBS + 1 ports in a range the
+    // static_assert below keeps at least that wide, and the other entries can hold at most
+    // IDEMIP_UDP_PCBS - 1 of them, so one of the ports tried is always free. It is written because
+    // the walk has to report something for a range with nothing left, and RFC 6335 sec 6's dynamic
+    // ports are a bounded range whatever this build sizes the table at.
+    for (uint16_t n = 0u; n <= (uint16_t)IDEMIP_UDP_PCBS; n++) // GCOVR_EXCL_BR_LINE
     {
         uint16_t step = (uint16_t)(((uint16_t)rand + n) & UDP_PCB_PORT_MASK);
         uint16_t port = (uint16_t)(IDEMIP_UDP_PCB_PORT_FIRST | step);
@@ -182,7 +185,7 @@ static uint16_t udp_pcb_free_port(uint8_t *work, uint16_t skip, uint32_t rand)
             return port;
         }
     }
-    return IDEMIP_UDP_PCB_PORT_ANY;
+    return IDEMIP_UDP_PCB_PORT_ANY; // GCOVR_EXCL_LINE
 }
 
 // True when two endpoints name the same address in the same RFC 4007 sec 6 zone. Two unspecified
@@ -203,8 +206,8 @@ static idemip_bool udp_pcb_netif_overlap(uint8_t a, uint8_t b)
 // address in the same zone, an overlapping interface, and the same Destination Port and address. Two
 // entries carrying it rank the same in a find, so nothing separates them and the second is refused.
 // A Source Port of zero is RFC 768's "not used", so an entry no bind has named collides with none.
-static idemip_bool udp_pcb_bind_taken(uint8_t *work, uint16_t skip, const UdpPcbFields *e,
-                                      const UdpPcbAddrArgs *a, uint16_t port)
+static idemip_bool udp_pcb_bind_taken(uint8_t *work, uint16_t skip, const UdpPcbFields *e, const UdpPcbAddrArgs *a,
+                                      uint16_t port)
 {
     uint8_t n = udp_pcb_addr_len(e->ip_version);
     for (uint16_t i = 0u; i < (uint16_t)IDEMIP_UDP_PCBS; i++)
@@ -231,8 +234,7 @@ static idemip_bool udp_pcb_bind_taken(uint8_t *work, uint16_t skip, const UdpPcb
 
 // True when an open entry other than @p skip already carries the identity a connect with operand
 // @p a would give entry @p e, on the same terms as udp_pcb_bind_taken.
-static idemip_bool udp_pcb_connect_taken(uint8_t *work, uint16_t skip, const UdpPcbFields *e,
-                                         const UdpPcbAddrArgs *a)
+static idemip_bool udp_pcb_connect_taken(uint8_t *work, uint16_t skip, const UdpPcbFields *e, const UdpPcbAddrArgs *a)
 {
     uint8_t n = udp_pcb_addr_len(e->ip_version);
     uint8_t netif = (a->netif != 0u) ? a->netif : e->netif;
@@ -268,7 +270,7 @@ static idemip_bool udp_pcb_local_admits(const UdpPcbFields *f, const UdpPcbFindA
         return IDEMIP_TRUE;
     }
     return (udp_pcb_addr_eq(f->local_ip, a->local_ip, n) && f->local_zone == a->local_zone) ? IDEMIP_TRUE
-                                                                                           : IDEMIP_FALSE;
+                                                                                            : IDEMIP_FALSE;
 }
 
 // The entry's remote endpoint admits the datagram's source: a connected binding takes only the
@@ -457,8 +459,7 @@ void idemip_udp_pcb_bind(uint8_t *work)
     UdpPcbIo *io = UDP_PCB_IO(work);
     io->status = IDEMIP_ERR;
     io->port = IDEMIP_UDP_PCB_PORT_ANY;
-    if (UDP_PCB_CTX(work)->ready != UDP_PCB_READY || io->bind_args.index >= IDEMIP_UDP_PCBS ||
-        io->bind_args.ip == NULL)
+    if (UDP_PCB_CTX(work)->ready != UDP_PCB_READY || io->bind_args.index >= IDEMIP_UDP_PCBS || io->bind_args.ip == NULL)
     {
         return;
     }
@@ -472,10 +473,13 @@ void idemip_udp_pcb_bind(uint8_t *work)
     if (port == (uint16_t)IDEMIP_UDP_PCB_PORT_ANY)
     {
         port = udp_pcb_free_port(work, io->bind_args.index, io->bind_args.rand);
-        if (port == (uint16_t)IDEMIP_UDP_PCB_PORT_ANY)
+        // Not measured, for the reason written at udp_pcb_free_port.
+        if (port == (uint16_t)IDEMIP_UDP_PCB_PORT_ANY) // GCOVR_EXCL_BR_LINE
         {
+            // GCOVR_EXCL_START
             io->status = IDEMIP_BUSY;
             return;
+            // GCOVR_EXCL_STOP
         }
     }
     else if (udp_pcb_bind_taken(work, io->bind_args.index, &e->f, &io->bind_args, port))
@@ -658,8 +662,7 @@ void idemip_udp_pcb_find(uint8_t *work)
     UdpPcbIo *io = UDP_PCB_IO(work);
     io->status = IDEMIP_ERR;
     io->index = IDEMIP_UDP_PCB_NONE;
-    if (UDP_PCB_CTX(work)->ready != UDP_PCB_READY || io->find_args.local_ip == NULL ||
-        io->find_args.remote_ip == NULL)
+    if (UDP_PCB_CTX(work)->ready != UDP_PCB_READY || io->find_args.local_ip == NULL || io->find_args.remote_ip == NULL)
     {
         return;
     }
