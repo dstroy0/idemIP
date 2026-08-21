@@ -19,7 +19,15 @@
 #include <assert.h> // static_assert
 #include <stddef.h> // size_t, NULL, offsetof
 #include <stdint.h> // the fixed widths every wire field is read into
-#include <string.h> // memcpy, memset, memcmp
+// memcpy, memset, memcmp and memmove, and the one place this tree names them. CMakeLists.txt's
+// IDEMIP_MMGR swaps libc's for MMgr's, which mmgr_string_shim.h aliases under the same spellings, so
+// every call site below is written once and reads the same either way. libc is the oracle: the suite
+// is expected to pass against both, and libc is what settles a disagreement.
+#if defined(IDEMIP_MMGR) && IDEMIP_MMGR
+#include "mmgr_string_shim.h"
+#else
+#include <string.h>
+#endif
 
 // ---------------------------------------------------------------------------
 // Version

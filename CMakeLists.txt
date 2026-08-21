@@ -38,6 +38,30 @@ if(IDEMIP_COVERAGE)
     set(IDEMIP_LTO OFF)
 endif()
 
+# --- the mem entries ---------------------------------------------------------
+# src/ calls memcpy, memmove, memset and memcmp in 241 places and names them nowhere else: one
+# #include in src/idemip_config.h decides whose they are. libc's is the default and the oracle -
+# entries that have shipped for decades have been beaten on harder than anything written here - and
+# this option points them at include/MMgr instead, whose mmgr_string_shim.h aliases them under the
+# same spellings. Not one call site changes either way.
+#
+# So the suite is meant to be run twice, and a case that passes both ways is testing the contract
+# rather than one implementation of it. A case that passes against MMgr and fails against libc is
+# either encoding a quirk of ours or has found a real disagreement, and libc is what settles it.
+option(IDEMIP_MMGR "Build against MMgr's mem entries instead of libc <string.h>" OFF)
+
+if(IDEMIP_MMGR)
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/include/MMgr/CMakeLists.txt")
+        message(FATAL_ERROR "IDEMIP_MMGR needs the include/MMgr submodule: git submodule update --init")
+    endif()
+    # MMgr's own suites and benches are MMgr's business, and CMP0077 lets a normal variable set here
+    # win over the option() inside it.
+    set(MMGR_BUILD_TESTS OFF)
+    set(MMGR_BUILD_BENCH OFF)
+    add_subdirectory(include/MMgr EXCLUDE_FROM_ALL)
+    message(STATUS "idemIP: MMGR build - the mem entries are MMgr's. libc is the oracle, build it that way too")
+endif()
+
 # --- capabilities ------------------------------------------------------------
 # One option per capability, and the edges between them. CMake is the one source for the values: it
 # selects the translation units below, passes each value as a definition the library and every
@@ -157,6 +181,14 @@ add_library(idemip STATIC ${IDEMIP_SOURCES})
 
 # The tree includes itself as "src/...", so the repo root is the one include path.
 target_include_directories(idemip PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+
+# PUBLIC on both: a suite compiles src/idemip_config.h itself, so the definition that picks the shim
+# and the include path that finds it have to reach the suite as well as the library. mmgr_host is
+# MMgr's aggregate for this machine's word, which is the environment idemIP builds for.
+if(IDEMIP_MMGR)
+    target_compile_definitions(idemip PUBLIC IDEMIP_MMGR=1)
+    target_link_libraries(idemip PUBLIC mmgr_host)
+endif()
 
 foreach(cap ${IDEMIP_CAPABILITIES})
     if(IDEMIP_ENABLE_${cap})
