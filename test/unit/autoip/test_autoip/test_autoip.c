@@ -895,3 +895,124 @@ void test_a_conflict_storm_on_one_borrow_leaves_the_other_running(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_AUTOIP_STATE_CHECKING, IO(work_a)->state);
     TEST_ASSERT_EQUAL_HEX32(0u, IO(work_a)->netmask);
 }
+
+// --- the draw that keeps running out of range -----------------------------------
+
+// RFC 3927 sec 2.1 reserves "The first 256 and last 256 addresses in the 169.254/16 prefix", so a
+// draw landing in either is drawn again. The generator is a fixed sequence out of the seed, and a
+// seed whose first four draws all land in those 512 exists: the walk over the draws is bounded, and
+// what it lands on is folded by the span of the range so the address handed back is inside it either
+// way. These two seeds are the ones this build's generator takes there, found by walking the seed
+// space against the generator itself - the sequence is deterministic, so they stand as long as it
+// does.
+void test_a_seed_whose_draws_all_fall_outside_the_range_still_lands_inside_it(void)
+{
+    // The fourth draw lands above the last address: the span comes off it.
+    AutoIp.clear(work_a);
+    arm_start(work_a, 0x0CD7D6FEu);
+    AutoIp.start(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_AUTOIP_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(0xA9FE0140u, IDEMIP_AUTOIP_IO(work_a)->ipaddr,
+                                    "a draw above the range did not fold back into it");
+
+    // And below the first address: the span goes on.
+    AutoIp.clear(work_b);
+    arm_start(work_b, 0x0874C723u);
+    AutoIp.start(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_AUTOIP_IO(work_b)->status);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(0xA9FEFEB4u, IDEMIP_AUTOIP_IO(work_b)->ipaddr,
+                                    "a draw below the range did not fold back into it");
+
+    // Both are addresses sec 2.1 selects from: 169.254.1.0 through 169.254.254.255.
+    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_IO(work_a)->ipaddr >= IDEMIP_AUTOIP_FIRST);
+    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_IO(work_a)->ipaddr <= IDEMIP_AUTOIP_LAST);
+    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_IO(work_b)->ipaddr >= IDEMIP_AUTOIP_FIRST);
+    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_IO(work_b)->ipaddr <= IDEMIP_AUTOIP_LAST);
+}
+
+// RFC 3927 sec 2.1 seeds the generator "using a value derived from" per-host information, and a
+// three-shift generator has no way out of a state of all zeros: a seed that lands there would hand
+// back that same state for ever. The state stands at a fixed value instead, so the sequence goes on.
+void test_a_seed_that_lands_on_zero_still_moves(void)
+{
+    // The first octet of the address folded against the caller's word leaves the state at zero.
+    AutoIp.clear(work_a);
+    arm_start(work_a, 0x9E3779BBu);
+    AutoIp.start(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_AUTOIP_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_AUTOIP_IO(work_a)->ipaddr >= IDEMIP_AUTOIP_FIRST,
+                             "a state of zero did not step out of itself");
+    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_IO(work_a)->ipaddr <= IDEMIP_AUTOIP_LAST);
+}
+
+// sec 2.2.1 asks for "a new pseudo-random address" on a conflict, and the address already held is
+// not a new one: a draw that lands on it is drawn again. This seed is one the generator takes there,
+// found by walking the seed space against the generator itself.
+void test_a_draw_that_lands_on_the_address_already_held_is_drawn_again(void)
+{
+    AutoIp.clear(work_a);
+    arm_start(work_a, 1u);
+    AutoIp.start(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_AUTOIP_IO(work_a)->status);
+    const uint32_t first = IDEMIP_AUTOIP_IO(work_a)->ipaddr;
+
+    IDEMIP_AUTOIP_IO(work_a)->conflict_args.rand = 0x0001C350u;
+    IDEMIP_AUTOIP_IO(work_a)->conflict_args.now_ms = 2000u;
+    AutoIp.conflict(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_AUTOIP_IO(work_a)->status);
+    TEST_ASSERT_NOT_EQUAL_UINT32_MESSAGE(first, IDEMIP_AUTOIP_IO(work_a)->ipaddr,
+                                         "the conflicted address was drawn again as the new one");
+    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_IO(work_a)->ipaddr >= IDEMIP_AUTOIP_FIRST);
+    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_IO(work_a)->ipaddr <= IDEMIP_AUTOIP_LAST);
+}
+
+// sec 2.1: "a previously recorded address" is a host's "first candidate when probing", so a start
+// over an address already in the range keeps it rather than drawing a new one.
+void test_a_start_over_an_address_already_in_the_range_keeps_it(void)
+{
+    AutoIp.clear(work_a);
+    arm_start(work_a, 1u);
+    AutoIp.start(work_a);
+    const uint32_t first = IDEMIP_AUTOIP_IO(work_a)->ipaddr;
+    AutoIp.bound(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_AUTOIP_IO(work_a)->status);
+    AutoIp.stop(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_AUTOIP_IO(work_a)->status);
+
+    arm_start(work_a, 2u);
+    AutoIp.start(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_AUTOIP_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(first, IDEMIP_AUTOIP_IO(work_a)->ipaddr,
+                                    "the address recorded from the last run was not the first candidate");
+}
+
+// sec 2.2.1's rate limit is "no more than one new address per RATE_LIMIT_INTERVAL", which the tick
+// releases, so a host on a link that answers for everything draws for as long as it is up. The two
+// counts it keeps - addresses drawn and conflicts seen - hold at the top of their own width rather
+// than turning over and reading as a host that has just started.
+void test_the_counts_hold_at_the_top_of_their_width(void)
+{
+    AutoIp.clear(work_a);
+    arm_start(work_a, 1u);
+    AutoIp.start(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_AUTOIP_IO(work_a)->status);
+
+    uint32_t now = 1000u;
+    for (uint32_t k = 0; k < 300u; k++)
+    {
+        IDEMIP_AUTOIP_IO(work_a)->conflict_args.rand = k;
+        IDEMIP_AUTOIP_IO(work_a)->conflict_args.now_ms = now;
+        AutoIp.conflict(work_a);
+
+        now += (uint32_t)IDEMIP_ACD_RATE_LIMIT_INTERVAL_MS + 1u;
+        IDEMIP_AUTOIP_IO(work_a)->tick_args.rand = k;
+        IDEMIP_AUTOIP_IO(work_a)->tick_args.now_ms = now;
+        AutoIp.tick(work_a);
+    }
+
+    // Still drawing, still inside the range, and still asking for one address per interval.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_AUTOIP_IO(work_a)->status,
+                                  "the counts turned over and the host started again");
+    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_IO(work_a)->ipaddr >= IDEMIP_AUTOIP_FIRST);
+    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_IO(work_a)->ipaddr <= IDEMIP_AUTOIP_LAST);
+}

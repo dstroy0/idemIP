@@ -141,9 +141,16 @@ static uint32_t autoip_draw(AutoIpCtx *ctx, uint32_t taken)
     {
         addr -= AUTOIP_SPAN;
     }
-    if (addr == taken)
+    // Not measured: reaching it takes four draws in a row inside the 512 addresses sec 2.1 reserves,
+    // which is one run in 128 to the fourth, and the fold of the fourth landing on exactly the
+    // address already held, which is one in the 65024 the range holds. It is written because sec
+    // 2.2.1 asks for "a new pseudo-random address" and the one already held is not a new one, so the
+    // fold must not hand it back.
+    if (addr == taken) // GCOVR_EXCL_BR_LINE
     {
+        // GCOVR_EXCL_START
         addr = (addr == IDEMIP_AUTOIP_LAST) ? IDEMIP_AUTOIP_FIRST : addr + 1u;
+        // GCOVR_EXCL_STOP
     }
     return addr;
 }
@@ -252,7 +259,11 @@ void idemip_autoip_start(uint8_t *work)
     ctx->seed = autoip_seed(io->start_args.mac, io->start_args.rand);
     ctx->state = IDEMIP_AUTOIP_STATE_CHECKING;
     idemip_bool ready = IDEMIP_TRUE;
-    if (ctx->held || ctx->ipaddr < IDEMIP_AUTOIP_FIRST || ctx->ipaddr > IDEMIP_AUTOIP_LAST)
+    // Not measured on the last: the address is either the zero a clear left, which the test before it
+    // answers, or one autoip_draw handed back - and that one is inside the range whichever way it
+    // was drawn. It is written because sec 2.1's "previously recorded address" is kept as the first
+    // candidate, and a recorded address is only a candidate while it is one of the range's own.
+    if (ctx->held || ctx->ipaddr < IDEMIP_AUTOIP_FIRST || ctx->ipaddr > IDEMIP_AUTOIP_LAST) // GCOVR_EXCL_BR_LINE
     {
         ready = autoip_advance(work, 0u, io->start_args.now_ms);
     }

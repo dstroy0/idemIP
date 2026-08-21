@@ -55,6 +55,11 @@ extern void test_a_tick_with_nothing_due_is_ok_and_asks_for_no_claim(void);
 extern void test_a_tick_with_nothing_due_repeats(void);
 extern void test_a_tick_does_not_restart_a_stopped_interface(void);
 extern void test_a_conflict_storm_on_one_borrow_leaves_the_other_running(void);
+extern void test_a_seed_whose_draws_all_fall_outside_the_range_still_lands_inside_it(void);
+extern void test_a_seed_that_lands_on_zero_still_moves(void);
+extern void test_a_draw_that_lands_on_the_address_already_held_is_drawn_again(void);
+extern void test_a_start_over_an_address_already_in_the_range_keeps_it(void);
+extern void test_the_counts_hold_at_the_top_of_their_width(void);
 
 
 /*=======Mock Management=====*/
@@ -163,6 +168,11 @@ int main(void)
   run_test(test_a_tick_with_nothing_due_repeats, "test_a_tick_with_nothing_due_repeats", 841);
   run_test(test_a_tick_does_not_restart_a_stopped_interface, "test_a_tick_does_not_restart_a_stopped_interface", 851);
   run_test(test_a_conflict_storm_on_one_borrow_leaves_the_other_running, "test_a_conflict_storm_on_one_borrow_leaves_the_other_running", 873);
+  run_test(test_a_seed_whose_draws_all_fall_outside_the_range_still_lands_inside_it, "test_a_seed_whose_draws_all_fall_outside_the_range_still_lands_inside_it", 908);
+  run_test(test_a_seed_that_lands_on_zero_still_moves, "test_a_seed_that_lands_on_zero_still_moves", 936);
+  run_test(test_a_draw_that_lands_on_the_address_already_held_is_drawn_again, "test_a_draw_that_lands_on_the_address_already_held_is_drawn_again", 951);
+  run_test(test_a_start_over_an_address_already_in_the_range_keeps_it, "test_a_start_over_an_address_already_in_the_range_keeps_it", 971);
+  run_test(test_the_counts_hold_at_the_top_of_their_width, "test_the_counts_hold_at_the_top_of_their_width", 993);
 
   return UNITY_END();
 }
