@@ -245,7 +245,8 @@ void test_bind_refuses_an_unusable_cfg(void)
     bad = g_cfg_a;
     bad.duid_len = 2u;
     Dhcp6.bind(work_a);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DHCP6_IO(work_a)->status, "a DUID of type code alone was accepted");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DHCP6_IO(work_a)->status,
+                                  "a DUID of type code alone was accepted");
 
     bad = g_cfg_a;
     bad.duid_len = (uint16_t)(IDEMIP_DHCP6_DUID_MAX + 1u);
@@ -824,8 +825,7 @@ void test_the_first_solicit_delay_stays_inside_sol_max_delay(void)
         IDEMIP_DHCP6_IO(work_a)->start_args.rand = rand;
         Dhcp6.start(work_a);
         uint32_t d = due_at(work_a, 4u * IDEMIP_DHCP6_SOL_MAX_DELAY_MS, 0u);
-        TEST_ASSERT_TRUE_MESSAGE(d <= IDEMIP_DHCP6_SOL_MAX_DELAY_MS,
-                                 "the first Solicit went out past SOL_MAX_DELAY");
+        TEST_ASSERT_TRUE_MESSAGE(d <= IDEMIP_DHCP6_SOL_MAX_DELAY_MS, "the first Solicit went out past SOL_MAX_DELAY");
         Dhcp6.clear(work_a);
     }
 }
@@ -889,8 +889,8 @@ void test_the_retransmission_timeout_stops_at_mrt(void)
 // message exchange", in hundredths of a second, and 0xffff stands for anything longer than the field.
 void test_the_elapsed_time_counts_from_the_first_message(void)
 {
-    static const uint32_t at[6] = {0u, 99u, 100u, 12345u, IDEMIP_DHCP6_ELAPSED_MAX_MS - 1u,
-                                   IDEMIP_DHCP6_ELAPSED_MAX_MS};
+    static const uint32_t at[6] = {
+        0u, 99u, 100u, 12345u, IDEMIP_DHCP6_ELAPSED_MAX_MS - 1u, IDEMIP_DHCP6_ELAPSED_MAX_MS};
     for (uint32_t i = 0u; i < 6u; i++)
     {
         arm_start(work_a, &g_cfg_a, 0x0000000Au);
@@ -911,18 +911,11 @@ void test_the_elapsed_time_counts_from_the_first_message(void)
 // and sec 16.2 and sec 16.4 through sec 16.14 name every type a client discards outright.
 void test_the_client_discards_every_type_it_must(void)
 {
-    static const uint8_t reject[12] = {(uint8_t)IDEMIP_DHCP6_SOLICIT,
-                                       (uint8_t)IDEMIP_DHCP6_REQUEST,
-                                       (uint8_t)IDEMIP_DHCP6_CONFIRM,
-                                       (uint8_t)IDEMIP_DHCP6_RENEW,
-                                       (uint8_t)IDEMIP_DHCP6_REBIND,
-                                       (uint8_t)IDEMIP_DHCP6_RELEASE,
-                                       (uint8_t)IDEMIP_DHCP6_DECLINE,
-                                       (uint8_t)IDEMIP_DHCP6_RECONFIGURE,
-                                       (uint8_t)IDEMIP_DHCP6_INFORMATION_REQUEST,
-                                       (uint8_t)IDEMIP_DHCP6_RELAY_FORW,
-                                       (uint8_t)IDEMIP_DHCP6_RELAY_REPL,
-                                       200u};
+    static const uint8_t reject[12] = {
+        (uint8_t)IDEMIP_DHCP6_SOLICIT,    (uint8_t)IDEMIP_DHCP6_REQUEST,     (uint8_t)IDEMIP_DHCP6_CONFIRM,
+        (uint8_t)IDEMIP_DHCP6_RENEW,      (uint8_t)IDEMIP_DHCP6_REBIND,      (uint8_t)IDEMIP_DHCP6_RELEASE,
+        (uint8_t)IDEMIP_DHCP6_DECLINE,    (uint8_t)IDEMIP_DHCP6_RECONFIGURE, (uint8_t)IDEMIP_DHCP6_INFORMATION_REQUEST,
+        (uint8_t)IDEMIP_DHCP6_RELAY_FORW, (uint8_t)IDEMIP_DHCP6_RELAY_REPL,  200u};
     arm_start(work_a, &g_cfg_a, 0x00ABCDEFu);
     for (uint32_t i = 0u; i < 12u; i++)
     {
@@ -2432,4 +2425,328 @@ void test_a_short_or_absent_message_is_refused(void)
     IDEMIP_DHCP6_IO(work_a)->input_args.src = NULL;
     Dhcp6.input(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DHCP6_IO(work_a)->status);
+}
+
+// --- what an exchange does not answer -----------------------------------------
+
+// sec 16.10 has a client "discard any received Reply message" where "the \"transaction-id\" field in
+// the message does not match the value used in the original message". Outside an exchange there is no
+// original message to match: a client that has started nothing and a client whose lease is in hand
+// both have none outstanding, so a Reply carrying any transaction-id at all is not for them.
+void test_a_reply_outside_an_exchange_answers_nothing(void)
+{
+    // Before a start, with the client idle.
+    bind_ok(work_a, &g_cfg_a);
+    msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, 0x00ABCDEFu);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+    msg_ia_na(g_cfg_a.iaid, 10u, 20u, g_lease, 300u, 400u, 0, 0u);
+    feed(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DHCP6_IO(work_a)->status,
+                                  "a Reply was taken by a client that had asked nothing");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_IDLE, IDEMIP_DHCP6_IO(work_a)->state);
+
+    // And once the lease is in hand, with the exchange that got it finished.
+    to_bound(work_b, &g_cfg_a, 10u, 20u, 300u, 400u);
+    const uint32_t held = IDEMIP_DHCP6_IO(work_b)->xid;
+    msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, held);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(g_sduid2, (uint16_t)sizeof g_sduid2);
+    msg_ia_na(g_cfg_a.iaid, 1u, 2u, g_lease2, 3u, 4u, 0, 0u);
+    feed(work_b);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DHCP6_IO(work_b)->status,
+                                  "a Reply was taken by a client that was not in an exchange");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_BOUND, IDEMIP_DHCP6_IO(work_b)->state);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(g_lease, IDEMIP_DHCP6_IO(work_b)->addr, IDEMIP_IP6_ADDR_LEN,
+                                         "the lease in hand was replaced from outside an exchange");
+}
+
+// sec 18.2.1: "The message exchange is not terminated by the receipt of an Advertise before the first
+// RT has elapsed. Rather, the client collects valid Advertise messages until the first RT has
+// elapsed." Before that an Advertise under the top preference is collected and the solicitation goes
+// on, which is what gives a slower server with a better offer its chance; once the retransmissions
+// have started, the first Advertise to arrive ends them whatever preference it carries.
+void test_an_advertise_under_the_top_preference_waits_for_the_first_retransmission(void)
+{
+    arm_start(work_a, &g_cfg_a, 0x00ABCDEFu);
+    build(work_a);
+
+    msg_begin((uint8_t)IDEMIP_DHCP6_ADVERTISE, 0x00ABCDEFu);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+    msg_pref(10u);
+    msg_ia_na(g_cfg_a.iaid, 0u, 0u, g_lease, 100u, 200u, 0, 0u);
+    feed(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_SOLICITING, IDEMIP_DHCP6_IO(work_a)->state,
+                                  "the first Advertise ended the solicitation before the first RT was out");
+
+    // A second client, left to retransmit because nothing answered its first Solicit at all.
+    arm(work_b, sizeof work_b);
+    arm_start(work_b, &g_cfg_a, 0x00ABCDEFu);
+    build(work_b);
+    const uint32_t due = due_at_from(work_b, 0u, 4u * IDEMIP_DHCP6_SOL_MAX_RT_MS, 0u);
+    tick(work_b, due, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP6_IO(work_b)->status);
+    build(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_SOLICITING, IDEMIP_DHCP6_IO(work_b)->state);
+
+    // The same Advertise, arriving now, ends the retransmissions where it did not end the first RT.
+    msg_begin((uint8_t)IDEMIP_DHCP6_ADVERTISE, 0x00ABCDEFu);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+    msg_pref(10u);
+    msg_ia_na(g_cfg_a.iaid, 0u, 0u, g_lease, 100u, 200u, 0, 0u);
+    feed(work_b);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_REQUESTING, IDEMIP_DHCP6_IO(work_b)->state,
+                                  "an Advertise past the first RT did not end the retransmissions");
+}
+
+// sec 11.1: "The length of the DUID (not including the type code) is at least 1 octet and at most 128
+// octets." One longer than that is one this client cannot record, so the message carrying it is not
+// taken - and sec 16.10 requires that "the contents of the Client Identifier option MUST match the
+// DUID of the client", so one of another length is a message for somebody else.
+void test_an_identifier_this_client_cannot_hold_or_does_not_own_is_refused(void)
+{
+    arm_start(work_a, &g_cfg_rc, 0x00ABCDEFu);
+    build(work_a);
+
+    // A Reply with Rapid Commit, whose Server Identifier is one octet past the bound.
+    static uint8_t huge[IDEMIP_DHCP6_DUID_MAX + 1u];
+    memset(huge, 0xAB, sizeof huge);
+    msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, 0x00ABCDEFu);
+    msg_clientid(&g_cfg_rc);
+    msg_serverid(huge, (uint16_t)sizeof huge);
+    (void)msg_opt(IDEMIP_DHCP6_OPT_RAPID_COMMIT, 0u);
+    msg_ia_na(g_cfg_rc.iaid, 10u, 20u, g_lease, 300u, 400u, 0, 0u);
+    feed(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_SOLICITING, IDEMIP_DHCP6_IO(work_a)->state,
+                                  "a server identifier too long to record was recorded");
+
+    // The same exchange, with a Client Identifier of another length: not this client's DUID.
+    msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, 0x00ABCDEFu);
+    (void)msg_opt(IDEMIP_DHCP6_OPT_CLIENTID, (uint16_t)(g_cfg_rc.duid_len + 1u));
+    msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+    (void)msg_opt(IDEMIP_DHCP6_OPT_RAPID_COMMIT, 0u);
+    msg_ia_na(g_cfg_rc.iaid, 10u, 20u, g_lease, 300u, 400u, 0, 0u);
+    feed(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_SOLICITING, IDEMIP_DHCP6_IO(work_a)->state,
+                                  "a Reply naming another client's DUID was taken");
+}
+
+// sec 18.2.9: "A client SHOULD only update its SOL_MAX_RT and INF_MAX_RT values if all received
+// Advertise messages that contained the corresponding option specified the same value". Two servers
+// answering one Solicit with the same value are that agreement, and the value they agreed on is the
+// one the exchange retransmits at: the second Advertise repeating it is not a disagreement.
+void test_two_advertises_agreeing_on_sol_max_rt_take_the_value_they_agreed_on(void)
+{
+    arm_start(work_a, &g_cfg_a, 0x00ABCDEFu);
+    const uint32_t agreed = 2u * IDEMIP_DHCP6_MAX_RT_MIN_S;
+    for (uint32_t i = 0u; i < 2u; i++)
+    {
+        msg_begin((uint8_t)IDEMIP_DHCP6_ADVERTISE, 0x00ABCDEFu);
+        msg_clientid(&g_cfg_a);
+        msg_serverid((i == 0u) ? g_sduid : g_sduid2, (uint16_t)sizeof g_sduid);
+        put32(msg_opt(IDEMIP_DHCP6_OPT_SOL_MAX_RT, IDEMIP_DHCP6_MAX_RT_LEN), agreed);
+        msg_ia_na(g_cfg_a.iaid, 0u, 0u, NULL, 0u, 0u, 0, 0u);
+        feed(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_SOLICITING, IDEMIP_DHCP6_IO(work_a)->state,
+                                      "an Advertise with no address ended the Solicit");
+    }
+
+    uint32_t now = 0u;
+    uint32_t rt = due_at(work_a, 4u * IDEMIP_DHCP6_SOL_TIMEOUT_MS, 0u) - now;
+    for (uint32_t step = 0u; step < 12u; step++)
+    {
+        now += rt;
+        tick(work_a, now, 0u);
+        rt = due_at_from(work_a, now, now + (4u * IDEMIP_DHCP6_SOL_MAX_RT_MS), 0u) - now;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(rt <= (agreed * 1000u) + rand_bound(agreed * 1000u),
+                             "the value both Advertises named was not the one the exchange settled at");
+}
+
+// sec 15: RT for the first transmission is "IRT + RAND*IRT", and sec 18.2.1 makes that first RT
+// "strictly greater than IRT by choosing RAND to be strictly greater than 0". A draw that lands on
+// zero still has to leave the interval past IRT, so it takes the smallest step there is.
+void test_the_first_solicit_interval_is_past_the_initial_timeout_on_any_draw(void)
+{
+    // A draw that gives the term nothing: the interval is IRT and one millisecond.
+    arm_start(work_a, &g_cfg_a, 0x00ABCDEFu);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(IDEMIP_DHCP6_SOL_TIMEOUT_MS + 1u,
+                                     due_at_from(work_a, 0u, 4u * IDEMIP_DHCP6_SOL_TIMEOUT_MS, 0u),
+                                     "a zero draw did not take the smallest step past IRT");
+
+    // A draw that gives it the whole term: the interval is IRT and that term.
+    arm(work_b, sizeof work_b);
+    bind_ok(work_b, &g_cfg_a);
+    IDEMIP_DHCP6_IO(work_b)->start_args.xid = 0x00ABCDEFu;
+    IDEMIP_DHCP6_IO(work_b)->start_args.now_ms = 0u;
+    IDEMIP_DHCP6_IO(work_b)->start_args.rand = 0u;
+    Dhcp6.start(work_b);
+    tick(work_b, 0u, 0xFFFFFFFFu);
+    const uint32_t drawn = due_at_from(work_b, 0u, 4u * IDEMIP_DHCP6_SOL_TIMEOUT_MS, 0u);
+    TEST_ASSERT_TRUE_MESSAGE(drawn > IDEMIP_DHCP6_SOL_TIMEOUT_MS + 1u, "the draw took nothing at all");
+    TEST_ASSERT_TRUE_MESSAGE(drawn <= IDEMIP_DHCP6_SOL_TIMEOUT_MS + rand_bound(IDEMIP_DHCP6_SOL_TIMEOUT_MS),
+                             "the interval left sec 15's tenth");
+}
+
+// sec 18.2.1 gives the Solicit no MRC and no MRD, which sec 15 says means "the message exchange is
+// not terminated" by either - so the count of transmissions is one a silent network can leave
+// running. It holds at the top of its own width rather than turning over and reading as an exchange
+// that has just begun.
+void test_the_transmission_count_holds_at_the_top_of_its_width(void)
+{
+    arm_start(work_a, &g_cfg_a, 0x00ABCDEFu);
+    uint32_t now = 0u;
+    for (unsigned k = 0; k < 300u; k++)
+    {
+        now = due_at_from(work_a, now, now + (2u * IDEMIP_DHCP6_SOL_MAX_RT_MS), 0u);
+        tick(work_a, now, 0u);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP6_IO(work_a)->status);
+        build(work_a);
+    }
+    // Still soliciting, and still owed one message rather than a first message all over again.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_SOLICITING, IDEMIP_DHCP6_IO(work_a)->state);
+    TEST_ASSERT_EQUAL_HEX8(IDEMIP_DHCP6_SOLICIT, g_out[IDEMIP_DHCP6_MSG_OFF_TYPE]);
+    const uint32_t due = due_at_from(work_a, now, now + (2u * IDEMIP_DHCP6_SOL_MAX_RT_MS), 0u);
+    TEST_ASSERT_TRUE_MESSAGE(due - now > (IDEMIP_DHCP6_SOL_MAX_RT_MS >> 1),
+                             "the interval fell back to the start of the backoff");
+}
+
+// sec 7.7: "The value 0xffffffff is taken to mean \"infinity\" when used as a lifetime". sec 18.2.5
+// ends the Rebind "when the valid lifetimes of all leases across all IAs have expired", and a
+// lifetime that never expires never ends it: the exchange runs on rather than reading the wrap of a
+// deadline as a deadline met.
+void test_an_infinite_lifetime_never_spends_the_deadline_of_an_exchange(void)
+{
+    to_bound(work_a, &g_cfg_a, 10u, 20u, IDEMIP_DHCP6_INFINITY, IDEMIP_DHCP6_INFINITY);
+
+    tick(work_a, 10000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_RENEWING, IDEMIP_DHCP6_IO(work_a)->state);
+    tick(work_a, 20000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_REBINDING, IDEMIP_DHCP6_IO(work_a)->state);
+
+    // Far past every finite lifetime the Reply could have carried, and the Rebind is still running.
+    tick(work_a, 0x7FFFFFFFu, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_REBINDING, IDEMIP_DHCP6_IO(work_a)->state,
+                                  "an infinite valid lifetime ended the Rebind");
+}
+
+// sec 18.2.10.1 sends the Request "if any of the IAs in the Reply message contain the NoBinding
+// status code", and it is written for the two exchanges that can be answered that way. A Request
+// answered NoBinding is not one of them - it is already the message that recovery would send - and a
+// Renew answered NoBinding by a server whose identifier cannot be recorded has nowhere to send it.
+void test_a_no_binding_reply_that_is_not_a_renew_or_a_rebind_sends_no_request(void)
+{
+    // In REQUESTING, where the Request that recovery would send is the message already outstanding.
+    to_bound(work_a, &g_cfg_a, 10u, 20u, 300u, 400u);
+    tick(work_a, 10000u, 0u);
+    tick(work_a, 20000u, 0u);
+    tick(work_a, 20000u, 0u);
+    build(work_a);
+    msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, IDEMIP_DHCP6_IO(work_a)->xid);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+    msg_ia_na(g_cfg_a.iaid, 0u, 0u, NULL, 0u, 0u, 1, (uint16_t)IDEMIP_DHCP6_STATUS_NO_BINDING);
+    feed(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_REQUESTING, IDEMIP_DHCP6_IO(work_a)->state);
+
+    const uint32_t xid_held = IDEMIP_DHCP6_IO(work_a)->xid;
+    msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, xid_held);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+    msg_ia_na(g_cfg_a.iaid, 0u, 0u, NULL, 0u, 0u, 1, (uint16_t)IDEMIP_DHCP6_STATUS_NO_BINDING);
+    feed(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_REQUESTING, IDEMIP_DHCP6_IO(work_a)->state,
+                                  "a Request answered NoBinding started another exchange");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(xid_held, IDEMIP_DHCP6_IO(work_a)->xid,
+                                     "the Request answered NoBinding was sent again under a new id");
+
+    // In RENEWING, answered by a server whose DUID is one octet past what sec 21.2 allows.
+    static uint8_t huge[IDEMIP_DHCP6_DUID_MAX + 1u];
+    memset(huge, 0xCD, sizeof huge);
+    to_bound(work_b, &g_cfg_a, 10u, 20u, 300u, 400u);
+    tick(work_b, 10000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_RENEWING, IDEMIP_DHCP6_IO(work_b)->state);
+    tick(work_b, 10000u, 0u);
+    build(work_b);
+    msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, IDEMIP_DHCP6_IO(work_b)->xid);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(huge, (uint16_t)sizeof huge);
+    msg_ia_na(g_cfg_a.iaid, 0u, 0u, NULL, 0u, 0u, 1, (uint16_t)IDEMIP_DHCP6_STATUS_NO_BINDING);
+    feed(work_b);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_RENEWING, IDEMIP_DHCP6_IO(work_b)->state,
+                                  "a Request went to a server whose identifier could not be recorded");
+}
+
+// sec 7.7 takes 0xffffffff "to mean \"infinity\" when used as a lifetime ... or a value for T1 or T2",
+// and sec 18.2.4's Renew/Reply exchange ends when T2 is reached. A T2 that is never reached never
+// ends it: the Renew runs on rather than reading the wrap of a deadline as a deadline met.
+void test_an_infinite_t2_never_terminates_the_renew(void)
+{
+    to_bound(work_a, &g_cfg_a, 10u, IDEMIP_DHCP6_INFINITY, 300u, 400u);
+    tick(work_a, 10000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_RENEWING, IDEMIP_DHCP6_IO(work_a)->state);
+    tick(work_a, 0x7FFFFFFFu, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_RENEWING, IDEMIP_DHCP6_IO(work_a)->state,
+                                  "an infinite T2 started the Rebind");
+}
+
+// An option is read for what it carries, so one carrying nothing usable is one the client passes
+// over. RFC 8415 sec 21.4 Figure 15 fixes the IA_NA header at IAID, T1 and T2 before any
+// IA_NA-options, so a shorter one is not an IA_NA; RFC 3646 sec 3's option "provides a list of one
+// or more IPv6 addresses of DNS recursive name servers", so an empty list names no server; and RFC
+// 8415 sec 21.23 gives the Information Refresh Time option an "option-len 4".
+void test_an_option_that_carries_nothing_usable_is_passed_over(void)
+{
+    arm_start(work_a, &g_cfg_a, 0x00ABCDEFu);
+    build(work_a);
+    msg_begin((uint8_t)IDEMIP_DHCP6_ADVERTISE, 0x00ABCDEFu);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+    msg_pref(IDEMIP_DHCP6_PREF_IMMEDIATE);
+    msg_ia_na(g_cfg_a.iaid, 0u, 0u, g_lease, 100u, 200u, 0, 0u);
+    feed(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_REQUESTING, IDEMIP_DHCP6_IO(work_a)->state);
+    tick(work_a, 0u, 0u);
+    build(work_a);
+
+    // An IA_NA that ends before its T2: sec 21.4's fixed fields are not all there.
+    msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, IDEMIP_DHCP6_IO(work_a)->xid);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+    put32(msg_opt(IDEMIP_DHCP6_OPT_IA_NA, (uint16_t)(IDEMIP_DHCP6_IA_NA_FIXED_LEN - 4u)), g_cfg_a.iaid);
+    feed(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_REQUESTING, IDEMIP_DHCP6_IO(work_a)->state,
+                                  "an IA_NA shorter than its own fixed fields assigned a lease");
+
+    // The lease arrives and the exchange finishes.
+    msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, IDEMIP_DHCP6_IO(work_a)->xid);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+    msg_ia_na(g_cfg_a.iaid, 10u, 20u, g_lease, 300u, 400u, 0, 0u);
+    feed(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_BOUND, IDEMIP_DHCP6_IO(work_a)->state);
+
+    // The other two options are read by the sec 18.2.6 Information-request exchange, so a stateless
+    // client is where a list of no servers and a refresh time of the wrong width are passed over.
+    arm_start(work_b, &g_cfg_b, 0x00BEEF01u);
+    build(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_INFO_REQUESTING, IDEMIP_DHCP6_IO(work_b)->state);
+    msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, 0x00BEEF01u);
+    msg_clientid(&g_cfg_b);
+    msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+    (void)msg_opt(IDEMIP_DHCP6_OPT_DNS_SERVERS, 0u);
+    (void)msg_opt(IDEMIP_DHCP6_OPT_INFO_REFRESH, (uint16_t)(IDEMIP_DHCP6_INFO_REFRESH_LEN - 1u));
+    feed(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP6_IO(work_b)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_BOUND, IDEMIP_DHCP6_IO(work_b)->state);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, IDEMIP_DHCP6_IO(work_b)->dns_count,
+                                    "a name server list of no servers was reported as servers");
+    // sec 21.23 makes this option "an upper bound for how long a client should wait before refreshing
+    // information", and without a usable one the wait is the default rather than a value read out of
+    // the wrong octets.
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(IDEMIP_DHCP6_IRT_DEFAULT_S, IDEMIP_DHCP6_IO(work_b)->t1_s,
+                                     "a refresh time of the wrong width was read as one");
 }

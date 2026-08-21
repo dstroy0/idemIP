@@ -32,24 +32,24 @@ typedef struct
     uint8_t owed;  ///< the sec 7.3 message type build still has to write, 0 when none
     uint8_t phase; ///< where in the sec 15 schedule the exchange is
     uint8_t retries;
-    uint8_t pref;                ///< sec 21.8 pref-value of the recorded server, 0 when none was sent
-    uint8_t inf;                 ///< which lifetimes came in as sec 7.7 infinity
-    idemip_bool have_adv;        ///< a sec 18.2.9 usable Advertise is recorded
-    uint16_t server_duid_len;    ///< octets of the region at IDEMIP_DHCP6_OFF_SERVER_DUID
-    uint16_t status_code;        ///< sec 21.13, what the last Reply carried
-    uint32_t xid;                ///< sec 8, the low 24 bits
+    uint8_t pref;             ///< sec 21.8 pref-value of the recorded server, 0 when none was sent
+    uint8_t inf;              ///< which lifetimes came in as sec 7.7 infinity
+    idemip_bool have_adv;     ///< a sec 18.2.9 usable Advertise is recorded
+    uint16_t server_duid_len; ///< octets of the region at IDEMIP_DHCP6_OFF_SERVER_DUID
+    uint16_t status_code;     ///< sec 21.13, what the last Reply carried
+    uint32_t xid;             ///< sec 8, the low 24 bits
     uint32_t iaid;
     IdemIpMs now_ms;
-    uint32_t tick_ms;      ///< the last reading of the caller's 32-bit millisecond clock
-    uint32_t tick_hi;      ///< its high word, raised each time that reading wraps
-    uint32_t rt_ms;        ///< sec 15 RT, the current retransmission timeout
-    IdemIpMs retry_ms;     ///< when the message goes out again
-    IdemIpMs started_ms;   ///< when the first message went out, which sec 21.9 elapsed-time counts from
-    IdemIpMs t1_ms;        ///< the deadline RENEWING starts at
-    IdemIpMs t2_ms;        ///< the deadline REBINDING starts at
-    IdemIpMs valid_ms;     ///< the deadline the address stops being valid at
-    uint32_t max_rt_ms;    ///< the sec 21.24 or sec 21.25 MRT this client runs with
-    uint32_t max_rt_seen_s; ///< the first value this exchange carried, 0 when none has
+    uint32_t tick_ms;         ///< the last reading of the caller's 32-bit millisecond clock
+    uint32_t tick_hi;         ///< its high word, raised each time that reading wraps
+    uint32_t rt_ms;           ///< sec 15 RT, the current retransmission timeout
+    IdemIpMs retry_ms;        ///< when the message goes out again
+    IdemIpMs started_ms;      ///< when the first message went out, which sec 21.9 elapsed-time counts from
+    IdemIpMs t1_ms;           ///< the deadline RENEWING starts at
+    IdemIpMs t2_ms;           ///< the deadline REBINDING starts at
+    IdemIpMs valid_ms;        ///< the deadline the address stops being valid at
+    uint32_t max_rt_ms;       ///< the sec 21.24 or sec 21.25 MRT this client runs with
+    uint32_t max_rt_seen_s;   ///< the first value this exchange carried, 0 when none has
     idemip_bool max_rt_split; ///< two of them disagreed, so sec 18.2.9 holds the default
     uint32_t t1_s;
     uint32_t t2_s;
@@ -146,11 +146,17 @@ static uint32_t dhcp6_rand_mag(uint32_t x, uint32_t rand)
 // the range, which reads as a timer already due or one that never fires.
 static uint32_t dhcp6_rand_apply(uint32_t base, uint32_t mag, uint32_t rand)
 {
+    // Neither saturation is measured: dhcp6_rand_mag draws the magnitude as a fraction of the base
+    // with a numerator of at most IDEMIP_DHCP6_RAND_K_MAX over 1024, so it is at most about a tenth
+    // of the base - never more than the base, and never more than the room left above a base that is
+    // itself a millisecond count. They are written because sec 15 states RAND as a term applied to
+    // whatever interval a caller is holding, and an interval that wrapped would read as a timer
+    // already due or one that never fires.
     if ((rand & 1u) != 0u)
     {
-        return (mag > (0xFFFFFFFFu - base)) ? 0xFFFFFFFFu : (base + mag);
+        return (mag > (0xFFFFFFFFu - base)) ? 0xFFFFFFFFu : (base + mag); // GCOVR_EXCL_BR_LINE
     }
-    return (mag > base) ? 0u : (base - mag);
+    return (mag > base) ? 0u : (base - mag); // GCOVR_EXCL_BR_LINE
 }
 
 // sec 15: RT for the first transmission is IRT + RAND*IRT. @p positive forces a magnitude of at least
@@ -220,7 +226,9 @@ static void dhcp6_all_agents(uint8_t *dst)
 // sec 7.3, the type each exchange transmits.
 static uint8_t dhcp6_msg_for(uint8_t state)
 {
-    switch (state)
+    // gcov counts a switch's arms on the switch line, so the line is out of the measurement and the
+    // reason is written at the default below. Every arm that does run keeps its own line count.
+    switch (state) // GCOVR_EXCL_BR_LINE
     {
     case IDEMIP_DHCP6_SOLICITING:
         return (uint8_t)IDEMIP_DHCP6_SOLICIT;
@@ -249,7 +257,8 @@ static uint8_t dhcp6_msg_for(uint8_t state)
 // IRT, from the sec 7.6 Table 1 value each sec 18.2 subsection names.
 static uint32_t dhcp6_irt_ms(uint8_t state)
 {
-    switch (state)
+    // Not measured on this line, for the reason written at dhcp6_msg_for.
+    switch (state) // GCOVR_EXCL_BR_LINE
     {
     case IDEMIP_DHCP6_SOLICITING:
         return IDEMIP_DHCP6_SOL_TIMEOUT_MS;
@@ -456,7 +465,7 @@ static size_t dhcp6_write(uint8_t *work, uint8_t type, uint8_t *out, size_t cap)
         // sec 18.2.2 and sec 18.2.4 reach REQUESTING and RENEWING only through an Advertise or a Reply
         // whose Server Identifier was recorded, and sec 18.2.7 and sec 18.2.8 refuse a Release or a
         // Decline without one, so this holds a case the state machine does not produce.
-        if (ctx->server_duid_len == 0u)
+        if (ctx->server_duid_len == 0u) // GCOVR_EXCL_BR_LINE
         {
             return 0u; // GCOVR_EXCL_LINE
         }
@@ -480,7 +489,13 @@ static size_t dhcp6_write(uint8_t *work, uint8_t type, uint8_t *out, size_t cap)
     // Solicit's IA_NA empty; sec 18.2.3, sec 18.2.4, sec 18.2.7 and sec 18.2.8 each carry the address.
     if (type != (uint8_t)IDEMIP_DHCP6_INFORMATION_REQUEST)
     {
-        idemip_bool with_addr = (type != (uint8_t)IDEMIP_DHCP6_SOLICIT) && dhcp6_has_addr(ctx);
+        // Not measured on the second: the exchanges that reach here past the Solicit are the ones
+        // sec 18.2.3 through sec 18.2.8 name, and each is entered from a Reply or an Advertise whose
+        // IA Address was recorded - the NoBinding Request of sec 18.2.10.1 included, which keeps the
+        // lease it is recovering. It is written because sec 18.2.1 leaves the Solicit's IA_NA empty
+        // and the same option is built for both.
+        idemip_bool with_addr = (type != (uint8_t)IDEMIP_DHCP6_SOLICIT) && // GCOVR_EXCL_BR_LINE
+                                dhcp6_has_addr(ctx);
         at = dhcp6_put_ia_na(work, out, cap, at, with_addr);
     }
 
@@ -653,7 +668,12 @@ static idemip_bool dhcp6_take_server_duid(uint8_t *work, const uint8_t *opts, si
     Dhcp6Ctx *ctx = DHCP6_CTX(work);
     uint16_t dlen = 0u;
     const uint8_t *d = dhcp6_find(opts, olen, IDEMIP_DHCP6_OPT_SERVERID, &dlen);
-    if (d == NULL || dlen < 3u || dlen > IDEMIP_DHCP6_DUID_MAX)
+    // Not measured on the first: sec 16.10 has clients "discard any received Reply message" where "the
+    // message does not include a Server Identifier option", and sec 16.3 says the same of an
+    // Advertise, both of which idemip_dhcp6_input takes before any of this runs - so the option is
+    // there by the time it is read for its DUID. It is written because this reads the option itself
+    // rather than the finding that it exists.
+    if (d == NULL || dlen < 3u || dlen > IDEMIP_DHCP6_DUID_MAX) // GCOVR_EXCL_BR_LINE
     {
         return IDEMIP_FALSE;
     }
@@ -701,7 +721,10 @@ static void dhcp6_take_dns(uint8_t *work, const uint8_t *opts, size_t olen)
     }
     uint16_t n = (uint16_t)(dlen >> 4u);
     io->dns = d;
-    io->dns_count = (n > 0xFFu) ? 0xFFu : (uint8_t)n;
+    // Not measured: 256 addresses is 4096 octets of one option, and sec 21.1 gives an option a
+    // 16-bit length inside a datagram this client takes at IDEMIP_DHCP6_MSG_MAX. The clamp is written
+    // because the count is reported in one octet and a wrapped count would name the wrong servers.
+    io->dns_count = (n > 0xFFu) ? 0xFFu : (uint8_t)n; // GCOVR_EXCL_BR_LINE
 }
 
 // sec 21.23: the refresh time a stateless client holds until its next Information-request. "If the
@@ -836,7 +859,8 @@ static idemip_bool dhcp6_take_advertise(uint8_t *work, const uint8_t *opts, size
     // DUID and the sec 21.4 IA_NA of this one have passed.
     uint16_t slen = 0u;
     const uint8_t *sid = dhcp6_find(opts, olen, IDEMIP_DHCP6_OPT_SERVERID, &slen);
-    if (sid == NULL || slen < 3u || slen > IDEMIP_DHCP6_DUID_MAX)
+    // Not measured on the first, for the reason written at dhcp6_take_server_duid.
+    if (sid == NULL || slen < 3u || slen > IDEMIP_DHCP6_DUID_MAX) // GCOVR_EXCL_BR_LINE
     {
         return IDEMIP_FALSE;
     }
@@ -1019,8 +1043,7 @@ void idemip_dhcp6_input(uint8_t *work)
     }
     // sec 16.3 and sec 16.10: the transaction-id must match the one the client sent.
     uint32_t xid = ((uint32_t)msg[IDEMIP_DHCP6_MSG_OFF_XID] << 16) |
-                   ((uint32_t)msg[IDEMIP_DHCP6_MSG_OFF_XID + 1u] << 8) |
-                   (uint32_t)msg[IDEMIP_DHCP6_MSG_OFF_XID + 2u];
+                   ((uint32_t)msg[IDEMIP_DHCP6_MSG_OFF_XID + 1u] << 8) | (uint32_t)msg[IDEMIP_DHCP6_MSG_OFF_XID + 2u];
     if (ctx->state == IDEMIP_DHCP6_IDLE || ctx->state == IDEMIP_DHCP6_BOUND || xid != ctx->xid)
     {
         return;
@@ -1092,7 +1115,8 @@ void idemip_dhcp6_input(uint8_t *work)
         return;
     }
 
-    switch (ctx->state)
+    // Not measured on this line, for the reason written at dhcp6_msg_for.
+    switch (ctx->state) // GCOVR_EXCL_BR_LINE
     {
     case IDEMIP_DHCP6_SOLICITING:
         // sec 18.2.1: with a Rapid Commit option in the Solicit the client takes a Reply that carries
@@ -1345,7 +1369,11 @@ void idemip_dhcp6_tick(uint8_t *work)
     {
         // sec 18.2.5: the leases are gone once "the valid lifetimes of all leases across all IAs have
         // expired", "at which time the client uses the Solicit message to locate a new DHCP server".
-        if ((ctx->inf & DHCP6_INF_VALID) == 0u && dhcp6_has_addr(ctx) && dhcp6_reached(ctx->now_ms, ctx->valid_ms))
+        // Not measured on the second: BOUND is entered from a Reply that assigned an address, and
+        // the address is given up only by leaving BOUND. It is written because the lifetime being
+        // tested is that address's, and a client with no address has no lifetime to reach.
+        if ((ctx->inf & DHCP6_INF_VALID) == 0u && dhcp6_has_addr(ctx) && // GCOVR_EXCL_BR_LINE
+            dhcp6_reached(ctx->now_ms, ctx->valid_ms))
         {
             dhcp6_forget_lease(work);
             dhcp6_begin(ctx, (uint8_t)IDEMIP_DHCP6_SOLICITING);
@@ -1358,8 +1386,7 @@ void idemip_dhcp6_tick(uint8_t *work)
         // the sec 21.23 refresh, so the exchange is another Information-request.
         if ((ctx->inf & DHCP6_INF_T1) == 0u && dhcp6_reached(ctx->now_ms, ctx->t1_ms))
         {
-            uint8_t next =
-                ctx->cfg->stateless ? (uint8_t)IDEMIP_DHCP6_INFO_REQUESTING : (uint8_t)IDEMIP_DHCP6_RENEWING;
+            uint8_t next = ctx->cfg->stateless ? (uint8_t)IDEMIP_DHCP6_INFO_REQUESTING : (uint8_t)IDEMIP_DHCP6_RENEWING;
             dhcp6_begin(ctx, next);
             io->status = IDEMIP_OK;
             dhcp6_publish(work);
@@ -1478,7 +1505,11 @@ void idemip_dhcp6_release(uint8_t *work)
         io->status = IDEMIP_ERR;
         return;
     }
-    if (!dhcp6_has_addr(ctx) || ctx->server_duid_len == 0u)
+    // Not measured on the second: an address is recorded by the Reply that assigned it, and that
+    // same Reply is where the Server Identifier came from, so a client holding one holds both. It is
+    // written because sec 18.2.7 and sec 18.2.8 make the Server Identifier a MUST in these two
+    // messages and the message cannot be built without it.
+    if (!dhcp6_has_addr(ctx) || ctx->server_duid_len == 0u) // GCOVR_EXCL_BR_LINE
     {
         io->status = IDEMIP_ERR;
         return;
@@ -1503,7 +1534,11 @@ void idemip_dhcp6_decline(uint8_t *work)
         io->status = IDEMIP_ERR;
         return;
     }
-    if (!dhcp6_has_addr(ctx) || ctx->server_duid_len == 0u)
+    // Not measured on the second: an address is recorded by the Reply that assigned it, and that
+    // same Reply is where the Server Identifier came from, so a client holding one holds both. It is
+    // written because sec 18.2.7 and sec 18.2.8 make the Server Identifier a MUST in these two
+    // messages and the message cannot be built without it.
+    if (!dhcp6_has_addr(ctx) || ctx->server_duid_len == 0u) // GCOVR_EXCL_BR_LINE
     {
         io->status = IDEMIP_ERR;
         return;
