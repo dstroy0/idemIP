@@ -301,16 +301,23 @@ static uint16_t tcp_pcb_transitions(IdemIpTcpState from)
         return (uint16_t)(TCP_PCB_S(LAST_ACK) | TCP_PCB_S(CLOSED) | TCP_PCB_S(TIME_WAIT));
     case IDEMIP_TCP_STATE_TIME_WAIT:
         return (uint16_t)(TCP_PCB_S(TIME_WAIT) | TCP_PCB_S(CLOSED));
-    default:
-        return 0u;
+    // sec 3.3.2 Figure 5 draws eleven states, and the eleven arms above are all of them. The arm is
+    // written so a state added later reads as reaching nothing rather than falling out of the
+    // switch, and it is not measured: the guard below refuses anything past TIME-WAIT before the
+    // table is indexed, and idemip_tcp_pcb_store makes the same test on the caller's state first.
+    default:       // GCOVR_EXCL_LINE
+        return 0u; // GCOVR_EXCL_LINE
     }
 }
 
 static idemip_bool tcp_pcb_transition_ok(IdemIpTcpState from, IdemIpTcpState to)
 {
-    if (from > IDEMIP_TCP_STATE_TIME_WAIT || to > IDEMIP_TCP_STATE_TIME_WAIT)
+    // Not measured, from the other side of the same argument: the bound is written out here so a
+    // reader sees it beside the shift that needs it, and idemip_tcp_pcb_store has already refused a
+    // state past TIME-WAIT. A TCB's own state is one this module wrote, and it writes no other.
+    if (from > IDEMIP_TCP_STATE_TIME_WAIT || to > IDEMIP_TCP_STATE_TIME_WAIT) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE;
+        return IDEMIP_FALSE; // GCOVR_EXCL_LINE
     }
     return ((tcp_pcb_transitions(from) >> (unsigned)to) & 1u) != 0u ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
@@ -364,7 +371,11 @@ static idemip_bool tcp_pcb_seg_unlink(uint8_t *work, uint16_t pcb, uint16_t seg)
             at = s->next;
         }
     }
-    return IDEMIP_FALSE;
+    // Not measured: a segment is put on this TCB's unsent queue when it is allocated and moved to the
+    // unacked queue by idemip_tcp_pcb_seg_sent, so one in use and naming this TCB is on one of the
+    // two. The report is here because a walk that can fail must say so rather than leave the caller
+    // to assume, and idemip_tcp_pcb_seg_free reads it.
+    return IDEMIP_FALSE; // GCOVR_EXCL_LINE
 }
 
 // RFC 9293 sec 3.10.7.4, releasing a held segment once RCV.NXT has passed it. The receive descriptor
@@ -388,7 +399,9 @@ static idemip_bool tcp_pcb_oos_unlink(uint8_t *work, uint16_t pcb, uint16_t oos)
         }
         at = o->next;
     }
-    return IDEMIP_FALSE;
+    // Not measured, for the same reason as the send queue above: a hold is threaded into this TCB's
+    // ooseq list when it is allocated and comes off it only here.
+    return IDEMIP_FALSE; // GCOVR_EXCL_LINE
 }
 
 // --- the local port --------------------------------------------------------
@@ -444,10 +457,17 @@ static idemip_bool tcp_pcb_port_listening(uint8_t *work, uint16_t port)
 // runs. sec 3.3 makes the obfuscation a SHOULD, "since this helps to mitigate a number of attacks
 // that depend on the attacker's ability to guess or know the five-tuple", and a walk from where the
 // last draw left off is guessable from one observed port.
+//
+// The walk is bounded by the pool because sec 3.3.1 bounds it - "count = num_ephemeral" - and coming
+// out the far end of it is not measured: the pool is 32768 ports and the two things that make one
+// unsuitable are the IDEMIP_TCP_PCBS connections and the IDEMIP_TCP_LISTEN_PCBS listeners, which
+// together are a handful. The bound is written because an unbounded walk over a table that can be
+// full does not end, and the report is written because a caller must be able to read a pool with
+// nothing left in it.
 static uint16_t tcp_pcb_port_draw(uint8_t *work, uint16_t except, uint32_t rand)
 {
     uint16_t at = (uint16_t)(IDEMIP_TCP_PCB_PORT_EPH_FIRST | (uint16_t)(rand & IDEMIP_TCP_PCB_PORT_EPH_MASK));
-    for (uint32_t n = 0u; n < (uint32_t)IDEMIP_TCP_PCB_PORT_EPH_COUNT; n++)
+    for (uint32_t n = 0u; n < (uint32_t)IDEMIP_TCP_PCB_PORT_EPH_COUNT; n++) // GCOVR_EXCL_BR_LINE
     {
         uint16_t port = at;
         at = (uint16_t)(IDEMIP_TCP_PCB_PORT_EPH_FIRST | (uint16_t)((port + 1u) & IDEMIP_TCP_PCB_PORT_EPH_MASK));
@@ -456,7 +476,7 @@ static uint16_t tcp_pcb_port_draw(uint8_t *work, uint16_t except, uint32_t rand)
             return port;
         }
     }
-    return IDEMIP_TCP_PCB_PORT_ANY;
+    return IDEMIP_TCP_PCB_PORT_ANY; // GCOVR_EXCL_LINE
 }
 
 // --- matching an arriving segment ------------------------------------------
@@ -691,10 +711,15 @@ void idemip_tcp_pcb_bind(uint8_t *work)
     if (port == IDEMIP_TCP_PCB_PORT_ANY)
     {
         port = tcp_pcb_port_draw(work, io->bind_args.index, io->bind_args.rand);
-        if (port == IDEMIP_TCP_PCB_PORT_ANY)
+        // BUSY rather than ERR, because a connection closing frees a port and the same call then
+        // works. Not measured, for the reason written at tcp_pcb_port_draw: the pool is far larger
+        // than the tables that can take ports out of it.
+        if (port == IDEMIP_TCP_PCB_PORT_ANY) // GCOVR_EXCL_BR_LINE
         {
+            // GCOVR_EXCL_START
             io->status = IDEMIP_BUSY;
             return;
+            // GCOVR_EXCL_STOP
         }
     }
     tcp_pcb_addr_set(t->local_ip, io->bind_args.ip, n);
@@ -1247,9 +1272,12 @@ void idemip_tcp_pcb_seg_free(uint8_t *work)
     {
         return;
     }
-    if (!tcp_pcb_seg_unlink(work, s->pcb, io->seg_args.index))
+    // Not measured, for the reason written at tcp_pcb_seg_unlink: a segment in use and naming a TCB
+    // is on one of that TCB's two queues. The test is here because the walk reports whether it found
+    // the segment, and a free that did not take it off a queue must not zero the entry.
+    if (!tcp_pcb_seg_unlink(work, s->pcb, io->seg_args.index)) // GCOVR_EXCL_BR_LINE
     {
-        return;
+        return; // GCOVR_EXCL_LINE
     }
     memset(TCP_PCB_SEG_AT(work, io->seg_args.index)->raw, 0, sizeof(TcpPcbSegEntry));
     io->status = IDEMIP_OK;
@@ -1387,9 +1415,10 @@ void idemip_tcp_pcb_oos_free(uint8_t *work)
     {
         return;
     }
-    if (!tcp_pcb_oos_unlink(work, o->pcb, io->oos_args.index))
+    // Not measured, for the same reason, over tcp_pcb_oos_unlink.
+    if (!tcp_pcb_oos_unlink(work, o->pcb, io->oos_args.index)) // GCOVR_EXCL_BR_LINE
     {
-        return;
+        return; // GCOVR_EXCL_LINE
     }
     memset(TCP_PCB_OOS_AT(work, io->oos_args.index)->raw, 0, sizeof(TcpPcbOosEntry));
     io->status = IDEMIP_OK;

@@ -331,6 +331,28 @@ void test_every_entry_refuses_a_row_that_is_not_in_use(void)
     IO(work_a)->oos_args.index = 0u;
     TcpPcb.oos_free(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "oos_free took a hold nobody allocated");
+
+    IO(work_a)->accept_args.index = 0u;
+    IO(work_a)->accept_args.listener = IDEMIP_TCP_PCB_NONE;
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "accept took a TCB nobody opened");
+
+    IO(work_a)->seg_args.pcb = 0u;
+    IO(work_a)->seg_args.data = NULL;
+    IO(work_a)->seg_args.len = 0u;
+    IO(work_a)->seg_args.seq = 100u;
+    IO(work_a)->seg_args.flags = IDEMIP_TCP_ACK;
+    IO(work_a)->seg_args.opts = 0u;
+    TcpPcb.seg_alloc(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "seg_alloc queued a segment on a TCB nobody opened");
+
+    IO(work_a)->oos_args.pcb = 0u;
+    IO(work_a)->oos_args.seq = 100u;
+    IO(work_a)->oos_args.desc = 1u;
+    IO(work_a)->oos_args.offset = 0u;
+    IO(work_a)->oos_args.len = 8u;
+    TcpPcb.oos_alloc(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "oos_alloc held a segment for a TCB nobody opened");
 }
 
 // A clear on one borrow reaches no byte of the other's tables.
@@ -838,6 +860,103 @@ void test_the_ephemeral_draw_steps_over_a_port_a_listener_holds(void)
     TcpPcb.bind(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "MUST-42's named bind must not be refused");
     TEST_ASSERT_EQUAL_UINT16(served, IO(work_a)->port);
+}
+
+// RFC 6056 sec 3.3.1's check_suitable_port is what the walk asks of each candidate, and a port
+// another connection already holds is not suitable: sec 2.3 wants a "Selection of ephemeral ports
+// such that they result in unique instance-ids (five-tuples)", and two connections here cannot share
+// a local port unless the rest of the tuple differs, which the draw cannot know yet: bind runs before
+// connect. So the draw steps over it and hands out the next one that is free.
+void test_the_ephemeral_draw_steps_over_a_port_another_connection_holds(void)
+{
+    TcpPcb.clear(work_a);
+    // The port a zero word lands on, taken by a named bind before the draw is asked for one.
+    const uint16_t held = (uint16_t)IDEMIP_TCP_PCB_PORT_EPH_FIRST;
+    uint16_t first = open_pcb(work_a);
+    IO(work_a)->bind_args.index = first;
+    IO(work_a)->bind_args.ip = g_local;
+    IO(work_a)->bind_args.port = held;
+    IO(work_a)->bind_args.rand = 0u;
+    TcpPcb.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    uint16_t second = open_pcb(work_a);
+    IO(work_a)->bind_args.index = second;
+    IO(work_a)->bind_args.ip = g_local;
+    IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
+    IO(work_a)->bind_args.rand = 0u;
+    TcpPcb.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(held, IO(work_a)->port, "the draw handed out a port already bound");
+    TEST_ASSERT_TRUE(IO(work_a)->port >= IDEMIP_TCP_PCB_PORT_EPH_FIRST);
+
+    // The TCB doing the drawing is excepted from that test, so a re-bind of the same connection can
+    // land where it already is rather than being refused by its own port.
+    IO(work_a)->bind_args.index = first;
+    IO(work_a)->bind_args.ip = g_local;
+    IO(work_a)->bind_args.port = IDEMIP_TCP_PCB_PORT_ANY;
+    IO(work_a)->bind_args.rand = 0u;
+    TcpPcb.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(held, IO(work_a)->port, "a connection was refused by the port it already held");
+}
+
+// RFC 9293 sec 3.3.2 Figure 5 draws eleven states and no twelfth, so a store naming anything past
+// TIME-WAIT names no state at all. Both ends of the move are read: the state the TCB is in and the
+// one the caller is asking for, and a value outside the figure at either end is refused rather than
+// indexed into the table of legal moves.
+void test_a_store_naming_a_state_the_figure_does_not_draw_is_refused(void)
+{
+    TcpPcb.clear(work_a);
+    uint16_t pcb = open_pcb(work_a);
+
+    IO(work_a)->pcb_args.index = pcb;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_CLOSED, IO(work_a)->state);
+
+    IO(work_a)->state = (IdemIpTcpState)(IDEMIP_TCP_STATE_TIME_WAIT + 1);
+    IO(work_a)->pcb_args.index = pcb;
+    TcpPcb.store(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a state past TIME-WAIT was stored");
+
+    // And the TCB is where it was, so nothing was written on the way to the refusal.
+    IO(work_a)->pcb_args.index = pcb;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_TCP_STATE_CLOSED, IO(work_a)->state, "the refused store moved the TCB");
+}
+
+// RFC 9293 sec 3.4.1: "A connection is defined by a pair of sockets", and how wide a socket's address
+// is comes from the IP version. A version this build carries neither of names no width, so there is
+// no pair to compare and the lookup refuses rather than comparing some number of octets it guessed.
+void test_a_lookup_at_a_version_that_names_no_address_width_is_refused(void)
+{
+    TcpPcb.clear(work_a);
+    uint16_t pcb = open_pcb(work_a);
+    IO(work_a)->bind_args.index = pcb;
+    IO(work_a)->bind_args.ip = g_local;
+    IO(work_a)->bind_args.port = 5001u;
+    IO(work_a)->bind_args.rand = 0u;
+    TcpPcb.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    IO(work_a)->find_args.local_ip = g_local;
+    IO(work_a)->find_args.remote_ip = g_remote;
+    IO(work_a)->find_args.local_port = 5001u;
+    IO(work_a)->find_args.remote_port = 5000u;
+    IO(work_a)->find_args.local_zone = 0u;
+    IO(work_a)->find_args.remote_zone = 0u;
+    IO(work_a)->find_args.netif = 0u;
+    IO(work_a)->find_args.ip_version = 5u; // neither 4 nor 6
+    TcpPcb.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "find compared a pair of unknown width");
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->index);
+
+    IO(work_a)->find_args.ip_version = 5u;
+    TcpPcb.find_listener(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "find_listener compared an address of unknown width");
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->index);
 }
 
 // RFC 6056 sec 3.3: "Ephemeral port selection algorithms SHOULD obfuscate the selection of their
@@ -1995,6 +2114,92 @@ void test_a_full_segment_table_is_busy_and_a_free_makes_the_same_call_succeed(vo
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 }
 
+// The same removal, of a segment further down the queue than the one behind the head. The walk that
+// finds the entry pointing at it has to step, and the case above never made it take a second step:
+// the queue was three long and the middle one came out, so the head pointed straight at it.
+void test_a_segment_freed_from_the_tail_of_a_longer_queue_leaves_the_rest_linked(void)
+{
+    TcpPcb.clear(work_a);
+    uint16_t pcb = open_pcb(work_a);
+    uint16_t got[4];
+    for (int i = 0; i < 4; i++)
+    {
+        IO(work_a)->seg_args.pcb = pcb;
+        IO(work_a)->seg_args.data = NULL;
+        IO(work_a)->seg_args.len = 0u;
+        IO(work_a)->seg_args.seq = (uint32_t)(200 + i);
+        IO(work_a)->seg_args.flags = IDEMIP_TCP_ACK;
+        IO(work_a)->seg_args.opts = 0u;
+        TcpPcb.seg_alloc(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        got[i] = IO(work_a)->index;
+    }
+
+    IO(work_a)->seg_args.index = got[3];
+    TcpPcb.seg_free(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "the walk did not reach the last of four");
+
+    // The three in front of it are still there, in order, and the queue ends where the fourth was.
+    IO(work_a)->pcb_args.index = pcb;
+    TcpPcb.load(work_a);
+    uint16_t at = IO(work_a)->info.unsent;
+    for (int i = 0; i < 3; i++)
+    {
+        TEST_ASSERT_EQUAL_UINT16_MESSAGE(got[i], at, "the queue was cut in front of the freed segment");
+        IO(work_a)->seg_args.index = at;
+        TcpPcb.seg_load(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        at = IO(work_a)->seg.next;
+    }
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(IDEMIP_TCP_PCB_NONE, at, "the queue still runs past the segment freed");
+}
+
+// RFC 9293 sec 3.10.7.4 releases a held segment once RCV.NXT has passed it, and the queue is kept in
+// sequence order rather than arrival order, so the entry released is not always the head. The list is
+// re-threaded around it the same way the send queue is.
+void test_a_held_segment_freed_from_the_middle_leaves_the_queue_linked(void)
+{
+    TcpPcb.clear(work_a);
+    uint16_t pcb = open_pcb(work_a);
+    uint16_t got[3];
+    const uint32_t seq[3] = {1000u, 2000u, 3000u};
+    for (int i = 0; i < 3; i++)
+    {
+        IO(work_a)->oos_args.pcb = pcb;
+        IO(work_a)->oos_args.seq = seq[i];
+        IO(work_a)->oos_args.desc = (uint16_t)(40 + i);
+        IO(work_a)->oos_args.offset = 0u;
+        IO(work_a)->oos_args.len = 100u;
+        TcpPcb.oos_alloc(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        got[i] = IO(work_a)->index;
+    }
+
+    IO(work_a)->oos_args.pcb = pcb;
+    IO(work_a)->oos_args.index = got[2];
+    TcpPcb.oos_free(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "the walk did not reach the last of three");
+
+    IO(work_a)->pcb_args.index = pcb;
+    TcpPcb.load(work_a);
+    uint16_t at = IO(work_a)->info.ooseq;
+    for (int i = 0; i < 2; i++)
+    {
+        TEST_ASSERT_EQUAL_UINT16_MESSAGE(got[i], at, "the held queue was cut in front of the entry freed");
+        IO(work_a)->oos_args.index = at;
+        TcpPcb.oos_load(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        at = IO(work_a)->oos.next;
+    }
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(IDEMIP_TCP_PCB_NONE, at, "the queue still runs past the entry freed");
+
+    // And a second free of the same entry is refused, since it is no longer in use.
+    IO(work_a)->oos_args.pcb = pcb;
+    IO(work_a)->oos_args.index = got[2];
+    TcpPcb.oos_free(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
 // RFC 9293 sec 3.4 case (b), "to remove the segment from a retransmission queue". A segment taken out
 // of the middle leaves the queue linked around it, and a second free of it is refused.
 void test_a_segment_freed_from_the_middle_leaves_the_queue_linked(void)
@@ -2397,11 +2602,77 @@ void test_an_ipv6_connection_keys_on_all_sixteen_octets_and_its_zone(void)
     TcpPcb.find(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
 
-    // The zone alone differs, and RFC 4007 sec 6 makes that a different address.
+    // The zone alone differs, and RFC 4007 sec 6 makes that a different address. Both halves of the
+    // pair carry one, so either of them differing is a different pair.
     IO(work_a)->find_args.remote_ip = r6;
     IO(work_a)->find_args.remote_zone = 3u;
     TcpPcb.find(work_a);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a remote zone that differs named the TCB anyway");
+
+    IO(work_a)->find_args.remote_zone = 2u;
+    IO(work_a)->find_args.local_zone = 3u;
+    TcpPcb.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a local zone that differs named the TCB anyway");
+#endif
+}
+
+// The listener half of the same. RFC 9293 sec 3.9.1.1's passive OPEN names a local socket, and over
+// IPv6 that socket carries the zone the address is scoped in. RFC 4007 sec 5 assigns "within the
+// node, a distinct 'zone index' to each zone of the same scope to which that node is attached", and
+// a segment arriving in another zone is arriving at another address.
+// The three fields ahead of it - the version, the port and the interface - each name the listener on
+// their own, and a segment differing in any one of them reaches none.
+void test_a_listener_is_matched_on_its_version_its_port_its_interface_and_its_zone(void)
+{
+#if !IDEMIP_ENABLE_IPV6
+    TEST_PASS();
+#else
+    static const uint8_t l6[IDEMIP_TCP_PCB_ADDR_BYTES] = {0xFEu, 0x80u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01u};
+    TcpPcb.clear(work_a);
+    IO(work_a)->listen_args.ip = l6;
+    IO(work_a)->listen_args.port = 443u;
+    IO(work_a)->listen_args.zone = 2u;
+    IO(work_a)->listen_args.netif = 1u;
+    IO(work_a)->listen_args.backlog = 1u;
+    IO(work_a)->listen_args.ip_version = 6u;
+    TcpPcb.listen(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    const uint16_t idx = IO(work_a)->index;
+
+    IO(work_a)->find_args.local_ip = l6;
+    IO(work_a)->find_args.remote_ip = l6;
+    IO(work_a)->find_args.local_port = 443u;
+    IO(work_a)->find_args.remote_port = 5000u;
+    IO(work_a)->find_args.local_zone = 2u;
+    IO(work_a)->find_args.remote_zone = 2u;
+    IO(work_a)->find_args.netif = 1u;
+    IO(work_a)->find_args.ip_version = 6u;
+    TcpPcb.find_listener(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16(idx, IO(work_a)->index);
+
+    IO(work_a)->find_args.local_port = 444u;
+    TcpPcb.find_listener(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "another port reached the listener");
+
+    IO(work_a)->find_args.local_port = 443u;
+    IO(work_a)->find_args.ip_version = 4u;
+    TcpPcb.find_listener(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "another version reached the listener");
+
+    IO(work_a)->find_args.ip_version = 6u;
+    IO(work_a)->find_args.netif = 2u;
+    TcpPcb.find_listener(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "another interface reached a bound listener");
+
+    IO(work_a)->find_args.netif = 1u;
+    IO(work_a)->find_args.local_zone = 3u;
+    TcpPcb.find_listener(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "another zone reached the listener");
+
+    IO(work_a)->find_args.local_zone = 2u;
+    TcpPcb.find_listener(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "the segment that matched before no longer does");
 #endif
 }
 
