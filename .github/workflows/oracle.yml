@@ -1,0 +1,53 @@
+# The suite, twice, against two sets of mem entries.
+#
+# src/ calls memcpy 89 times, memset 151 and memmove once, and names <string.h> in exactly one place:
+# src/idemip_config.h. IDEMIP_MMGR decides whose those are. Off is libc. On is include/MMgr's, which
+# mmgr_string_shim.h aliases under the same spellings, so no call site differs between the two runs
+# and neither does a suite.
+#
+# libc is the oracle. Not because MMgr is untrusted, but because a mem entry that has shipped for
+# decades has been beaten on harder than anything either of these repos has written. A suite that
+# passes both ways is testing the contract rather than one implementation of it. One that passes
+# against MMgr and fails against libc is encoding a quirk of ours, and libc is what settles it.
+#
+# Both in one job, consecutively, on one runner: the pair is the finding, and reading it off two
+# jobs that could have been scheduled hours apart is worse than waiting for the second build.
+name: oracle
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  build:
+    name: libc and MMgr
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: true # include/MMgr, and this is the workflow that cannot run without it
+
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      # First, because it is the reference. A failure here is a failure of the tree, not of a
+      # disagreement between two libraries.
+      - name: Against libc
+        run: |
+          cmake -S . -B build-string -G Ninja -DIDEMIP_MMGR=OFF
+          cmake --build build-string
+          ctest --test-dir build-string --output-on-failure --timeout 120
+
+      # Second. A failure that reaches here and not the step above is the whole reason the workflow
+      # exists: the same suites, the same call sites, and only the mem entries underneath changed.
+      - name: Against MMgr
+        run: |
+          cmake -S . -B build-mmgr -G Ninja -DIDEMIP_MMGR=ON
+          cmake --build build-mmgr
+          ctest --test-dir build-mmgr --output-on-failure --timeout 120
