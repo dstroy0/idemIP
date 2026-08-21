@@ -10,6 +10,16 @@ caller, sized by a macro that unit publishes, and reads and writes nothing outsi
 file-scope mutable anywhere in `src/`, so two instances of a unit share not one byte and the whole
 footprint of a build is the arrays the application declared.
 
+Under FreeRTOS a borrow is a static array or one task's buffer, and the millisecond clock is whatever
+the port reads `xTaskGetTickCount()` into. SafeRTOS is the same integration with its certification
+constraints already met, and for the reason the design has anyway: execution is sequential and memory
+is mapped. A call runs to completion and returns - there is no callback, no re-entry and nothing that
+blocks, so BUSY is the answer to a call that cannot run now and it comes back on a later tick. Every
+byte a unit will ever touch is at a known offset in the array the caller declared, which the unit
+publishes the size of, so the memory map is a compile-time fact rather than a run-time one. A borrow
+belongs to whoever calls into it: keep it to one task or put your own lock around it, since the
+library takes none of its own and holds nothing outside the array it was handed.
+
 ```c
 #include "src/idemip.h"
 
