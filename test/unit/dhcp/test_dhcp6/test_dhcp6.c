@@ -1123,6 +1123,40 @@ void test_a_sol_max_rt_outside_its_range_is_ignored(void)
                              "a SOL_MAX_RT under sec 21.24's floor of 60 seconds was applied");
 }
 
+// sec 18.2.9: "A client SHOULD only update its SOL_MAX_RT and INF_MAX_RT values if all received
+// Advertise messages that contained the corresponding option specified the same value; otherwise, it
+// should use the default value." Two servers answering one Solicit with different values leave the
+// sec 7.6 default in force, and a third Advertise repeating the first value does not bring it back:
+// the disagreement stands for the rest of the exchange.
+void test_two_advertises_that_disagree_on_sol_max_rt_leave_the_default(void)
+{
+    arm_start(work_a, &g_cfg_a, 0x00ABCDEFu);
+    uint32_t low = IDEMIP_DHCP6_MAX_RT_MIN_S;
+    uint32_t high = 2u * IDEMIP_DHCP6_MAX_RT_MIN_S;
+    const uint32_t offered[3] = {low, high, low};
+    for (uint32_t i = 0u; i < 3u; i++)
+    {
+        msg_begin((uint8_t)IDEMIP_DHCP6_ADVERTISE, 0x00ABCDEFu);
+        msg_clientid(&g_cfg_a);
+        msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+        put32(msg_opt(IDEMIP_DHCP6_OPT_SOL_MAX_RT, IDEMIP_DHCP6_MAX_RT_LEN), offered[i]);
+        msg_ia_na(g_cfg_a.iaid, 0u, 0u, NULL, 0u, 0u, 0, 0u);
+        feed(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_SOLICITING, IDEMIP_DHCP6_IO(work_a)->state,
+                                      "an Advertise with no address ended the Solicit");
+    }
+
+    uint32_t now = 0u;
+    uint32_t rt = due_at(work_a, 4u * IDEMIP_DHCP6_SOL_TIMEOUT_MS, 0u) - now;
+    for (uint32_t step = 0u; step < 12u; step++)
+    {
+        now += rt;
+        tick(work_a, now, 0u);
+        rt = due_at_from(work_a, now, now + (4u * IDEMIP_DHCP6_SOL_MAX_RT_MS), 0u) - now;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(rt > high * 1000u, "sec 18.2.9 holds the default when the Advertises disagree");
+}
+
 // --- sec 21.4 and sec 21.6, the lease ---------------------------------------
 
 // sec 18.2.10.1 with sec 21.4 and sec 21.6: the Reply's IA_NA and IA Address set T1, T2 and the two
