@@ -52,11 +52,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build
 
-      # No capability set is allowed a warning either: the ones this workflow exists to catch arrive
-      # as a warning before they arrive as an error.
+      # No capability set is allowed a warning, and -Werror is what makes that the rule rather than
+      # the hope it was: the defects this workflow exists to catch arrive as a warning first. A call
+      # to a function the set does not contain is an implicit declaration before it is a missing
+      # symbol, and it need never become one - dispatch.c called an IPv4-guarded helper from the
+      # IPv6 path for as long as link-time optimization folded the call away first.
+      #
+      # Two are exempted because they are the feature tree working and not a defect: a static helper
+      # whose only callers a capability removed is unused, and so is a local that only that
+      # capability's arm of a switch reads. Both are correct code, and guarding either would put a
+      # conditional into the dispatch engine to answer a question the build already answered.
       - name: Configure
         run: >
           cmake -S . -B build -G Ninja
+          -DCMAKE_C_FLAGS="-Werror -Wno-error=unused-function -Wno-error=unused-variable"
           -DIDEMIP_ENABLE_IPV4=${{ matrix.ipv4 }}
           -DIDEMIP_ENABLE_IPV6=${{ matrix.ipv6 }}
           -DIDEMIP_ENABLE_TCP=${{ matrix.tcp }}
@@ -64,6 +73,17 @@ jobs:
 
       - name: Build
         run: cmake --build build
+
+      # unity_runner.c is generated and tracked, so the two can disagree: a case added without a
+      # build is a case the committed runner does not register, and the suite passes without ever
+      # running it. Deleting them and building again is what makes the difference visible, and the
+      # full set is where every suite is built and every runner therefore regenerated.
+      - name: Check the committed runners are the ones the sources generate
+        if: matrix.tag == 'all'
+        run: |
+          find test -name unity_runner.c -delete
+          cmake --build build
+          git diff --exit-code -- test/unit test/integration
 
       # test/CMakeLists.txt names the capabilities each suite needs, so a reduced set runs fewer
       # suites rather than none. A set that builds and then fails a suite is the other half of this:
@@ -78,6 +98,15 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           submodules: true # include/MMgr, which this tree tracks as a commit and not as files
+
+      # Unity's runner generator does not see a preprocessor conditional; harness.py does, and it
+      # copies each one onto the runner's declaration and call so a capability takes a case out of
+      # both together. That only holds for a conditional written over IDEMIP_ENABLE_ terms, which
+      # are the macros every translation unit is given: over anything else the runner would compile
+      # against an undefined macro, read it as zero, and stop running the case without failing.
+      # This is where a case standing under one of those is caught, and it costs no build at all.
+      - name: Check every case the runner registers is one it can be given the same conditional
+        run: python3 test/harness.py suites --strict
 
       # The static form of the matrix above, and much faster: a member the struct declares under an
       # #if and the table sets without one is the exact shape of four of the six defects, and it is
