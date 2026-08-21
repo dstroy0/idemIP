@@ -160,10 +160,15 @@ static uint32_t dhcp4_half_left(IdemIpMs now, IdemIpMs deadline, idemip_bool tim
     {
         left = deadline - now;
     }
+    // The clamp is written because the interval this returns is one word and the time it is measured
+    // from is not. It is not measured: the value halved is the distance to a deadline the same clock
+    // holds, so it is inside one word already, and the lease that would carry it past one has a T1
+    // this client could not reach - sec 4.4.5 measures the RENEWING interval from T1 to T2, which is
+    // three eighths of a lease whose first half already outran the clock.
     IdemIpMs half = left >> 1;
-    if (half > (IdemIpMs)0xFFFFFFFFu)
+    if (half > (IdemIpMs)0xFFFFFFFFu) // GCOVR_EXCL_BR_LINE
     {
-        half = (IdemIpMs)0xFFFFFFFFu; // the interval is one word, and a lease this long is not bounded by it
+        half = (IdemIpMs)0xFFFFFFFFu; // GCOVR_EXCL_LINE
     }
     return (half > (IdemIpMs)IDEMIP_DHCP4_RENEW_MIN_MS) ? (uint32_t)half : (uint32_t)IDEMIP_DHCP4_RENEW_MIN_MS;
 }

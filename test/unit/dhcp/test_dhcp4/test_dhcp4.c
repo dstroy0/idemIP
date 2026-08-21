@@ -590,8 +590,9 @@ void test_the_first_occurrence_of_the_remaining_options_is_the_one_read(void)
     TEST_ASSERT_EQUAL_UINT32(600u, IDEMIP_DHCP4_IO(work_a)->lease_s);
 }
 
-// RFC 2132 sec 2 encodes an option as "a tag octet, a length octet, and any number of data octets",
-// and sec 3.2's end option is what marks where the list stops. A message whose option area runs out
+// RFC 2132 sec 2: "All other options are variable-length with a length octet following the tag
+// octet", and "The length octet is followed by 'length' octets of data". sec 3.2's end option is what
+// marks where the list stops. A message whose option area runs out
 // before an end option is one the walk reaches the end of: RFC 2131 sec 4.1 says nothing that makes a
 // missing end fatal, and every option written before the edge was read, so the message stands. The
 // octets after the last one written are zeros, which sec 3.1 makes pad options.
@@ -726,6 +727,97 @@ static void to_bound(uint8_t *w, uint32_t lease_s)
     feed(w);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP4_IO(w)->status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP4_BOUND, IDEMIP_DHCP4_IO(w)->state);
+}
+
+// sec 4.4.5: "In both RENEWING and REBINDING states, if the client receives no response to its
+// DHCPREQUEST message, the client SHOULD wait one-half of the remaining time until T2 (in RENEWING
+// state) and one-half of the remaining lease time (in REBINDING state), down to a minimum of 60
+// seconds, before retransmitting the DHCPREQUEST message." The floor is what this reads: a lease
+// whose T2 is close enough that half the time left to it is under sixty seconds still waits sixty.
+void test_the_renewal_interval_is_floored_at_sixty_seconds(void)
+{
+    // T1 is half the lease and T2 seven-eighths of it, so at 170 seconds there are 30 left and half
+    // of that is well under the floor.
+    Dhcp4.clear(work_a);
+    to_bound(work_a, 200u);
+    tick_at(work_a, 1000u + (100u * 1000u), 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP4_RENEWING, IDEMIP_DHCP4_IO(work_a)->state, "T1 was not reached");
+    build_ok(work_a);
+
+    tick_at(work_a, 1000u + (170u * 1000u), 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP4_RENEWING, IDEMIP_DHCP4_IO(work_a)->state,
+                                  "an interval under the floor retired the lease early");
+    // Sixty seconds on from that retransmission is where the next one is due, not the fifteen half
+    // the time left would have given.
+    tick_at(work_a, 1000u + (175u * 1000u), 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP4_RENEWING, IDEMIP_DHCP4_IO(work_a)->state,
+                                  "the lease moved on before its next deadline");
+}
+
+// RFC 2131 Table 1 puts "htype" - "Hardware address type, see ARP section in 'Assigned Numbers' RFC;
+// e.g., '1' = 10mb ethernet" - and "hlen" - "Hardware address length" - beside the address the reply
+// is matched on. A reply naming another kind of hardware is not this client's reply whatever the
+// address octets say, so the pair is read before them.
+void test_a_reply_naming_another_hardware_type_or_length_is_discarded(void)
+{
+    static const struct
+    {
+        size_t at;
+        uint8_t to;
+        const char *why;
+    } rows[] = {
+        {(size_t)IDEMIP_DHCP4_MSG_OFF_HTYPE, 6u, "a reply of another hardware type was taken"},
+        {(size_t)IDEMIP_DHCP4_MSG_OFF_HLEN, 8u, "a reply of another hardware length was taken"},
+    };
+
+    for (size_t r = 0u; r < (sizeof rows / sizeof rows[0]); r++)
+    {
+        Dhcp4.clear(work_a);
+        to_selecting(work_a);
+        msg_begin(XID_A, IP_OFFER, (uint8_t)IDEMIP_DHCP4_OFFER, g_mac_a);
+        msg_opt32(IDEMIP_DHCP4_OPT_LEASE_TIME, 600u);
+        msg_opt32(IDEMIP_DHCP4_OPT_SERVER_ID, IP_SERVER);
+        msg_end();
+        g_msg[rows[r].at] = rows[r].to;
+        feed(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP4_SELECTING, IDEMIP_DHCP4_IO(work_a)->state, rows[r].why);
+    }
+}
+
+// sec 4.4.3: "The client then unicasts the DHCPINFORM to the DHCP server if it knows the server's
+// address, otherwise it broadcasts the message to the limited (all 1s) broadcast address." sec 4.1
+// states where that address comes from: "DHCP clients MUST use the IP address provided in the 'server
+// identifier' option for any unicast requests". A client that has none broadcasts; one that learnt a
+// server identifier from the answer to an earlier DHCPINFORM sends the next one there.
+void test_an_inform_goes_to_the_server_the_last_answer_named(void)
+{
+    bind_ok(work_a, &g_cfg_a);
+    IDEMIP_DHCP4_IO(work_a)->offered_ip = IP_OFFER;
+    IDEMIP_DHCP4_IO(work_a)->start_args.xid = XID_A;
+    IDEMIP_DHCP4_IO(work_a)->start_args.now_ms = 0u;
+    Dhcp4.inform(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP4_IO(work_a)->status);
+    build_ok(work_a);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(IP_BROADCAST, IDEMIP_DHCP4_IO(work_a)->dst,
+                                    "a client that knows no server does not unicast");
+
+    // The answer names the server, which is what sec 4.1 has the next unicast go to.
+    msg_begin(XID_A, 0u, (uint8_t)IDEMIP_DHCP4_ACK, g_mac_a);
+    msg_opt32(IDEMIP_DHCP4_OPT_SUBNET_MASK, IP_MASK);
+    msg_opt32(IDEMIP_DHCP4_OPT_SERVER_ID, IP_SERVER);
+    msg_end();
+    feed(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP4_IO(work_a)->status);
+
+    IDEMIP_DHCP4_IO(work_a)->offered_ip = IP_OFFER;
+    IDEMIP_DHCP4_IO(work_a)->start_args.xid = XID_A + 1u;
+    IDEMIP_DHCP4_IO(work_a)->start_args.now_ms = 1000u;
+    Dhcp4.inform(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP4_IO(work_a)->status);
+    build_ok(work_a);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_DHCP4_INFORM, IDEMIP_DHCP4_IO(work_a)->msg_type);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(IP_SERVER, IDEMIP_DHCP4_IO(work_a)->dst,
+                                    "an inform went somewhere other than the server it knows");
 }
 
 // --- sec 4.4.1, INIT to SELECTING --------------------------------------------
