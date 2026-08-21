@@ -1903,6 +1903,26 @@ void test_an_arp_reply_with_no_transmit_buffer_is_busy(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, io->status);
 }
 
+// RFC 826 opens its algorithm with "?Do I have the hardware type in ar$hrd?" and "?Do I speak the
+// protocol in ar$pro?", with the two length fields beside them, and says of all of it: "Negative
+// conditionals indicate an end of processing and a discarding of the packet." A packet failing any
+// of the four is over, with nothing learned from it and nothing answered.
+void test_an_arp_packet_of_another_hardware_type_is_read_by_nothing(void)
+{
+    size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_ARP);
+    size_t end = build_arp(g_frame, off, IDEMIP_ARP_OP_REQUEST, LOCAL_IP4);
+    // ar$hrd 6 is IEEE 802 networks, which this table does not answer for; 1 is Ethernet.
+    idemip_wr16(g_frame + off + IDEMIP_ARP_OFF_HRD, 6u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a packet of another hardware type was read");
+    TEST_ASSERT_FALSE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_SEND) != 0u,
+                              "a packet the table cannot read was answered");
+    TEST_ASSERT_FALSE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u,
+                              "a packet the table cannot read was delivered");
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_DISCARDS));
+}
+
 // An ARP payload shorter than RFC 826's twenty-eight octets is a malformed frame.
 void test_a_short_arp_packet_is_an_error(void)
 {
@@ -2389,6 +2409,44 @@ void test_the_icmpv6_echo_reply_this_path_builds_takes_its_two_out_counters(void
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_OUT_ECHO_REPLIES));
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP6_IN_ECHO_REPLIES),
                                      "the reply that arrived is still an in count");
+}
+
+// RFC 4443 sec 2.3: "The checksum is the 16-bit one's complement of the one's complement sum of the
+// entire ICMPv6 message, starting with the ICMPv6 message type field", over an IPv6 pseudo-header
+// prepended to it. sec 2.4 (a) has a message with an unknown Code "silently discarded", and a
+// message whose sum does not hold is not read at all. RFC 2466 ipv6IfIcmpInErrors is where it is
+// counted, and the drop says the sum rather than the length, which is the pair icmp6_in reports
+// separately.
+void test_an_icmpv6_message_whose_checksum_does_not_hold_is_an_error(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t end = build_ip6_echo6(g_frame, off, IDEMIP_ICMP6_ECHO_REQUEST);
+    g_frame[end - 1u] ^= 0xFFu; // an octet of the message the sum covers
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_FALSE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_SEND) != 0u,
+                              "a message that failed its checksum was answered");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_DISCARDS));
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP6_OUT_ECHO_REPLIES), "a message not read drew a reply");
+}
+
+// The same message with nothing in it. sec 2.1 gives every ICMPv6 message a Type, a Code and a
+// Checksum before its body, so four octets is less than one message. The demux reads the Type to tell
+// a Neighbor Discovery message from the rest, and there is no Type to read.
+void test_an_icmpv6_message_shorter_than_its_own_header_is_an_error(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_ICMPV6, g_remote_ip6, g_local_ip6, 2u);
+    memset(g_frame + off, 0, 2u);
+    input(work_a, off + 2u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_FALSE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_SEND) != 0u,
+                              "two octets were answered as a message");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS));
 }
 
 // RFC 8200 sec 8.1: "IPv6 receivers must discard UDP packets containing a zero checksum". The
@@ -3395,6 +3453,71 @@ void test_a_bare_rst_at_a_listener_creates_no_tcb(void)
     TcpPcb.load(tcp_pcb_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_SYN_RECEIVED, tp->state);
+}
+
+// RFC 9293 sec 3.10.7.1 CLOSED STATE, the first line of it: "If the state is CLOSED (i.e., TCB does
+// not exist), then all data in the incoming segment is discarded. An incoming segment containing a
+// RST is discarded." The segment that belongs to no connection is answered with a reset - which the
+// case beside this one drives - and a reset is not, because answering one with another is the
+// exchange sec 3.10.7.1 is written to stop. tcpOutRsts is what shows the difference.
+void test_a_reset_that_belongs_to_no_connection_is_not_answered_with_another(void)
+{
+    const uint32_t rsts = ctr(IDEMIP_STAT_TCP_OUT_RSTS);
+    size_t end = build_tcp4(g_frame, 5000u, 5999u, 100u, 0u, (uint8_t)IDEMIP_TCP_RST, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_NONE, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "a reset to a port nothing listens on took a connection");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_DISPATCH_IO(work_a)->tcp_act & IDEMIP_TCP_IN_ACT_RST,
+                              "a reset was answered with a reset");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(rsts, ctr(IDEMIP_STAT_TCP_OUT_RSTS), "tcpOutRsts counted a reset never sent");
+}
+
+// The table itself, rather than one listener's backlog. RFC 9293 sec 3.10.7.2 opens a TCB for the SYN
+// that reaches SYN-RECEIVED, and a build has IDEMIP_TCP_PCBS of them for every listener, connection
+// and half-open connection at once. With none left the SYN takes nothing and is dropped without a
+// reset, for the reason the backlog case gives: the segment belongs to a listener that has no room
+// for it right now, and the peer's own retransmission is what recovers it.
+//
+// tcpAttemptFails stays where it was. RFC 1213 sec 6.5 counts there "the number of times TCP
+// connections have made a direct transition to the CLOSED state from either the SYN-SENT state or the
+// SYN-RCVD state, plus the number of times TCP connections have made a direct transition to the
+// LISTEN state from the SYN-RCVD state" - and no TCB existed here to transition anywhere.
+void test_a_syn_with_no_control_block_left_takes_no_connection(void)
+{
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    listen_on(5001u);
+
+    // Every remaining entry taken by something that is not this listener's, until there are none.
+    unsigned int taken = 0u;
+    for (;;)
+    {
+        tp->open_args.ip_version = 4u;
+        TcpPcb.open(tcp_pcb_mem);
+        if (tp->status != IDEMIP_OK)
+        {
+            break;
+        }
+        taken++;
+        TEST_ASSERT_TRUE_MESSAGE(taken <= (unsigned int)IDEMIP_TCP_PCBS, "the table never filled");
+    }
+
+    const uint32_t fails = ctr(IDEMIP_STAT_TCP_ATTEMPT_FAILS);
+    const uint32_t opens = ctr(IDEMIP_STAT_TCP_PASSIVE_OPENS);
+    const uint32_t rsts = ctr(IDEMIP_STAT_TCP_OUT_RSTS);
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, (uint8_t)IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_NONE, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "a SYN took a control block the table did not have");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, IDEMIP_DISPATCH_IO(work_a)->tcp_act,
+                                     "the listener's answer was left standing");
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_TCP) == 0u);
+    TEST_ASSERT_EQUAL_UINT32(opens, ctr(IDEMIP_STAT_TCP_PASSIVE_OPENS));
+    TEST_ASSERT_EQUAL_UINT32(rsts, ctr(IDEMIP_STAT_TCP_OUT_RSTS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(fails, ctr(IDEMIP_STAT_TCP_ATTEMPT_FAILS),
+                                     "nothing transitioned, so nothing failed");
 }
 
 // The backlog the passive OPEN named, applied where a SYN would take a connection. listen_on asks
