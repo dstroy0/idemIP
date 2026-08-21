@@ -1,6 +1,9 @@
 # idemIP
 
-A TCP/IP stack in C11 for targets that have no heap and no operating system.
+A TCP/IP stack in C11 for targets that have no heap. It is independent of the operating system rather
+than written against the absence of one: it asks for no allocation, no thread, no timer and no socket,
+so it runs on bare hardware and under an OS alike. Where there is one, the OS is the caller - it hands
+the stack the memory, reads it the clock, gives it the frames, and calls it on its own schedule.
 
 The library allocates nothing. Every unit that holds state is handed one `uint8_t` array by the
 caller, sized by a macro that unit publishes, and reads and writes nothing outside it. There is no
