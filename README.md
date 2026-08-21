@@ -31,6 +31,13 @@ the branch space is enumerable rather than merely testable: a tool can walk an e
 drive every branch out of it, and fuzz the wire paths against the same borrows. That is not a safety
 case, but it is the part of one that a design usually has to be rewritten to produce.
 
+`test/fuzz/` is the second half of that sentence taken up. `Dispatch.input` is one entry over one
+frame that allocates nothing, so the harness is the borrows, a frame and the four numbers the caller
+reads - no driver, no socket, no allocator interposition. Every borrow is cleared and rebound at the
+head of each input and the clock is a function of the frame's place in it, so a crash file is the
+whole reproduction. Every line and every branch of `src/` is measured besides, and the few that
+cannot be reached each carry the argument for why, written beside them.
+
 ```c
 #include "src/idemip.h"
 

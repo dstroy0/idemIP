@@ -1,0 +1,77 @@
+# The receive path, driven by libFuzzer.
+#
+# Dispatch.input is one entry over one frame and it allocates nothing, so the harness needs no
+# driver, no socket and no allocator interposition - it needs the borrows and the four numbers the
+# caller reads for it. That is what makes this cheap enough to run on every push rather than
+# somewhere else on a schedule nobody reads.
+#
+# Two runs, and they are not the same thing. The first replays the seed corpus exactly, which is a
+# regression: every seed is a frame the walk answered a particular way once. The second mutates and
+# is a search, time-boxed, which either finds nothing or writes the input that broke something.
+name: fuzz
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  fuzz:
+    name: dispatch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: true # include/MMgr, which this tree tracks as a commit and not as files
+
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      # The address and undefined-behaviour sanitizers reach the library, not only the harness: the
+      # coverage feedback is what steers the mutations, and a read past a frame is the finding this
+      # is for. IDEMIP_FUZZ turns link-time optimization off for the same reason - the counters it
+      # would fold are the ones being counted.
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DIDEMIP_FUZZ=ON
+          -DBUILD_TESTING=OFF
+
+      - name: Build
+        run: cmake --build build --target fuzz_dispatch
+
+      - name: Write the seed corpus
+        run: python3 test/fuzz/seed_corpus.py build/fuzz_corpus
+
+      # Each seed on its own, so a failure names the seed. libFuzzer runs a file rather than
+      # mutating when it is handed one.
+      - name: Replay every seed
+        run: ./build/fuzz_dispatch build/fuzz_corpus/*.bin
+
+      # The search. -max_total_time bounds the job rather than the finding: a crash stops it at
+      # once and writes the input to crash-*, which the next step keeps.
+      - name: Fuzz
+        run: >
+          ./build/fuzz_dispatch build/fuzz_corpus
+          -max_total_time=120 -timeout=10 -rss_limit_mb=2048 -print_final_stats=1
+          -artifact_prefix=./
+
+      # Whatever it wrote. A crash file is the whole reproduction: the harness clears and rebinds
+      # every borrow at the head of each input, so the state the crash came from is in the file.
+      - name: Keep what it found
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-artifacts
+          path: |
+            crash-*
+            leak-*
+            timeout-*
+            oom-*
+          if-no-files-found: ignore

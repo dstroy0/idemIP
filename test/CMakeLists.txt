@@ -158,6 +158,40 @@ foreach(suite_src ${IDEMIP_SUITE_SOURCES})
     list(APPEND IDEMIP_BUILT "${suite_name}")
 endforeach()
 
+# --- the fuzz corpus, replayed ------------------------------------------------
+# test/fuzz/fuzz_dispatch.c is a libFuzzer harness where clang builds it, and the same file with a
+# main() where anything else does. This is that second form: it replays the seed corpus and reports
+# the first input that breaks one of the invariants it reads back after every frame.
+#
+# The point is that the corpus runs. A seed is a frame far enough into the walk that a mutation
+# starting from it reaches somewhere, so it is also a case worth running as it stands - and this
+# way a fuzzer finding, once written into the corpus by the program that generates it, is checked
+# by every build on every compiler rather than only where -fsanitize=fuzzer exists.
+#
+# It carries no IDEMIP_SUITE_CAP_ line because it needs none: the harness is written over the same
+# capability conditionals the library is, and a seed whose family is off is a frame the walk turns
+# away, which is a case too.
+set(IDEMIP_FUZZ_CORPUS "${CMAKE_BINARY_DIR}/fuzz_corpus")
+add_custom_command(
+    OUTPUT "${IDEMIP_FUZZ_CORPUS}.stamp"
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/seed_corpus.py" "${IDEMIP_FUZZ_CORPUS}"
+    COMMAND ${CMAKE_COMMAND} -E touch "${IDEMIP_FUZZ_CORPUS}.stamp"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/seed_corpus.py"
+    COMMENT "idemIP: writing the fuzz seed corpus"
+    VERBATIM
+)
+add_custom_target(fuzz_corpus_files DEPENDS "${IDEMIP_FUZZ_CORPUS}.stamp")
+
+add_executable(fuzz_replay "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/fuzz_dispatch.c")
+target_compile_definitions(fuzz_replay PRIVATE IDEMIP_FUZZ_STANDALONE=1)
+target_link_libraries(fuzz_replay PRIVATE idemip idemip_warnings)
+add_dependencies(fuzz_replay fuzz_corpus_files)
+set_target_properties(fuzz_replay PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test")
+add_test(NAME fuzz_corpus COMMAND ${CMAKE_COMMAND}
+         -DIDEMIP_REPLAY=$<TARGET_FILE:fuzz_replay> -DIDEMIP_CORPUS=${IDEMIP_FUZZ_CORPUS}
+         -P "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/replay.cmake")
+list(APPEND IDEMIP_BUILT "fuzz_corpus")
+
 list(LENGTH IDEMIP_BUILT IDEMIP_BUILT_COUNT)
 message(STATUS "idemIP: ${IDEMIP_BUILT_COUNT} test suites")
 if(IDEMIP_SKIPPED)

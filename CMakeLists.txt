@@ -105,6 +105,28 @@ set_property(CACHE IDEMIP_TIME_DETERMINISM_GRADE PROPERTY STRINGS COARSE FINE LI
 # sources, so what they time is the translation unit this build produced under this build's flags.
 option(IDEMIP_BENCH "Build the timing benches under test/bench" OFF)
 
+# The fuzz harness, which is not a test either: it has no fixed input and nothing to pass. libFuzzer
+# drives Dispatch.input over a mutated frame and what it reports is a crash, a sanitizer finding, or
+# one of the invariants the harness reads back after every frame.
+#
+# The sanitizers reach the library and not only the harness, deliberately: the coverage feedback is
+# what steers the mutations, and instrumenting only the harness would leave it steering on nothing.
+# Link-time optimization is off for the same build, because the coverage counters it would fold are
+# the ones being counted.
+option(IDEMIP_FUZZ "Build the libFuzzer harness under test/fuzz" OFF)
+
+if(IDEMIP_FUZZ)
+    if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "IDEMIP_FUZZ needs Clang: -fsanitize=fuzzer is clang's")
+    endif()
+    set(IDEMIP_LTO OFF CACHE BOOL "Link-time optimization, which is what folds the namespace indirection" FORCE)
+    # -fno-sanitize-recover is what makes a finding stop the run: undefined behaviour is reported
+    # and stepped over by default, and a fuzzer that steps over its own findings reports none.
+    add_compile_options(-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=all
+                        -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=fuzzer-no-link,address,undefined)
+endif()
+
 # --- the translation units each capability is ---------------------------------
 # One list per capability, and a file appears in exactly one of them. An option that is off leaves
 # its files out of the target, so a disabled capability reaches the compiler as no file at all.
@@ -276,6 +298,18 @@ if(IDEMIP_BENCH)
             set_property(TARGET ${b} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
         endif()
     endforeach()
+endif()
+
+# --- the fuzz harness ---------------------------------------------------------
+# One target over one entry. fuzz_dispatch.c includes src/idemip.h, so building it is also the only
+# compile the front door gets: nothing in the library includes it, and an application is the only
+# other thing that would.
+
+if(IDEMIP_FUZZ)
+    add_executable(fuzz_dispatch "${CMAKE_CURRENT_SOURCE_DIR}/test/fuzz/fuzz_dispatch.c")
+    target_link_libraries(fuzz_dispatch PRIVATE idemip idemip_warnings)
+    target_compile_options(fuzz_dispatch PRIVATE -fsanitize=fuzzer)
+    target_link_options(fuzz_dispatch PRIVATE -fsanitize=fuzzer)
 endif()
 
 # --- tests -------------------------------------------------------------------
