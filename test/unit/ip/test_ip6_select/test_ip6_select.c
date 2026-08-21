@@ -745,6 +745,130 @@ void test_rule8_use_longest_matching_prefix(void)
     select_is(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), near, 8u);
 }
 
+// --- sec 5, read from both ends ----------------------------------------------
+
+// Each rule above was driven with the winner in one position only. ip6_select_best_source compares
+// every new candidate against the incumbent, so the position decides which arm of the rule runs: with
+// the winner added first the rule has to keep the incumbent, with it added second the rule has to
+// replace it. Both arms are the same rule and neither had been read.
+//
+// sec 5 states the rules as a preference over a pair - "If SA is X and SB is not, then prefer SA" - so
+// the answer is a property of the pair. A comparator that agreed only when the candidates arrived in
+// one order would still pass every case above.
+
+typedef struct
+{
+    const uint8_t *addr;
+    uint8_t netif;
+    int deprecated;
+    int temporary;
+    int home;
+    int care_of;
+    int next_hop;
+} Cand;
+
+static void add_cand(uint8_t *w, const Cand *c)
+{
+    src_add(w, c->addr, c->netif, c->deprecated, c->temporary, c->home, c->care_of, c->next_hop);
+}
+
+static void wins_either_order(const Cand *win, const Cand *lose, const uint8_t *d, uint8_t rule)
+{
+    Ip6Select.clear(work_a);
+    add_cand(work_a, win);
+    add_cand(work_a, lose);
+    select_is(work_a, d, win->addr, rule);
+
+    Ip6Select.clear(work_a);
+    add_cand(work_a, lose);
+    add_cand(work_a, win);
+    select_is(work_a, d, win->addr, rule);
+}
+
+void test_rule1_decides_the_same_pair_either_way_round(void)
+{
+    const Cand same = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), 0u, 1, 0, 0, 0, 0};
+    const Cand other = {A(0x2001u, 0x0DB8u, 2u, 0, 0, 0, 0, 1u), 0u, 0, 0, 0, 0, 0};
+    wins_either_order(&same, &other, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), 1u);
+}
+
+void test_rule2_decides_the_same_pair_either_way_round(void)
+{
+    const Cand global = {A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 1u), 0u, 0, 0, 0, 0, 0};
+    const Cand ll = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u), 0u, 0, 0, 0, 0, 0};
+    wins_either_order(&global, &ll, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), 2u);
+}
+
+void test_rule3_decides_the_same_pair_either_way_round(void)
+{
+    const Cand fresh = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u), 0u, 0, 0, 0, 0, 0};
+    const Cand old = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u), 0u, 1, 0, 0, 0, 0};
+    wins_either_order(&fresh, &old, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), 3u);
+}
+
+void test_rule4_decides_the_same_pair_either_way_round(void)
+{
+    const Cand home = {A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 2u), 0u, 0, 0, 1, 0, 0};
+    const Cand care_of = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u), 0u, 0, 0, 0, 1, 0};
+    wins_either_order(&home, &care_of, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), 4u);
+}
+
+void test_rule4_both_decides_the_same_pair_either_way_round(void)
+{
+    const Cand both = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u), 0u, 0, 0, 1, 1, 0};
+    const Cand home_only = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u), 0u, 0, 0, 1, 0, 0};
+    wins_either_order(&both, &home_only, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), 4u);
+}
+
+// Rule 4 names two pairs and no others: both-against-not-both, and just-home-against-just-care-of. A
+// home address against a plain one is neither of those, so the rule abstains and rule 8 decides. The
+// plain address is the near one here, so a rule 4 that reached further than sec 5 lets it would show
+// up as the wrong winner and not merely a different rule number.
+void test_rule4_abstains_on_the_pairs_sec5_does_not_name(void)
+{
+    const Cand plain_near = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u), 0u, 0, 0, 0, 0, 0};
+    const Cand home_far = {A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 2u), 0u, 0, 0, 1, 0, 0};
+    const Cand care_far = {A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 3u), 0u, 0, 0, 0, 1, 0};
+    const uint8_t *d = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    wins_either_order(&plain_near, &home_far, d, 8u);
+    wins_either_order(&plain_near, &care_far, d, 8u);
+}
+
+void test_rule5_decides_the_same_pair_either_way_round(void)
+{
+    const Cand out_if = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u), 0u, 0, 0, 0, 0, 0};
+    const Cand other_if = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u), 1u, 0, 0, 0, 0, 0};
+    wins_either_order(&out_if, &other_if, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), 5u);
+}
+
+void test_rule5_5_decides_the_same_pair_either_way_round(void)
+{
+    const Cand from_hop = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 3u), 0u, 0, 0, 0, 0, 1};
+    const Cand elsewhere = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u), 0u, 0, 0, 0, 0, 0};
+    wins_either_order(&from_hop, &elsewhere, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), IDEMIP_IP6_SELECT_RULE_5_5);
+}
+
+void test_rule6_decides_the_same_pair_either_way_round(void)
+{
+    const Cand sixtofour = {A(0x2002u, 0xC633u, 0x6401u, 0, 0xD5E3u, 0x7953u, 0x13EBu, 0x22E8u), 0u, 0, 1, 0, 0, 0};
+    const Cand native = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u), 0u, 0, 0, 0, 0, 0};
+    wins_either_order(&sixtofour, &native, A(0x2002u, 0xC633u, 0x6401u, 0, 0, 0, 0, 1u), 6u);
+}
+
+void test_rule7_decides_the_same_pair_either_way_round(void)
+{
+    const Cand temp = {A(0x2001u, 0x0DB8u, 1u, 0, 0xD5E3u, 0x7953u, 0x13EBu, 0x22E8u), 0u, 0, 1, 0, 0, 0};
+    const Cand public_addr = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u), 0u, 0, 0, 0, 0, 0};
+    wins_either_order(&temp, &public_addr, A(0x2001u, 0x0DB8u, 1u, 0, 0xD5E3u, 0, 0, 1u), 7u);
+}
+
+void test_rule8_decides_the_same_pair_either_way_round(void)
+{
+    const Cand near = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u), 0u, 0, 0, 0, 0, 0};
+    const Cand far = {A(0x2001u, 0x0DB8u, 3u, 0, 0, 0, 0, 2u), 0u, 0, 0, 0, 0, 0};
+    wins_either_order(&near, &far, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), 8u);
+}
+
 // sec 5: "If the eight rules fail to choose a single address, the tiebreaker is
 // implementation-specific." Here the incumbent keeps its place, so the answer repeats.
 void test_a_tie_keeps_the_candidate_that_was_added_first(void)
@@ -1064,6 +1188,101 @@ void test_dest_rule9_use_longest_matching_prefix(void)
     Ip6Select.dest_sort(work_a);
     sorted_is(work_a, 0u, near, s6);
     sorted_is(work_a, 1u, far, s6);
+}
+
+// --- sec 6, read from both ends ----------------------------------------------
+
+// The same argument as sec 5's above, on the other comparator. dest_sort compares each destination
+// against the ones already placed, so which of a pair arrives first decides which arm of each rule
+// runs. sec 6 states its rules as a comparison over a pair - "If DB is known to be unreachable ...
+// then prefer DA" - so the sorted order is a property of the set and not of the order it was given in.
+
+typedef struct
+{
+    const uint8_t *addr;
+    uint8_t netif;
+    int unreachable;
+    int encapsulated;
+} Dest;
+
+static void sorts_either_order(const Cand *s1, const Cand *s2, const Dest *win, const Dest *lose)
+{
+    for (int swapped = 0; swapped < 2; swapped++)
+    {
+        Ip6Select.clear(work_a);
+        add_cand(work_a, s1);
+        if (s2 != NULL)
+        {
+            add_cand(work_a, s2);
+        }
+        const Dest *first = swapped ? lose : win;
+        const Dest *second = swapped ? win : lose;
+        dst_add(work_a, first->addr, first->netif, first->unreachable, first->encapsulated);
+        dst_add(work_a, second->addr, second->netif, second->unreachable, second->encapsulated);
+        Ip6Select.dest_sort(work_a);
+        sorted_is(work_a, 0u, win->addr, NULL);
+        sorted_is(work_a, 1u, lose->addr, NULL);
+    }
+}
+
+void test_dest_rule1_sorts_the_same_pair_either_way_round(void)
+{
+    const Cand s6 = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u), 0u, 0, 0, 0, 0, 0};
+    const Dest live = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 5u), 0u, 0, 0};
+    const Dest dead = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), 0u, 1, 0};
+    sorts_either_order(&s6, NULL, &live, &dead);
+}
+
+// sec 4 confines a link-local destination's candidates to its own link, so each destination below has
+// exactly one source and sec 5 cannot settle the pair before sec 6 sees it. That is what lets rule 3
+// and rule 4 be read on the destination side at all: both are about Source(D), not about D.
+void test_dest_rule3_sorts_the_same_pair_either_way_round(void)
+{
+    const Cand old = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u), 1u, 1, 0, 0, 0, 0};
+    const Cand fresh = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 3u), 0u, 0, 0, 0, 0, 0};
+    const Dest by_fresh = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 0xAu), 0u, 0, 0};
+    const Dest by_old = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u), 1u, 0, 0};
+    sorts_either_order(&old, &fresh, &by_fresh, &by_old);
+}
+
+// Rule 4: "Prefer home addresses. If Source(DA) is simultaneously a home address and care-of address
+// and Source(DB) is not, then prefer DA. If Source(DA) is just a home address and Source(DB) is just a
+// care-of address, then prefer DA." The same two pairs sec 5 rule 4 names, read off the sources the
+// destinations resolved to.
+void test_dest_rule4_prefers_the_destination_whose_source_is_home(void)
+{
+    const Cand home = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u), 1u, 0, 0, 1, 0, 0};
+    const Cand care_of = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 3u), 0u, 0, 0, 0, 1, 0};
+    const Dest by_home = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u), 1u, 0, 0};
+    const Dest by_care_of = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 0xAu), 0u, 0, 0};
+    sorts_either_order(&home, &care_of, &by_home, &by_care_of);
+}
+
+// The other pair rule 4 names, on the same side: an address that is both beats one that is only one of
+// the two.
+void test_dest_rule4_prefers_the_destination_whose_source_is_both(void)
+{
+    const Cand both = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u), 1u, 0, 0, 1, 1, 0};
+    const Cand home_only = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 3u), 0u, 0, 0, 1, 0, 0};
+    const Dest by_both = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u), 1u, 0, 0};
+    const Dest by_home_only = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 0xAu), 0u, 0, 0};
+    sorts_either_order(&both, &home_only, &by_both, &by_home_only);
+}
+
+void test_dest_rule7_sorts_the_same_pair_either_way_round(void)
+{
+    const Cand s6 = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u), 0u, 0, 0, 0, 0, 0};
+    const Dest native = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 5u), 0u, 0, 0};
+    const Dest tunneled = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), 0u, 0, 1};
+    sorts_either_order(&s6, NULL, &native, &tunneled);
+}
+
+void test_dest_rule9_sorts_the_same_pair_either_way_round(void)
+{
+    const Cand s6 = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u), 0u, 0, 0, 0, 0, 0};
+    const Dest near = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), 0u, 0, 0};
+    const Dest far = {A(0x2001u, 0x0DB8u, 9u, 0, 0, 0, 0, 1u), 0u, 0, 0};
+    sorts_either_order(&s6, NULL, &near, &far);
 }
 
 // Rule 10: "If DA preceded DB in the original list, prefer DA." Two identical destinations tie every
