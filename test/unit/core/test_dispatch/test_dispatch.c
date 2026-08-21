@@ -864,6 +864,32 @@ void test_a_bound_udp_port_takes_the_datagram(void)
     TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_NUCAST_PKTS));
 }
 
+// RFC 1122 sec 3.2.1.3 case (g): "{ 127, <any> } Internal host loopback address. Addresses of this
+// form MUST NOT appear outside a host." A 127/8 destination that arrived on a wire is discarded for
+// that reason, and the interface no wire reaches is the exception - there the address is this host's
+// and loopif is what owns it. The two outcomes are told apart by where the datagram stops: an address
+// error at the IP layer, or the transport, which then has no binding for port 4001.
+void test_a_loopback_interface_carries_the_address_loopif_owns(void)
+{
+    NetifIo *ni = IDEMIP_NETIF_IO(netif_mem);
+    ni->if_args.index = 0u;
+    ni->if_args.set = (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK;
+    ni->if_args.clear = 0u;
+    Netif.set_flags(netif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ni->status);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, 0x7F000001u, IDEMIP_UDP_HDR_LEN, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp4(g_frame, off, REMOTE_IP4, 0x7F000001u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "the address loopif owns was not this host's on the loopback interface");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_IP4_IN_ADDR_ERRORS),
+                                     "a datagram that reached the transport was counted as an address error");
+}
+
 // RFC 1122 sec 4.1.3.1: with no binding, "UDP SHOULD send an ICMP Port Unreachable message", and
 // udpNoPorts is what counts it.
 void test_an_unbound_udp_port_counts_no_ports(void)
@@ -1240,6 +1266,25 @@ void test_a_zero_udp_checksum_is_accepted_over_ipv4(void)
 
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+}
+
+// The other end of the same field: RFC 768 gives the header eight octets, so an IP payload shorter
+// than that carries no Length to read and no ports to demux on. RFC 1213 udpInErrors is "The number
+// of received UDP datagrams that could not be delivered for reasons other than the lack of an
+// application at the destination port", which is this, and it is an interface error as well because
+// the octets arrived.
+void test_a_udp_datagram_shorter_than_its_header_is_an_error(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN - 4u, 0u);
+    memset(g_frame + off, 0, IDEMIP_UDP_HDR_LEN - 4u);
+    input(work_a, off + (IDEMIP_UDP_HDR_LEN - 4u), 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "four octets were read as a UDP header");
+    TEST_ASSERT_FALSE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_UDP_IN_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
 }
 
 // RFC 768's Length "including this header and the data", minimum eight. A Length past the octets
@@ -3767,6 +3812,68 @@ void test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault
 #define ASSERT_UNBOUND(w, who)                                                                                         \
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_UNBOUND, IDEMIP_DISPATCH_IO(w)->drop,                           \
                                   "a frame reached " who " and it was never bound")
+
+// stats is the one unit whose absence a frame cannot see. d_bump and d_if_bump return without
+// writing and every path carries on, so the contract here is not DROP_UNBOUND but that the same
+// datagram still reaches the same binding with nothing counted anywhere.
+void test_a_frame_with_no_stats_borrow_is_still_delivered(void)
+{
+    uint16_t pcb = bind_udp4(4001u);
+    BIND_WITHOUT(work_a, stats);
+    if_untagged(work_a, 0u);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 4u);
+    seal_udp4(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u,
+                             "a build carrying no stats borrow stopped delivering");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_UDP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
+}
+
+// netif is not read for a broadcast, a multicast or a loopback destination, which are answered before
+// it, so the unicast case is the one that needs it: with no interface table there is no address to
+// match and no route to find, and RFC 1213 ipInAddrErrors - "discarded because the IP address in
+// their IP header's destination field was not a valid address to be received at this entity" - is
+// what that is.
+void test_a_unicast_destination_with_no_netif_borrow_is_an_address_error(void)
+{
+    BIND_WITHOUT(work_a, netif);
+    if_untagged(work_a, 0u);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp4(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_ADDRESS, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "an address was matched with no interface table to match it against");
+    TEST_ASSERT_FALSE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+}
+
+// RFC 1112 sec 7.2 makes the all-hosts group a membership no table holds, so it is answered without
+// igmp. Every other group is a table lookup, and a build with no igmp borrow holds no memberships at
+// all: the datagram is for a group this host has not joined.
+void test_a_multicast_destination_with_no_igmp_borrow_is_not_ours(void)
+{
+    BIND_WITHOUT(work_a, igmp);
+    if_untagged(work_a, 0u);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    // 224.0.0.2, all-routers, which is a group and is not the one sec 7.2 joins for you.
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, 0xE0000002u, IDEMIP_UDP_HDR_LEN, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp4(g_frame, off, REMOTE_IP4, 0xE0000002u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_ADDRESS, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a group this host never joined was taken as its own");
+    TEST_ASSERT_FALSE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+}
 
 // The tag is read before anything else, so an unbound vlan stops every frame there.
 void test_a_frame_with_no_vlan_borrow_is_refused(void)
