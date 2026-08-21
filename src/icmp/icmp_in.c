@@ -407,8 +407,10 @@ static uint8_t icmp_in_suppressed(const IcmpInErrArgs *a)
 
 // "A router which sends ICMP Source Quench messages MUST be able to limit the rate at which the
 // messages can be generated. A router SHOULD also be able to limit the rate at which it sends other
-// sorts of ICMP error messages." The section names the shape: "Bucket-based - count 'credits' ...
-// allowing a burst of messages to be sent". One token lands every IDEMIP_ICMP4_ERR_TOKEN_MS, the
+// sorts of ICMP error messages." It lists Count-based, Timer-based and Bandwidth-based mechanisms and
+// then leaves the rest open: "How the limits are applied (e.g., per router or per interface) is left
+// to the implementor's discretion". The shape here is the token bucket RFC 4443 sec 2.4 (f)
+// recommends for the IPv6 twin. One token lands every IDEMIP_ICMP4_ERR_TOKEN_MS, the
 // count stops at IDEMIP_ICMP4_ERR_BUCKET, and a gap of a whole bucket or more fills it in one step so
 // the loop runs at most IDEMIP_ICMP4_ERR_BUCKET times.
 #define ICMP_IN_BUCKET_MS ((uint32_t)IDEMIP_ICMP4_ERR_BUCKET * (uint32_t)IDEMIP_ICMP4_ERR_TOKEN_MS)

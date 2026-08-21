@@ -546,8 +546,9 @@ void idemip_ip4_forward_decide(uint8_t *work)
     io->ttl = (uint8_t)(ttl - 1u);
 
     // sec 5.2.1.2 step (9): "The forwarder performs any necessary IP fragmentation". RFC 791 sec 3.1
-    // Don't Fragment: "If the DF bit is set, the fragmentation of this datagram is not permitted", so
-    // an oversized datagram carrying it is discarded and RFC 1191 sec 4 answers Destination
+    // Don't Fragment: "If the Don't Fragment flag (DF) bit is set, then internet fragmentation of this
+    // datagram is NOT permitted, although it may be discarded", so an oversized datagram carrying it
+    // is discarded and RFC 1191 sec 4 answers Destination
     // Unreachable Code 4 carrying "the MTU of that next-hop network".
     if ((size_t)idemip_ip4_total_len(h) > (size_t)a->out_mtu)
     {

@@ -703,9 +703,10 @@ typedef enum IDEMIP_ENUM_PACKED
 // rate at which the messages can be generated. A router SHOULD also be able to limit the rate at
 // which it sends other sorts of ICMP error messages (Destination Unreachable, Redirect, Time
 // Exceeded, Parameter Problem). The rate limit parameters SHOULD be settable as part of the
-// configuration of the router." The same section names the token bucket: "Bucket-based - count
-// 'credits' ... allowing a burst of messages to be sent". The IPv4 bucket takes the shape and the
-// defaults RFC 4443 sec 2.4 (f) prints for IPv6, "B=10, N=10/s", which sec 4.3.2.8 leaves open.
+// configuration of the router." It names no mechanism to use - Count-based, Timer-based and
+// Bandwidth-based are the three it lists - and leaves the rest to "the implementor's discretion", so
+// the IPv4 bucket takes the shape and the defaults RFC 4443 sec 2.4 (f) prints for IPv6, "B=10,
+// N=10/s".
 
 /** @brief Error messages the IPv4 bucket holds for a burst. */
 #ifndef IDEMIP_ICMP4_ERR_BUCKET

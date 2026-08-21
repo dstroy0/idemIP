@@ -137,9 +137,9 @@ typedef struct
  *                               sec 3.3.2 answers with an ICMP Time Exceeded: "the
  *                               partially-reassembled datagram MUST be discarded and an ICMP Time
  *                               Exceeded message sent to the source host". Zero for a row the sweep
- *                               retired that was abandoned rather than timed out: sec 3.3.2 owes the
- *                               message to reassembly that failed "due to missing fragments", and an
- *                               abandoned datagram was missing none.
+ *                               retired that was abandoned rather than timed out: the message is owed
+ *                               to reassembly that failed, in RFC 792's words, "due to missing
+ *                               fragments", and an abandoned datagram was missing none.
  * @var Ip4ReassIo::frag_zero    fragment zero of that datagram was among the fragments held, which is
  *                               the condition sec 3.3.2 puts on sending it. Clear for an abandoned
  *                               row, for the same reason.

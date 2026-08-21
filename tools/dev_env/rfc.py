@@ -78,6 +78,16 @@ FOOTER = re.compile(r"^.*\[Page \d+\]\s*$", re.M)
 # spans that page break.
 HEADER = re.compile(r"^RFC\s?\d+\s+.*\d{4}\s*$", re.M)
 
+# A reference set into the middle of a sentence: RFC 8200's "not an extension header [IANA-EH]
+# indicates", RFC 6528's "MD5 [RFC1321] would be a good choice", RFC 1122's "IP multicasting [IP:4],
+# while". It is apparatus and not words - a comment quoting the sentence around it has quoted the
+# sentence - so it comes out with the page furniture. The bound keeps it to a marker: a bracket
+# holding twenty characters is a citation, one holding a paragraph is prose.
+# The parenthesised form of the same thing, which RFC 1122 and RFC 8415 use everywhere: "Destination
+# Unreachable (see Section 3.2.2.1)", "the Status Code option (see Section 21.13) returned by the
+# server". A comment quoting the sentence has quoted the sentence.
+INLINE_REF = re.compile(r"\[[^\]\n]{1,20}\]|\((?:see|See)\s[^)\n]{1,40}\)")
+
 # "RFC 8415", "RFC1122", and the sec 18.2.10.1 form this tree writes beside them.
 RFC_REF = re.compile(r"\bRFC\s?(\d{3,5})\b")
 
@@ -178,6 +188,10 @@ def squeeze(text):
     each behind a "+", RFC 2131's message types behind bullets - is quoted in a comment with one line
     to work with, so the breaks come back as commas and the markers do not come back at all.
 
+    A reference set into the middle of a sentence goes too, on both sides: the document's "[IANA-EH]"
+    and a comment that kept it are the same sentence, and dropping it from one road only would break
+    every quotation that was faithful about it.
+
     None of that is what the audit is for. It is looking for a word that was bent to fit the sentence
     around it, a subject swapped for a pronoun, a sentence nobody wrote - and every one of those still
     shows, because the words themselves are what is compared. A run of sixteen alphanumerics does not
@@ -186,9 +200,13 @@ def squeeze(text):
     fold() maps one character to one character, so an index into the folded text is an index into the
     input, and the map returned here carries that through the squeeze.
     """
+    folded = fold(text)
+    skip = set()
+    for m in INLINE_REF.finditer(folded):
+        skip.update(range(m.start(), m.end()))
     out, idx = [], []
-    for i, ch in enumerate(fold(text)):
-        if not ch.isalnum():
+    for i, ch in enumerate(folded):
+        if i in skip or not ch.isalnum():
             continue
         out.append(ch)
         idx.append(i)

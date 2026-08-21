@@ -756,9 +756,10 @@ static void ip4_reass_expire(uint8_t *work)
         {
             continue;
         }
-        // RFC 1122 sec 3.3.2 owes the Time Exceeded to a datagram the timer ran out on: "If a host
-        // reassembling a fragmented datagram cannot complete the reassembly due to missing
-        // fragments within its time limit". An abandoned row is not missing fragments - it was told
+        // RFC 1122 sec 3.3.2 owes the Time Exceeded to a datagram the timer ran out on, which RFC 792
+        // states as "If a host reassembling a fragmented datagram cannot complete the reassembly due
+        // to missing fragments within its time limit it discards the datagram, and it may send a time
+        // exceeded message". An abandoned row is not missing fragments - it was told
         // two different things about the same octets - so it is retired without an answer, which is
         // the disposition RFC 8200 sec 4.5 states for its IPv6 twin: "no ICMP error messages should
         // be sent". Its buffer identifier goes back here, and only here.
