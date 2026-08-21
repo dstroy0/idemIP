@@ -2121,6 +2121,39 @@ void test_a_fragmented_echo_request_is_not_ignored(void)
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_REASM_REQDS));
 }
 
+// RFC 8200 sec 4.1: "The Hop-by-Hop Options header, when present, must immediately follow the IPv6
+// header." The same section says of the whole chain, "IPv6 nodes must accept and attempt to process
+// extension headers in any order and occurring any number of times in the same packet, except for the
+// Hop-by-Hop Options header, which is restricted to appear immediately after an IPv6 header only",
+// and a second one is a chain no walk can step. That is a fault in the header, which RFC 2465
+// ipv6IfStatsInHdrErrors counts: "The number of input datagrams discarded due to errors in their IPv6
+// headers."
+void test_a_second_hop_by_hop_header_is_a_header_error(void)
+{
+    const size_t hop1 = IDEMIP_ETH_HDR_LEN + IDEMIP_IPV6_HDR_LEN;
+    const size_t hop2 = hop1 + IDEMIP_IP6_EXT_UNIT;
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_HOPOPT, g_remote_ip6, g_local_ip6, IDEMIP_IP6_EXT_UNIT * 2u);
+
+    // Two Hop-by-Hop headers of one unit each, the first naming the second, the second naming UDP.
+    memset(g_frame + hop1, 0, IDEMIP_IP6_EXT_UNIT * 2u);
+    g_frame[hop1 + IDEMIP_IP6_EXT_OFF_NEXT_HDR] = IDEMIP_IP6_NH_HOPOPT;
+    g_frame[hop1 + IDEMIP_IP6_EXT_OFF_LEN] = 0u; // one unit, which sec 4.3 counts as the header alone
+    g_frame[hop1 + 2u] = IDEMIP_IP6_OPT_PADN;
+    g_frame[hop1 + 3u] = 4u;
+    g_frame[hop2 + IDEMIP_IP6_EXT_OFF_NEXT_HDR] = IDEMIP_IP6_NH_UDP;
+    g_frame[hop2 + IDEMIP_IP6_EXT_OFF_LEN] = 0u;
+    g_frame[hop2 + 2u] = IDEMIP_IP6_OPT_PADN;
+    g_frame[hop2 + 3u] = 4u;
+
+    input(work_a, hop2 + IDEMIP_IP6_EXT_UNIT, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_HEADER, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a second Hop-by-Hop Options header was stepped over");
+    TEST_ASSERT_FALSE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_HDR_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
+}
+
 // A Routing header carrying @p segs_left, ahead of an eight-octet UDP header. The Routing Type is 43,
 // which no allocation names and this library executes none of either way.
 static size_t build_ip6_routing(uint8_t *f, size_t off, uint8_t segs_left)
@@ -2447,6 +2480,36 @@ void test_an_icmpv6_message_shorter_than_its_own_header_is_an_error(void)
                               "two octets were answered as a message");
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS));
+}
+
+// The RFC 4443 twin of the IPv4 case above: a message with nowhere to build the answer is BUSY, and
+// the same frame dispatched again once a transmit buffer frees is answered. The floor is one minimum
+// Ethernet frame, because that is the smallest thing that can go out.
+void test_an_icmpv6_echo_request_with_no_room_for_the_reply_is_busy(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t end = build_ip6_echo6(g_frame, off, IDEMIP_ICMP6_ECHO_REQUEST);
+
+    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    io->input_args.frame = g_frame;
+    io->input_args.len = end;
+    io->input_args.out = g_out;
+    io->input_args.out_cap = (size_t)IDEMIP_ETH_FRAME_MIN - 1u;
+    io->input_args.now_ms = 1000u;
+    io->input_args.rand = g_rand;
+    io->input_args.desc = IDEMIP_DISPATCH_DESC_NONE;
+    io->input_args.netif = 0u;
+    Dispatch.input(work_a);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, io->status, "a buffer that frees later is BUSY, not a drop");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, io->drop, "BUSY is not a discard");
+    TEST_ASSERT_FALSE((io->act & IDEMIP_DISPATCH_ACT_SEND) != 0u);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS),
+                                     "a message nothing was wrong with was counted as an error");
+
+    // The same frame with room answers it.
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE_MESSAGE((io->act & IDEMIP_DISPATCH_ACT_SEND) != 0u, "the retry built no reply");
 }
 
 // RFC 8200 sec 8.1: "IPv6 receivers must discard UDP packets containing a zero checksum". The
@@ -3852,6 +3915,59 @@ void test_two_segments_earn_one_acknowledgment(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, io->status);
 }
 
+// MUST-59 aggregates an acknowledgment and takes it on a later call, so between the segment that
+// earned one and the call that sends it the connection can go: RFC 9293 sec 3.10.4 CLOSE deletes the
+// TCB, and sec 3.10.7.4 deletes it on a reset. The row is left owing an acknowledgment for a
+// connection that no longer exists, and the flush passes over it rather than answering from a control
+// block that has been reused. Nothing is owed after that, which is BUSY.
+void test_an_acknowledgment_owed_by_a_connection_that_closed_is_not_sent(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    // Four octets of text, which earns the acknowledgment MUST-58 aggregates.
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_ACK_OWED) != 0u,
+                             "the segment earned no acknowledgment, so there is nothing to leave owed");
+
+    tp->pcb_args.index = pcb;
+    TcpPcb.close(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+
+    Dispatch.tcp_ack(work_a);
+    const DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, io->status,
+                                  "an acknowledgment was formed for a connection that no longer exists");
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, io->reply.flags, "a segment was formed with nothing to form it from");
+
+    // And the row was cleared on the way past, so a second call finds nothing either.
+    Dispatch.tcp_ack(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, io->status);
+}
+
+// The same gap on the other join. A held segment waits for RCV.NXT to reach it, and the connection
+// holding it can be deleted first - sec 3.10.7.4 of a reset in a synchronized state: "Enter the
+// CLOSED state, delete the TCB, and return." A delivery asked for against a control block that is no
+// longer in use reports ERR rather than reading the entry as though it were still a connection.
+void test_a_delivery_asked_for_against_a_closed_connection_is_refused(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.close(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+
+    IDEMIP_DISPATCH_IO(work_a)->tcp_args.pcb = pcb;
+    Dispatch.tcp_deliver(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DISPATCH_IO(work_a)->status,
+                                  "a held segment was delivered against a connection that was deleted");
+    TEST_ASSERT_FALSE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+}
+
 // Nothing owed is BUSY, not ERR: a segment on a later tick makes the same call succeed.
 void test_an_ack_flush_with_nothing_owed_is_busy(void)
 {
@@ -4402,6 +4518,70 @@ void test_a_multicast_destination_with_no_igmp_borrow_is_not_ours(void)
                                   "a group this host never joined was taken as its own");
     TEST_ASSERT_FALSE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
 }
+
+// netif is what an ARP packet is answered from: RFC 826 asks "?Am I the target protocol address?"
+// against this end's own protocol address, and the reply it builds carries this end's hardware
+// address, "Swap hardware and protocol fields, putting the local hardware and protocol addresses in
+// the sender fields." A build with no interface table has neither of the two to read.
+void test_an_arp_packet_with_no_netif_borrow_is_refused(void)
+{
+    BIND_WITHOUT(work_a, netif);
+    if_untagged(work_a, 0u);
+    size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_ARP);
+    size_t end = build_arp(g_frame, off, IDEMIP_ARP_OP_REQUEST, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    ASSERT_UNBOUND(work_a, "netif");
+    TEST_ASSERT_FALSE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_SEND) != 0u,
+                              "a reply was built with no address to build it from");
+}
+
+#if IDEMIP_ENABLE_IPV6
+
+// RFC 4291 sec 2.5.3 of the loopback address: "An IPv6 packet with a destination address of loopback
+// must never be sent outside of a single node and must never be forwarded by an IPv6 router. A packet
+// received on an interface with a destination address of loopback must be dropped." With no loopif
+// borrow there is no interface that could own it, and that last sentence is what is left.
+void test_a_loopback_destination_off_a_wire_is_dropped(void)
+{
+    BIND_WITHOUT(work_a, loopif);
+    if_untagged(work_a, 0u);
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_lo6, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, g_lo6);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_ADDRESS, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a loopback destination off a wire was taken as this node's");
+    TEST_ASSERT_FALSE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_FALSE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) != 0u,
+                              "sec 2.5.3 says it must never be forwarded");
+}
+
+// RFC 4291 sec 2.7.1 requires a node to join "the associated Solicited-Node multicast addresses for
+// all unicast and anycast addresses that have been configured for the node's interfaces", and that is
+// the last thing a multicast destination is tried against. Working out a solicited-node address needs
+// ip6_addr, so a build without it holds none of them: the group is one this node has not joined.
+void test_a_multicast_destination_with_no_ip6_addr_borrow_is_not_ours(void)
+{
+    BIND_WITHOUT(work_a, ip6_addr);
+    if_untagged(work_a, 0u);
+    // ff02::1:ff00:99, a solicited-node address, and not one of the all-nodes pair sec 2.8 joins for
+    // you.
+    static const uint8_t solicited[IDEMIP_IP6_ADDR_LEN] = {0xFFu, 0x02u, 0, 0,  0,     0, 0, 0,
+                                                           0,     0,     0, 1u, 0xFFu, 0, 0, 0x99u};
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, solicited, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, solicited);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_ADDRESS, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a solicited-node group was taken with nothing to work it out from");
+    TEST_ASSERT_FALSE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+}
+
+#endif // IDEMIP_ENABLE_IPV6
 
 // The tag is read before anything else, so an unbound vlan stops every frame there.
 void test_a_frame_with_no_vlan_borrow_is_refused(void)
