@@ -3811,8 +3811,8 @@ void test_a_segment_ahead_of_a_full_out_of_order_queue_is_dropped(void)
                                  "a segment the queue had room for was not held");
     }
 
-    size_t end = build_tcp4(g_frame, 5000u, 5001u, 105u + (uint32_t)(IDEMIP_TCP_OOSEQ_SEGS * 8u), iss + 1u,
-                            IDEMIP_TCP_ACK, 4u);
+    const uint32_t past_end = 105u + (uint32_t)(IDEMIP_TCP_OOSEQ_SEGS * 8u);
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, past_end, iss + 1u, IDEMIP_TCP_ACK, 4u);
     input(work_a, end, 0u, (uint16_t)(3u + IDEMIP_TCP_OOSEQ_SEGS));
     TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) == 0u,
                              "a segment the queue had no room for was left holding a descriptor");
