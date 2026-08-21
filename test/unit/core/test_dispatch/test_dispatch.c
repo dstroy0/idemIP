@@ -1018,6 +1018,16 @@ static uint32_t igmp_deadline(uint32_t group)
 
 // Another host's Report puts the membership in sec 6's Idle Member state, so the next Query arms a
 // fresh timer rather than deciding whether to shorten a running one.
+static int igmp_state(uint32_t group)
+{
+    IgmpIo *ig = IDEMIP_IGMP_IO(igmp_mem);
+    ig->group_args.group = group;
+    ig->group_args.netif = 0u;
+    Igmp.find(igmp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ig->status);
+    return (int)ig->state;
+}
+
 static void quiet_group(uint32_t group)
 {
     IgmpIo *ig = IDEMIP_IGMP_IO(igmp_mem);
@@ -1120,6 +1130,91 @@ void test_an_unrecognized_igmp_type_is_silently_ignored(void)
     }
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(unknown, ctr(IDEMIP_STAT_IP4_IN_UNKNOWN_PROTOS),
                                      "IP protocol 2 is supported, so ipInUnknownProtos must not move");
+}
+
+// RFC 2236 sec 3: "When a host receives a Report for a group that it is a member of on that
+// interface, it stops its timer for that group and does not send a report." The Report has to reach
+// igmp for that to happen, and only the Query and the two types sec 2.1 has a host ignore had ever
+// been fed to this demux. Types 0x12 and 0x16 are the v1 and v2 Reports.
+void test_an_igmp_report_from_another_host_reaches_the_group_table(void)
+{
+    static const uint8_t reports[2] = {(uint8_t)IDEMIP_IGMP_TYPE_REPORT_V1, (uint8_t)IDEMIP_IGMP_TYPE_REPORT_V2};
+    for (int i = 0; i < 2; i++)
+    {
+        wire_units();
+        Dispatch.clear(work_a);
+        bind_all(work_a);
+        if_untagged(work_a, 0u);
+        join_group(0xE0000102u);
+
+        // A General Query arms this host's own delayed Report for the group.
+        memset(g_frame, 0, sizeof g_frame);
+        size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+        const uint32_t all_systems = IDEMIP_IGMP_ALL_SYSTEMS;
+        off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, all_systems, IDEMIP_IGMP_MSG_LEN, 0u);
+        size_t end = build_igmp(g_frame, off, (uint8_t)IDEMIP_IGMP_TYPE_QUERY, 100u, 0u);
+        input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IGMP_DELAYING_MEMBER, igmp_state(0xE0000102u),
+                                      "the General Query did not arm a delayed Report");
+
+        // Another host's Report for the same group, which withdraws it.
+        memset(g_frame, 0, sizeof g_frame);
+        off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+        off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, 0xE0000102u, IDEMIP_IGMP_MSG_LEN, 0u);
+        end = build_igmp(g_frame, off, reports[i], 0u, 0xE0000102u);
+        input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IGMP_IDLE_MEMBER, igmp_state(0xE0000102u),
+                                      "sec 3 stops the timer when another host reports the group");
+        TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u,
+                                 "a Report this build acts on is a delivery");
+    }
+}
+
+// RFC 2236 sec 2: a Membership message is eight octets. An IP payload shorter than that carries no
+// Group Address to read and no checksum to verify, so it is refused before either is attempted, and
+// the octets arriving is what makes it an interface error as well.
+void test_an_igmp_message_shorter_than_its_header_is_refused(void)
+{
+    join_group(0xE0000102u);
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, 0xE0000102u, IDEMIP_IGMP_MSG_LEN - 4u, 0u);
+    memset(g_frame + off, 0, IDEMIP_IGMP_MSG_LEN - 4u);
+    input(work_a, off + (IDEMIP_IGMP_MSG_LEN - 4u), 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "four octets were read as a Membership message");
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
+    TEST_ASSERT_FALSE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+}
+
+// RFC 1122 sec 3.2.2.6 answers an Echo Request, and dispatch.h says what it does when the caller's
+// transmit buffer cannot hold the answer: "A reply with nowhere to be built is BUSY: a transmit buffer
+// frees on a later tick, and the same frame dispatched again then answers." Not a drop, and not an
+// error - the frame is still good and the caller is being asked to come back with room. The floor is
+// one minimum Ethernet frame, because that is the smallest thing that can go out.
+void test_an_echo_request_with_no_room_for_the_reply_is_busy(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+
+    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    io->input_args.frame = g_frame;
+    io->input_args.len = end;
+    io->input_args.out = g_out;
+    io->input_args.out_cap = (size_t)IDEMIP_ETH_FRAME_MIN - 1u;
+    io->input_args.now_ms = 1000u;
+    io->input_args.rand = g_rand;
+    io->input_args.desc = IDEMIP_DISPATCH_DESC_NONE;
+    io->input_args.netif = 0u;
+    Dispatch.input(work_a);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, io->status, "a buffer that frees later is BUSY, not a drop");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, io->drop, "BUSY is not a discard");
+    TEST_ASSERT_FALSE_MESSAGE((io->act & IDEMIP_DISPATCH_ACT_SEND) != 0u,
+                              "nothing was built, so nothing is owed to the wire");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP4_IN_ERRORS),
+                                     "the message was not read, so it is not an ICMP-specific error");
 }
 
 // RFC 1122 sec 2.3.3, of a host on a 10Mbps Ethernet: "SHOULD be able to receive RFC-1042 packets,
@@ -2134,6 +2229,32 @@ void test_an_unrecognized_option_that_says_skip_is_skipped(void)
                                   "sec 4.2 skips an unrecognized option whose high bits are 00");
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
     TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
+}
+
+// The IPv6 twin of the loopback case above. RFC 4291 sec 2.5.3: an IPv6 packet with a destination of
+// loopback "must never be sent outside of a single node and must never be forwarded by an IPv6
+// router", so one that arrived on a wire is dropped - and the interface no wire reaches is the
+// exception, where ::1 is this host's and loopif owns it. Told apart by where the datagram stops: an
+// address error at the IP layer, or the transport, which has no binding for the port.
+void test_a_loopback_interface_carries_the_ipv6_address_loopif_owns(void)
+{
+    NetifIo *ni = IDEMIP_NETIF_IO(netif_mem);
+    ni->if_args.index = 0u;
+    ni->if_args.set = (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK;
+    ni->if_args.clear = 0u;
+    Netif.set_flags(netif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ni->status);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_lo6, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, g_lo6);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "the address loopif owns was not this host's on the loopback interface");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_IP6_IN_ADDR_ERRORS),
+                                     "a datagram that reached the transport was counted as an address error");
 }
 
 // RFC 4443 sec 2.4 (b): "If an ICMPv6 informational message of unknown type is received, it MUST be
