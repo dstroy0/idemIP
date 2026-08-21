@@ -55,9 +55,13 @@
 #define FUZZ_CANARY 0xA5u
 
 static const uint8_t fuzz_local_mac[6] = {0x02u, 0x00u, 0x5Eu, 0x10u, 0x00u, 0x01u};
+#if IDEMIP_ENABLE_IPV6
+// Behind the capability that reads them: a build without IPv6 has no address to give the interface
+// and no ::1 for the loopback, and a constant nothing names is a warning the two-build run refuses.
 static const uint8_t fuzz_local_ip6[16] = {0x20u, 0x01u, 0x0Du, 0xB8u, 0u, 0u, 0u, 0u,
                                            0u,    0u,    0u,    0u,    0u, 0u, 0u, 0x01u};
 static const uint8_t fuzz_lo6[16] = {0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0x01u};
+#endif
 
 // One array per borrow, which is the whole footprint: the library holds no file-scope mutable of
 // its own. The dispatch borrow carries a tail of canary octets so a write past
@@ -81,7 +85,9 @@ static _Alignas(IDEMIP_ALIGN) uint8_t ip6_reass_mem[IDEMIP_IP6_REASS_BORROW];
 static _Alignas(IDEMIP_ALIGN) uint8_t icmp6_in_mem[IDEMIP_ICMP6_IN_BORROW];
 static _Alignas(IDEMIP_ALIGN) uint8_t mld6_mem[IDEMIP_MLD6_BORROW];
 #endif
+#if IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6
 static _Alignas(IDEMIP_ALIGN) uint8_t raw_mem[IDEMIP_RAW_PCB_BORROW];
+#endif
 #if IDEMIP_ENABLE_UDP
 static _Alignas(IDEMIP_ALIGN) uint8_t udp_mem[IDEMIP_UDP_PCB_BORROW];
 static _Alignas(IDEMIP_ALIGN) uint8_t udplite_mem[IDEMIP_UDPLITE_BORROW];
@@ -141,7 +147,9 @@ static void fuzz_wire(void)
     Icmp6In.clear(icmp6_in_mem);
     Mld6.clear(mld6_mem);
 #endif
-    RawPcb.clear(raw_mem);
+#if IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6
+    RawPcb.clear(raw_mem); // raw_pcb.h stands behind the same two: a raw binding names an IP version
+#endif
 #if IDEMIP_ENABLE_UDP
     UdpPcb.clear(udp_mem);
     UdpLite.clear(udplite_mem);
@@ -274,7 +282,9 @@ static void fuzz_wire(void)
     io->bind_args.icmp6_in = icmp6_in_mem;
     io->bind_args.mld6 = mld6_mem;
 #endif
+#if IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6
     io->bind_args.raw_pcb = raw_mem;
+#endif
 #if IDEMIP_ENABLE_UDP
     io->bind_args.udp_pcb = udp_mem;
     io->bind_args.udplite = udplite_mem;
