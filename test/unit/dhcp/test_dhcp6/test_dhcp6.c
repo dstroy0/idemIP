@@ -1392,8 +1392,8 @@ void test_an_option_of_the_wrong_length_is_read_as_though_it_were_absent(void)
 
         // An ill-formed preference is no preference, so that one row waits where sec 18.2.1 leaves a
         // client with nothing to prefer; every other row still moves on the address it was offered.
-        const int want = (rows[r].code == IDEMIP_DHCP6_OPT_PREFERENCE) ? IDEMIP_DHCP6_SOLICITING
-                                                                       : IDEMIP_DHCP6_REQUESTING;
+        const int soliciting = (rows[r].code == IDEMIP_DHCP6_OPT_PREFERENCE);
+        const int want = soliciting ? IDEMIP_DHCP6_SOLICITING : IDEMIP_DHCP6_REQUESTING;
         TEST_ASSERT_EQUAL_INT_MESSAGE(want, IDEMIP_DHCP6_IO(work_a)->state, rows[r].why);
     }
 }
@@ -1495,15 +1495,15 @@ void test_an_ia_na_with_no_usable_address_option_offers_nothing(void)
     msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
     msg_pref(IDEMIP_DHCP6_PREF_IMMEDIATE);
     // An IA_NA whose only sub-option is an IA Address four octets short of Figure 17.
-    const uint16_t body = (uint16_t)(IDEMIP_DHCP6_IA_NA_FIXED_LEN + IDEMIP_DHCP6_OPT_HDR_LEN +
-                                     IDEMIP_DHCP6_IAADDR_FIXED_LEN - 4u);
+    const uint16_t short_addr = (uint16_t)(IDEMIP_DHCP6_IAADDR_FIXED_LEN - 4u);
+    const uint16_t body = (uint16_t)(IDEMIP_DHCP6_IA_NA_FIXED_LEN + IDEMIP_DHCP6_OPT_HDR_LEN + short_addr);
     uint8_t *ia = msg_opt(IDEMIP_DHCP6_OPT_IA_NA, body);
     put32(ia, g_cfg_a.iaid);
     put32(ia + 4u, 0u);
     put32(ia + 8u, 0u);
     uint8_t *sub = ia + IDEMIP_DHCP6_IA_NA_FIXED_LEN;
     put16(sub, IDEMIP_DHCP6_OPT_IAADDR);
-    put16(sub + 2u, (uint16_t)(IDEMIP_DHCP6_IAADDR_FIXED_LEN - 4u));
+    put16(sub + 2u, short_addr);
     memcpy(sub + IDEMIP_DHCP6_OPT_HDR_LEN, g_lease, IDEMIP_IP6_ADDR_LEN);
     feed(work_a);
 
