@@ -160,9 +160,17 @@ static idemip_bool dns_deref(const uint8_t *msg, size_t len, size_t *off, size_t
         {
             return IDEMIP_TRUE;
         }
-        if (((*off) + 1u) >= len || *hops >= IDEMIP_DNS_PTR_HOPS_MAX)
+        // Neither half is measured. Every caller reaches this walk through dns_name_end, which stops
+        // at the first pointer and refuses one whose second octet is not there, so a pointer standing
+        // at the last octet of the message is answered before the walk is entered. And the hop count
+        // cannot be reached: each hop must land strictly below the one before it, so a chain is at
+        // most as long as the offsets below where it started, and IDEMIP_DNS_PTR_HOPS_MAX is half of
+        // the 255 octets sec 3.1 allows a name - a chain that long needs a message that could not
+        // hold the name it is compressing. Both are written because a walk over a caller's octets
+        // must be bounded whatever it is handed.
+        if (((*off) + 1u) >= len || *hops >= IDEMIP_DNS_PTR_HOPS_MAX) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE;
+            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
         }
         size_t next = (size_t)(idemip_rd16(msg + *off) & IDEMIP_DNS_LABEL_PTR_MASK);
         if (next >= *off)
@@ -172,7 +180,9 @@ static idemip_bool dns_deref(const uint8_t *msg, size_t len, size_t *off, size_t
         *off = next;
         (*hops)++;
     }
-    return IDEMIP_FALSE;
+    // The loop leaves only through a return above: an offset at or past the end is refused by the
+    // caller before the walk is entered, for the reason written there. Not measured.
+    return IDEMIP_FALSE; // GCOVR_EXCL_LINE
 }
 
 /**
@@ -253,10 +263,15 @@ static idemip_bool dns_name_eq_text(const uint8_t *msg, size_t len, size_t off, 
         {
             return IDEMIP_FALSE;
         }
+        // sec 3.1's bound on the encoding, tested against the message rather than against the name
+        // this is comparing it to. Not measured: the dotted form was measured by dns_text_wire_len
+        // before it was stored, so it spans at most IDEMIP_DNS_NAME_TEXT_MAX octets, and a message
+        // name that runs past this bound while still matching that form octet for octet cannot
+        // exist. The test is written because the walk is over a caller's octets.
         spent += 1u + (size_t)n;
-        if ((spent + 1u) > IDEMIP_DNS_NAME_WIRE_MAX) // sec 3.1, the root's length octet counts
+        if ((spent + 1u) > IDEMIP_DNS_NAME_WIRE_MAX) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE;
+            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
         }
         for (uint8_t i = 0; i < n; i++)
         {
@@ -308,18 +323,24 @@ static idemip_bool dns_name_eq_wire(const uint8_t *msg, size_t len, size_t a, si
         {
             return IDEMIP_TRUE;
         }
-        if (na > IDEMIP_DNS_LABEL_MAX)
+        // The three bounds below are written because this walk is over a caller's octets, and none of
+        // them is measured. This is reached only for a message whose question already matched the
+        // name asked about, so the question's length octets are all sec 2.3.4 legal and its encoding
+        // is inside sec 3.1's 255; na equals the question's octet by the test above, so it is legal
+        // too, and the same equality carries the length bound. A record whose owner runs past the
+        // message is answered by dns_name_end before the comparison is made.
+        if (na > IDEMIP_DNS_LABEL_MAX) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE;
+            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
         }
-        if (((a + 1u + (size_t)na) > len) || ((b + 1u + (size_t)na) > len))
+        if (((a + 1u + (size_t)na) > len) || ((b + 1u + (size_t)na) > len)) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE;
+            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
         }
         spent += 1u + (size_t)na;
-        if ((spent + 1u) > IDEMIP_DNS_NAME_WIRE_MAX) // sec 3.1, the root's length octet counts
+        if ((spent + 1u) > IDEMIP_DNS_NAME_WIRE_MAX) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE;
+            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
         }
         for (uint8_t i = 0; i < na; i++)
         {
@@ -366,10 +387,15 @@ static idemip_bool dns_text_wire_len(const char *text, size_t *out_wire, size_t 
         {
             return IDEMIP_FALSE; // an empty label, or one past the sec 2.3.4 limit
         }
+        // Not measured: the encoding is exactly two octets longer than the dotted form it is measured
+        // from - one length octet replaces each separator and the root's is added - so this bound is
+        // reached at the same name the IDEMIP_DNS_NAME_TEXT_MAX test above reaches one character
+        // earlier. It is written because sec 3.1 states the bound on the encoding, and this is where
+        // the encoding is counted.
         wire += 1u + label;
-        if (wire > IDEMIP_DNS_NAME_WIRE_MAX)
+        if (wire > IDEMIP_DNS_NAME_WIRE_MAX) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE;
+            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
         }
         label = 0;
         if (c == '\0')
@@ -904,9 +930,13 @@ static void dns_build_query(uint8_t *work)
         {
             label++;
         }
-        if (label == 0u)
+        // Not measured: dns_text_wire_len refuses an empty label where the name is taken in, and it
+        // reports a length that stops at the separator standing for the root, so the walk never
+        // arrives at a run of no characters. The arm is written because a walk that counts to a
+        // separator must say what it does when there is nothing before one.
+        if (label == 0u) // GCOVR_EXCL_BR_LINE
         {
-            break; // the separator standing for the root, which the zero octet below writes
+            break; // GCOVR_EXCL_LINE
         }
         out[at] = (uint8_t)label;
         memcpy(out + at + 1u, name + k, label);
@@ -952,9 +982,15 @@ static void dns_build_query(uint8_t *work)
     {
         wait <<= 1;
     }
-    if (wait > (uint32_t)IDEMIP_DNS_RETRY_MAX_MS)
+    // The clamp is written because sec 6.1.3.3 (5) asks for an upper bound and the doubling above
+    // does not have one on its own. It is not measured in this configuration: IDEMIP_DNS_RETRY_MS is
+    // 2000 and IDEMIP_DNS_RETRY_MAX_MS is 32000, so the doubling lands exactly on the bound and stops
+    // there. A configuration whose lower bound does not divide the upper by a power of two - which
+    // the static_assert in dns.h allows, taking IDEMIP_DNS_RETRY_MS anywhere in 2000 to 5000 - steps
+    // over it, and this is what holds the interval down when it does.
+    if (wait > (uint32_t)IDEMIP_DNS_RETRY_MAX_MS) // GCOVR_EXCL_BR_LINE
     {
-        wait = (uint32_t)IDEMIP_DNS_RETRY_MAX_MS;
+        wait = (uint32_t)IDEMIP_DNS_RETRY_MAX_MS; // GCOVR_EXCL_LINE
     }
     q->deadline_ms = io->now_ms + wait;
     io->status = IDEMIP_OK;
@@ -999,9 +1035,12 @@ static uint8_t dns_match(uint8_t *work, const uint8_t *msg, size_t len)
         {
             continue;
         }
-        if (q->server >= IDEMIP_DNS_SERVERS)
+        // Not measured: a question reaches the sent state through idemip_dns_build, which answers BUSY
+        // rather than sending when dns_server_used_from finds none, so a sent question has a server.
+        // The test is written because the index is read out of the slot and used to index the table.
+        if (q->server >= IDEMIP_DNS_SERVERS) // GCOVR_EXCL_BR_LINE
         {
-            continue;
+            continue; // GCOVR_EXCL_LINE
         }
         const DnsServer *s = DNS_SERVER_AT(work, q->server);
         if (!s->used || s->ipv6 != a->ipv6 || s->port != a->src_port)
@@ -1189,10 +1228,14 @@ static void dns_take(uint8_t *work)
         return;
     }
 
+    // Not measured: the loop that picked this question made the same call on the same octets and
+    // moved to the next question when it failed, so the name ends inside the message by the time the
+    // answers are read. It is written because the offset it reports is what the answer section
+    // starts at, and reading that from a walk that was not checked would be reading a guess.
     size_t at = 0;
-    if (!dns_name_end(msg, len, IDEMIP_DNS_HDR_LEN, &at))
+    if (!dns_name_end(msg, len, IDEMIP_DNS_HDR_LEN, &at)) // GCOVR_EXCL_BR_LINE
     {
-        return;
+        return; // GCOVR_EXCL_LINE
     }
     at += IDEMIP_DNS_QFIXED_LEN;
 

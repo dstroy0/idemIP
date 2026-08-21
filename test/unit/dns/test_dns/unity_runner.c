@@ -100,6 +100,9 @@ extern void test_a_name_written_with_its_root_separator_builds_the_same_question
 extern void test_a_response_from_the_right_server_on_another_port_answers_nothing(void);
 extern void test_a_question_whose_name_does_not_encode_the_name_asked_about_answers_nothing(void);
 extern void test_a_full_cache_gives_up_the_answer_closest_to_expiry(void);
+extern void test_a_response_ending_before_its_qtype_answers_nothing(void);
+extern void test_a_record_whose_rdlength_runs_past_the_message_ends_the_walk(void);
+extern void test_a_record_whose_owner_differs_in_one_character_is_not_an_answer(void);
 extern void test_a_question_that_gave_up_returns_a_soft_error(void);
 extern void test_the_retransmission_interval_is_inside_the_rfc_window(void);
 extern void test_a_deadline_holds_across_the_millisecond_wrap(void);
@@ -258,13 +261,16 @@ int main(void)
   run_test(test_a_name_written_with_its_root_separator_builds_the_same_question, "test_a_name_written_with_its_root_separator_builds_the_same_question", 2125);
   run_test(test_a_response_from_the_right_server_on_another_port_answers_nothing, "test_a_response_from_the_right_server_on_another_port_answers_nothing", 2158);
   run_test(test_a_question_whose_name_does_not_encode_the_name_asked_about_answers_nothing, "test_a_question_whose_name_does_not_encode_the_name_asked_about_answers_nothing", 2180);
-  run_test(test_a_full_cache_gives_up_the_answer_closest_to_expiry, "test_a_full_cache_gives_up_the_answer_closest_to_expiry", 2220);
-  run_test(test_a_question_that_gave_up_returns_a_soft_error, "test_a_question_that_gave_up_returns_a_soft_error", 2266);
-  run_test(test_the_retransmission_interval_is_inside_the_rfc_window, "test_the_retransmission_interval_is_inside_the_rfc_window", 2302);
-  run_test(test_a_deadline_holds_across_the_millisecond_wrap, "test_a_deadline_holds_across_the_millisecond_wrap", 2324);
-  run_test(test_the_exchange_runs_end_to_end_on_two_borrows_at_once, "test_the_exchange_runs_end_to_end_on_two_borrows_at_once", 2344);
-  run_test(test_input_on_the_same_bytes_repeats, "test_input_on_the_same_bytes_repeats", 2389);
-  run_test(test_cancel_leaves_no_question_for_a_late_response, "test_cancel_leaves_no_question_for_a_late_response", 2417);
+  run_test(test_a_full_cache_gives_up_the_answer_closest_to_expiry, "test_a_full_cache_gives_up_the_answer_closest_to_expiry", 2221);
+  run_test(test_a_response_ending_before_its_qtype_answers_nothing, "test_a_response_ending_before_its_qtype_answers_nothing", 2267);
+  run_test(test_a_record_whose_rdlength_runs_past_the_message_ends_the_walk, "test_a_record_whose_rdlength_runs_past_the_message_ends_the_walk", 2282);
+  run_test(test_a_record_whose_owner_differs_in_one_character_is_not_an_answer, "test_a_record_whose_owner_differs_in_one_character_is_not_an_answer", 2297);
+  run_test(test_a_question_that_gave_up_returns_a_soft_error, "test_a_question_that_gave_up_returns_a_soft_error", 2327);
+  run_test(test_the_retransmission_interval_is_inside_the_rfc_window, "test_the_retransmission_interval_is_inside_the_rfc_window", 2363);
+  run_test(test_a_deadline_holds_across_the_millisecond_wrap, "test_a_deadline_holds_across_the_millisecond_wrap", 2385);
+  run_test(test_the_exchange_runs_end_to_end_on_two_borrows_at_once, "test_the_exchange_runs_end_to_end_on_two_borrows_at_once", 2405);
+  run_test(test_input_on_the_same_bytes_repeats, "test_input_on_the_same_bytes_repeats", 2450);
+  run_test(test_cancel_leaves_no_question_for_a_late_response, "test_cancel_leaves_no_question_for_a_late_response", 2478);
 
   return UNITY_END();
 }

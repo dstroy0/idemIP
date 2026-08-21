@@ -2189,6 +2189,7 @@ void test_a_question_whose_name_does_not_encode_the_name_asked_about_answers_not
         {1, 0u, 0u, "a question whose last label runs past the message answered it"},
         {0, OFF_QNAME, 8u, "a question with a longer first label answered it"},
         {0, OFF_COM, 4u, "a question with a longer last label answered it"},
+        {0, OFF_QNAME, 6u, "a question whose first label ends inside the name's answered it"},
     };
 
     for (size_t r = 0u; r < (sizeof rows / sizeof rows[0]); r++)
@@ -2258,6 +2259,66 @@ void test_a_full_cache_gives_up_the_answer_closest_to_expiry(void)
     look(work_a, names[0], IDEMIP_DNS_TYPE_A);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status,
                                   "an answer with longer to live was given up instead");
+}
+
+// RFC 1035 sec 4.1.2 puts a QTYPE and a QCLASS behind the QNAME, so a datagram that ends with the
+// name is not carrying a question at all. RFC 5452 sec 9.1 matches a response on "Question section"
+// as a whole, and there is no section here to match.
+void test_a_response_ending_before_its_qtype_answers_nothing(void)
+{
+    (void)ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, 0u);
+    (void)good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+    // The QNAME ends at OFF_QTYPE; two octets past it is short of the four sec 4.1.2 needs.
+    deliver_ok(work_a, (size_t)OFF_QTYPE + 2u);
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status,
+                                  "a datagram with no room for a QTYPE was taken as the answer");
+}
+
+// RFC 1035 sec 4.1.3's RDLENGTH "specifies the length in octets of the RDATA field", and a length
+// naming more octets than the datagram carries names data that is not there. The walk stops at that
+// record rather than reading past the message, and the records before it stand.
+void test_a_record_whose_rdlength_runs_past_the_message_ends_the_walk(void)
+{
+    (void)ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, 0u);
+    const size_t len = good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+    (void)w16(g_msg, len - 4u - 2u, 200u); // the RDLENGTH ahead of the four octets of RDATA
+    deliver_ok(work_a, len);
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status,
+                                  "a record naming more octets than arrived was read");
+}
+
+// RFC 5452 sec 6: a record is an answer only if it is "for the name asked about". The owner written
+// out in full rather than as a sec 4.1.4 pointer is compared label by label against the question, and
+// one character of one label is enough to make it another name.
+void test_a_record_whose_owner_differs_in_one_character_is_not_an_answer(void)
+{
+    static const char spell[2] = {'f', 'e'};
+    for (int k = 0; k < 2; k++)
+    {
+        Dns.clear(work_a);
+        (void)ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+        put_on_the_wire(work_a, 0u);
+
+        mhdr(XID, (uint16_t)(IDEMIP_DNS_FLAG_QR | IDEMIP_DNS_FLAG_RD | IDEMIP_DNS_FLAG_RA), 1u, 1u);
+        size_t at = wname(g_msg, IDEMIP_DNS_HDR_LEN, NAME);
+        at = w16(g_msg, at, IDEMIP_DNS_TYPE_A);
+        at = w16(g_msg, at, IDEMIP_DNS_CLASS_IN);
+        // The owner in full rather than as a pointer, with the same two labels at the same two
+        // lengths, and one character of the first either the question's or not.
+        const size_t owner = at;
+        at = wname(g_msg, at, NAME);
+        g_msg[owner + 7u] = (uint8_t)spell[k];
+        const size_t len = wrr(g_msg, at, IDEMIP_DNS_TYPE_A, IDEMIP_DNS_CLASS_IN, 300u, g_ans4, 4u);
+
+        deliver_ok(work_a, len);
+        look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+        TEST_ASSERT_EQUAL_INT_MESSAGE((k == 0) ? IDEMIP_BUSY : IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status,
+                                      "the owner written out in full decided the wrong way");
+    }
 }
 
 // RFC 1123 sec 6.1.3.3 (2): "After a query has been retransmitted several times without a response,
