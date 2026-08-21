@@ -1346,6 +1346,57 @@ void test_each_icmp_error_type_counts_itself_by_type(void)
     }
 }
 
+// RFC 1122 sec 3.2.2.8: "A host MAY implement Timestamp and Timestamp Reply", and this build does
+// not, so icmp_in discards both on their Type before it reads a field of either. RFC 2011 still names
+// icmpInTimestamps and icmpInTimestampReps and this table still carries them, so what has to be true
+// is that they stay at zero and that nothing calls the message an error: sec 3.2.2's silent discard
+// is what a build declining a MAY owes, and icmpInErrors is for "ICMP-specific errors (bad ICMP
+// checksums, bad length, etc.)", which a well-formed Timestamp is not. The message is counted in
+// icmpInMsgs, which is every ICMP message, and discarded.
+void test_a_timestamp_is_discarded_without_counting_as_an_error(void)
+{
+    static const struct
+    {
+        uint8_t type;
+        IdemIpStatsCounter id;
+        const char *name;
+    } rows[] = {
+        {(uint8_t)IDEMIP_ICMP_TIMESTAMP, IDEMIP_STAT_ICMP4_IN_TIMESTAMPS, "icmpInTimestamps"},
+        {(uint8_t)IDEMIP_ICMP_TIMESTAMP_REPLY, IDEMIP_STAT_ICMP4_IN_TIMESTAMP_REPS, "icmpInTimestampReps"},
+    };
+
+    for (size_t r = 0; r < sizeof rows / sizeof rows[0]; r++)
+    {
+        wire_units();
+        Dispatch.clear(work_a);
+        bind_all(work_a);
+        if_untagged(work_a, 0u);
+        memset(g_frame, 0, sizeof g_frame);
+
+        // RFC 792's Timestamp: type, code and checksum, an Identifier and a Sequence Number, then the
+        // three timestamps. Twenty octets and a checksum that holds, so neither length nor checksum is
+        // what stops it - the Type is, which is the whole point of the two assertions below.
+        size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+        const size_t ip = off;
+        off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, LOCAL_IP4, 20u, 0u);
+        memset(g_frame + off, 0, 20u);
+        g_frame[off + IDEMIP_ICMP_OFF_TYPE] = rows[r].type;
+        idemip_wr16(g_frame + off + 4u, 0x0AAAu);
+        idemip_wr16(g_frame + off + 6u, 0x0001u);
+        idemip_wr16(g_frame + off + 2u, idemip_cksum(g_frame + off, 20u));
+        const size_t end = off + 20u;
+        idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(end - ip));
+        idemip_ip4_recksum(g_frame + ip);
+        input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP4_IN_MSGS), rows[r].name);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(rows[r].id), rows[r].name);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP4_IN_ERRORS),
+                                         "a Type this build declines to implement is not an ICMP error");
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_IP4_IN_DISCARDS), rows[r].name);
+    }
+}
+
 // RFC 1213 sec 6.7 icmpOutMsgs is "the total number of ICMP messages which this entity attempted to
 // send" and icmpOutEchoReps is "the number of ICMP Echo Reply messages sent". The Echo Reply this
 // path builds is the one ICMPv4 message the library emits itself, so it is the one whose out
@@ -2079,6 +2130,47 @@ void test_an_icmpv6_message_of_unknown_type_is_discarded(void)
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_DISCARDS));
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_IP4_IN_DISCARDS),
                                      "an IPv6 packet was counted against the IPv4 counter");
+}
+
+// The other half of sec 2.4. (b) silently discards an informational message of unknown type, which is
+// the case above; (a) says an ERROR message of unknown type "MUST be passed to the upper-layer process
+// that originated the packet that caused the error", so icmp6_in hands it on rather than dropping it
+// and it reaches the RFC 2466 counters. It has none of its own - the table names a counter per type
+// RFC 4443 assigns - so ipv6IfIcmpInMsgs is the only one that moves, and nothing calls it an error.
+//
+// Type 100 because RFC 4443 sec 6 leaves it to private experimentation: an error type, by being under
+// 128, and one no implementation is expected to know. The same reason 253 is the next-header the IPv6
+// cases above reach for.
+void test_an_icmpv6_error_of_unknown_type_is_passed_up_and_counted_once(void)
+{
+    const size_t msg_len = (size_t)IDEMIP_ICMP6_ERR_HDR_LEN + IDEMIP_IP6_OFF_PAYLOAD + IDEMIP_UDP_HDR_LEN;
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_ICMPV6, g_remote_ip6, g_local_ip6, msg_len);
+    memset(g_frame + off, 0, msg_len);
+    g_frame[off + IDEMIP_ICMP6_OFF_TYPE] = 100u;
+    g_frame[off + IDEMIP_ICMP6_OFF_CODE] = 0u;
+    // sec 2.4 (c)'s invoking packet, whole enough that sec 2.4 (d) can read a protocol out of it. A
+    // body that stops short of one is a different case: icmp6_in calls that a length error.
+    (void)build_ip6(g_frame, off + IDEMIP_ICMP6_ERR_HDR_LEN, IDEMIP_IP6_NH_UDP, g_local_ip6, g_remote_ip6,
+                    IDEMIP_UDP_HDR_LEN);
+    uint32_t sum = idemip_ip6_pseudo_accum(0u, g_remote_ip6, g_local_ip6, (uint32_t)msg_len, IDEMIP_IP6_NH_ICMPV6);
+    idemip_wr16(g_frame + off + IDEMIP_ICMP6_OFF_CKSUM,
+                idemip_cksum_final(idemip_cksum_accum(sum, g_frame + off, msg_len)));
+    input(work_a, off + msg_len, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    const Icmp6InIo *ic = IDEMIP_ICMP6_IN_IO(icmp6_in_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ic->status);
+    TEST_ASSERT_TRUE_MESSAGE(ic->cksum_ok, "the sec 2.3 checksum this case built must hold");
+    TEST_ASSERT_TRUE_MESSAGE((ic->act & IDEMIP_ICMP6_IN_ACT_DISCARD) == 0u,
+                             "sec 2.4 (a) passes an error message of unknown type up, it does not discard it");
+    TEST_ASSERT_EQUAL_UINT8(100u, ic->type);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, ctr(IDEMIP_STAT_ICMP6_IN_MSGS), "ipv6IfIcmpInMsgs is every message");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP6_IN_ERRORS),
+                                     "an unknown error type is not an ICMP-specific error");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP6_IN_DEST_UNREACHS), "a type it is not");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP6_IN_PKT_TOO_BIGS), "a type it is not");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ctr(IDEMIP_STAT_ICMP6_IN_ECHOS), "a type it is not");
 }
 
 // An eight-octet ICMPv6 Echo message of @p type, 128 being a Request and 129 a Reply, carrying

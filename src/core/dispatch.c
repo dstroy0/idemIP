@@ -174,6 +174,19 @@ static void d_drop(uint8_t *work, IdemIpDispatchDrop why, IdemIpStatsIfCounter i
 // and every unassigned value - is counted only in icmpInMsgs. RFC 950's Address Mask pair is not a
 // type this library carries, RFC 1122 sec 3.2.2.9 leaving it optional, so those two counters have no
 // Type to reach them.
+//
+// RFC 792's Timestamp pair is in the same position, sec 3.2.2.8 leaving it a MAY that this build
+// declines: icmp_in discards both on their Type, and the call below runs only where that discard did
+// not happen. The two arms that stood here for them could not be reached by any frame, so they are
+// gone and icmpInTimestamps and icmpInTimestampReps read zero the way the Address Mask pair does -
+// the table keeps RFC 2011's shape, and the switch keeps only the Types that can arrive. A build that
+// implements Timestamp brings its arms back with the implementation, not before.
+//
+// Which leaves the default arm reachable by no frame. A Type is read off the wire, so the switch is
+// written over the whole octet, but icmp_in delivers exactly two query types - Echo and Echo Reply,
+// every other one discarded on its Type - and the five idemip_icmp_is_error names, and those seven
+// are the seven cases above. The arm is the shape of a switch over a wire field, not a path, so it
+// is out of the measurement rather than waiting for a test that cannot be written.
 #if IDEMIP_ENABLE_IPV4
 static void d_icmp4_type_bump(uint8_t *work, uint8_t type)
 {
@@ -200,14 +213,8 @@ static void d_icmp4_type_bump(uint8_t *work, uint8_t type)
     case IDEMIP_ICMP_PARAMETER_PROBLEM:
         d_bump(work, IDEMIP_STAT_ICMP4_IN_PARM_PROBS);
         return;
-    case IDEMIP_ICMP_TIMESTAMP:
-        d_bump(work, IDEMIP_STAT_ICMP4_IN_TIMESTAMPS);
-        return;
-    case IDEMIP_ICMP_TIMESTAMP_REPLY:
-        d_bump(work, IDEMIP_STAT_ICMP4_IN_TIMESTAMP_REPS);
-        return;
-    default:
-        return;
+    default:    // GCOVR_EXCL_LINE
+        return; // GCOVR_EXCL_LINE
     }
 }
 #endif
