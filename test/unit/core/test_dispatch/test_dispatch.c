@@ -3591,6 +3591,92 @@ static uint16_t establish(void)
     return pcb;
 }
 
+// RFC 9293 sec 3.10.7 splits arriving segments three ways by the state of the TCB they land on:
+// "CLOSED STATE (i.e., TCB does not exist)", "LISTEN STATE", "SYN-SENT STATE", and then everything
+// else. dispatch reads the state and calls the entry for it, and only the else arm had been driven -
+// every case above reaches an ESTABLISHED connection or a listener.
+// An active open: a TCB of its own, bound to the local half and connected to the remote one. sec 3.3.2
+// starts it in CLOSED, and tcp_pcb only accepts the transitions sec 3.3.2 draws, so CLOSED is where it
+// stays until the caller moves it to SYN-SENT - which is the one legal step from there.
+static uint16_t active_open(uint16_t local_port, uint16_t remote_port)
+{
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    uint8_t local[IDEMIP_TCP_PCB_ADDR_BYTES];
+    uint8_t remote[IDEMIP_TCP_PCB_ADDR_BYTES];
+    memset(local, 0, sizeof local);
+    memset(remote, 0, sizeof remote);
+    idemip_wr32(local, LOCAL_IP4);
+    idemip_wr32(remote, REMOTE_IP4);
+
+    tp->open_args.ip_version = 4u;
+    TcpPcb.open(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+    uint16_t pcb = tp->index;
+
+    tp->bind_args.index = pcb;
+    tp->bind_args.ip = local;
+    tp->bind_args.port = local_port;
+    tp->bind_args.zone = 0u;
+    tp->bind_args.netif = 0u;
+    TcpPcb.bind(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+
+    tp->connect_args.index = pcb;
+    tp->connect_args.ip = remote;
+    tp->connect_args.port = remote_port;
+    tp->connect_args.zone = 0u;
+    tp->connect_args.netif = 0u;
+    TcpPcb.connect(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+    return pcb;
+}
+
+static void to_syn_sent(uint16_t pcb)
+{
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+    tp->state = IDEMIP_TCP_STATE_SYN_SENT;
+    tp->pcb_args.index = pcb;
+    TcpPcb.store(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, tp->status, "sec 3.3.2 allows CLOSED to SYN-SENT");
+}
+
+// sec 3.10.7.3 SYN-SENT: the segment that finishes an active open. The TCB is the one establish()
+// built, put back into SYN-SENT so the arriving SYN-ACK meets the entry sec 3.10.7.3 names.
+void test_a_segment_for_a_pcb_in_syn_sent_takes_the_syn_sent_entry(void)
+{
+    uint16_t pcb = active_open(5001u, 5000u);
+    to_syn_sent(pcb);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 300u, iss + 1u, IDEMIP_TCP_SYN | IDEMIP_TCP_ACK, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_TCP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "the segment did not reach the TCB it names");
+    TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
+}
+
+// sec 3.10.7.1 CLOSED: "If the state is CLOSED (i.e., TCB does not exist), then ... an incoming
+// segment not containing a RST causes a RST to be sent in response." RFC 1213 tcpOutRsts counts the
+// reset this build emits itself, and this is the path that emits one.
+void test_a_segment_for_a_pcb_in_closed_answers_with_a_reset(void)
+{
+    (void)active_open(5001u, 5000u); // opened, bound and connected, and still in sec 3.3.2's CLOSED
+    const uint32_t rsts = ctr(IDEMIP_STAT_TCP_OUT_RSTS);
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 400u, 900u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(rsts + 1u, ctr(IDEMIP_STAT_TCP_OUT_RSTS),
+                                     "a segment to a CLOSED TCB is answered with a reset, and it is counted");
+}
+
 // JOIN 3, RFC 9293 sec 3.10.7.4 (MUST-58): the acknowledgment a segment earns is recorded rather than
 // reported, so a batch of segments does not put one acknowledgment each on the wire.
 void test_an_ordinary_acknowledgment_is_aggregated_and_not_reported(void)
@@ -3677,6 +3763,59 @@ void test_a_segment_ahead_of_the_window_is_held(void)
     TEST_ASSERT_EQUAL_UINT32(105u, tp->oos.seq);
     TEST_ASSERT_EQUAL_UINT16(4u, tp->oos.len);
     TEST_ASSERT_EQUAL_UINT16(3u, tp->oos.desc);
+}
+
+// SHLD-31's hold is a SHOULD, and holding is pinning the descriptor the segment lies in. A caller that
+// names no descriptor has handed over octets that are already its own to reuse, so there is nothing to
+// pin and nothing to hold: the segment is dropped and the sender's retransmission recovers it, which
+// is what a SHOULD leaves open.
+void test_a_segment_ahead_of_the_window_with_no_descriptor_is_not_held(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 105u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    const DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    TEST_ASSERT_TRUE_MESSAGE((io->tcp_act & IDEMIP_TCP_IN_ACT_HOLD) != 0u,
+                             "the segment is still one tcp_in asks to hold");
+    TEST_ASSERT_TRUE_MESSAGE((io->act & IDEMIP_DISPATCH_ACT_PINNED) == 0u,
+                             "a descriptor that was never named cannot have been pinned");
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(IDEMIP_TCP_PCB_NONE, tp->info.ooseq,
+                                     "a segment with no descriptor was queued anyway");
+}
+
+// The queue is IDEMIP_TCP_OOSEQ_SEGS deep and sec 3.10.7.4's hold is a SHOULD, so the segment that
+// finds it full is dropped and its descriptor goes back to the ring rather than staying pinned for a
+// row that does not exist.
+void test_a_segment_ahead_of_a_full_out_of_order_queue_is_dropped(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    // Four segments, each above RCV.NXT and each in its own descriptor, fill the queue.
+    for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_OOSEQ_SEGS; i++)
+    {
+        size_t end = build_tcp4(g_frame, 5000u, 5001u, 105u + (uint32_t)(i * 8u), iss + 1u, IDEMIP_TCP_ACK, 4u);
+        input(work_a, end, 0u, (uint16_t)(3u + i));
+        TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) != 0u,
+                                 "a segment the queue had room for was not held");
+    }
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 105u + (uint32_t)(IDEMIP_TCP_OOSEQ_SEGS * 8u), iss + 1u,
+                            IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, (uint16_t)(3u + IDEMIP_TCP_OOSEQ_SEGS));
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) == 0u,
+                             "a segment the queue had no room for was left holding a descriptor");
 }
 
 // JOIN 2: nothing re-delivers a held segment until RCV.NXT reaches it, and BUSY is what says so.
