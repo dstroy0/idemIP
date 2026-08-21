@@ -93,6 +93,7 @@ void tearDown(void)
 static void call_every_entry(uint8_t *w)
 {
     TcpPcb.open(w);
+    TcpPcb.opt(w);
     TcpPcb.close(w);
     TcpPcb.bind(w);
     TcpPcb.connect(w);
@@ -289,6 +290,47 @@ void test_two_borrows_share_no_byte(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_PCB_IO(work_b)->status);
     TEST_ASSERT_EQUAL_UINT32(2000u, IDEMIP_TCP_PCB_IO(work_b)->vars.snd_nxt);
     TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_LISTEN, IDEMIP_TCP_PCB_IO(work_b)->state);
+}
+
+// Every entry that names a row by index has two ways to be given one it cannot use: an index outside
+// the table, which the suite covers elsewhere, and an index inside it naming a row nobody opened. The
+// second is the one a caller reaches by holding an index across a close, and each entry has to refuse
+// it rather than read the free row's fields. A cleared borrow has no row in use, so index zero is
+// inside every table and open in none of them.
+void test_every_entry_refuses_a_row_that_is_not_in_use(void)
+{
+    TcpPcb.clear(work_a);
+
+    IO(work_a)->opt_args.index = 0u;
+    IO(work_a)->opt_args.tos = 0u;
+    IO(work_a)->opt_args.ttl = 64u;
+    IO(work_a)->opt_args.r2 = 0u;
+    TcpPcb.opt(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "opt took a TCB nobody opened");
+
+    IO(work_a)->pcb_args.index = 0u;
+    TcpPcb.load(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "load took a TCB nobody opened");
+
+    IO(work_a)->seg_args.index = 0u;
+    TcpPcb.seg_load(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "seg_load took a segment nobody allocated");
+
+    IO(work_a)->seg_args.index = 0u;
+    TcpPcb.seg_sent(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "seg_sent took a segment nobody allocated");
+
+    IO(work_a)->seg_args.index = 0u;
+    TcpPcb.seg_free(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "seg_free took a segment nobody allocated");
+
+    IO(work_a)->oos_args.index = 0u;
+    TcpPcb.oos_load(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "oos_load took a hold nobody allocated");
+
+    IO(work_a)->oos_args.index = 0u;
+    TcpPcb.oos_free(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "oos_free took a hold nobody allocated");
 }
 
 // A clear on one borrow reaches no byte of the other's tables.
