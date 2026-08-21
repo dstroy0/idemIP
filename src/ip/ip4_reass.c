@@ -191,9 +191,14 @@ static uint8_t ip4_reass_row_alloc(uint8_t *work)
     return IP4_REASS_NONE;
 }
 
+// The failure is written out because a caller must be able to read what an empty table reports, and
+// it is not measured, because no call can produce it: ctx->held counts the entries not in the free
+// state - one up at the link, one down at reclaim, and nowhere else - and ip4_reass_take answers BUSY
+// at ctx->held >= IDEMIP_IP4_REASS_FRAGS before it asks for one. The search is empty only when the
+// count it mirrors is already at the bound.
 static uint8_t ip4_reass_frag_alloc(uint8_t *work)
 {
-    for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_FRAGS; i++)
+    for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_FRAGS; i++) // GCOVR_EXCL_BR_LINE
     {
         Ip4ReassFrag *frag = IP4_REASS_FRAG_AT(work, i);
         if (frag->state == (uint8_t)IDEMIP_IP4_REASS_FREE)
@@ -203,12 +208,18 @@ static uint8_t ip4_reass_frag_alloc(uint8_t *work)
             return (uint8_t)i;
         }
     }
-    return IP4_REASS_NONE;
+    return IP4_REASS_NONE; // GCOVR_EXCL_LINE
 }
 
+// The failure is written out for the same reason, and is not measured for the reason idemip_config.h
+// states beside IDEMIP_IP4_REASS_HOLES: RFC 815 opens a datagram with one hole and steps 4 through 6
+// leave at most one more per fragment, so D datagrams holding N fragments reach at most D + N
+// descriptors, and the static_assert there holds the table at or above that. Both bounds are enforced
+// ahead of every call - a row by IDEMIP_IP4_REASS_DATAGRAMS, a fragment by ctx->held - so the search
+// has an entry every time it is made.
 static uint8_t ip4_reass_hole_alloc(uint8_t *work, uint32_t first, uint32_t last)
 {
-    for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_HOLES; i++)
+    for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_HOLES; i++) // GCOVR_EXCL_BR_LINE
     {
         Ip4ReassHole *hole = IP4_REASS_HOLE_AT(work, i);
         if (hole->state == (uint8_t)IDEMIP_IP4_REASS_FREE)
@@ -220,7 +231,7 @@ static uint8_t ip4_reass_hole_alloc(uint8_t *work, uint32_t first, uint32_t last
             return (uint8_t)i;
         }
     }
-    return IP4_REASS_NONE;
+    return IP4_REASS_NONE; // GCOVR_EXCL_LINE
 }
 
 // RFC 791 sec 3.2 step (16), "free all reassembly resources for this BUFID": the hole list goes back
@@ -240,11 +251,16 @@ static void ip4_reass_free_holes(uint8_t *work, Ip4ReassDatagram *row)
     row->cursor = IP4_REASS_NONE;
 }
 
+// A flushed row goes free if it holds nothing and waits on reclaim if it does. Only the second is
+// measured: every state a flush is reached from - gathering, complete, abandoned - has taken at least
+// one fragment, and the one place a row exists without one is the pair of table-exhausted arms in
+// ip4_reass_take, which open a row and give it back unfilled. Those cannot be reached either, for the
+// reasons written beside them, so the free arm is here to serve them and is never walked.
 static void ip4_reass_flush(uint8_t *work, uint8_t index)
 {
     Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, index);
     ip4_reass_free_holes(work, row);
-    row->state = (row->frag_head == IP4_REASS_NONE) ? (uint8_t)IDEMIP_IP4_REASS_FREE
+    row->state = (row->frag_head == IP4_REASS_NONE) ? (uint8_t)IDEMIP_IP4_REASS_FREE // GCOVR_EXCL_BR_LINE
                                                     : (uint8_t)IDEMIP_IP4_REASS_RECLAIM;
 }
 
@@ -305,6 +321,11 @@ static void ip4_reass_frag_link(uint8_t *work, uint8_t index, uint8_t frag)
 }
 
 // The octet past the last one any held fragment of this row covers.
+//
+// The walk is written as a maximum because that is what it means, and only one arm of it is measured:
+// ip4_reass_frag_link keeps the list in ascending Fragment Offset, and a fragment is only linked
+// after the measure above found every octet of it missing, so no two held fragments share an octet
+// and their ends ascend with their offsets. Each is past the one before it.
 static uint32_t ip4_reass_end(uint8_t *work, uint8_t index)
 {
     uint32_t end = 0u;
@@ -313,7 +334,7 @@ static uint32_t ip4_reass_end(uint8_t *work, uint8_t index)
     {
         const Ip4ReassFrag *frag = IP4_REASS_FRAG_AT(work, f);
         const uint32_t frag_end = (uint32_t)frag->off + (uint32_t)frag->len;
-        if (frag_end > end)
+        if (frag_end > end) // GCOVR_EXCL_BR_LINE
         {
             end = frag_end;
         }
@@ -365,10 +386,16 @@ static uint8_t ip4_reass_holes(uint8_t *work, uint8_t index, uint32_t first, uin
         if (first > hole_first) // step 5
         {
             const uint8_t piece = ip4_reass_hole_alloc(work, hole_first, first - 1u);
-            if (piece == IP4_REASS_NONE)
+            // Neither piece can fail to be made, for the reason written at ip4_reass_hole_alloc: the
+            // table is sized for one hole per datagram and one more per fragment, and both bounds are
+            // enforced before this walk is entered. The arms are here because a walk that hands the
+            // list to a caller must not hand back a list it has torn, and they are not measured.
+            if (piece == IP4_REASS_NONE) // GCOVR_EXCL_BR_LINE
             {
+                // GCOVR_EXCL_START
                 ip4_reass_hole_thread(work, index, prev, next); // the rest of the list stays reachable
                 return IP4_REASS_NONE;
+                // GCOVR_EXCL_STOP
             }
             IP4_REASS_HOLE_AT(work, piece)->next = next;
             ip4_reass_hole_thread(work, index, tail, piece);
@@ -377,13 +404,15 @@ static uint8_t ip4_reass_holes(uint8_t *work, uint8_t index, uint32_t first, uin
         if (last < hole_last && mf) // step 6
         {
             const uint8_t piece = ip4_reass_hole_alloc(work, last + 1u, hole_last);
-            if (piece == IP4_REASS_NONE)
+            if (piece == IP4_REASS_NONE) // GCOVR_EXCL_BR_LINE
             {
+                // GCOVR_EXCL_START
                 if (tail == prev)
                 {
                     ip4_reass_hole_thread(work, index, prev, next);
                 }
                 return IP4_REASS_NONE;
+                // GCOVR_EXCL_STOP
             }
             IP4_REASS_HOLE_AT(work, piece)->next = next;
             ip4_reass_hole_thread(work, index, tail, piece);
@@ -501,11 +530,16 @@ static void ip4_reass_take(uint8_t *work)
         // case, hole.first equals zero, and hole.last equals infinity".
         Ip4ReassDatagram *fresh = IP4_REASS_DGRAM_AT(work, index);
         fresh->hole_head = ip4_reass_hole_alloc(work, 0u, IDEMIP_IP4_REASS_INFINITY);
-        if (fresh->hole_head == IP4_REASS_NONE)
+        // Not measured, for the reason written at ip4_reass_hole_alloc: the row this call just took
+        // is one of IDEMIP_IP4_REASS_DATAGRAMS, and the table holds one opening hole for every one of
+        // them on top of one per fragment. The row is given back rather than left half-open.
+        if (fresh->hole_head == IP4_REASS_NONE) // GCOVR_EXCL_BR_LINE
         {
+            // GCOVR_EXCL_START
             fresh->state = (uint8_t)IDEMIP_IP4_REASS_FREE;
             io->status = IDEMIP_BUSY;
             return;
+            // GCOVR_EXCL_STOP
         }
         fresh->src = src;
         fresh->dst = dst;
@@ -530,13 +564,21 @@ static void ip4_reass_take(uint8_t *work)
     // RFC 791 sec 3.2 step (10) fixes TDL, so no octet of this datagram lies at or past it, and a
     // second last fragment naming a different TDL contradicts the first. A last fragment also cannot
     // name a TDL below what is already held. None of the three changes on a retry.
+    //
+    // The middle line is not measured. Its TDL test is the same row->total_len != 0u the line above
+    // makes, and the code generated for a short-circuit chain reaches the second test only along the
+    // first one's true path, so the arm where a row has no TDL yet is answered on the line above and
+    // never on this one. Each of the three contradictions has a case that fails if it is removed.
     if ((row->total_len != 0u && frag_end > (uint32_t)row->total_len) ||
-        (!mf && row->total_len != 0u && frag_end != (uint32_t)row->total_len) ||
+        (!mf && row->total_len != 0u && frag_end != (uint32_t)row->total_len) || // GCOVR_EXCL_BR_LINE
         (!mf && frag_end < ip4_reass_end(work, index)))
     {
-        if (opened)
+        // A row this call opened holds one hole from zero to infinity and no TDL, so none of the
+        // three contradictions above can be its first fragment's answer and the flush is not
+        // measured. It is here because a row must not be left open by a fragment that was refused.
+        if (opened) // GCOVR_EXCL_BR_LINE
         {
-            ip4_reass_flush(work, index);
+            ip4_reass_flush(work, index); // GCOVR_EXCL_LINE
         }
         return;
     }
@@ -578,19 +620,25 @@ static void ip4_reass_take(uint8_t *work)
     }
 
     const uint8_t frag = ip4_reass_frag_alloc(work);
-    if (frag == IP4_REASS_NONE)
+    // Not measured, for the reason written at ip4_reass_frag_alloc: ctx->held answered BUSY at the
+    // bound before this call was made. The arm is here because a table that can be full must be read
+    // as though it is.
+    if (frag == IP4_REASS_NONE) // GCOVR_EXCL_BR_LINE
     {
+        // GCOVR_EXCL_START
         if (opened)
         {
             ip4_reass_flush(work, index);
         }
         io->status = IDEMIP_BUSY;
         return;
+        // GCOVR_EXCL_STOP
     }
 
     const uint8_t deleted = ip4_reass_holes(work, index, off, frag_end - 1u, mf);
-    if (deleted == IP4_REASS_NONE)
+    if (deleted == IP4_REASS_NONE) // GCOVR_EXCL_BR_LINE
     {
+        // GCOVR_EXCL_START
         // The hole table ran out inside the eight steps, which the IDEMIP_IP4_REASS_HOLES bound in
         // idemip_config.h rules out. The list no longer describes what is missing, so the row is
         // flushed and its descriptors go back. BUSY, because a freed row lets the fragment land.
@@ -598,6 +646,7 @@ static void ip4_reass_take(uint8_t *work)
         ip4_reass_flush(work, index);
         io->status = IDEMIP_BUSY;
         return;
+        // GCOVR_EXCL_STOP
     }
     // A fragment reaching here fills a hole, because the measure above admitted only fragments
     // wholly inside them and no fragment is zero octets long, so at least one hole was reached.
@@ -623,8 +672,11 @@ static void ip4_reass_take(uint8_t *work)
     // is the one stamped when the row was opened, and no fragment moves it.
 
     // RFC 815 sec 3 step 8: "If the hole descriptor list is now empty, the datagram is now complete."
-    // The header comes with octet zero, so step (11) has run by then.
-    if (row->hole_head == IP4_REASS_NONE && row->first_frag != IP4_REASS_NONE)
+    // The header comes with octet zero, so step (11) has run by then - which is why the second test
+    // is not measured. The list opens at a hole starting at zero, step 5 leaves a piece starting at
+    // zero behind every fragment that does not begin there, and only a fragment at Fragment Offset
+    // zero can delete it. An empty list has taken octet zero, and taking it set first_frag.
+    if (row->hole_head == IP4_REASS_NONE && row->first_frag != IP4_REASS_NONE) // GCOVR_EXCL_BR_LINE
     {
         row->state = (uint8_t)IDEMIP_IP4_REASS_COMPLETE;
         row->cursor = row->frag_head;
@@ -709,7 +761,10 @@ static void ip4_reass_unpin(uint8_t *work)
     for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
     {
         Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, i);
-        if (row->state != (uint8_t)IDEMIP_IP4_REASS_RECLAIM || row->frag_head == IP4_REASS_NONE)
+        // The second test is not measured: a row reaches the reclaim state out of ip4_reass_flush,
+        // which puts it there only when it still holds a fragment, and the last one going back below
+        // takes the row free in the same breath. A row waiting on reclaim always has one to hand.
+        if (row->state != (uint8_t)IDEMIP_IP4_REASS_RECLAIM || row->frag_head == IP4_REASS_NONE) // GCOVR_EXCL_BR_LINE
         {
             continue;
         }
@@ -720,7 +775,10 @@ static void ip4_reass_unpin(uint8_t *work)
         row->frag_head = held->next;
         held->state = (uint8_t)IDEMIP_IP4_REASS_FREE;
         held->next = IP4_REASS_NONE;
-        if (ctx->held != 0u)
+        // The count is what ip4_reass_take reads to answer BUSY, so it is never let below zero. It
+        // cannot reach here at zero - the entry just freed was counted when it was linked - and the
+        // floor is not measured.
+        if (ctx->held != 0u) // GCOVR_EXCL_BR_LINE
         {
             ctx->held--;
         }

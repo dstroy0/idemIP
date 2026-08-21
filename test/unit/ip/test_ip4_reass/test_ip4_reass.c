@@ -291,6 +291,13 @@ static uint8_t *fr_id(int slot, uint16_t id, uint16_t off_units, uint16_t data_l
     return frag_full(slot, SRC, DST, PROTO, id, off_units, data_len, mf, TTL_LOW, (uint8_t)IDEMIP_IP4_IHL_MIN);
 }
 
+// The first eight octets of a datagram named by all four fields of RFC 791 sec 3.2's buffer
+// identifier, so a case can vary one of them and leave the rest as the suite's.
+static uint8_t *fr_key(int slot, uint32_t src, uint32_t dst, uint8_t proto, uint16_t id)
+{
+    return frag_full(slot, src, dst, proto, id, 0u, 8u, 1, TTL_LOW, (uint8_t)IDEMIP_IP4_IHL_MIN);
+}
+
 static IdemIpStatus hold_at(uint8_t *w, const uint8_t *h, uint16_t desc, uint32_t now_ms)
 {
     IDEMIP_IP4_REASS_IO(w)->now_ms = now_ms;
@@ -638,6 +645,108 @@ void test_a_whole_datagram_with_no_row_names_none(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(0, 0u, 64u, 0), 101u));
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP4_REASS_INDEX_NONE, IDEMIP_IP4_REASS_IO(work_a)->index);
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+}
+
+// "flush ALL reassembly for this BUFID" is written for more than one row, and more than one row can
+// carry a buffer identifier here. A row goes on holding its identifier once it is complete, so that
+// the caller can walk it, and a further fragment of the same datagram - a retransmission the network
+// delivered late - does not land on it: it opens a second row. The whole datagram then clears both.
+void test_every_row_of_one_buffer_identifier_is_flushed_not_just_the_first(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 0u, 8u, 1), 121u));
+    const uint8_t first = IDEMIP_IP4_REASS_IO(work_a)->index;
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 1u, 8u, 0), 122u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+
+    // The same datagram's first fragment again, arriving after the row completed.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(2, 0u, 8u, 1), 123u));
+    const uint8_t second = IDEMIP_IP4_REASS_IO(work_a)->index;
+    TEST_ASSERT_NOT_EQUAL_UINT8_MESSAGE(first, second, "a completed row took a fragment it had finished with");
+
+    // The whole datagram flushes both, and names the first of them.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(3, 0u, 64u, 0), 124u));
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(first, IDEMIP_IP4_REASS_IO(work_a)->index,
+                                    "the first row flushed is the one named");
+
+    // Both rows are waiting on reclaim now, and a row on its way back is not reassembly to flush: a
+    // second whole datagram of the same identifier finds nothing, before a descriptor has come back.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(4, 0u, 64u, 0), 125u));
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP4_REASS_INDEX_NONE, IDEMIP_IP4_REASS_IO(work_a)->index);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, reclaim_one(work_a), "the second row's descriptor stayed pinned");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, reclaim_one(work_a));
+}
+
+// The identifier is "the concatenation of the source, destination, protocol, and identification
+// fields", so a row differing in any one of the four is a different datagram and the flush passes
+// over it. Four rows sit in the table differing in exactly one field each, and the fifth matches.
+void test_a_flush_passes_over_a_row_differing_in_any_one_field_of_the_identifier(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr_key(0, SRC + 1u, DST, PROTO, ID), 131u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr_key(1, SRC, DST + 1u, PROTO, ID), 132u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr_key(2, SRC, DST, IDEMIP_IP4_PROTO_TCP, ID), 133u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr_key(3, SRC, DST, PROTO, ID + 1u), 134u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(4, 0u, 8u, 1), 135u));
+    const uint8_t mine = IDEMIP_IP4_REASS_IO(work_a)->index;
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(5, 0u, 64u, 0), 136u));
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(mine, IDEMIP_IP4_REASS_IO(work_a)->index, "the flush named a row it does not own");
+
+    // Exactly one descriptor comes back: the other four rows were not this datagram's.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_UINT16(135u, IDEMIP_IP4_REASS_IO(work_a)->desc);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, reclaim_one(work_a), "a row of another identifier was flushed too");
+}
+
+// RFC 815 sec 3 steps 2 and 3 skip a hole the fragment does not reach: "if fragment.first is greater
+// than hole.last, go to step one" and "if fragment.last is less than hole.first, go to step one". A
+// fragment landing in the middle leaves a hole on each side, and the next fragment has to step over
+// the earlier of the two to reach the one it fills.
+void test_a_fragment_filling_the_later_of_two_holes_steps_over_the_earlier(void)
+{
+    Ip4Reass.clear(work_a);
+    // Octets 8 through 15, which breaks the opening hole in half: 0 through 7 and 16 to infinity.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 1u, 8u, 1), 141u));
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+
+    // Octets 16 through 23, past the first hole entirely: step 2 goes back to step one for it.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(1, 2u, 8u, 0), 142u));
+    TEST_ASSERT_FALSE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT16(24u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+
+    // And the leading hole, which is all that is left.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(2, 0u, 8u, 1), 143u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_UINT16(24u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+}
+
+// A last fragment arriving twice names the same total data length both times, so it contradicts
+// nothing: step (10)'s TDL is the value already held. The second copy fills no hole - steps 2 and 3
+// pass over every one - so it is the duplicate RFC 8200 sec 4.5 permits a receiver to "drop", and the
+// row stands where it was rather than being abandoned.
+void test_a_last_fragment_arriving_twice_is_a_duplicate_and_not_a_contradiction(void)
+{
+    Ip4Reass.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(0, 1u, 8u, 0), 151u));
+    const uint8_t row = IDEMIP_IP4_REASS_IO(work_a)->index;
+    TEST_ASSERT_EQUAL_UINT16(16u, IDEMIP_IP4_REASS_IO(work_a)->total_len);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, hold_frag(work_a, fr(1, 1u, 8u, 0), 152u));
+    TEST_ASSERT_EQUAL_UINT8(row, IDEMIP_IP4_REASS_IO(work_a)->index);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_REASS_HOLDING, IDEMIP_IP4_REASS_IO(work_a)->state,
+                                  "a repeated last fragment abandoned the row it agrees with");
+
+    // The row still completes, and only the first copy's descriptor was ever pinned.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, hold_frag(work_a, fr(2, 0u, 8u, 1), 153u));
+    TEST_ASSERT_TRUE(IDEMIP_IP4_REASS_IO(work_a)->complete);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, release_row(work_a, row));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, reclaim_one(work_a));
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, reclaim_one(work_a), "the duplicate pinned a descriptor of its own");
 }
 
 // RFC 791 sec 3.2 step (10): "IF MF = 0 THEN TDL <- TL-(IHL*4)+(FO*8)". Fragment Offset 2 units is 16
