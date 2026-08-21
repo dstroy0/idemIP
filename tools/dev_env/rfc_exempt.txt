@@ -78,6 +78,8 @@ IF FO = 0 AND MF = 0 THEN IF buffer with BUFID is allocated THEN flush all reass
 a cast to a wider type at an odd address is a fault on the parts in the target list that require natural alignment
 # src/core/dispatch.h
 come back and it can work
+# test/unit/core/test_dispatch/test_dispatch.c - dispatch.h's own answer for a full transmit buffer
+A reply with nowhere to be built is BUSY: a transmit buffer frees on a later tick, and the same frame dispatched again then answers.
 # src/core/stats.h
 the out counters of both groups
 # src/core/tick.c

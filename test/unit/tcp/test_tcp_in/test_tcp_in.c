@@ -1114,15 +1114,16 @@ void test_a_reset_inside_the_window_in_time_wait_draws_a_challenge_ack(void)
 }
 
 // RFC 1337 Figure 1, the whole assassination, run as the figure prints it. Segments 1 through 5 are
-// RFC 9293 sec 3.10.7.4 eighth ends "CLOSE-WAIT STATE / CLOSING STATE / LAST-ACK STATE: Remain in the
-// [state]", and a retransmitted FIN is what puts a connection in front of that sentence. CLOSE-WAIT
-// is the only one of the three that reaches the eighth check: sec 3.10.7.4 fifth returns for CLOSING
-// and LAST-ACK, so their FIN is answered there and the state is left where the same sentence says to
-// leave it. The three are asserted together because the RFC writes them together.
+// RFC 9293 sec 3.10.7.4 eighth ends with three states in a row: "Remain in the CLOSE-WAIT state",
+// "Remain in the CLOSING state", "Remain in the LAST-ACK state". A retransmitted FIN is what puts a
+// connection in front of that sentence. CLOSE-WAIT is the only one of the three that reaches the
+// eighth check: sec 3.10.7.4 fifth returns for CLOSING and LAST-ACK, so their FIN is answered there
+// and each is left where the same sentence says to leave it. The three are asserted together because
+// the RFC writes them together.
 //
 // SND.NXT is one ahead of SND.UNA in each, so the segment acknowledges nothing new. Without that the
-// fifth check would move two of the three on its own - "CLOSING STATE: if the ACK acknowledges our
-// FIN, then enter the TIME-WAIT state", and LAST-ACK deletes the TCB on the same condition.
+// fifth check would move two of the three on its own - of CLOSING it says "if the ACK acknowledges
+// our FIN, then enter the TIME-WAIT state", and LAST-ACK deletes the TCB on the same condition.
 void test_a_fin_leaves_the_three_remaining_states_where_they_are(void)
 {
     static const IdemIpTcpState states[3] = {IDEMIP_TCP_STATE_CLOSE_WAIT, IDEMIP_TCP_STATE_CLOSING,

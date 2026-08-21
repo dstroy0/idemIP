@@ -523,9 +523,10 @@ void test_an_option_of_the_wrong_length_discards_the_message(void)
     }
 }
 
-// sec 3.1: "The pad option can be used to cause subsequent fields to align on word boundaries", and it
-// "is not followed by length and value fields". sec 2 skips an option this client does not read by its
-// own length octet. Both leave the message readable, so the Offer is taken.
+// sec 3.1: "The pad option can be used to cause subsequent fields to align on word boundaries", and
+// "The code for the pad option is 0, and its length is 1 octet" - one octet in all, so no length or
+// value follows it. sec 2 skips an option this client does not read by that option's own length
+// octet. Both leave the message readable, so the Offer is taken.
 void test_a_pad_and_an_unread_option_are_stepped_over(void)
 {
     const uint8_t junk[3] = {0xAAu, 0xBBu, 0xCCu};

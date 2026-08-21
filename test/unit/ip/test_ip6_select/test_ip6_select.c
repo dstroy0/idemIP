@@ -752,7 +752,9 @@ void test_rule8_use_longest_matching_prefix(void)
 // the winner added first the rule has to keep the incumbent, with it added second the rule has to
 // replace it. Both arms are the same rule and neither had been read.
 //
-// sec 5 states the rules as a preference over a pair - "If SA is X and SB is not, then prefer SA" - so
+// sec 5 states each rule as a preference over a pair, twice over - "If SA is simultaneously a home
+// address and care-of address and SB is not, then prefer SA. Similarly, if SB is simultaneously a
+// home address and care-of address and SA is not, then prefer SB" is rule 4 written both ways - so
 // the answer is a property of the pair. A comparator that agreed only when the candidates arrived in
 // one order would still pass every case above.
 
@@ -1246,9 +1248,9 @@ void test_dest_rule3_sorts_the_same_pair_either_way_round(void)
 }
 
 // Rule 4: "Prefer home addresses. If Source(DA) is simultaneously a home address and care-of address
-// and Source(DB) is not, then prefer DA. If Source(DA) is just a home address and Source(DB) is just a
-// care-of address, then prefer DA." The same two pairs sec 5 rule 4 names, read off the sources the
-// destinations resolved to.
+// and Source(DB) is not, then prefer DA. ... If Source(DA) is just a home address and Source(DB) is
+// just a care-of address, then prefer DA." The same two pairs sec 5 rule 4 names, read off the
+// sources the destinations resolved to.
 void test_dest_rule4_prefers_the_destination_whose_source_is_home(void)
 {
     const Cand home = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u), 1u, 0, 0, 1, 0, 0};

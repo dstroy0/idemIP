@@ -1383,9 +1383,11 @@ static void owner_is_unreadable(uint8_t *w, const char *why)
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(w)->status, why);
 }
 
-// sec 4.1.4 gives the length octet two forms: "the first two bits are zero" for a label of up to 63
-// octets, and "11" for a pointer. "The 10 and 01 combinations are reserved for future use." A length
-// octet carrying one is not something this walk can step over, so the record it owns is not an answer.
+// sec 4.1.4 gives the length octet two forms. Of a pointer: "The first two bits are ones. This
+// allows a pointer to be distinguished from a label, since the label must begin with two zero bits
+// because labels are restricted to 63 octets or less. (The 10 and 01 combinations are reserved for
+// future use.)" A length octet carrying one of those two is not something this walk can step over, so
+// the record it owns is not an answer.
 void test_a_reserved_label_length_form_is_refused(void)
 {
     static const uint8_t reserved[2] = {0x40u, 0x80u}; // the 01 and the 10 forms

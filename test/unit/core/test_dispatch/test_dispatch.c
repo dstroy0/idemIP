@@ -1132,10 +1132,11 @@ void test_an_unrecognized_igmp_type_is_silently_ignored(void)
                                      "IP protocol 2 is supported, so ipInUnknownProtos must not move");
 }
 
-// RFC 2236 sec 3: "When a host receives a Report for a group that it is a member of on that
-// interface, it stops its timer for that group and does not send a report." The Report has to reach
-// igmp for that to happen, and only the Query and the two types sec 2.1 has a host ignore had ever
-// been fed to this demux. Types 0x12 and 0x16 are the v1 and v2 Reports.
+// RFC 2236 sec 3: "If the host receives another host's Report (version 1 or 2) while it has a timer
+// running, it stops its timer for the specified group and does not send a Report, in order to
+// suppress duplicate Reports." The Report has to reach igmp for that to happen, and only the Query
+// and the two types sec 2.1 has a host ignore had ever been fed to this demux. Types 0x12 and 0x16
+// are the v1 and v2 Reports.
 void test_an_igmp_report_from_another_host_reaches_the_group_table(void)
 {
     static const uint8_t reports[2] = {(uint8_t)IDEMIP_IGMP_TYPE_REPORT_V1, (uint8_t)IDEMIP_IGMP_TYPE_REPORT_V2};
@@ -3944,6 +3945,91 @@ void test_a_challenge_acknowledgment_is_not_aggregated(void)
     TEST_ASSERT_TRUE((io->act & IDEMIP_DISPATCH_ACT_ACK_OWED) == 0u);
 }
 
+#if IDEMIP_ENABLE_IPV6
+
+// The same three joins over IPv6. RFC 9293 sec 3.1: "The checksum also covers a pseudo-header
+// (Figure 2) conceptually prefixed to the TCP header. The pseudo-header is 96 bits for IPv4 and 320
+// bits for IPv6." The ports and sequence numbers are read the same way at either version; only the
+// octets the sum is taken over differ.
+static uint16_t listen_on6(uint16_t port)
+{
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->listen_args.ip = g_local_ip6;
+    tp->listen_args.port = port;
+    tp->listen_args.zone = 0u;
+    tp->listen_args.netif = 0u;
+    tp->listen_args.backlog = 2u;
+    tp->listen_args.ip_version = 6u;
+    TcpPcb.listen(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+    return tp->index;
+}
+
+static size_t build_tcp6(uint8_t *f, uint16_t sport, uint16_t dport, uint32_t seq, uint32_t ack, uint8_t flags,
+                         size_t data_len)
+{
+    size_t off = build_eth(f, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(f, off, IDEMIP_IP6_NH_TCP, g_remote_ip6, g_local_ip6, IDEMIP_TCP_HDR_LEN + data_len);
+    uint8_t *seg = f + off;
+    const size_t len = (size_t)IDEMIP_TCP_HDR_LEN + data_len;
+    memset(seg, 0, IDEMIP_TCP_HDR_LEN);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_SRC_PORT, sport);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_DST_PORT, dport);
+    idemip_wr32(seg + IDEMIP_TCP_OFF_SEQ, seq);
+    idemip_wr32(seg + IDEMIP_TCP_OFF_ACK, ack);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_OFFS_FLAGS,
+                (uint16_t)(((uint16_t)IDEMIP_TCP_DOFF_MIN << IDEMIP_TCP_DOFF_SHIFT) | flags));
+    idemip_wr16(seg + IDEMIP_TCP_OFF_WINDOW, (uint16_t)IDEMIP_TCP_WND);
+    memset(seg + IDEMIP_TCP_HDR_LEN, 0x5A, data_len);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM, 0u);
+    uint32_t sum = idemip_ip6_pseudo_accum(0u, g_remote_ip6, g_local_ip6, (uint32_t)len, IDEMIP_IP6_NH_TCP);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM, idemip_cksum_final(idemip_cksum_accum(sum, seg, len)));
+    return off + len;
+}
+
+// A SYN at an IPv6 listener takes a TCB the same way its IPv4 twin does, and the segment reaches the
+// connection: RFC 9293 sec 3.10.7.2 "create a new transmission control block (TCB)".
+void test_a_syn_at_an_ipv6_listener_takes_a_connection(void)
+{
+    listen_on6(5001u);
+
+    size_t end = build_tcp6(g_frame, 5000u, 5001u, 100u, 0u, (uint8_t)IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_TCP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "a SYN over IPv6 reached no listener");
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_DELIVERS));
+
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = IDEMIP_DISPATCH_IO(work_a)->pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_SYN_RECEIVED, tp->state);
+}
+
+// RFC 9293 sec 3.1 makes the TCP checksum mandatory at both versions, and RFC 8200 sec 8.1 removes
+// even IPv4's exemption for the transports that had one. A segment whose sum does not come out is
+// refused before any state is read, and no connection sees it.
+//
+// The report is DROP_SHORT rather than DROP_CKSUM: sec 3.1's checksum and the Data Offset are both
+// read by TcpIn.parse, which refuses on either without saying which, so this path has one answer for
+// a header it could not take. tcpInErrs is what separates it from a frame that reached no binding -
+// RFC 1213 sec 6.5: "the total number of segments received in error (e.g., bad TCP checksums)".
+void test_a_tcp_segment_over_ipv6_with_a_bad_checksum_reaches_no_connection(void)
+{
+    listen_on6(5001u);
+
+    size_t end = build_tcp6(g_frame, 5000u, 5001u, 100u, 0u, (uint8_t)IDEMIP_TCP_SYN, 0u);
+    g_frame[end - 1u] ^= 0xFFu; // an octet of the header the sum covers
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_NONE, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "a segment that failed its checksum took a connection");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_TCP_IN_ERRS));
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
+}
+
+#endif // IDEMIP_ENABLE_IPV6
+
 #endif // IDEMIP_ENABLE_TCP
 
 #if IDEMIP_ENABLE_UDP
@@ -4049,6 +4135,64 @@ void test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop,
                                   "a failed UDP-Lite sum was reported as a length fault");
 }
+
+#if IDEMIP_ENABLE_IPV6
+
+// RFC 3828 sec 3.1 states the pseudo-header without naming a version: "Irrespective of the Checksum
+// Coverage, the computed Checksum field MUST include a pseudo-header, based on the IP header (see
+// below)." Protocol 136 is a Next Header like any other, and the datagram reaches its binding over
+// IPv6 as it does over IPv4.
+void test_a_udp_lite_datagram_over_ipv6_reaches_a_lite_binding(void)
+{
+    UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
+    up->open_args.ip_version = 6u;
+    up->open_args.lite = IDEMIP_TRUE;
+    UdpPcb.open(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+    const uint16_t pcb = up->index;
+    up->bind_args.index = pcb;
+    up->bind_args.ip = g_local_ip6;
+    up->bind_args.port = 4001u;
+    up->bind_args.zone = 0u;
+    up->bind_args.netif = 0u;
+    UdpPcb.bind(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+    up->opt_args.index = pcb;
+    up->opt_args.cksum_len_tx = (uint16_t)IDEMIP_UDPLITE_COV_MIN;
+    up->opt_args.cksum_len_rx = (uint16_t)IDEMIP_UDPLITE_COV_MIN;
+    up->opt_args.tos = 0u;
+    up->opt_args.ttl = 64u;
+    up->opt_args.mcast_ttl = 1u;
+    up->opt_args.mcast_netif = 0u;
+    up->opt_args.flags = 0u;
+    UdpPcb.set_opts(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t ip = off;
+    off = build_ip6(g_frame, off, (uint8_t)IDEMIP_UDPLITE_PROTO, g_remote_ip6, g_local_ip6, IDEMIP_UDP_HDR_LEN + 4u);
+    memset(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
+
+    UdpLiteIo *ul = IDEMIP_UDPLITE_IO(udplite_mem);
+    ul->build_args.dgram = g_frame + off;
+    ul->build_args.src = g_frame + ip + IDEMIP_IP6_OFF_SRC;
+    ul->build_args.dst = g_frame + ip + IDEMIP_IP6_OFF_DST;
+    ul->build_args.ip_payload_len = (uint32_t)(IDEMIP_UDP_HDR_LEN + 4u);
+    ul->build_args.src_port = 4000u;
+    ul->build_args.dst_port = 4001u;
+    ul->build_args.cov = (uint16_t)IDEMIP_UDPLITE_COV_MIN;
+    ul->build_args.ip_version = 6u;
+    UdpLite.build(udplite_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ul->status);
+
+    input(work_a, off + IDEMIP_UDP_HDR_LEN + 4u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_UDP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_DELIVERS));
+}
+
+#endif // IDEMIP_ENABLE_IPV6
 
 #endif // IDEMIP_ENABLE_UDP
 
