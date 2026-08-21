@@ -70,9 +70,9 @@ IDEMIP_ASSERT_REGION(IDEMIP_ARP_OFF_CTX, sizeof(ArpCtx), IDEMIP_ARP_OFF_TAB, "ar
 // tick hands the descriptor back.
 typedef enum IDEMIP_ENUM_PACKED
 {
-    ARP_HOLD_FREE = 0,  ///< no descriptor in this hold
-    ARP_HOLD_WAIT,      ///< linked on row ArpPending::entry, waiting for its triplet
-    ARP_HOLD_RECLAIM,   ///< off every row, its descriptor waiting to be handed back
+    ARP_HOLD_FREE = 0, ///< no descriptor in this hold
+    ARP_HOLD_WAIT,     ///< linked on row ArpPending::entry, waiting for its triplet
+    ARP_HOLD_RECLAIM,  ///< off every row, its descriptor waiting to be handed back
 } ArpHoldState;
 
 // Row i is at (i << SHIFT), so the width has to be exactly the shift.
@@ -107,7 +107,8 @@ static_assert(IDEMIP_ARP_PENDING <= 0xFFu, "IDEMIP_ARP_PENDING exceeds the one-o
 // second per destination."
 #define ARP_REQUEST_MIN_MS 1000u
 
-static_assert(ARP_MAXAGE_MS < 0x80000000u, "IDEMIP_ARP_MAXAGE_S past half the millisecond range breaks the wrap compare");
+static_assert(ARP_MAXAGE_MS < 0x80000000u,
+              "IDEMIP_ARP_MAXAGE_S past half the millisecond range breaks the wrap compare");
 static_assert(ARP_MAXPENDING_MS < 0x80000000u,
               "IDEMIP_ARP_MAXPENDING_S past half the millisecond range breaks the wrap compare");
 
@@ -143,7 +144,12 @@ static uint8_t arp_row_find(uint8_t *work, uint16_t pro, uint32_t spa)
     for (uint8_t i = 0u; i < (uint8_t)IDEMIP_ARP_ENTRIES; i++)
     {
         const ArpEntry *e = ARP_AT(work, i);
-        if (e->state != (uint8_t)IDEMIP_ARP_STATE_FREE && e->pro == pro && e->spa == spa)
+        // Not measured on the protocol: every entry refuses a pair whose protocol is not
+        // IDEMIP_ARP_PRO_IPV4 before it reaches this walk, so every row in use is on that one and so
+        // is every lookup. It is written because RFC 826's algorithm is over the pair rather than
+        // over the address alone, and a table that matched on the address would answer for the wrong
+        // protocol the moment a second one was carried.
+        if (e->state != (uint8_t)IDEMIP_ARP_STATE_FREE && e->pro == pro && e->spa == spa) // GCOVR_EXCL_BR_LINE
         {
             return i;
         }
@@ -198,7 +204,11 @@ static uint8_t arp_row_take(uint8_t *work, uint32_t now_ms)
             victim = i;
         }
     }
-    if (victim != ARP_NONE)
+    // Not measured on the empty arm: a row is passed over here only while it is holding a packet,
+    // and IDEMIP_ARP_PENDING holds cannot occupy more than that many of the IDEMIP_ARP_ENTRIES rows -
+    // the table is the larger of the two, so a row is always free to take. It is written because the
+    // walk reports ARP_NONE for a table with nothing to give and the caller must not free that.
+    if (victim != ARP_NONE) // GCOVR_EXCL_BR_LINE
     {
         arp_row_free(work, victim);
     }
@@ -223,8 +233,8 @@ static void arp_row_open(uint8_t *work, uint8_t i, uint16_t pro, uint32_t spa, u
 // @p add_absent is that second step's condition, "?Am I the target protocol address?". False leaves a
 // pair that is not in the table out of it, which is what keeps a REQUEST for a third party from
 // creating a row. Reports the row, or ARP_NONE when nothing was merged and nothing was added.
-static uint8_t arp_learn(uint8_t *work, uint16_t pro, uint32_t spa, const uint8_t *sha, uint8_t netif,
-                         uint32_t now_ms, idemip_bool add_absent, idemip_bool *merged)
+static uint8_t arp_learn(uint8_t *work, uint16_t pro, uint32_t spa, const uint8_t *sha, uint8_t netif, uint32_t now_ms,
+                         idemip_bool add_absent, idemip_bool *merged)
 {
     // RFC 1812 sec 3.3.2: "A router MUST not believe any ARP reply that claims that the Link Layer
     // address of another host or router is a broadcast or multicast address." Bit 0 of the first
@@ -243,9 +253,10 @@ static uint8_t arp_learn(uint8_t *work, uint16_t pro, uint32_t spa, const uint8_
             return ARP_NONE;
         }
         i = arp_row_take(work, now_ms);
-        if (i == ARP_NONE)
+        // Not measured, for the reason written at arp_row_take.
+        if (i == ARP_NONE) // GCOVR_EXCL_BR_LINE
         {
-            return ARP_NONE;
+            return ARP_NONE; // GCOVR_EXCL_LINE
         }
         arp_row_open(work, i, pro, spa, now_ms);
     }
@@ -285,7 +296,11 @@ static void arp_hold_link(uint8_t *work, uint8_t i, uint8_t h)
         return;
     }
     uint8_t cur = e->pending;
-    for (uint8_t n = 0u; n < (uint8_t)IDEMIP_ARP_PENDING; n++)
+    // Not measured where the count runs out: a list holds packets drawn from a table of
+    // IDEMIP_ARP_PENDING, each on one row's list at a time, so a walk of that many steps has been
+    // over every hold there is and the link it followed ended first. The count is written because the
+    // walk is over next fields a caller's borrow holds, and one that cannot end is one that hangs.
+    for (uint8_t n = 0u; n < (uint8_t)IDEMIP_ARP_PENDING; n++) // GCOVR_EXCL_BR_LINE
     {
         ArpPending *p = ARP_PENDING_AT(work, cur);
         if (p->next == ARP_NONE)
@@ -304,7 +319,10 @@ static void arp_hold_unlink(uint8_t *work, uint8_t i, uint8_t h)
     ArpEntry *e = ARP_AT(work, i);
     uint8_t cur = e->pending;
     uint8_t prev = ARP_NONE;
-    for (uint8_t n = 0u; n < (uint8_t)IDEMIP_ARP_PENDING && cur != ARP_NONE; n++)
+    // Not measured where the count runs out, for the reason written at arp_hold_link.
+    for (uint8_t n = 0u; n < (uint8_t)IDEMIP_ARP_PENDING && // GCOVR_EXCL_BR_LINE
+                         cur != ARP_NONE;
+         n++)
     {
         ArpPending *p = ARP_PENDING_AT(work, cur);
         if (cur == h)
@@ -357,7 +375,11 @@ static void arp_expire_holds(uint8_t *work, uint32_t now_ms)
         {
             continue;
         }
-        if (p->entry != ARP_NONE)
+        // Not measured on the empty arm: a hold is put on a row's list as it is allocated and the row
+        // is cleared from it as it leaves ARP_HOLD_WAIT, which the test above has already read. It is
+        // written because the row index is what the unlink is given, and unlinking from ARP_NONE
+        // would walk a row that is not there.
+        if (p->entry != ARP_NONE) // GCOVR_EXCL_BR_LINE
         {
             arp_hold_unlink(work, p->entry, h);
         }
@@ -382,7 +404,10 @@ static idemip_bool arp_report_reclaim(uint8_t *work)
         io->len = p->len;
         io->ip = p->spa;
         memset(p, 0, sizeof *p);
-        if (ARP_CTX(work)->held != 0u)
+        // Not measured on the empty arm: the count rises with the hold that is being given back
+        // here, so it cannot be at zero while one is in hand. It is written because the count is what
+        // idemip_arp_queue reads to refuse a packet, and a count that wrapped would refuse every one.
+        if (ARP_CTX(work)->held != 0u) // GCOVR_EXCL_BR_LINE
         {
             ARP_CTX(work)->held--;
         }
@@ -409,7 +434,12 @@ static idemip_bool arp_report_request(uint8_t *work, uint32_t now_ms)
             continue;
         }
         e->req_ms = now_ms;
-        if (e->tries != 0xFFu)
+        // Not measured on the ceiling: RFC 1122 sec 2.3.2.1's flood limit puts ARP_REQUEST_MIN_MS
+        // between two REQUESTs for one row, and a row waiting for an answer is freed after
+        // IDEMIP_ARP_MAXPENDING_S, so the count cannot reach the top of its octet before the row is
+        // gone. It is written because the count is one octet and a wrapped count would read as a row
+        // that has just started asking.
+        if (e->tries != 0xFFu) // GCOVR_EXCL_BR_LINE
         {
             e->tries++;
         }
@@ -658,7 +688,11 @@ void idemip_arp_queue(uint8_t *work)
     }
     ArpCtx *ctx = ARP_CTX(work);
     uint8_t h = arp_hold_free(work);
-    if (h == ARP_NONE || ctx->held >= (uint8_t)IDEMIP_ARP_PENDING)
+    // Not measured on the count: the walk above reports ARP_NONE exactly when every hold is taken,
+    // which is when the count is at IDEMIP_ARP_PENDING, so the first test answers first. It is
+    // written because the count is what the borrow carries and the walk is what the table says, and
+    // a packet must not be saved against a count that has already been spent.
+    if (h == ARP_NONE || ctx->held >= (uint8_t)IDEMIP_ARP_PENDING) // GCOVR_EXCL_BR_LINE
     {
         io->status = IDEMIP_BUSY;
         return;
@@ -666,10 +700,13 @@ void idemip_arp_queue(uint8_t *work)
     if (i == ARP_NONE)
     {
         i = arp_row_take(work, io->now_ms);
-        if (i == ARP_NONE)
+        // Not measured, for the reason written at arp_row_take.
+        if (i == ARP_NONE) // GCOVR_EXCL_BR_LINE
         {
+            // GCOVR_EXCL_START
             io->status = IDEMIP_BUSY;
             return;
+            // GCOVR_EXCL_STOP
         }
         arp_row_open(work, i, (uint16_t)IDEMIP_ARP_PRO_IPV4, io->queue_args.ip, io->now_ms);
         ARP_AT(work, i)->state = (uint8_t)IDEMIP_ARP_STATE_PENDING;
@@ -726,7 +763,10 @@ void idemip_arp_dequeue(uint8_t *work)
         io->netif = e->netif;
         io->mac = e->sha;
         memset(p, 0, sizeof *p);
-        if (ARP_CTX(work)->held != 0u)
+        // Not measured on the empty arm: the count rises with the hold that is being given back
+        // here, so it cannot be at zero while one is in hand. It is written because the count is what
+        // idemip_arp_queue reads to refuse a packet, and a count that wrapped would refuse every one.
+        if (ARP_CTX(work)->held != 0u) // GCOVR_EXCL_BR_LINE
         {
             ARP_CTX(work)->held--;
         }

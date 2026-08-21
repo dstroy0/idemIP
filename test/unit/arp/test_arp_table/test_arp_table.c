@@ -473,15 +473,13 @@ void test_a_group_sender_hardware_address_is_not_believed(void)
     idemip_arp_build_reply(pkt, EA_BCAST, IPA_X, EA_Y, IPA_Y);
     (void)input_at(work_a, 1000u, pkt, IPA_Y, 0u);
     TEST_ASSERT_FALSE(IDEMIP_ARP_IO(work_a)->merged);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, find_ip(work_a, IPA_X),
-                                  "a broadcast ar$sha was installed as a next hop");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, find_ip(work_a, IPA_X), "a broadcast ar$sha was installed as a next hop");
 
     // And as an unsolicited REQUEST, which merges before the opcode is read.
     ready_at(work_a, 1000u);
     idemip_arp_build_request(pkt, EA_MCAST, IPA_X, IPA_Y);
     (void)input_at(work_a, 1000u, pkt, IPA_Y, 0u);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, find_ip(work_a, IPA_X),
-                                  "a multicast ar$sha was installed as a next hop");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, find_ip(work_a, IPA_X), "a multicast ar$sha was installed as a next hop");
 
     // Through ArpTable.add, which is the same learn.
     ready_at(work_a, 1000u);
@@ -1019,4 +1017,89 @@ void test_the_same_packet_twice_leaves_one_row(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, input_at(work_a, 1000u, pkt, IPA_Y, 0u));
     TEST_ASSERT_TRUE(IDEMIP_ARP_IO(work_a)->merged);
     TEST_ASSERT_EQUAL_UINT8(first, IDEMIP_ARP_IO(work_a)->index);
+}
+
+// --- what the operands rule out ------------------------------------------------
+
+// RFC 826's algorithm is over a <protocol type, sender protocol address> pair, and this table carries
+// "the protocol in ar$pro" for IPv4 alone. A lookup naming another protocol names nothing this table
+// holds, and RFC 1122 sec 3.2.1.3 makes 0.0.0.0 "this host on this network", which no neighbour
+// answers for. Neither can become a row later, so both are ERR rather than a lookup that missed.
+void test_a_lookup_outside_the_pair_this_table_holds_is_refused(void)
+{
+    ready_at(work_a, 1000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, add_at(work_a, 1000u, IPA_X, EA_X, 0u));
+
+    IDEMIP_ARP_IO(work_a)->find_args.pro = 0x86DDu;
+    IDEMIP_ARP_IO(work_a)->find_args.spa = IPA_X;
+    IDEMIP_ARP_IO(work_a)->now_ms = 1000u;
+    ArpTable.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ARP_IO(work_a)->status,
+                                  "a lookup for another protocol was answered from the IPv4 table");
+
+    IDEMIP_ARP_IO(work_a)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
+    IDEMIP_ARP_IO(work_a)->find_args.spa = 0u;
+    ArpTable.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ARP_IO(work_a)->status,
+                                  "a lookup for this-host-on-this-network was answered");
+
+    IDEMIP_ARP_IO(work_a)->remove_args.pro = 0x86DDu;
+    IDEMIP_ARP_IO(work_a)->remove_args.spa = IPA_X;
+    ArpTable.remove(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ARP_IO(work_a)->status,
+                                  "a row of another protocol was removed from the IPv4 table");
+
+    IDEMIP_ARP_IO(work_a)->remove_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
+    IDEMIP_ARP_IO(work_a)->remove_args.spa = 0u;
+    ArpTable.remove(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ARP_IO(work_a)->status,
+                                  "a row for this-host-on-this-network was removed");
+
+    // The row itself is untouched by any of the four.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, find_ip(work_a, IPA_X));
+
+    // And a reception with no packet is nothing to run the algorithm over.
+    IDEMIP_ARP_IO(work_a)->input_args.packet = NULL;
+    IDEMIP_ARP_IO(work_a)->input_args.local_pa = IPA_Z;
+    IDEMIP_ARP_IO(work_a)->input_args.netif = 0u;
+    IDEMIP_ARP_IO(work_a)->now_ms = 1000u;
+    ArpTable.input(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ARP_IO(work_a)->status,
+                                  "the reception algorithm ran over no packet");
+}
+
+// RFC 1122 sec 2.3.2.2: "the link layer SHOULD save (rather than discard) at least one (the latest)
+// packet of each set of packets destined to the same unresolved IP address". The saved packets of one
+// address are a list, and a hold that leaves it is taken out of the list wherever it stands - the
+// front of it or behind another. Which one a hold stands at is not the order it was allocated in: a
+// hold freed by delivery is the next one allocated, and by then the list it joins already has a head.
+void test_a_hold_is_taken_off_the_list_from_behind_its_head_as_well_as_from_the_front(void)
+{
+    ready_at(work_a, 1000u);
+
+    // One hold on X and one on Y, in that order, so the first hold in the table belongs to X.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, queue_at(work_a, 1000u, IPA_X, 11u, 100u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, queue_at(work_a, 1000u, IPA_Y, 22u, 200u));
+
+    // X answers, and its hold is delivered - which is the front of X's list and frees that hold.
+    idemip_arp_build_reply(pkt, EA_X, IPA_X, g_sha, IPA_Z);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, input_at(work_a, 1000u, pkt, IPA_Z, 0u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, dequeue_one(work_a));
+    TEST_ASSERT_EQUAL_UINT16(11u, IDEMIP_ARP_IO(work_a)->desc);
+
+    // A second packet for Y takes that freed hold, so Y's list now runs from the later hold to the
+    // earlier one and the earlier one is no longer at its front.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, queue_at(work_a, 1000u, IPA_Y, 33u, 300u));
+
+    // Y answers too, so its row stands and the two holds on it are deliverable - and nobody comes to
+    // take them. Both go past sec 2.3.2.2's wait on a row that is not going anywhere, and the sweep
+    // reaches the one standing behind the head before it reaches the head.
+    idemip_arp_build_reply(pkt, EA_Y, IPA_Y, g_sha, IPA_Z);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, input_at(work_a, 1000u, pkt, IPA_Z, 0u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tick_at(work_a, 1000u + (IDEMIP_ARP_MAXPENDING_S * 1000u) + 1u));
+
+    // Neither is deliverable now, and the row they were held for is still in the table.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, dequeue_one(work_a), "a hold outlived sec 2.3.2.2's wait");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, find_ip(work_a, IPA_Y),
+                                  "the row went with the holds that were waiting on it");
 }
