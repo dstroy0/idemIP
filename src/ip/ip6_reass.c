@@ -154,7 +154,10 @@ static uint8_t ip6_reass_take_datagram(uint8_t *work)
     {
         return IDEMIP_IP6_REASS_NONE;
     }
-    for (uint8_t i = 0u; i < IDEMIP_IP6_REASS_DATAGRAMS; i++)
+    // The empty search is written out because a caller must be able to read a table with nothing left
+    // in it, and it is not measured: ip6_reass_input answers BUSY at the count before it asks, and the
+    // count and the table are the same thing.
+    for (uint8_t i = 0u; i < IDEMIP_IP6_REASS_DATAGRAMS; i++) // GCOVR_EXCL_BR_LINE
     {
         if (!IP6_REASS_DATAGRAM_AT(work, i)->used)
         {
@@ -166,7 +169,7 @@ static uint8_t ip6_reass_take_datagram(uint8_t *work)
             return i;
         }
     }
-    return IDEMIP_IP6_REASS_NONE;
+    return IDEMIP_IP6_REASS_NONE; // GCOVR_EXCL_LINE
 }
 
 static uint8_t ip6_reass_take_frag(uint8_t *work)
@@ -175,7 +178,8 @@ static uint8_t ip6_reass_take_frag(uint8_t *work)
     {
         return IDEMIP_IP6_REASS_NONE;
     }
-    for (uint8_t i = 0u; i < IDEMIP_IP6_REASS_FRAGS; i++)
+    // Not measured, for the reason written at the datagram search above.
+    for (uint8_t i = 0u; i < IDEMIP_IP6_REASS_FRAGS; i++) // GCOVR_EXCL_BR_LINE
     {
         if (!IP6_REASS_FRAG_AT(work, i)->used)
         {
@@ -186,16 +190,21 @@ static uint8_t ip6_reass_take_frag(uint8_t *work)
             return i;
         }
     }
-    return IDEMIP_IP6_REASS_NONE;
+    return IDEMIP_IP6_REASS_NONE; // GCOVR_EXCL_LINE
 }
 
 static uint8_t ip6_reass_take_hole(uint8_t *work)
 {
-    if (IP6_REASS_CTX(work)->holes >= IDEMIP_IP6_REASS_HOLES)
+    // Not measured, for the reason idemip_config.h states beside IDEMIP_IP6_REASS_HOLES: RFC 815 opens
+    // a packet with one hole and steps four through six leave at most one more per fragment, so D
+    // packets holding N fragments reach at most D + N descriptors, and the table is sized at or above
+    // that. Both bounds are enforced ahead of every call. The count is written because a table that
+    // can be full must be read as though it is.
+    if (IP6_REASS_CTX(work)->holes >= IDEMIP_IP6_REASS_HOLES) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_IP6_REASS_NONE;
+        return IDEMIP_IP6_REASS_NONE; // GCOVR_EXCL_LINE
     }
-    for (uint8_t i = 0u; i < IDEMIP_IP6_REASS_HOLES; i++)
+    for (uint8_t i = 0u; i < IDEMIP_IP6_REASS_HOLES; i++) // GCOVR_EXCL_BR_LINE
     {
         if (!IP6_REASS_HOLE_AT(work, i)->used)
         {
@@ -206,7 +215,7 @@ static uint8_t ip6_reass_take_hole(uint8_t *work)
             return i;
         }
     }
-    return IDEMIP_IP6_REASS_NONE;
+    return IDEMIP_IP6_REASS_NONE; // GCOVR_EXCL_LINE
 }
 
 // RFC 8200 sec 4.5: "all the fragments that have been received for that packet must be discarded".
@@ -324,9 +333,13 @@ static idemip_bool ip6_reass_carve(uint8_t *work, uint8_t d, uint32_t first, uin
         if (head && tail)
         {
             uint8_t h2 = ip6_reass_take_hole(work);
-            if (h2 == IDEMIP_IP6_REASS_NONE)
+            // Not measured, for the reason written at ip6_reass_take_hole: the table is sized for one
+            // hole per packet and one more per fragment, and both bounds are enforced before this
+            // walk is entered. The arm is here because a walk that hands the list back must not hand
+            // back one it has torn.
+            if (h2 == IDEMIP_IP6_REASS_NONE) // GCOVR_EXCL_BR_LINE
             {
-                return IDEMIP_FALSE;
+                return IDEMIP_FALSE; // GCOVR_EXCL_LINE
             }
             IP6_REASS_HOLE_AT(work, h2)->first = (uint16_t)end;
             IP6_REASS_HOLE_AT(work, h2)->last = (uint16_t)hole_last;
@@ -369,24 +382,31 @@ static void ip6_reass_trim(uint8_t *work, uint8_t d, uint32_t end)
     {
         Ip6ReassHole *h = IP6_REASS_HOLE_AT(work, cur);
         uint8_t next = h->next;
+        // A hole left past the reassembled length is the trailing one, and there is only ever the one:
+        // every other hole lies between fragments that arrived, so it ends before the last of them.
+        // That makes it the head of what is left by the time the trim walks, and the unlink from
+        // further down the list is not measured. Neither is the clip below it: a hole that straddles
+        // the end was reached by the last fragment's own carve, which cut it back to the piece in
+        // front of the fragment - the last fragment sets no tail. Both are written because the trim
+        // reads a list it did not build.
         if ((uint32_t)h->first >= end)
         {
-            if (prev == IDEMIP_IP6_REASS_NONE)
+            if (prev == IDEMIP_IP6_REASS_NONE) // GCOVR_EXCL_BR_LINE
             {
                 dg->hole_head = next;
             }
             else
             {
-                IP6_REASS_HOLE_AT(work, prev)->next = next;
+                IP6_REASS_HOLE_AT(work, prev)->next = next; // GCOVR_EXCL_LINE
             }
             h->used = IDEMIP_FALSE;
             IP6_REASS_CTX(work)->holes--;
         }
         else
         {
-            if ((uint32_t)h->last >= end)
+            if ((uint32_t)h->last >= end) // GCOVR_EXCL_BR_LINE
             {
-                h->last = (uint16_t)(end - 1u);
+                h->last = (uint16_t)(end - 1u); // GCOVR_EXCL_LINE
             }
             prev = cur;
         }
@@ -444,8 +464,12 @@ typedef struct
 // named, or names more octets than the buffer holds, or seats its fragment data past sixteen bits.
 static idemip_bool ip6_reass_fields(const uint8_t *pkt, size_t len, size_t fh, Ip6ReassFields *f)
 {
+    // The third test is not measured: sec 3's Payload Length is sixteen bits, so a packet cannot
+    // carry the octets a Fragment header seated past IP6_REASS_INFINITY would need, and the second
+    // test refuses it against the caller's own length first. It is written because the offsets this
+    // unit holds are sixteen bits wide and a caller's offset is not.
     if (fh < IDEMIP_IPV6_HDR_LEN || fh + IDEMIP_IP6_FRAG_HDR_LEN > len ||
-        fh + IDEMIP_IP6_FRAG_HDR_LEN > IP6_REASS_INFINITY)
+        fh + IDEMIP_IP6_FRAG_HDR_LEN > IP6_REASS_INFINITY) // GCOVR_EXCL_BR_LINE
     {
         return IDEMIP_FALSE;
     }
@@ -562,10 +586,17 @@ static void ip6_reass_file(uint8_t *work)
         // received for that packet must be discarded, and no ICMP error messages should be sent."
         Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
         idemip_bool inconsistent = IDEMIP_FALSE;
+        //
+        // The second last fragment naming a different end is written out because sec 4.5 fixes the
+        // length there and two fragments cannot fix it twice, and the equal case is not measured: a
+        // second M-zero fragment ending where the first one did begins at a multiple of eight below
+        // that end, so it is either the same fragment again, which the duplicate above drops, or one
+        // covering octets already held, which the overlap above abandons. Neither reaches here.
         if (!f.more)
         {
             inconsistent = (idemip_bool)(ip6_reass_past_end(work, d, f.end) ||
-                                         (dg->last_seen && (uint32_t)dg->frag_end != f.end));
+                                         (dg->last_seen &&                            // GCOVR_EXCL_BR_LINE
+                                          (uint32_t)dg->frag_end != f.end)); // GCOVR_EXCL_BR_LINE
         }
         else if (dg->last_seen && f.end > (uint32_t)dg->frag_end)
         {
@@ -609,13 +640,18 @@ static void ip6_reass_file(uint8_t *work)
             return;
         }
         uint8_t h = ip6_reass_take_hole(work);
-        if (h == IDEMIP_IP6_REASS_NONE)
+        // Not measured, for the reason written at ip6_reass_take_hole: the table holds one opening
+        // hole for every packet on top of one per fragment. The packet and the fragment entry it just
+        // took both go back rather than being left half-open.
+        if (h == IDEMIP_IP6_REASS_NONE) // GCOVR_EXCL_BR_LINE
         {
+            // GCOVR_EXCL_START
             IP6_REASS_FRAG_AT(work, fi)->used = IDEMIP_FALSE;
             IP6_REASS_CTX(work)->frags--;
             ip6_reass_put_datagram(work, d);
             io->status = IDEMIP_BUSY;
             return;
+            // GCOVR_EXCL_STOP
         }
         // RFC 815 sec 3: "one entry in its hole descriptor list, the entry which describes the
         // datagram as being completely missing"
@@ -668,10 +704,15 @@ static void ip6_reass_file(uint8_t *work)
     io->frag_count = dg->frag_count;
     io->next_hdr = dg->next_hdr;
 
-    if (!ip6_reass_carve(work, d, (uint32_t)f.offset, f.end, f.more))
+    // Not measured, for the reason written at ip6_reass_take_hole: the walk cannot run the table out.
+    // The arm is here because a torn hole list describes a packet that can never be told apart from a
+    // complete one, so the packet is given up rather than reassembled from a list that lies.
+    if (!ip6_reass_carve(work, d, (uint32_t)f.offset, f.end, f.more)) // GCOVR_EXCL_BR_LINE
     {
+        // GCOVR_EXCL_START
         dg->state = IP6_REASS_ABANDONED;
-        return; // no descriptor for the second half of a split hole, so the packet is given up
+        return;
+        // GCOVR_EXCL_STOP
     }
     if (!f.more)
     {

@@ -432,6 +432,44 @@ void test_two_fragments_in_order_reassemble(void)
     TEST_ASSERT_EQUAL_UINT16(16u, IDEMIP_IP6_REASS_IO(work_a)->total_len);
 }
 
+// RFC 815 sec 3 steps two and three skip a hole the arriving fragment does not reach: "if
+// fragment.first is greater than hole.last, go to step one" and "if fragment.last is less than
+// hole.first, go to step one". Both are read here, and so is what step four does to a hole that is
+// not at the head of the list: the fragments below leave three holes at one point, and the one that
+// goes is the middle.
+void test_a_hole_is_taken_out_of_the_middle_of_the_list(void)
+{
+    ready();
+
+    // 8..15, which breaks the opening hole into 0..7 and 16..infinity.
+    feed_plain(work_a, 3u, 8u, 1, IDEMIP_IP6_NH_UDP, 8u, 1000u, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_FALSE(IDEMIP_IP6_REASS_IO(work_a)->complete);
+
+    // 48..55, which steps over 0..7 - step two - and splits 16..infinity into 16..47 and 56..infinity.
+    feed_plain(work_a, 3u, 48u, 1, IDEMIP_IP6_NH_UDP, 8u, 1000u, 2u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_FALSE(IDEMIP_IP6_REASS_IO(work_a)->complete);
+
+    // 16..47, which steps over 0..7, covers 16..47 whole and stops before 56..infinity - step three.
+    // The hole it covers is the middle of the three.
+    feed_plain(work_a, 3u, 16u, 1, IDEMIP_IP6_NH_UDP, 32u, 1000u, 3u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP6_REASS_IO(work_a)->complete, "the datagram completed with 0..7 missing");
+
+    // The last fragment at 56..63, which covers the trailing hole whole and fixes the length at 64.
+    feed_plain(work_a, 3u, 56u, 0, IDEMIP_IP6_NH_UDP, 8u, 1000u, 4u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_FALSE(IDEMIP_IP6_REASS_IO(work_a)->complete);
+
+    // 0..7 is all that is left, and it completes the datagram at the length the last fragment fixed.
+    feed_plain(work_a, 3u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 1000u, 5u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP6_REASS_IO(work_a)->complete, "the hole list did not empty");
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(64u, IDEMIP_IP6_REASS_IO(work_a)->total_len,
+                                     "the reassembled length is the one the last fragment fixed");
+}
+
 // RFC 815 sec 3 reassembles "from any number of fragments arriving in any order", so the last fragment
 // first leaves the head of the datagram as the one hole.
 void test_two_fragments_out_of_order_reassemble(void)
@@ -1090,6 +1128,60 @@ void test_a_timed_out_packet_without_its_first_fragment_owes_no_icmp(void)
     TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_IP6_REASS_IO(work_a)->expired);
     TEST_ASSERT_EQUAL_UINT8(d, IDEMIP_IP6_REASS_IO(work_a)->datagram);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_REASS_ERR_NONE, IDEMIP_IP6_REASS_IO(work_a)->err);
+}
+
+// RFC 8200 sec 4.5 owes the Time Exceeded to a packet the timer ran out on "If insufficient fragments
+// are received to complete reassembly", and a packet that reassembled is not that: the caller simply
+// has not taken it yet. Its slot still has to go back, so the sweep names it and no error is owed.
+void test_a_reassembled_packet_the_caller_left_is_retired_without_an_error(void)
+{
+    ready();
+    feed_plain(work_a, 55u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 1000u, 1u);
+    feed_plain(work_a, 55u, 8u, 0, IDEMIP_IP6_NH_UDP, 8u, 1000u, 2u);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP6_REASS_IO(work_a)->complete, "the two fragments did not complete it");
+    const uint8_t d = IDEMIP_IP6_REASS_IO(work_a)->datagram;
+
+    tick_at(work_a, 1000u + IDEMIP_IP6_REASS_MAXAGE_MS);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, IDEMIP_IP6_REASS_IO(work_a)->expired,
+                                    "a packet the caller left was held past the bound");
+    TEST_ASSERT_EQUAL_UINT8(d, IDEMIP_IP6_REASS_IO(work_a)->datagram);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP6_REASS_ERR_NONE, IDEMIP_IP6_REASS_IO(work_a)->err,
+                                  "a packet that reassembled is owed no Time Exceeded");
+}
+
+// sec 4.5's Fragment header sits behind the per-fragment headers, and the Payload Length counts both.
+// A Payload Length that does not reach the end of the header the caller pointed at describes a packet
+// that cannot hold the one it names, whatever the buffer behind it holds.
+void test_a_payload_length_short_of_the_fragment_header_is_refused(void)
+{
+    ready();
+    // Eight octets of per-fragment Destination Options ahead of the Fragment header.
+    size_t len = build_frag(addr_a_src, addr_a_dst, 56u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 8u);
+    // The Payload Length is 8 + 8 + 8; eight is short of the options and the header together.
+    idemip_ip6_set_payload_len(pkt, 8u);
+    feed(work_a, len, IDEMIP_IPV6_HDR_LEN + 8u, 1000u, 1u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IP6_REASS_IO(work_a)->status,
+                                  "a Payload Length short of the Fragment header was read");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_REASS_ERR_NONE, IDEMIP_IP6_REASS_IO(work_a)->err);
+}
+
+// frag_at reads one held fragment by its place in two tables, and either index can be one the table
+// does not have. Both are ERR: no later call makes an index that is out of range a legal one.
+void test_frag_at_refuses_an_index_past_either_table(void)
+{
+    ready();
+    feed_plain(work_a, 57u, 0u, 1, IDEMIP_IP6_NH_UDP, 8u, 1000u, 1u);
+    const uint8_t d = IDEMIP_IP6_REASS_IO(work_a)->datagram;
+
+    frag_at(work_a, (uint8_t)IDEMIP_IP6_REASS_DATAGRAMS, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IP6_REASS_IO(work_a)->status, "a packet past the table was read");
+    frag_at(work_a, d, (uint8_t)IDEMIP_IP6_REASS_FRAGS);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IP6_REASS_IO(work_a)->status,
+                                  "a fragment past the table was read");
+    frag_at(work_a, d, 0u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_IP6_REASS_IO(work_a)->status,
+                                  "the fragment that is there was refused");
 }
 
 // A timed-out packet takes no more fragments: its reassembly is abandoned, so a matching fragment
