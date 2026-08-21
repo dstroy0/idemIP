@@ -4325,6 +4325,24 @@ void test_a_udp_lite_datagram_reaches_a_lite_binding(void)
     TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
 }
 
+// RFC 768: Length "is the length in octets of this user datagram including this header and the data",
+// and sec 1 of the same page fixes the header at eight octets, so a Length below that is not a
+// datagram at all - a length fault, and RFC 1213 udpInErrors.
+void test_a_udp_length_below_its_own_header_is_refused(void)
+{
+    (void)bind_udp4(4001u);
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 4u);
+    idemip_wr16(g_frame + off + IDEMIP_UDP_OFF_LEN, 7u); // one short of the header
+    seal_udp4(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_UDP_IN_ERRORS));
+}
+
 // RFC 3828 sec 3.1: "the value of the Checksum Coverage field MUST be either 0 or at least 8. A
 // UDP-Lite packet with a Checksum Coverage value of 1 to 7 MUST be discarded by the receiver."
 void test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded(void)
@@ -4339,6 +4357,50 @@ void test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded(void)
     // A Coverage sec 3.1 bars is a fault in a length field, and that is what is reported.
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop,
                                   "an illegal Coverage was not reported as a length fault");
+}
+
+// RFC 3828 sec 3.1: "A Checksum Coverage of zero indicates that the entire UDP-Lite packet is covered
+// by the checksum", which is the other way a sender writes what the packet's own length says. Both
+// reach the binding as the same coverage, so a binding that admits one admits the other.
+void test_a_udp_lite_coverage_of_zero_is_the_whole_packet(void)
+{
+    UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
+    up->open_args.ip_version = 4u;
+    up->open_args.lite = IDEMIP_TRUE;
+    UdpPcb.open(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+    const uint16_t pcb = up->index;
+    uint8_t local[4];
+    idemip_wr32(local, LOCAL_IP4);
+    up->bind_args.index = pcb;
+    up->bind_args.ip = local;
+    up->bind_args.port = 4001u;
+    up->bind_args.zone = 0u;
+    up->bind_args.netif = 0u;
+    UdpPcb.bind(udp_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    size_t ip = off;
+    off = build_ip4(g_frame, off, (uint8_t)IDEMIP_UDPLITE_PROTO, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
+    memset(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
+
+    UdpLiteIo *ul = IDEMIP_UDPLITE_IO(udplite_mem);
+    ul->build_args.dgram = g_frame + off;
+    ul->build_args.src = g_frame + ip + IDEMIP_IP4_OFF_SRC;
+    ul->build_args.dst = g_frame + ip + IDEMIP_IP4_OFF_DST;
+    ul->build_args.ip_payload_len = (uint32_t)(IDEMIP_UDP_HDR_LEN + 4u);
+    ul->build_args.src_port = 4000u;
+    ul->build_args.dst_port = 4001u;
+    ul->build_args.cov = 0u; // sec 3.1's zero, which is the whole packet
+    ul->build_args.ip_version = 4u;
+    UdpLite.build(udplite_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ul->status);
+
+    input(work_a, off + IDEMIP_UDP_HDR_LEN + 4u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u,
+                             "a Coverage of zero did not reach the binding");
+    TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
 }
 
 // RFC 3828 sec 3.1: "Irrespective of the Checksum Coverage, the computed Checksum field MUST include
@@ -4637,6 +4699,180 @@ void test_an_echo_request_at_a_build_with_no_netif_borrow_is_still_answered(void
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_ICMP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
                                   "the message did not reach icmp_in");
 }
+
+#if IDEMIP_ENABLE_IPV6
+
+// RFC 4291 sec 2.8 has a node recognize its own unicast addresses, and the interface table is where
+// they are. A build with no netif borrow holds none, so an IPv6 unicast destination is not this
+// node's - and one that is not this node's is left to the forwarder rather than reported as an
+// address error: sec 2.8's list is what a node answers for, not what it may relay.
+void test_an_ipv6_unicast_destination_with_no_netif_borrow_is_left_to_the_forwarder(void)
+{
+    BIND_WITHOUT(work_a, netif);
+    if_untagged(work_a, 0u);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_local_ip6, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, g_local_ip6);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) != 0u,
+                             "an address was matched with no interface table to match it against");
+    TEST_ASSERT_FALSE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+}
+
+// RFC 4291 sec 2.8 also has a host recognize "Multicast addresses of all other groups to which the
+// node belongs", and mld6 is where those memberships are held. A build with no mld6 borrow holds
+// none, so a group that is not one of sec 2.7.1's all-nodes pair and not a solicited-node address of
+// this node's is a group it never joined.
+void test_an_ipv6_multicast_destination_with_no_mld6_borrow_is_not_ours(void)
+{
+    BIND_WITHOUT(work_a, mld6);
+    if_untagged(work_a, 0u);
+    // ff02::2, all-routers, which is a group and is not one sec 2.7.1 joins for you.
+    static const uint8_t all_routers[IDEMIP_IP6_ADDR_LEN] = {0xFFu, 0x02u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2u};
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, all_routers, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, all_routers);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_ADDRESS, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a group this node never joined was taken as its own");
+}
+
+// RFC 4443 sec 2.2 (a) answers "a message sent to one of the node's unicast addresses" from "that
+// same address", and (b) leaves the source of every other answer to be picked from the interface.
+// The interface table is where that address is looked for, and a build with no netif borrow has none:
+// the answer is built from what icmp6_in is left with rather than from a table that is not there.
+void test_an_icmpv6_echo_request_at_a_build_with_no_netif_borrow_is_still_answered(void)
+{
+    BIND_WITHOUT(work_a, netif);
+    if_untagged(work_a, 0u);
+    // The all-nodes group, which sec 2.8 makes this node's without asking the interface.
+    static const uint8_t all_nodes[IDEMIP_IP6_ADDR_LEN] = {0xFFu, 0x02u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1u};
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_ICMPV6, g_remote_ip6, all_nodes, IDEMIP_ICMP6_ECHO_HDR_LEN);
+    g_frame[off + IDEMIP_ICMP6_OFF_TYPE] = IDEMIP_ICMP6_ECHO_REQUEST;
+    g_frame[off + IDEMIP_ICMP6_OFF_CODE] = 0u;
+    idemip_wr16(g_frame + off + IDEMIP_ICMP6_OFF_CKSUM, 0u);
+    idemip_wr16(g_frame + off + 4u, 0x0AAAu);
+    idemip_wr16(g_frame + off + 6u, 0x0001u);
+    uint32_t sum =
+        idemip_ip6_pseudo_accum(0u, g_remote_ip6, all_nodes, (uint32_t)IDEMIP_ICMP6_ECHO_HDR_LEN, IDEMIP_IP6_NH_ICMPV6);
+    idemip_wr16(g_frame + off + IDEMIP_ICMP6_OFF_CKSUM,
+                idemip_cksum_final(idemip_cksum_accum(sum, g_frame + off, IDEMIP_ICMP6_ECHO_HDR_LEN)));
+
+    input(work_a, off + IDEMIP_ICMP6_ECHO_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_ICMP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "the message did not reach icmp6_in");
+}
+
+#endif // IDEMIP_ENABLE_IPV6
+
+#if IDEMIP_ENABLE_TCP
+
+// A delivery asked for against a build that carries no connection table has no table to ask, and no
+// later call gives it one, so it is ERR.
+void test_a_delivery_at_a_build_with_no_tcp_pcb_borrow_is_refused(void)
+{
+    BIND_WITHOUT(work_a, tcp_pcb);
+    if_untagged(work_a, 0u);
+    IDEMIP_DISPATCH_IO(work_a)->tcp_args.pcb = 0u;
+    Dispatch.tcp_deliver(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DISPATCH_IO(work_a)->status,
+                                  "a delivery was made from a table that was never bound");
+
+    Dispatch.tcp_ack(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DISPATCH_IO(work_a)->status,
+                                  "an acknowledgment was formed from a table that was never bound");
+}
+
+#endif // IDEMIP_ENABLE_TCP
+
+// A caller with no transmit buffer at all is the same case as one whose buffer is too small: the
+// frame is good and the answer is owed, so it is BUSY and the same frame dispatched again once a
+// buffer is free answers it. Both the ARP reply and the ICMPv6 reply are built into that buffer.
+void test_a_reply_with_no_transmit_buffer_at_all_is_busy(void)
+{
+    size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_ARP);
+    size_t end = build_arp(g_frame, off, IDEMIP_ARP_OP_REQUEST, LOCAL_IP4);
+
+    DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    io->input_args.frame = g_frame;
+    io->input_args.len = end;
+    io->input_args.out = NULL;
+    io->input_args.out_cap = 0u;
+    io->input_args.now_ms = 1000u;
+    io->input_args.rand = g_rand;
+    io->input_args.desc = IDEMIP_DISPATCH_DESC_NONE;
+    io->input_args.netif = 0u;
+    Dispatch.input(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, io->status, "an ARP reply with nowhere to go was not BUSY");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, io->drop);
+    TEST_ASSERT_FALSE((io->act & IDEMIP_DISPATCH_ACT_SEND) != 0u);
+
+#if IDEMIP_ENABLE_IPV6
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    end = build_ip6_echo6(g_frame, off, IDEMIP_ICMP6_ECHO_REQUEST);
+    io->input_args.frame = g_frame;
+    io->input_args.len = end;
+    io->input_args.out = NULL;
+    io->input_args.out_cap = 0u;
+    io->input_args.desc = IDEMIP_DISPATCH_DESC_NONE;
+    io->input_args.netif = 0u;
+    Dispatch.input(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, io->status, "an ICMPv6 reply with nowhere to go was not BUSY");
+    TEST_ASSERT_FALSE((io->act & IDEMIP_DISPATCH_ACT_SEND) != 0u);
+#endif
+}
+
+#if IDEMIP_ENABLE_IPV6
+
+// RFC 4443 sec 2.2 (b) picks the source of a reply from "a unicast address belonging to the node",
+// and RFC 4862 sec 2 bars one still being checked for duplicates: a tentative address is "an address
+// whose uniqueness on a link is being verified, prior to its assignment to an interface. A tentative
+// address is not considered assigned to an interface in the usual sense." An interface whose only
+// address is tentative
+// therefore offers none, and the answer to a message addressed to the all-nodes group - which
+// RFC 4291 sec 2.8 makes this node's without asking the interface - is built from what icmp6_in is
+// left with rather than from an address it may not use.
+void test_an_echo_request_is_answered_with_no_preferred_address_to_take(void)
+{
+    NetifIo *ni = IDEMIP_NETIF_IO(netif_mem);
+    ni->addr6_args.index = 0u;
+    ni->addr6_args.addr = g_local_ip6;
+    Netif.remove_addr6(netif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ni->status);
+    ni->addr6_args.index = 0u;
+    ni->addr6_args.addr = g_local_ip6;
+    ni->addr6_args.state = IDEMIP_NETIF_ADDR6_TENTATIVE;
+    ni->addr6_args.preferred_s = IDEMIP_NETIF_LIFETIME_INFINITE;
+    ni->addr6_args.valid_s = IDEMIP_NETIF_LIFETIME_INFINITE;
+    Netif.add_addr6(netif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ni->status);
+
+    static const uint8_t all_nodes[IDEMIP_IP6_ADDR_LEN] = {0xFFu, 0x02u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1u};
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_ICMPV6, g_remote_ip6, all_nodes, IDEMIP_ICMP6_ECHO_HDR_LEN);
+    g_frame[off + IDEMIP_ICMP6_OFF_TYPE] = IDEMIP_ICMP6_ECHO_REQUEST;
+    g_frame[off + IDEMIP_ICMP6_OFF_CODE] = 0u;
+    idemip_wr16(g_frame + off + IDEMIP_ICMP6_OFF_CKSUM, 0u);
+    idemip_wr16(g_frame + off + 4u, 0x0AAAu);
+    idemip_wr16(g_frame + off + 6u, 0x0001u);
+    uint32_t sum =
+        idemip_ip6_pseudo_accum(0u, g_remote_ip6, all_nodes, (uint32_t)IDEMIP_ICMP6_ECHO_HDR_LEN, IDEMIP_IP6_NH_ICMPV6);
+    idemip_wr16(g_frame + off + IDEMIP_ICMP6_OFF_CKSUM,
+                idemip_cksum_final(idemip_cksum_accum(sum, g_frame + off, IDEMIP_ICMP6_ECHO_HDR_LEN)));
+
+    input(work_a, off + IDEMIP_ICMP6_ECHO_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_ICMP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "the message did not reach icmp6_in");
+}
+
+#endif // IDEMIP_ENABLE_IPV6
 
 // The tag is read before anything else, so an unbound vlan stops every frame there.
 void test_a_frame_with_no_vlan_borrow_is_refused(void)
