@@ -45,9 +45,9 @@
 
 // The interface this node answers on. The addresses are RFC 5737 sec 3's TEST-NET-1 and RFC 3849's
 // documentation prefix, so nothing here names a host that exists.
-#define FUZZ_LOCAL_IP4 0xC0000201u  // 192.0.2.1
-#define FUZZ_NETMASK4 0xFFFFFF00u   // /24
-#define FUZZ_GATEWAY4 0xC00002FEu   // 192.0.2.254
+#define FUZZ_LOCAL_IP4 0xC0000201u // 192.0.2.1
+#define FUZZ_NETMASK4 0xFFFFFF00u  // /24
+#define FUZZ_GATEWAY4 0xC00002FEu  // 192.0.2.254
 #define FUZZ_UDP_PORT 5001u
 #define FUZZ_TCP_PORT 5002u
 
@@ -361,7 +361,13 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             }
         }
         const size_t len = (want > FUZZ_FRAME_MAX) ? (size_t)FUZZ_FRAME_MAX : want;
-        memcpy(frame, data + at, len);
+        // That @p data holds @p size octets is libFuzzer's contract with this entry, and nothing in
+        // this file states it, so an analysis reading the function alone cannot see it. What the
+        // function does state is at + len <= size on every path: the short branch sets len to
+        // size - at, and the long one clips want to what remains after the two length octets. The
+        // destination is the wider of the two either way - len is capped at FUZZ_FRAME_MAX and
+        // frame carries a word past that.
+        memcpy(frame, data + at, len); // NOSONAR c:S3519 - the bound is the caller's, and it is above
         at += want;
 
         DispatchIo *io = IDEMIP_DISPATCH_IO(work);
