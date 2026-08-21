@@ -793,8 +793,9 @@ static void dhcp4_write(uint8_t *work)
     {
         at = dhcp4_opt_u32(out, at, IDEMIP_DHCP4_OPT_SERVER_ID, ctx->server_id); // sec 9.7
     }
-    // Not measured on the configured duration: sec 9.2's option carries "the lease time value
-    // requested", and a caller that wants none leaves it zero, which the suites bind. A caller that
+    // Not measured on the configured duration: sec 9.2's option is "used in a client request
+    // (DHCPDISCOVER or DHCPREQUEST) to allow the client to request a lease time for the IP address",
+    // and a caller that wants none leaves it zero, which the suites bind. A caller that
     // configured one and a message that does not ask for a lease are the two the cases beside this
     // drive; the pair where a message asks and the configuration names nothing is the same message
     // with the same option left off.
@@ -889,8 +890,9 @@ static idemip_bool dhcp4_run(uint8_t *work)
         return dhcp4_retry(work, 0u);
     case IDEMIP_DHCP4_INIT_REBOOT:
         // Figure 5: "-/Send DHCPREQUEST" moves INIT-REBOOT to REBOOTING. The wait is written because
-        // every other state in this switch has one, and it is not measured: sec 4.4.1's "random delay
-        // between one and ten seconds" is for the DHCPDISCOVER alone, so a machine entering
+        // every other state in this switch has one, and it is not measured: sec 4.4.1's "The client
+        // SHOULD wait a random time between one and ten seconds to desynchronize the use of DHCP at
+        // startup" is written of the DHCPDISCOVER alone, so a machine entering
         // INIT-REBOOT is due at the instant it is entered and the first tick after that sends.
         if (!dhcp4_due(ctx->now_ms, ctx->retry_ms)) // GCOVR_EXCL_BR_LINE
         {
