@@ -41,8 +41,7 @@ typedef struct
 } RawPcbFields;
 
 // Entry i sits at (i << IDEMIP_RAW_PCB_ENTRY_SHIFT), so the entry is exactly that wide.
-typedef union
-{
+typedef union {
     RawPcbFields f;
     uint8_t raw[1u << IDEMIP_RAW_PCB_ENTRY_SHIFT];
 } RawPcbEntry;
@@ -75,8 +74,7 @@ static_assert(IDEMIP_RAW_PCB_OFF_TAB + (IDEMIP_RAW_PCBS << IDEMIP_RAW_PCB_ENTRY_
 
 // Every index reported through the operand block is 16 bits, so the table may hold no more entries
 // than that, and IDEMIP_RAW_PCB_NONE must name none of them.
-static_assert(IDEMIP_RAW_PCBS < IDEMIP_RAW_PCB_NONE,
-              "the table outgrew the 16-bit index the operand block reports");
+static_assert(IDEMIP_RAW_PCBS < IDEMIP_RAW_PCB_NONE, "the table outgrew the 16-bit index the operand block reports");
 
 // The regions, at their offsets in the caller's borrow.
 #define RAW_PCB_CTX(w) ((RawPcbCtx *)(void *)((w) + IDEMIP_RAW_PCB_OFF_CTX))
@@ -202,7 +200,10 @@ static void raw_pcb_set_local(uint8_t *work, const RawPcbAddrArgs *args)
         return;
     }
     size_t len = raw_pcb_addr_len(e->f.ip_version);
-    if (len == 0u || !raw_pcb_src_allowed(e->f.ip_version, args->ip))
+    // Not measured on the width: idemip_raw_pcb_open refuses a version this build has no address
+    // width for, so an entry in use carries one of the two. It is written because the width is what
+    // the store and the compare below are handed, and a width of zero is neither.
+    if (len == 0u || !raw_pcb_src_allowed(e->f.ip_version, args->ip)) // GCOVR_EXCL_BR_LINE
     {
         return;
     }
@@ -224,9 +225,12 @@ static void raw_pcb_set_remote(uint8_t *work, const RawPcbAddrArgs *args)
         return;
     }
     size_t len = raw_pcb_addr_len(e->f.ip_version);
-    if (len == 0u)
+    // Not measured on the width: idemip_raw_pcb_open refuses a version this build has no address
+    // width for, so an entry in use carries one of the two. It is written because the width is what
+    // the store and the compare below are handed, and a width of zero is neither.
+    if (len == 0u) // GCOVR_EXCL_BR_LINE
     {
-        return;
+        return; // GCOVR_EXCL_LINE
     }
     // RFC 1122 sec 3.2.1.3 (a) { 0, 0 } "MUST NOT be sent, except as a source address", and RFC 4291
     // sec 2.5.2 "The unspecified address must not be used as the destination address of IPv6
@@ -310,9 +314,12 @@ static idemip_bool raw_pcb_score(const RawPcbEntry *e, const RawPcbFindArgs *a, 
         return IDEMIP_FALSE;
     }
     size_t len = raw_pcb_addr_len(e->f.ip_version);
-    if (len == 0u)
+    // Not measured on the width: idemip_raw_pcb_open refuses a version this build has no address
+    // width for, so an entry in use carries one of the two. It is written because the width is what
+    // the store and the compare below are handed, and a width of zero is neither.
+    if (len == 0u) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE;
+        return IDEMIP_FALSE; // GCOVR_EXCL_LINE
     }
     uint8_t s = 0u;
     if (!raw_pcb_is_any(e->f.local_ip, len))
@@ -440,8 +447,7 @@ void idemip_raw_pcb_bind(uint8_t *work)
     }
     RawPcbIo *io = RAW_PCB_IO(work);
     io->status = IDEMIP_ERR;
-    if (RAW_PCB_CTX(work)->ready != RAW_PCB_READY || io->bind_args.index >= IDEMIP_RAW_PCBS ||
-        io->bind_args.ip == NULL)
+    if (RAW_PCB_CTX(work)->ready != RAW_PCB_READY || io->bind_args.index >= IDEMIP_RAW_PCBS || io->bind_args.ip == NULL)
     {
         return;
     }
@@ -551,8 +557,7 @@ void idemip_raw_pcb_find(uint8_t *work)
     RawPcbIo *io = RAW_PCB_IO(work);
     io->status = IDEMIP_ERR;
     io->index = IDEMIP_RAW_PCB_NONE;
-    if (RAW_PCB_CTX(work)->ready != RAW_PCB_READY || io->find_args.local_ip == NULL ||
-        io->find_args.remote_ip == NULL)
+    if (RAW_PCB_CTX(work)->ready != RAW_PCB_READY || io->find_args.local_ip == NULL || io->find_args.remote_ip == NULL)
     {
         return;
     }

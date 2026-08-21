@@ -962,3 +962,62 @@ void test_a_binding_on_one_borrow_matches_nothing_on_the_other(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, find4(work_b, PROTO_B, v4_a, v4_peer));
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, find4(work_a, PROTO_B, v4_a, v4_peer));
 }
+
+// RFC 1122 sec 3.2.1.3 (c) makes 255.255.255.255 "Limited broadcast", which sec 3.2.1.3 bars as a
+// source address the same way it bars a multicast one, so neither is an address a binding sends
+// from. And an index past the table names no binding, whichever entry is given it.
+void test_a_binding_takes_no_broadcast_source_and_no_index_past_the_table(void)
+{
+    RawPcb.clear(work_a);
+    const uint16_t idx = do_open(work_a, 253u, 4u);
+
+    static const uint8_t limited[IDEMIP_RAW_PCB_ADDR_BYTES] = {255u, 255u, 255u, 255u};
+    IDEMIP_RAW_PCB_IO(work_a)->bind_args.index = idx;
+    IDEMIP_RAW_PCB_IO(work_a)->bind_args.ip = limited;
+    IDEMIP_RAW_PCB_IO(work_a)->bind_args.zone = 0u;
+    IDEMIP_RAW_PCB_IO(work_a)->bind_args.netif = 0u;
+    RawPcb.bind(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_RAW_PCB_IO(work_a)->status,
+                                  "a binding took the limited broadcast as its own address");
+
+    // The bar is on that address and not on the octet: an address differing from it in any one of
+    // the four is not the limited broadcast, and each octet is read.
+    static const uint8_t near_bcast[3][IDEMIP_RAW_PCB_ADDR_BYTES] = {
+        {255u, 0u, 0u, 0u}, {255u, 255u, 0u, 0u}, {255u, 255u, 255u, 0u}};
+    for (unsigned k = 0; k < 3u; k++)
+    {
+        IDEMIP_RAW_PCB_IO(work_a)->bind_args.index = idx;
+        IDEMIP_RAW_PCB_IO(work_a)->bind_args.ip = near_bcast[k];
+        RawPcb.bind(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_RAW_PCB_IO(work_a)->status,
+                                      "an address differing from the limited broadcast was barred as one");
+    }
+
+    IDEMIP_RAW_PCB_IO(work_a)->connect_args.index = (uint16_t)IDEMIP_RAW_PCBS;
+    IDEMIP_RAW_PCB_IO(work_a)->connect_args.ip = g_remote;
+    IDEMIP_RAW_PCB_IO(work_a)->connect_args.zone = 0u;
+    IDEMIP_RAW_PCB_IO(work_a)->connect_args.netif = 0u;
+    RawPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_RAW_PCB_IO(work_a)->status,
+                                  "a connect took an index past the table");
+}
+
+// A lookup is over a datagram, and a datagram has a destination as well as a source: without one
+// there is nothing for a binding's own address to be matched against.
+void test_a_lookup_with_no_destination_address_is_refused(void)
+{
+    RawPcb.clear(work_a);
+    const uint16_t idx = do_open(work_a, 253u, 4u);
+    (void)idx;
+
+    IDEMIP_RAW_PCB_IO(work_a)->find_args.ip_version = 4u;
+    IDEMIP_RAW_PCB_IO(work_a)->find_args.proto = 253u;
+    IDEMIP_RAW_PCB_IO(work_a)->find_args.local_ip = NULL;
+    IDEMIP_RAW_PCB_IO(work_a)->find_args.remote_ip = g_remote;
+    IDEMIP_RAW_PCB_IO(work_a)->find_args.local_zone = 0u;
+    IDEMIP_RAW_PCB_IO(work_a)->find_args.remote_zone = 0u;
+    IDEMIP_RAW_PCB_IO(work_a)->find_args.netif = 0u;
+    RawPcb.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_RAW_PCB_IO(work_a)->status,
+                                  "a datagram with no destination was demultiplexed");
+}

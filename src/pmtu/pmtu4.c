@@ -321,8 +321,7 @@ void idemip_pmtu4_age(uint8_t *work)
         io->status = IDEMIP_BUSY;
         return;
     }
-    if (io->age_args.raise_ms != 0u &&
-        (io->now_ms - io->age_args.raise_ms) < (uint32_t)IDEMIP_PMTU4_RAISE_MS)
+    if (io->age_args.raise_ms != 0u && (io->now_ms - io->age_args.raise_ms) < (uint32_t)IDEMIP_PMTU4_RAISE_MS)
     {
         io->status = IDEMIP_BUSY;
         return;

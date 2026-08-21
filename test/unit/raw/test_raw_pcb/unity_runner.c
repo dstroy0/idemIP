@@ -56,6 +56,8 @@ extern void test_the_rfc_4007_zone_index_qualifies_a_link_local_address(void);
 extern void test_the_rfc_4007_zone_index_qualifies_a_connected_remote(void);
 extern void test_no_binding_is_err_and_not_busy(void);
 extern void test_a_binding_on_one_borrow_matches_nothing_on_the_other(void);
+extern void test_a_binding_takes_no_broadcast_source_and_no_index_past_the_table(void);
+extern void test_a_lookup_with_no_destination_address_is_refused(void);
 
 
 /*=======Mock Management=====*/
@@ -165,6 +167,8 @@ int main(void)
   run_test(test_the_rfc_4007_zone_index_qualifies_a_connected_remote, "test_the_rfc_4007_zone_index_qualifies_a_connected_remote", 923);
   run_test(test_no_binding_is_err_and_not_busy, "test_no_binding_is_err_and_not_busy", 938);
   run_test(test_a_binding_on_one_borrow_matches_nothing_on_the_other, "test_a_binding_on_one_borrow_matches_nothing_on_the_other", 949);
+  run_test(test_a_binding_takes_no_broadcast_source_and_no_index_past_the_table, "test_a_binding_takes_no_broadcast_source_and_no_index_past_the_table", 969);
+  run_test(test_a_lookup_with_no_destination_address_is_refused, "test_a_lookup_with_no_destination_address_is_refused", 1007);
 
   return UNITY_END();
 }

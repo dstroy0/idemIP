@@ -29,9 +29,8 @@
 static _Alignas(8) uint8_t work_a[IDEMIP_TCP_ISN_BORROW + 16];
 static _Alignas(8) uint8_t work_b[IDEMIP_TCP_ISN_BORROW + 16];
 
-static const uint8_t g_key[IDEMIP_TCP_ISN_SECRET_BYTES] = {0x00u, 0x11u, 0x22u, 0x33u, 0x44u, 0x55u,
-                                                           0x66u, 0x77u, 0x88u, 0x99u, 0xAAu, 0xBBu,
-                                                           0xCCu, 0xDDu, 0xEEu, 0xFFu};
+static const uint8_t g_key[IDEMIP_TCP_ISN_SECRET_BYTES] = {0x00u, 0x11u, 0x22u, 0x33u, 0x44u, 0x55u, 0x66u, 0x77u,
+                                                           0x88u, 0x99u, 0xAAu, 0xBBu, 0xCCu, 0xDDu, 0xEEu, 0xFFu};
 static const uint8_t g_local[IDEMIP_TCP_ISN_ADDR_BYTES] = {192u, 0u, 2u, 1u};
 static const uint8_t g_remote[IDEMIP_TCP_ISN_ADDR_BYTES] = {192u, 0u, 2u, 9u};
 
@@ -150,8 +149,7 @@ void test_reset_zeroes_the_block_and_the_working_set(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_ISN_IO(work_a)->status);
     check_zero(work_a, IDEMIP_TCP_ISN_OFF_BLOCK, IDEMIP_TCP_ISN_BLOCK_BYTES,
                "reset left an octet of the connection-id block");
-    check_zero(work_a, IDEMIP_TCP_ISN_OFF_HASH, IDEMIP_TCP_ISN_HASH_BYTES,
-               "reset left an octet of the working set");
+    check_zero(work_a, IDEMIP_TCP_ISN_OFF_HASH, IDEMIP_TCP_ISN_HASH_BYTES, "reset left an octet of the working set");
     TEST_ASSERT_EQUAL_UINT32(0u, IDEMIP_TCP_ISN_IO(work_a)->isn);
 }
 
@@ -273,9 +271,8 @@ static const uint8_t g_local6[IDEMIP_TCP_ISN_ADDR_BYTES] = {0x20u, 0x01u, 0x0Du,
 static const uint8_t g_remote6[IDEMIP_TCP_ISN_ADDR_BYTES] = {0x20u, 0x01u, 0x0Du, 0xB8u, 0u, 0u, 0u, 0u,
                                                              0u,    0u,    0u,    0u,    0u, 0u, 0u, 9u};
 
-static const uint8_t g_key2[IDEMIP_TCP_ISN_SECRET_BYTES] = {0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u,
-                                                            0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u,
-                                                            0xA5u, 0xA5u, 0xA5u, 0xA5u};
+static const uint8_t g_key2[IDEMIP_TCP_ISN_SECRET_BYTES] = {0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u,
+                                                            0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u};
 static const uint8_t g_key_zero[IDEMIP_TCP_ISN_SECRET_BYTES] = {0};
 
 // reset, take a key at a base, and aim at the v4 documentation pair.
@@ -688,4 +685,27 @@ void test_two_borrows_generate_in_their_own_spaces(void)
     TEST_ASSERT_EQUAL_HEX32(0x7FA376F7u, a1);
     TEST_ASSERT_EQUAL_HEX32(0x89249192u, b1);
     TEST_ASSERT_EQUAL_HEX32(a1, a2);
+}
+
+// RFC 6528 sec 3 forms the sequence number over "localip, localport, remoteip, remoteport,
+// secretkey", so a call naming neither address has no connection to form one for.
+void test_a_generation_that_names_no_address_is_refused(void)
+{
+    TcpIsn.reset(work_a);
+    IDEMIP_TCP_ISN_IO(work_a)->seed_args.key = g_key;
+    IDEMIP_TCP_ISN_IO(work_a)->seed_args.key_len = sizeof g_key;
+    TcpIsn.seed(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_ISN_IO(work_a)->status);
+
+    aim(work_a);
+    IDEMIP_TCP_ISN_IO(work_a)->gen_args.local_ip = NULL;
+    TcpIsn.generate(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_TCP_ISN_IO(work_a)->status,
+                                  "a sequence number was formed with no local address");
+
+    aim(work_a);
+    IDEMIP_TCP_ISN_IO(work_a)->gen_args.remote_ip = NULL;
+    TcpIsn.generate(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_TCP_ISN_IO(work_a)->status,
+                                  "a sequence number was formed with no remote address");
 }

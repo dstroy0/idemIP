@@ -52,8 +52,7 @@ static_assert(IDEMIP_TCP_ISN_OFF_HASH + IDEMIP_TCP_ISN_HASH_BYTES <= IDEMIP_TCP_
               "raise it in idemip_config.h");
 
 // RFC 6528 sec 3 concatenates localip, localport, remoteip, remoteport and secretkey.
-static_assert(IDEMIP_TCP_ISN_BLOCK_BYTES >=
-                  (2u * IDEMIP_TCP_ISN_ADDR_BYTES) + 4u + IDEMIP_TCP_ISN_SECRET_BYTES,
+static_assert(IDEMIP_TCP_ISN_BLOCK_BYTES >= (2u * IDEMIP_TCP_ISN_ADDR_BYTES) + 4u + IDEMIP_TCP_ISN_SECRET_BYTES,
               "the connection-id block is short of two addresses, two ports and the key (RFC 6528 sec 3)");
 
 // The regions, at their offsets in the caller's borrow.
@@ -70,10 +69,10 @@ static_assert(IDEMIP_TCP_ISN_BLOCK_BYTES >=
 // padded last block of sec 5.1.1. No array here has automatic storage duration, so all three are
 // regions of the caller's borrow.
 
-#define TCP_ISN_SHA_WORDS 8u                            ///< H(0) through H(7), FIPS 180-4 sec 5.3.3
-#define TCP_ISN_SHA_BLOCK 64u                           ///< the 512-bit block of FIPS 180-4 sec 5.1.1
-#define TCP_ISN_SHA_WINDOW 16u                          ///< the schedule words a round reaches back over
-#define TCP_ISN_SHA_LEN_OFF (TCP_ISN_SHA_BLOCK - 8u)    ///< where the 64-bit length sits, sec 5.1.1
+#define TCP_ISN_SHA_WORDS 8u                         ///< H(0) through H(7), FIPS 180-4 sec 5.3.3
+#define TCP_ISN_SHA_BLOCK 64u                        ///< the 512-bit block of FIPS 180-4 sec 5.1.1
+#define TCP_ISN_SHA_WINDOW 16u                       ///< the schedule words a round reaches back over
+#define TCP_ISN_SHA_LEN_OFF (TCP_ISN_SHA_BLOCK - 8u) ///< where the 64-bit length sits, sec 5.1.1
 
 #define TCP_ISN_OFF_STATE 0u
 #define TCP_ISN_OFF_SCHED (TCP_ISN_OFF_STATE + (TCP_ISN_SHA_WORDS * 4u))
@@ -206,20 +205,30 @@ static void tcp_isn_prf(uint8_t *work, size_t len)
 
     memcpy(h, tcp_isn_h0, sizeof tcp_isn_h0);
 
-    while (left >= TCP_ISN_SHA_BLOCK)
+    // Neither the whole-block loop nor the second padded block is measured: the block this digests
+    // is RFC 6528 sec 3's concatenation, which is two addresses of IDEMIP_TCP_ISN_ADDR_BYTES, two
+    // ports and IDEMIP_TCP_ISN_SECRET_BYTES of key - 52 octets at the widest, under both the 64 of a
+    // block and the 56 a length leaves room in. They are written because this is FIPS 180-4 sec
+    // 5.1.1's padding as the standard states it, and a digest that padded only the shapes one caller
+    // happens to hand it would be a digest of something else.
+    while (left >= TCP_ISN_SHA_BLOCK) // GCOVR_EXCL_BR_LINE
     {
+        // GCOVR_EXCL_START
         tcp_isn_sha_block(work, msg);
         msg += TCP_ISN_SHA_BLOCK;
         left -= TCP_ISN_SHA_BLOCK;
+        // GCOVR_EXCL_STOP
     }
 
     memset(pad, 0, TCP_ISN_SHA_BLOCK);
     memcpy(pad, msg, left);
     pad[left] = (uint8_t)0x80u;
-    if (left >= TCP_ISN_SHA_LEN_OFF)
+    if (left >= TCP_ISN_SHA_LEN_OFF) // GCOVR_EXCL_BR_LINE
     {
+        // GCOVR_EXCL_START
         tcp_isn_sha_block(work, pad);
         memset(pad, 0, TCP_ISN_SHA_BLOCK);
+        // GCOVR_EXCL_STOP
     }
 
     uint64_t bits = (uint64_t)len << 3u;
@@ -286,11 +295,9 @@ static uint32_t tcp_isn_derive(uint8_t *work, size_t addr_len)
     tcp_isn_prf(work, len);
 
     uint32_t f = TCP_ISN_STATE(work)[0];
-    uint32_t m = TCP_ISN_CTX(work)->base +
-                 (TCP_ISN_IO(work)->gen_args.now_ms * (uint32_t)IDEMIP_TCP_ISN_TICKS_PER_MS);
+    uint32_t m = TCP_ISN_CTX(work)->base + (TCP_ISN_IO(work)->gen_args.now_ms * (uint32_t)IDEMIP_TCP_ISN_TICKS_PER_MS);
 
-    memset(work + IDEMIP_TCP_ISN_OFF_BLOCK, 0,
-           (size_t)IDEMIP_TCP_ISN_BORROW - IDEMIP_TCP_ISN_OFF_BLOCK);
+    memset(work + IDEMIP_TCP_ISN_OFF_BLOCK, 0, (size_t)IDEMIP_TCP_ISN_BORROW - IDEMIP_TCP_ISN_OFF_BLOCK);
     return m + f;
 }
 

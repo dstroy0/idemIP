@@ -57,6 +57,9 @@ extern void test_a_null_packet_is_refused(void);
 extern void test_a_routed_call_with_no_next_hop_is_refused(void);
 extern void test_an_interface_index_past_the_count_is_refused(void);
 extern void test_nothing_is_ever_busy(void);
+extern void test_the_prefixes_are_read_to_their_whole_width(void);
+extern void test_the_error_rules_read_the_source_and_the_chain(void);
+extern void test_a_link_scope_group_may_be_sent_back_out_the_interface_it_arrived_on(void);
 
 
 /*=======Mock Management=====*/
@@ -167,6 +170,9 @@ int main(void)
   run_test(test_a_routed_call_with_no_next_hop_is_refused, "test_a_routed_call_with_no_next_hop_is_refused", 777);
   run_test(test_an_interface_index_past_the_count_is_refused, "test_an_interface_index_past_the_count_is_refused", 787);
   run_test(test_nothing_is_ever_busy, "test_nothing_is_ever_busy", 804);
+  run_test(test_the_prefixes_are_read_to_their_whole_width, "test_the_prefixes_are_read_to_their_whole_width", 827);
+  run_test(test_the_error_rules_read_the_source_and_the_chain, "test_the_error_rules_read_the_source_and_the_chain", 852);
+  run_test(test_a_link_scope_group_may_be_sent_back_out_the_interface_it_arrived_on, "test_a_link_scope_group_may_be_sent_back_out_the_interface_it_arrived_on", 888);
 
   return UNITY_END();
 }

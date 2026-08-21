@@ -818,3 +818,80 @@ void test_nothing_is_ever_busy(void)
     Ip6Forward.decide(work_a);
     TEST_ASSERT_NOT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_IP6_FORWARD_IO(work_a)->status);
 }
+
+// --- the ten bits, the fifteen octets, and the chain ----------------------------
+
+// RFC 4291 sec 2.5.6 makes the link-local prefix ten bits, so FEC0::/10 shares its first octet and
+// is not link-local; sec 2.5.3's loopback is fifteen zero octets and a low octet of one, so ::2 is
+// neither the loopback nor the unspecified address. Each of the three is read to its whole width.
+void test_the_prefixes_are_read_to_their_whole_width(void)
+{
+    static const uint8_t site_local[16] = {0xfe, 0xc0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
+    static const uint8_t low_two[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02};
+
+    // FEC0::/10 as a destination: not link-local, so it is forwarded like any other address.
+    clear_ok(work_a);
+    size_t len = build_plain(DOC_HOST_A, site_local, HOP_COMMON);
+    args_default(work_a, len);
+    Ip6Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP6_FORWARD_SEND, IDEMIP_IP6_FORWARD_IO(work_a)->action,
+                                  "an address sharing the link-local first octet was read as link-local");
+
+    // ::2 as a destination: fifteen zero octets and a low octet that is not one.
+    clear_ok(work_a);
+    len = build_plain(DOC_HOST_A, low_two, HOP_COMMON);
+    args_default(work_a, len);
+    Ip6Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP6_FORWARD_SEND, IDEMIP_IP6_FORWARD_IO(work_a)->action,
+                                  "an address one octet away from the loopback was read as the loopback");
+}
+
+// RFC 4443 sec 2.4 (e.6): no error is sent about "A packet whose source address does not uniquely
+// identify a single node", which a multicast source does not. RFC 8200 sec 4 chains the extension
+// headers, and a chain that runs off the end of the packet names no upper layer to read a type from.
+void test_the_error_rules_read_the_source_and_the_chain(void)
+{
+    // A multicast source, with a hop limit that would otherwise be answered with Time Exceeded.
+    clear_ok(work_a);
+    size_t len = build_plain(MCAST_LINK, DOC_HOST_B, 1u);
+    args_default(work_a, len);
+    Ip6Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_DISCARD, IDEMIP_IP6_FORWARD_IO(work_a)->action);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP6_FORWARD_IO(work_a)->icmp,
+                              "an error was answered to a source that names no single node");
+
+    // An ICMPv6 packet with no room for the octet its Type stands in.
+    clear_ok(work_a);
+    len = build6(DOC_HOST_A, DOC_HOST_B, 1u, (uint8_t)IDEMIP_IP6_NH_ICMPV6, 0u);
+    args_default(work_a, len);
+    Ip6Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_DISCARD, IDEMIP_IP6_FORWARD_IO(work_a)->action);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP6_FORWARD_IO(work_a)->icmp,
+                             "a packet with no Type octet was read as carrying an ICMPv6 error");
+
+    // A Hop-by-Hop header with fewer octets behind it than sec 4.3 gives one: the chain does not
+    // close, so there is no ICMPv6 type to read and the packet is not carrying an error.
+    clear_ok(work_a);
+    len = build6(DOC_HOST_A, DOC_HOST_B, 1u, (uint8_t)IDEMIP_IP6_NH_HOPOPT, 4u);
+    memset(g_pkt + IDEMIP_IPV6_HDR_LEN, 0, 4u);
+    g_pkt[IDEMIP_IPV6_HDR_LEN] = (uint8_t)IDEMIP_IP6_NH_ICMPV6;
+    args_default(work_a, len);
+    Ip6Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_DISCARD, IDEMIP_IP6_FORWARD_IO(work_a)->action);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP6_FORWARD_IO(work_a)->icmp,
+                             "a chain that does not close was read as carrying an ICMPv6 error");
+}
+
+// RFC 4291 sec 2.7: a link-local multicast group is one "Routers must not forward ... beyond of the
+// scope indicated by the scop field", and the scope it names is the link the packet arrived on. A
+// route that leaves by the interface it came in on has not left that link.
+void test_a_link_scope_group_may_be_sent_back_out_the_interface_it_arrived_on(void)
+{
+    clear_ok(work_a);
+    const size_t len = build_plain(DOC_HOST_A, MCAST_LINK, HOP_COMMON);
+    args_default(work_a, len);
+    IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.out_netif = IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.in_netif;
+    Ip6Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP6_FORWARD_SEND, IDEMIP_IP6_FORWARD_IO(work_a)->action,
+                                  "a link-scope group was refused a route that stays on its own link");
+}

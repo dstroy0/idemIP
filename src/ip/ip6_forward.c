@@ -27,9 +27,9 @@ IDEMIP_BEGIN_DECLS
 
 // RFC 4291 sec 2.7: the second octet carries "flgs" then "scop is a 4-bit multicast scope value".
 #define IP6_FORWARD_SCOP_MASK 0x0Fu
-#define IP6_FORWARD_SCOP_RESERVED 0u    ///< "0 reserved"
-#define IP6_FORWARD_SCOP_INTERFACE 1u   ///< "1 Interface-Local scope"
-#define IP6_FORWARD_SCOP_LINK 2u        ///< "2 Link-Local scope"
+#define IP6_FORWARD_SCOP_RESERVED 0u  ///< "0 reserved"
+#define IP6_FORWARD_SCOP_INTERFACE 1u ///< "1 Interface-Local scope"
+#define IP6_FORWARD_SCOP_LINK 2u      ///< "2 Link-Local scope"
 
 // RFC 4291 sec 2.5.6: the first ten bits of a link-local address are 1111111010.
 #define IP6_FORWARD_LINK_LOCAL_HI 0xFEu
@@ -52,7 +52,8 @@ typedef struct
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
 // holds it. common.h's IDEMIP_ASSERT_REGION states both.
-IDEMIP_ASSERT_REGION(IDEMIP_IP6_FORWARD_OFF_CTX, sizeof(Ip6ForwardCtx), IDEMIP_IP6_FORWARD_BORROW, "ip6_forward's context");
+IDEMIP_ASSERT_REGION(IDEMIP_IP6_FORWARD_OFF_CTX, sizeof(Ip6ForwardCtx), IDEMIP_IP6_FORWARD_BORROW,
+                     "ip6_forward's context");
 
 // The caller's borrow, split: the operand block, then the context. ip6_forward.h publishes the
 // offsets; the assert proves the span covers them before anything runs.
@@ -141,9 +142,13 @@ static idemip_bool ip6_forward_carries_icmp_error(const uint8_t *h, size_t len)
     {
         return IDEMIP_FALSE;
     }
-    if (c.fragmented && idemip_ip6_frag_offset_bytes(h + c.frag_hdr) != 0u)
+    // Not measured on the offset: idemip_ip6_walk stops at a Fragment header whose offset is not
+    // zero and leaves the Fragment header as the next one, so the test above has already answered a
+    // later fragment. It is written because RFC 8200 sec 4.5 puts the upper-layer header "in the
+    // first fragment" alone, and the type read below is out of that header.
+    if (c.fragmented && idemip_ip6_frag_offset_bytes(h + c.frag_hdr) != 0u) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE;
+        return IDEMIP_FALSE; // GCOVR_EXCL_LINE
     }
     if (c.offset + (size_t)IDEMIP_ICMP6_OFF_TYPE + 1u > len)
     {
@@ -161,9 +166,14 @@ static idemip_bool ip6_forward_icmp_allowed(const uint8_t *h, size_t len, const 
 {
     const uint8_t *src = idemip_ip6_src(h);
     const uint8_t *dst = idemip_ip6_dst(h);
-    if (ip6_forward_is_unspecified(src) || ip6_forward_is_multicast(src))
+    // Not measured: sec 5.3.7's source filter refuses the unspecified address and a multicast one
+    // before any decision reaches this, so a packet that gets here carries neither. It is written
+    // because (e.6) is a rule about the message this router would originate rather than about the
+    // packet it is forwarding, and the two are read in the order the sections give them.
+    if (ip6_forward_is_unspecified(src) || ip6_forward_is_multicast(src)) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE; // (e.6) "A packet whose source address does not uniquely identify a single node"
+        // (e.6) "A packet whose source address does not uniquely identify a single node"
+        return IDEMIP_FALSE; // GCOVR_EXCL_LINE
     }
     if (ip6_forward_carries_icmp_error(h, len))
     {
@@ -232,8 +242,7 @@ void idemip_ip6_forward_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IP6_FORWARD_OFF_CTX, 0,
-           (size_t)IDEMIP_IP6_FORWARD_BORROW - IDEMIP_IP6_FORWARD_OFF_CTX);
+    memset(work + IDEMIP_IP6_FORWARD_OFF_CTX, 0, (size_t)IDEMIP_IP6_FORWARD_BORROW - IDEMIP_IP6_FORWARD_OFF_CTX);
     IP6_FORWARD_CTX(work)->ready = IP6_FORWARD_READY;
     IP6_FORWARD_IO(work)->status = IDEMIP_OK;
 }
@@ -265,8 +274,8 @@ void idemip_ip6_forward_decide(uint8_t *work)
     {
         return;
     }
-    if (a->routed && (a->out_netif >= (uint8_t)IDEMIP_NETIF_COUNT || a->next_hop == NULL ||
-                      a->out_mtu < IDEMIP_IPV6_MIN_MTU))
+    if (a->routed &&
+        (a->out_netif >= (uint8_t)IDEMIP_NETIF_COUNT || a->next_hop == NULL || a->out_mtu < IDEMIP_IPV6_MIN_MTU))
     {
         return;
     }
@@ -371,8 +380,7 @@ void idemip_ip6_forward_decide(uint8_t *work)
     if (total > (size_t)a->out_mtu)
     {
         ip6_forward_drop_icmp(io, IDEMIP_IP6_FORWARD_R_TOO_BIG, (uint8_t)IDEMIP_ICMP6_PACKET_TOO_BIG,
-                              (uint8_t)IDEMIP_ICMP6_CODE_PTB,
-                              ip6_forward_icmp_allowed(h, a->len, a, IDEMIP_TRUE));
+                              (uint8_t)IDEMIP_ICMP6_CODE_PTB, ip6_forward_icmp_allowed(h, a->len, a, IDEMIP_TRUE));
         io->mtu = (uint32_t)a->out_mtu;
         return;
     }

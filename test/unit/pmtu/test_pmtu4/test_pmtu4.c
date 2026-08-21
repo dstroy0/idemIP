@@ -42,8 +42,7 @@ static void put16(uint8_t *p, uint16_t v)
 }
 
 // type, code, the whole unused word, then a quoted header of ihl words carrying dst, tos and total.
-static size_t build(uint8_t type, uint8_t code, uint32_t unused, uint8_t ihl, uint8_t tos, uint16_t total,
-                    uint32_t dst)
+static size_t build(uint8_t type, uint8_t code, uint32_t unused, uint8_t ihl, uint8_t tos, uint16_t total, uint32_t dst)
 {
     memset(g_msg, 0, sizeof g_msg);
     g_msg[0] = type;
@@ -589,8 +588,7 @@ void test_a_second_raise_inside_the_interval_is_refused(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_PMTU4_IO(work_a)->status);
 
     // One millisecond short of the interval, still refused; at it, allowed.
-    IDEMIP_PMTU4_IO(work_a)->now_ms =
-        IDEMIP_PMTU4_IO(work_a)->age_args.raise_ms + (uint32_t)IDEMIP_PMTU4_RAISE_MS - 1u;
+    IDEMIP_PMTU4_IO(work_a)->now_ms = IDEMIP_PMTU4_IO(work_a)->age_args.raise_ms + (uint32_t)IDEMIP_PMTU4_RAISE_MS - 1u;
     Pmtu4.age(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_PMTU4_IO(work_a)->status);
     IDEMIP_PMTU4_IO(work_a)->now_ms = IDEMIP_PMTU4_IO(work_a)->age_args.raise_ms + (uint32_t)IDEMIP_PMTU4_RAISE_MS;
@@ -639,4 +637,130 @@ void test_the_same_message_repeats(void)
     TEST_ASSERT_EQUAL_UINT16(first, IDEMIP_PMTU4_IO(work_a)->mtu);
     TEST_ASSERT_EQUAL_HEX32(dst, IDEMIP_PMTU4_IO(work_a)->dst);
     TEST_ASSERT_EQUAL_UINT16(4352u, first);
+}
+
+// --- an estimate that is already held -------------------------------------------
+
+// RFC 1191 sec 5 has a host that already holds an estimate lower the message against it: sec 3 says
+// "a host MUST not increase its estimate of the Path MTU in response to the contents of a Datagram
+// Too Big message", so a message naming more than the estimate leaves it where it is, and only one
+// naming less is a decrease. A message with nothing in it at all is no message.
+void test_a_message_is_read_against_the_estimate_already_held(void)
+{
+    ready(work_a);
+
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.msg = NULL;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.len = 64u;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.first_hop_mtu = 1500u;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.held = 0u;
+    Pmtu4.too_big(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PMTU4_IO(work_a)->status, "a call with no message was taken");
+
+    // A router naming 1500 where the estimate already stands at 1006: the estimate holds.
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.msg = g_msg;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.len = datagram_too_big(1500u, 4000u);
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.first_hop_mtu = 1500u;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.held = 1006u;
+    Pmtu4.too_big(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU4_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(1006u, IDEMIP_PMTU4_IO(work_a)->mtu,
+                                     "a message naming more than the estimate raised it");
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_PMTU4_IO(work_a)->decreased, "a message that raised nothing reported a decrease");
+
+    // And one naming less, which is the decrease.
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.len = datagram_too_big(576u, 4000u);
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.first_hop_mtu = 1500u;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.held = 1006u;
+    Pmtu4.too_big(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU4_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16(576u, IDEMIP_PMTU4_IO(work_a)->mtu);
+    TEST_ASSERT_TRUE(IDEMIP_PMTU4_IO(work_a)->decreased);
+}
+
+// sec 6.2 initializes a row's estimate to "the MTU of the associated first-hop data link", so a
+// caller that names neither an estimate nor a first hop has no ceiling to hold the message under -
+// and what the message names is the estimate, with nothing to compare it against.
+void test_a_caller_naming_no_estimate_and_no_first_hop_takes_what_the_message_names(void)
+{
+    ready(work_a);
+
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.msg = g_msg;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.len = datagram_too_big(1006u, 4000u);
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.held = 0u;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.first_hop_mtu = 0u;
+    Pmtu4.too_big(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU4_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(1006u, IDEMIP_PMTU4_IO(work_a)->mtu,
+                                     "the next-hop MTU the router named was not the estimate");
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_PMTU4_IO(work_a)->decreased,
+                              "a decrease was reported against an estimate that was never held");
+
+    // The old-style message the same way: the length that failed is all there is to go on.
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.len = datagram_too_big(0u, 1500u);
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.held = 0u;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.first_hop_mtu = 0u;
+    Pmtu4.too_big(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU4_IO(work_a)->status);
+    TEST_ASSERT_TRUE(IDEMIP_PMTU4_IO(work_a)->old_style);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_PMTU4_IO(work_a)->mtu < 1500u, "the plateau below the length was not taken");
+}
+
+// RFC 1191 sec 5: an unmodified router sends the message with the MTU field zero, and the message
+// still "contain[s] the IP header of the original datagram, which contains the Total Length of the
+// datagram that was too big to be forwarded" - so the plateau below that length is what is taken.
+// Where the estimate already held is at or under that length, the header is taken off first, since
+// the length that failed is the one the estimate has to fall under.
+void test_an_old_style_message_is_read_against_the_estimate_too(void)
+{
+    ready(work_a);
+
+    // The estimate already stands at 1006 and the datagram that failed was 1006 octets.
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.msg = g_msg;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.len = datagram_too_big(0u, 1006u);
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.first_hop_mtu = 1500u;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.held = 1006u;
+    Pmtu4.too_big(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU4_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_PMTU4_IO(work_a)->old_style, "the message was not read as an old-style one");
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_PMTU4_IO(work_a)->mtu < 1006u,
+                             "the estimate did not fall below the length that failed");
+
+    // A quoted datagram whose Total Length is its header and no more: there is nothing below it.
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.len = datagram_too_big(0u, 20u);
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.first_hop_mtu = 1500u;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.held = 20u;
+    Pmtu4.too_big(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PMTU4_IO(work_a)->status,
+                                  "a datagram of nothing but its header set an estimate");
+
+    // And one under the smallest plateau sec 5 Table 7-1 lists, which has none below it either.
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.len = datagram_too_big(0u, 68u);
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.first_hop_mtu = 1500u;
+    IDEMIP_PMTU4_IO(work_a)->too_big_args.held = 0u;
+    Pmtu4.too_big(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PMTU4_IO(work_a)->status,
+                                  "a length under the last plateau found one below it");
+}
+
+// sec 6.4 raises the estimate "to the next-highest value in the plateau table (or the first-hop MTU,
+// if that is smaller)". A size above the last plateau has none higher, so the first hop is what is
+// left - on the search itself and on the age that uses it.
+void test_a_size_above_the_last_plateau_is_held_to_the_first_hop(void)
+{
+    ready(work_a);
+
+    IDEMIP_PMTU4_IO(work_a)->plateau_args.size = 65535u;
+    IDEMIP_PMTU4_IO(work_a)->plateau_args.first_hop_mtu = 1500u;
+    Pmtu4.plateau_above(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PMTU4_IO(work_a)->status,
+                                  "a size above the last plateau found one above it after all");
+
+    IDEMIP_PMTU4_IO(work_a)->age_args.pmtu = 65535u;
+    IDEMIP_PMTU4_IO(work_a)->age_args.first_hop_mtu = 1500u;
+    IDEMIP_PMTU4_IO(work_a)->age_args.raise_ms = 0u;
+    IDEMIP_PMTU4_IO(work_a)->age_args.stamp_ms = 0u;
+    IDEMIP_PMTU4_IO(work_a)->now_ms = (uint32_t)IDEMIP_PMTU4_INCREASE_MS + 1u;
+    Pmtu4.age(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_PMTU4_IO(work_a)->status,
+                                  "an estimate already past the first hop was raised anyway");
 }
