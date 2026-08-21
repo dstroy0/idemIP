@@ -679,8 +679,7 @@ void test_an_error_for_a_destination_that_is_not_the_nodes_uses_the_interface_ad
 // still bars it, because the Source Address must be a unicast address.
 void test_an_error_for_an_anycast_destination_uses_the_interface_address(void)
 {
-    static const uint8_t anycast[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
-                                                         0,    0,    0,    0,    0, 0, 0, 0};
+    static const uint8_t anycast[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     put_victim6(PEER6, anycast);
     load_error_foreign(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_ADDR_UNREACH);
     Icmp6In.error(work_a);
@@ -1036,4 +1035,242 @@ void test_a_built_error_repeats(void)
     Icmp6In.error(work_a);
     TEST_ASSERT_EQUAL_size_t(first, IDEMIP_ICMP6_IN_IO(work_a)->out_len);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(copy, out, first);
+}
+
+// --- the operands an entry cannot work from -------------------------------------
+
+// Each entry works over a packet the caller holds, into a buffer the caller holds, on an interface
+// address the caller holds. A call missing one of those has nothing to work from and no later call
+// supplies it, so it is ERR rather than a message that came to nothing.
+void test_the_entries_refuse_a_call_that_names_no_packet_or_nowhere_to_put_one(void)
+{
+    Icmp6In.clear(work_a);
+    put_victim6(PEER6, HOST6);
+
+    load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
+    IDEMIP_ICMP6_IN_IO(work_a)->err_args.out = NULL;
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "an error was built with nowhere to put it");
+
+    load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
+    IDEMIP_ICMP6_IN_IO(work_a)->err_args.if_addr = NULL;
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "an error was built with no address to send it from");
+
+    load_recv(work_a);
+    IDEMIP_ICMP6_IN_IO(work_a)->recv_args.if_addr = NULL;
+    Icmp6In.recv(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "a message was taken with no address to answer from");
+}
+
+// RFC 8200 sec 3 gives the header a Version of 6, and an invoking packet that is not one is not a
+// packet this node sent or received. RFC 4443 sec 3 defines four error types, so a type outside them
+// is not an error message to originate.
+void test_an_invoking_packet_that_is_not_ipv6_and_a_type_that_is_not_an_error(void)
+{
+    Icmp6In.clear(work_a);
+    put_victim6(PEER6, HOST6);
+    pkt[0] = 0x40u; // version 4 in an IPv6 header's first nibble
+
+    load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "an error was built about a packet that is not IPv6");
+
+    put_victim6(PEER6, HOST6);
+    load_error(work_a, (uint8_t)IDEMIP_ICMP6_ECHO_REQUEST, 0u);
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "a type sec 3 does not define was originated as an error");
+}
+
+// RFC 4443 sec 2.4 (e.1) and (e.2) read the type at the head of the invoking packet's own ICMPv6
+// message. A packet that carries something else, one whose chain does not close, and a later
+// fragment - which RFC 8200 sec 4.5 leaves without that head - each carry no type to read, so the
+// rule that would have refused an error about an error has nothing to refuse.
+void test_the_invoking_type_is_read_only_where_the_packet_carries_one(void)
+{
+    // A UDP packet: not an ICMPv6 message at all, so an error about it goes.
+    Icmp6In.clear(work_a);
+    put_victim6(PEER6, HOST6);
+    load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ICMP6_IN_IO(work_a)->status);
+
+    // An ICMPv6 packet with no room for the two octets its type and code stand in.
+    Icmp6In.clear(work_a);
+    put_ip6(PEER6, HOST6, IDEMIP_IP6_NH_ICMPV6, 1u);
+    pkt[IDEMIP_IPV6_HDR_LEN] = (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE;
+    load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "a type was read out of a packet too short to carry one");
+
+    // A first fragment of an ICMPv6 error: this one does carry the head, and sec 2.4 (e.1) refuses
+    // the error about it.
+    Icmp6In.clear(work_a);
+    uint8_t *frag = pkt + IDEMIP_IPV6_HDR_LEN;
+    memset(frag, 0, IDEMIP_IP6_FRAG_HDR_LEN);
+    frag[0] = IDEMIP_IP6_NH_ICMPV6;
+    idemip_wr16(frag + 2u, 0u); // offset zero, more fragments clear
+    idemip_wr32(frag + 4u, 0x1234u);
+    frag[IDEMIP_IP6_FRAG_HDR_LEN] = (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE;
+    frag[IDEMIP_IP6_FRAG_HDR_LEN + 1u] = IDEMIP_ICMP6_DU_PORT_UNREACH;
+    put_ip6(PEER6, HOST6, IDEMIP_IP6_NH_FRAGMENT, IDEMIP_IP6_FRAG_HDR_LEN + 8u);
+    load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "an error was originated about an error in a first fragment");
+
+    // A later fragment of the same: the head is in the fragment before it, so there is no type here.
+    Icmp6In.clear(work_a);
+    frag = pkt + IDEMIP_IPV6_HDR_LEN;
+    memset(frag, 0, IDEMIP_IP6_FRAG_HDR_LEN);
+    frag[0] = IDEMIP_IP6_NH_ICMPV6;
+    idemip_wr16(frag + 2u, 8u); // offset one unit on
+    idemip_wr32(frag + 4u, 0x1234u);
+    put_ip6(PEER6, HOST6, IDEMIP_IP6_NH_FRAGMENT, IDEMIP_IP6_FRAG_HDR_LEN + 8u);
+    load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "a later fragment was read for a head only the first one carries");
+}
+
+// RFC 4443 sec 3.4's Pointer "identifies the octet offset within the invoking packet where the error
+// was detected", and sec 2.4 (e.3)'s second exception is a Parameter Problem Code 2 about an option
+// "that has the Option Type highest-order two bits set to 10". A pointer past the packet points at
+// no option, and an option whose two bits are anything else is not that exception.
+void test_the_unrecognized_option_exception_reads_the_octet_the_pointer_names(void)
+{
+    // The invoking packet went to a multicast group, so only sec 2.4 (e.3)'s exceptions answer.
+    Icmp6In.clear(work_a);
+    put_victim6(PEER6, MCAST6);
+    load_error_foreign(work_a, (uint8_t)IDEMIP_ICMP6_PARAMETER_PROBLEM, IDEMIP_ICMP6_PP_UNREC_OPTION);
+    IDEMIP_ICMP6_IN_IO(work_a)->err_args.word = 0xFFFFu; // past the packet altogether
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "a pointer past the packet was read as naming an option");
+
+    // A pointer inside the packet, at an octet whose two high bits are not 10.
+    Icmp6In.clear(work_a);
+    put_victim6(PEER6, MCAST6);
+    pkt[IDEMIP_IPV6_HDR_LEN] = 0x00u;
+    load_error_foreign(work_a, (uint8_t)IDEMIP_ICMP6_PARAMETER_PROBLEM, IDEMIP_ICMP6_PP_UNREC_OPTION);
+    IDEMIP_ICMP6_IN_IO(work_a)->err_args.word = (uint32_t)IDEMIP_IPV6_HDR_LEN;
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "an option whose action bits are not 10 was taken as the exception");
+
+    // And at one whose two high bits are 10, which is the exception.
+    Icmp6In.clear(work_a);
+    put_victim6(PEER6, MCAST6);
+    pkt[IDEMIP_IPV6_HDR_LEN] = IDEMIP_IP6_OPT_ACT_DISCARD_ICMP;
+    load_error_foreign(work_a, (uint8_t)IDEMIP_ICMP6_PARAMETER_PROBLEM, IDEMIP_ICMP6_PP_UNREC_OPTION);
+    IDEMIP_ICMP6_IN_IO(work_a)->err_args.word = (uint32_t)IDEMIP_IPV6_HDR_LEN;
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "sec 2.4 (e.3)'s second exception was not taken");
+}
+
+// RFC 4443 sec 3 gives an error message four octets behind its type and code before the invoking
+// packet starts, so a message shorter than that is not one of the four.
+void test_an_error_message_shorter_than_its_own_header_is_discarded(void)
+{
+    Icmp6In.clear(work_a);
+    uint8_t *m = pkt + IDEMIP_IPV6_HDR_LEN;
+    idemip_icmp6_hdr_write(m, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
+    put_ip6(PEER6, HOST6, IDEMIP_IP6_NH_ICMPV6, IDEMIP_ICMP6_HDR_LEN);
+    seal(IDEMIP_ICMP6_HDR_LEN);
+    load_recv(work_a);
+    Icmp6In.recv(work_a);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_ICMP6_IN_IO(work_a)->bad_len,
+                             "an error message with no room for its own four octets was read");
+    TEST_ASSERT_BITS_HIGH(IDEMIP_ICMP6_IN_ACT_DISCARD, IDEMIP_ICMP6_IN_IO(work_a)->act);
+}
+
+// RFC 8200 sec 4 lays the extension headers out "between the IPv6 header and the upper-layer header",
+// each naming the next, and a chain that runs off the end of the packet names no upper layer at all.
+// Neither the reception path nor the origination path can read a type out of one.
+void test_a_header_chain_that_runs_off_the_end_names_no_upper_layer(void)
+{
+    // A Hop-by-Hop header with fewer octets behind it than sec 4.3 gives one.
+    Icmp6In.clear(work_a);
+    memset(pkt + IDEMIP_IPV6_HDR_LEN, 0, 4u);
+    pkt[IDEMIP_IPV6_HDR_LEN] = IDEMIP_IP6_NH_ICMPV6;
+    put_ip6(PEER6, HOST6, IDEMIP_IP6_NH_HOPOPT, 4u);
+    load_recv(work_a);
+    Icmp6In.recv(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "a message was read out of a chain that does not close");
+
+    // The same packet as the invoking one: sec 2.4 (e.1) has no type to test, so the error goes.
+    load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "a chain that does not close was read for a type");
+}
+
+// RFC 4443 sec 2.4 (e.3)'s second exception is a Parameter Problem "Code 2 ... reporting an
+// unrecognized IPv6 option", so a Parameter Problem of another code about a multicast packet is not
+// it and the rule holds. sec 3 numbers the four error types 1 through 4, so a type below the first
+// is not one of them, the same way a type above the last is not.
+void test_the_exception_is_the_code_it_names_and_the_types_are_the_four_sec_3_defines(void)
+{
+    Icmp6In.clear(work_a);
+    put_victim6(PEER6, MCAST6);
+    load_error_foreign(work_a, (uint8_t)IDEMIP_ICMP6_PARAMETER_PROBLEM, IDEMIP_ICMP6_PP_ERRONEOUS_HDR);
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "a Parameter Problem of another code was taken as the option exception");
+
+    Icmp6In.clear(work_a);
+    put_victim6(PEER6, HOST6);
+    load_error(work_a, 0u, 0u);
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "a type below the first sec 3 defines was originated");
+}
+
+// RFC 8200 sec 3 fixes the header at forty octets, so fewer than that is not a packet either entry
+// can read a source, a destination or a next header out of.
+void test_a_call_with_fewer_octets_than_a_header_is_refused(void)
+{
+    Icmp6In.clear(work_a);
+    put_victim6(PEER6, HOST6);
+
+    load_recv(work_a);
+    IDEMIP_ICMP6_IN_IO(work_a)->recv_args.len = (size_t)IDEMIP_IPV6_HDR_LEN - 1u;
+    Icmp6In.recv(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "a packet shorter than a header was read");
+
+    load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
+    IDEMIP_ICMP6_IN_IO(work_a)->err_args.len = (size_t)IDEMIP_IPV6_HDR_LEN - 1u;
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "an error was built about a packet shorter than a header");
+}
+
+// RFC 4443 sec 2.4 (f)'s rate limit is a token bucket, and a bucket that is already full takes no
+// more: the refill stops at the top whatever time has passed.
+void test_the_token_bucket_refill_stops_at_the_top(void)
+{
+    Icmp6In.clear(work_a);
+    put_victim6(PEER6, HOST6);
+
+    load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
+    IDEMIP_ICMP6_IN_IO(work_a)->err_args.now_ms = 0u;
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ICMP6_IN_IO(work_a)->status);
+
+    // A gap long enough for two tokens, shorter than the one that refills the whole bucket: the one
+    // that was spent comes back and the second has nowhere to go.
+    load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
+    IDEMIP_ICMP6_IN_IO(work_a)->err_args.now_ms = 2u * (uint32_t)IDEMIP_ICMP6_ERR_TOKEN_MS;
+    Icmp6In.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ICMP6_IN_IO(work_a)->status,
+                                  "the token that was spent did not come back");
 }

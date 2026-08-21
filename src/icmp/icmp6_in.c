@@ -66,8 +66,8 @@ static idemip_bool icmp6_in_is_unspecified(const uint8_t *addr)
 // a span carrying its own checksum sum to all ones, so the verify is that sum against zero.
 static idemip_bool icmp6_in_cksum_ok(const uint8_t *p, const uint8_t *m, size_t len)
 {
-    uint32_t sum = idemip_ip6_pseudo_accum(0u, idemip_ip6_src(p), idemip_ip6_dst(p), (uint32_t)len,
-                                           IDEMIP_IP6_NH_ICMPV6);
+    uint32_t sum =
+        idemip_ip6_pseudo_accum(0u, idemip_ip6_src(p), idemip_ip6_dst(p), (uint32_t)len, IDEMIP_IP6_NH_ICMPV6);
     return (idemip_cksum_final(idemip_cksum_accum(sum, m, len)) == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
@@ -114,9 +114,13 @@ static idemip_bool icmp6_in_invoking_type(const uint8_t *p, size_t len, uint8_t 
     {
         return IDEMIP_FALSE;
     }
-    if (c.fragmented && idemip_ip6_frag_offset_bytes(p + c.frag_hdr) != 0u)
+    // Not measured on the offset: idemip_ip6_walk stops at a Fragment header whose offset is not
+    // zero and leaves the Fragment header itself as the next one, so the test above has already
+    // answered a later fragment. It is written because RFC 8200 sec 4.5 puts the upper-layer header
+    // "in the first fragment" alone, and the type read below is out of that header.
+    if (c.fragmented && idemip_ip6_frag_offset_bytes(p + c.frag_hdr) != 0u) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE;
+        return IDEMIP_FALSE; // GCOVR_EXCL_LINE
     }
     if (c.offset + IDEMIP_ICMP6_HDR_LEN > len)
     {
@@ -139,8 +143,7 @@ static idemip_bool icmp6_in_mcast_exception(const Icmp6InErrArgs *a, size_t avai
         return IDEMIP_TRUE;
     }
     if (a->type == (uint8_t)IDEMIP_ICMP6_PARAMETER_PROBLEM && a->code == IDEMIP_ICMP6_PP_UNREC_OPTION &&
-        (size_t)a->word < avail &&
-        (a->invoking[a->word] & IDEMIP_IP6_OPT_ACT_MASK) == IDEMIP_IP6_OPT_ACT_DISCARD_ICMP)
+        (size_t)a->word < avail && (a->invoking[a->word] & IDEMIP_IP6_OPT_ACT_MASK) == IDEMIP_IP6_OPT_ACT_DISCARD_ICMP)
     {
         return IDEMIP_TRUE;
     }
@@ -271,8 +274,8 @@ static void icmp6_in_error_arrived(Icmp6InIo *io, const uint8_t *msg, size_t msg
 static void icmp6_in_build_echo_reply(Icmp6InIo *io, const uint8_t *msg, size_t msg_len)
 {
     const size_t data_len = msg_len - IDEMIP_ICMP6_ECHO_HDR_LEN;
-    const size_t n = idemip_icmp6_echo_reply_build(io->recv_args.out, io->id, io->seq,
-                                                   msg + IDEMIP_ICMP6_ECHO_HDR_LEN, data_len);
+    const size_t n =
+        idemip_icmp6_echo_reply_build(io->recv_args.out, io->id, io->seq, msg + IDEMIP_ICMP6_ECHO_HDR_LEN, data_len);
     idemip_wr16(io->recv_args.out + IDEMIP_ICMP6_OFF_CKSUM,
                 idemip_icmp6_cksum_compute(io->recv_args.out, n, io->src, io->dst));
     io->out_len = n;
@@ -464,8 +467,7 @@ void idemip_icmp6_in_error(uint8_t *work)
     io->src = (a->dst_local_unicast && !icmp6_in_is_multicast(dst)) ? dst : a->if_addr;
     io->dst = idemip_ip6_src(a->invoking);
     io->out_len = idemip_icmp6_err_build(a->out, a->type, a->code, a->word, a->invoking, avail);
-    idemip_wr16(a->out + IDEMIP_ICMP6_OFF_CKSUM,
-                idemip_icmp6_cksum_compute(a->out, io->out_len, io->src, io->dst));
+    idemip_wr16(a->out + IDEMIP_ICMP6_OFF_CKSUM, idemip_icmp6_cksum_compute(a->out, io->out_len, io->src, io->dst));
     io->status = IDEMIP_OK;
 }
 
