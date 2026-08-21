@@ -171,8 +171,8 @@ void test_the_published_offsets_are_ordered_and_do_not_overlap(void)
     TEST_ASSERT_TRUE((size_t)IDEMIP_NETIF_OFF_CTX < (size_t)IDEMIP_NETIF_OFF_TAB);
     TEST_ASSERT_EQUAL_size_t((size_t)IDEMIP_NETIF_OFF_TAB + (IDEMIP_NETIF_COUNT << IDEMIP_NETIF_ENTRY_SHIFT),
                              (size_t)IDEMIP_NETIF_OFF_ADDR6);
-    TEST_ASSERT_EQUAL_size_t((size_t)IDEMIP_NETIF_OFF_ADDR6 + ((IDEMIP_NETIF_COUNT * IDEMIP_IP6_ADDRESSES)
-                                                               << IDEMIP_NETIF_ADDR6_ENTRY_SHIFT),
+    TEST_ASSERT_EQUAL_size_t((size_t)IDEMIP_NETIF_OFF_ADDR6 +
+                                 ((IDEMIP_NETIF_COUNT * IDEMIP_IP6_ADDRESSES) << IDEMIP_NETIF_ADDR6_ENTRY_SHIFT),
                              (size_t)IDEMIP_NETIF_OFF_END);
     TEST_ASSERT_TRUE((size_t)IDEMIP_NETIF_OFF_END <= (size_t)IDEMIP_NETIF_BORROW);
 }
@@ -251,6 +251,51 @@ void test_an_uncleared_borrow_is_refused(void)
     IDEMIP_NETIF_IO(work_a)->route_args.dst = 0x0A000002u;
     Netif.local4(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status);
+
+    // And the rest of them, each on its own set of bytes clear has not run on.
+    memset(work_a, 0xFF, IDEMIP_NETIF_BORROW);
+    IDEMIP_NETIF_IO(work_a)->if_args.index = 0u;
+    IDEMIP_NETIF_IO(work_a)->if_args.set = 0u;
+    IDEMIP_NETIF_IO(work_a)->if_args.clear = 0u;
+    IDEMIP_NETIF_IO(work_a)->if_args.chksum = 0u;
+    IDEMIP_NETIF_IO(work_a)->if_args.mtu = 1500u;
+    IDEMIP_NETIF_IO(work_a)->addr4_args.index = 0u;
+    IDEMIP_NETIF_IO(work_a)->addr4_args.addr = 0x0A000001u;
+    IDEMIP_NETIF_IO(work_a)->addr4_args.mask = 0xFFFFFF00u;
+    IDEMIP_NETIF_IO(work_a)->addr4_args.gw = 0u;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.index = 0u;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.slot = 0u;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_a;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.state = IDEMIP_NETIF_ADDR6_PREFERRED;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.valid_s = 100u;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.preferred_s = 100u;
+    IDEMIP_NETIF_IO(work_a)->route_args.dst = 0x0A000002u;
+    IDEMIP_NETIF_IO(work_a)->now_ms = 1000u;
+
+    Netif.unbind(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status, "unbind read an uncleared borrow");
+    Netif.set_addr4(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status, "set_addr4 read an uncleared borrow");
+    Netif.set_mtu(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status, "set_mtu read an uncleared borrow");
+    Netif.set_flags(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status, "set_flags read an uncleared borrow");
+    Netif.set_offload(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status, "set_offload read an uncleared borrow");
+    Netif.find4(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status, "find4 read an uncleared borrow");
+    Netif.tick(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status, "tick read an uncleared borrow");
+#if IDEMIP_ENABLE_IPV6
+    Netif.add_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status, "add_addr6 read an uncleared borrow");
+    Netif.remove_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status, "remove_addr6 read an uncleared borrow");
+    Netif.find_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status, "find_addr6 read an uncleared borrow");
+    Netif.get_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status, "get_addr6 read an uncleared borrow");
+#endif
 }
 
 // An index past the table would reach outside the region the map published for it.
@@ -280,6 +325,40 @@ void test_an_index_past_the_table_is_refused(void)
     IDEMIP_NETIF_IO(work_a)->route_args.index = (uint8_t)IDEMIP_NETIF_COUNT;
     Netif.local4(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status);
+
+    IDEMIP_NETIF_IO(work_a)->if_args.set = 0u;
+    IDEMIP_NETIF_IO(work_a)->if_args.clear = 0u;
+    IDEMIP_NETIF_IO(work_a)->if_args.chksum = 0u;
+    Netif.set_flags(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "set_flags took an index past the table");
+    Netif.set_offload(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "set_offload took an index past the table");
+#if IDEMIP_ENABLE_IPV6
+    IDEMIP_NETIF_IO(work_a)->addr6_args.index = (uint8_t)IDEMIP_NETIF_COUNT;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.slot = 0u;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_a;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.state = IDEMIP_NETIF_ADDR6_PREFERRED;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.valid_s = 100u;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.preferred_s = 100u;
+    Netif.add_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "add_addr6 took an index past the table");
+    Netif.remove_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "remove_addr6 took an index past the table");
+    Netif.get_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "get_addr6 took an index past the table");
+
+    // And the slot inside one interface's addresses, which is a second bound of its own.
+    IDEMIP_NETIF_IO(work_a)->addr6_args.index = 0u;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.slot = (uint8_t)IDEMIP_IP6_ADDRESSES;
+    Netif.get_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "get_addr6 took a slot past this interface's addresses");
+#endif
 }
 
 // A driver-less interface has no link to send through, so bind takes both the borrow and the
@@ -468,17 +547,17 @@ void test_the_masks_cover_their_enums(void)
 // RFC 1122 prints no numeric unicast example in sec 3.3.1.1 or sec 3.3.1.6, so these are the
 // notation of sec 3.2.1.3 filled in: { <Network-number>, <Subnet-number>, <Host-number> } with a
 // {-1, -1, 0} mask.
-#define V4_HOST 0x0A000005u     // 10.0.0.5
-#define V4_MASK 0xFFFFFF00u     // 255.255.255.0
-#define V4_GW 0x0A0000FEu       // 10.0.0.254
-#define V4_ON_LINK 0x0A000063u  // 10.0.0.99, same {net, subnet}
-#define V4_OFF_LINK 0x0A000163u // 10.0.1.99, a different {subnet}
-#define V4_DIRECTED 0x0A0000FFu // 10.0.0.255, case (e) under V4_MASK
+#define V4_HOST 0x0A000005u      // 10.0.0.5
+#define V4_MASK 0xFFFFFF00u      // 255.255.255.0
+#define V4_GW 0x0A0000FEu        // 10.0.0.254
+#define V4_ON_LINK 0x0A000063u   // 10.0.0.99, same {net, subnet}
+#define V4_OFF_LINK 0x0A000163u  // 10.0.1.99, a different {subnet}
+#define V4_DIRECTED 0x0A0000FFu  // 10.0.0.255, case (e) under V4_MASK
 #define V4_ZERO_HOST 0x0A000000u // 10.0.0.0, <Host-number> all zeros under V4_MASK
 
 #if IDEMIP_ENABLE_IPV6
 // RFC 4291 sec 2.2 prints these two as its examples of the preferred text form.
-static const uint8_t v6_rfc4291_a[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0,    0,    0,
+static const uint8_t v6_rfc4291_a[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0,    0,    0,    0,
                                                           0x00, 0x08, 0x08, 0x00, 0x20, 0x0C, 0x41, 0x7A};
 static const uint8_t v6_rfc4291_b[IDEMIP_IP6_ADDR_LEN] = {0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89,
                                                           0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89};
@@ -1579,3 +1658,94 @@ void test_the_addr6_tables_of_two_borrows_are_independent(void)
 }
 
 #endif // IDEMIP_ENABLE_IPV6
+
+// --- the fields RFC 1122 sec 3.2.1.3 names -------------------------------------
+
+// sec 3.2.1.3: "IP addresses are not permitted to have the value 0 or -1 for any of the
+// <Host-number>, <Network-number>, or <Subnet-number> fields (except in the special cases listed
+// above)." The mask says where those fields are, so it decides what the rule reads: a mask with no
+// host field has no host field to be all zeros or all ones, and { 0, 0 } is one of the special
+// cases - "a source address as part of an initialization procedure by which the host learns its own
+// IP address" - which is left through.
+void test_the_mask_says_which_fields_the_rule_reads(void)
+{
+    Netif.clear(work_a);
+    up(work_a, 0u, phy_a, g_mac_a, 1500u);
+
+    // A mask of all ones: the address is its own prefix and there is no host field at all.
+    IDEMIP_NETIF_IO(work_a)->addr4_args.index = 0u;
+    IDEMIP_NETIF_IO(work_a)->addr4_args.addr = 0x0A000001u;
+    IDEMIP_NETIF_IO(work_a)->addr4_args.mask = 0xFFFFFFFFu;
+    IDEMIP_NETIF_IO(work_a)->addr4_args.gw = 0u;
+    Netif.set_addr4(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status,
+                                  "a single-host prefix was read as a broadcast");
+
+    // { 0, 0 }, the initialization case.
+    IDEMIP_NETIF_IO(work_a)->addr4_args.addr = 0u;
+    IDEMIP_NETIF_IO(work_a)->addr4_args.mask = 0u;
+    Netif.set_addr4(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status, "the initialization case was refused");
+
+    // A <Network-number> of all zeros under an eight-bit mask.
+    IDEMIP_NETIF_IO(work_a)->addr4_args.addr = 0x00000001u;
+    IDEMIP_NETIF_IO(work_a)->addr4_args.mask = 0xFF000000u;
+    Netif.set_addr4(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "an address whose network field is all zeros was taken");
+
+    // A <Subnet-number> of all ones. The mask puts the subnet field in the middle two octets, which
+    // is where this address carries 255.255 - the "-1" the section bars, on a network that is not.
+    IDEMIP_NETIF_IO(work_a)->addr4_args.addr = 0x0AFFFF01u;
+    IDEMIP_NETIF_IO(work_a)->addr4_args.mask = 0x00FFFF00u;
+    Netif.set_addr4(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "an address whose subnet field is all ones was taken");
+}
+
+#if IDEMIP_ENABLE_IPV6
+// RFC 4291 sec 2.5.3: the loopback address is "0:0:0:0:0:0:0:1" and no other, so ::2 is an address
+// like any other. RFC 4862 sec 5.4 gives an address one of the states this build names, and sec 2's
+// valid lifetime "must be greater than or equal to the preferred lifetime": neither a state past the
+// last one nor lifetimes the wrong way round is an address this interface can hold.
+void test_an_address_is_taken_on_its_own_terms_and_its_lifetimes_in_order(void)
+{
+    Netif.clear(work_a);
+    up(work_a, 0u, phy_a, g_mac_a, 1500u);
+
+    static const uint8_t not_loopback[IDEMIP_IP6_ADDR_LEN] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02};
+    IDEMIP_NETIF_IO(work_a)->addr6_args.index = 0u;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.addr = not_loopback;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.state = IDEMIP_NETIF_ADDR6_PREFERRED;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.valid_s = 200u;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.preferred_s = 100u;
+    Netif.add_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status,
+                                  "an address one octet away from the loopback was read as the loopback");
+
+    // A state past the last one this build names.
+    IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_b;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.state = (uint8_t)(IDEMIP_NETIF_ADDR6_DUPLICATE + 1u);
+    Netif.add_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status, "an address took a state with no name");
+
+    // A preferred lifetime past the valid one.
+    IDEMIP_NETIF_IO(work_a)->addr6_args.state = IDEMIP_NETIF_ADDR6_PREFERRED;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.valid_s = 100u;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.preferred_s = 200u;
+    Netif.add_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "a preferred lifetime past the valid one was taken");
+
+    // A remove of an address this interface does not hold walks past the one it does.
+    IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_b;
+    Netif.remove_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
+                                  "an address the interface does not hold was removed");
+
+    // The one it does hold is still there.
+    IDEMIP_NETIF_IO(work_a)->addr6_args.addr = not_loopback;
+    Netif.remove_addr6(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status);
+}
+#endif
