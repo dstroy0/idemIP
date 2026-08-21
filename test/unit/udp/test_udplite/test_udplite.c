@@ -378,8 +378,9 @@ void test_an_ip_payload_of_exactly_the_header_is_kept(void)
     TEST_ASSERT_EQUAL_PTR(buf + IDEMIP_UDPLITE_HDR_LEN, IDEMIP_UDPLITE_IO(work_a)->res.payload);
 }
 
-// RFC 3828 sec 3.3 recommends the default "have the Checksum Coverage field match the length of the
-// UDP-Lite packet". That reaches the same octets as sec 3.1's zero, so both report full coverage,
+// RFC 3828 sec 3.3 recommends a default that mimics UDP "by having the Checksum Coverage field match
+// the length of the UDP-Lite packet and verify the entire packet". That reaches the same octets as
+// sec 3.1's zero, so both report full coverage,
 // and they are two different datagrams because the field itself is inside the span.
 void test_coverage_equal_to_the_ip_length_covers_the_whole_packet(void)
 {

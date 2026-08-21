@@ -675,8 +675,8 @@ void test_a_retained_frame_keeps_its_descriptor_out_of_the_ring(void)
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, g_released, "a pinned descriptor was handed back to the engine");
 }
 
-// RFC 791 sec 3.2 step (19): "if the timer runs out, the all reassembly resources for this BUFID are
-// released". Each of those fragments pinned a receive descriptor, so releasing them is the only
+// RFC 791 sec 3.2 step (19): "timer expires: flush all reassembly with this BUFID; DONE." Each of
+// those fragments pinned a receive descriptor, so releasing them is the only
 // thing that hands the buffers back. This suite bound the ip4_reass borrow to the tick and drove it
 // only through whole datagrams, so the sweep and the reclaim that follows it had never run.
 void test_an_expired_datagram_returns_every_descriptor_it_pinned(void)

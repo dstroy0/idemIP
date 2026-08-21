@@ -3006,7 +3006,7 @@ void test_a_unicast_address_that_is_not_ours_is_still_forwarded(void)
 }
 
 // The positive twin, and the only thing that makes the negative one mean anything: RFC 4291 sec 2.8
-// puts "All other Multicast addresses of groups to which the node belongs" on the list a host must
+// puts "Multicast addresses of all other groups to which the node belongs" on the list a host must
 // recognize as its own, and belonging is what Mld6 records. The group table is the one thing that
 // tells this destination from the address above it.
 void test_a_multicast_group_this_node_joined_is_local(void)
@@ -3739,8 +3739,8 @@ void test_a_udp_lite_datagram_reaches_a_lite_binding(void)
     TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
 }
 
-// RFC 3828 sec 3.1: "A UDP-Lite packet with a Checksum Coverage of 1 to 7 is illegal, and MUST be
-// discarded by the receiver."
+// RFC 3828 sec 3.1: "the value of the Checksum Coverage field MUST be either 0 or at least 8. A
+// UDP-Lite packet with a Checksum Coverage value of 1 to 7 MUST be discarded by the receiver."
 void test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded(void)
 {
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);

@@ -478,9 +478,9 @@ void test_the_done_optimization_can_be_turned_off(void)
     TEST_ASSERT_TRUE_MESSAGE(IDEMIP_MLD6_IO(work_a)->send_done,
                              "turned off, the optimization must not withhold the Done");
 
-    // Turned off, the Done still goes to none of the addresses sec 5 forbids MLD messages for: "MLD
-    // messages are never sent for multicast addresses whose scope is 0 (reserved) or 1 (node-local),
-    // ... nor for the link-scope all-nodes address."
+    // Turned off, the Done still goes to none of the addresses sec 5 withholds MLD messages from. They
+    // "are never sent for multicast addresses whose scope is 0 (reserved) or 1 (node-local)", and they
+    // ARE sent for scope 2 "except for the link-scope, all-nodes address (FF02::1)".
     Mld6.clear(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join(work_a, g_all_nodes, 0u));
     IDEMIP_MLD6_IO(work_a)->group_args.group = g_all_nodes;

@@ -1988,9 +1988,10 @@ void test_confirm_release_and_decline_refuse_without_a_lease(void)
                                   "sec 18.2.3 confirms addresses, and a stateless client holds none");
 }
 
-// sec 18.2.10.3: "If the client receives any Reply messages that do not indicate a NotOnLink status,
-// the client can use the addresses in the IA". A Success, which sec 21.13 also reads out of a Reply
-// carrying no Status Code at all, leaves the client bound to what it already held.
+// sec 18.2.10.3: "If the client receives any Reply messages that indicate a status of Success
+// (explicit or implicit), the client can use the addresses in the IA and ignore any messages that
+// indicate a NotOnLink status." The implicit Success is sec 21.13's, read out of a Reply carrying no
+// Status Code at all, and it leaves the client bound to what it already held.
 void test_a_confirm_reply_without_not_on_link_keeps_the_lease(void)
 {
     to_bound(work_a, &g_cfg_a, 100u, 200u, 300u, 400u);
@@ -2028,7 +2029,7 @@ void test_the_first_confirm_waits_out_its_random_delay(void)
 }
 
 // sec 18.2.10.2: "the client considers the Decline event completed, regardless of the Status Code
-// option returned by the server", and sec 18.2.8 has it hold the declined address no longer.
+// option(s) returned by the server", and sec 18.2.8 has it hold the declined address no longer.
 void test_a_reply_to_the_decline_completes_it(void)
 {
     to_bound(work_a, &g_cfg_a, 100u, 200u, 300u, 400u);

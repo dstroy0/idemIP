@@ -240,19 +240,19 @@ int main(void)
   run_test(test_the_release_names_the_server_and_the_lease, "test_the_release_names_the_server_and_the_lease", 1897);
   run_test(test_release_and_decline_stop_at_their_retry_counts, "test_release_and_decline_stop_at_their_retry_counts", 1929);
   run_test(test_confirm_release_and_decline_refuse_without_a_lease, "test_confirm_release_and_decline_refuse_without_a_lease", 1974);
-  run_test(test_a_confirm_reply_without_not_on_link_keeps_the_lease, "test_a_confirm_reply_without_not_on_link_keeps_the_lease", 1994);
-  run_test(test_the_first_confirm_waits_out_its_random_delay, "test_the_first_confirm_waits_out_its_random_delay", 2014);
-  run_test(test_a_reply_to_the_decline_completes_it, "test_a_reply_to_the_decline_completes_it", 2032);
-  run_test(test_the_confirm_retransmits_up_to_cnf_max_rt, "test_the_confirm_retransmits_up_to_cnf_max_rt", 2058);
-  run_test(test_the_dns_servers_option_is_read_out_of_the_message, "test_the_dns_servers_option_is_read_out_of_the_message", 2085);
-  run_test(test_a_dns_servers_option_of_a_ragged_length_is_ignored, "test_a_dns_servers_option_of_a_ragged_length_is_ignored", 2104);
-  run_test(test_the_information_refresh_time_schedules_the_next_request, "test_the_information_refresh_time_schedules_the_next_request", 2119);
-  run_test(test_inf_max_rt_is_taken_only_inside_its_range, "test_inf_max_rt_is_taken_only_inside_its_range", 2150);
-  run_test(test_an_infinite_information_refresh_time_never_asks_again, "test_an_infinite_information_refresh_time_never_asks_again", 2176);
-  run_test(test_two_clients_run_independent_exchanges, "test_two_clients_run_independent_exchanges", 2195);
-  run_test(test_stop_ends_the_exchange_and_drops_the_lease, "test_stop_ends_the_exchange_and_drops_the_lease", 2220);
-  run_test(test_start_refuses_a_running_client, "test_start_refuses_a_running_client", 2240);
-  run_test(test_a_short_or_absent_message_is_refused, "test_a_short_or_absent_message_is_refused", 2254);
+  run_test(test_a_confirm_reply_without_not_on_link_keeps_the_lease, "test_a_confirm_reply_without_not_on_link_keeps_the_lease", 1995);
+  run_test(test_the_first_confirm_waits_out_its_random_delay, "test_the_first_confirm_waits_out_its_random_delay", 2015);
+  run_test(test_a_reply_to_the_decline_completes_it, "test_a_reply_to_the_decline_completes_it", 2033);
+  run_test(test_the_confirm_retransmits_up_to_cnf_max_rt, "test_the_confirm_retransmits_up_to_cnf_max_rt", 2059);
+  run_test(test_the_dns_servers_option_is_read_out_of_the_message, "test_the_dns_servers_option_is_read_out_of_the_message", 2086);
+  run_test(test_a_dns_servers_option_of_a_ragged_length_is_ignored, "test_a_dns_servers_option_of_a_ragged_length_is_ignored", 2105);
+  run_test(test_the_information_refresh_time_schedules_the_next_request, "test_the_information_refresh_time_schedules_the_next_request", 2120);
+  run_test(test_inf_max_rt_is_taken_only_inside_its_range, "test_inf_max_rt_is_taken_only_inside_its_range", 2151);
+  run_test(test_an_infinite_information_refresh_time_never_asks_again, "test_an_infinite_information_refresh_time_never_asks_again", 2177);
+  run_test(test_two_clients_run_independent_exchanges, "test_two_clients_run_independent_exchanges", 2196);
+  run_test(test_stop_ends_the_exchange_and_drops_the_lease, "test_stop_ends_the_exchange_and_drops_the_lease", 2221);
+  run_test(test_start_refuses_a_running_client, "test_start_refuses_a_running_client", 2241);
+  run_test(test_a_short_or_absent_message_is_refused, "test_a_short_or_absent_message_is_refused", 2255);
 
   return UNITY_END();
 }
