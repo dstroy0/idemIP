@@ -73,7 +73,10 @@ TIMEOUT = 30
 # them to match.
 PAGE = re.compile(r"\n?\f\n?")
 FOOTER = re.compile(r"^.*\[Page \d+\]\s*$", re.M)
-HEADER = re.compile(r"^RFC \d+\s+.*\d{4}\s*$", re.M)
+# RFC 1122 and its contemporaries print the running header as "RFC1122 LINK LAYER October 1989",
+# with no space after RFC, and one left in the middle of a sentence breaks every quotation that
+# spans that page break.
+HEADER = re.compile(r"^RFC\s?\d+\s+.*\d{4}\s*$", re.M)
 
 # "RFC 8415", "RFC1122", and the sec 18.2.10.1 form this tree writes beside them.
 RFC_REF = re.compile(r"\bRFC\s?(\d{3,5})\b")

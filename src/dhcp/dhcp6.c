@@ -61,10 +61,10 @@ typedef struct
 // No record of where the server answered from, which this held for three writes and no read. A
 // client identifies its server by the sec 11.1 DUID, which server_duid_len and the DUID region hold
 // and which every Request, Renew and Release puts back in a sec 21.3 Server Identifier option. It
-// does not identify it by address: sec 16 has it "MUST NOT send messages using unicast unless it
-// received the Server Unicast option", and this client neither asks for nor parses sec 21.12's
-// option, so every message it sends goes to All_DHCP_Relay_Agents_and_Servers whatever the last
-// reply's Source Address was.
+// does not identify it by address: sec 21.12 has the server send the Server Unicast option "to
+// indicate to the client that it is allowed to unicast messages to the server", and this client
+// neither asks for nor parses that option, so every message it sends goes to
+// All_DHCP_Relay_Agents_and_Servers whatever the last reply's Source Address was.
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
 // holds it. common.h's IDEMIP_ASSERT_REGION states both.
@@ -750,7 +750,7 @@ static idemip_bool dhcp6_take_lease(uint8_t *work, const uint8_t *opts, size_t o
     const uint8_t *sub = ia + IDEMIP_DHCP6_IA_NA_FIXED_LEN;
     size_t sublen = (size_t)dlen - IDEMIP_DHCP6_IA_NA_FIXED_LEN;
     // sec 21.4: "The status of any operations involving this IA_NA is indicated in a Status Code option
-    // in the IA_NA-options field", which is where NoAddrsAvail of sec 21.13 Table 3 arrives.
+    // ... in the IA_NA-options field", which is where NoAddrsAvail of sec 21.13 Table 3 arrives.
     uint16_t ia_status = dhcp6_status_of(sub, sublen);
     if (ia_status != (uint16_t)IDEMIP_DHCP6_STATUS_SUCCESS)
     {
@@ -1058,8 +1058,9 @@ void idemip_dhcp6_input(uint8_t *work)
             dhcp6_publish(work);
             return;
         }
-        // sec 18.2.1: a Preference of 255 has the client "immediately begin a client-initiated message
-        // exchange", and past the first RT it "terminates the retransmission process as soon as it
+        // sec 18.2.1: with a Preference of 255 "the client immediately begins a client-initiated message
+        // exchange ... by sending a Request message to the server from which the Advertise message was
+        // received", and past the first RT it "terminates the retransmission process as soon as it
         // receives any valid Advertise message".
         if (ctx->pref == IDEMIP_DHCP6_PREF_IMMEDIATE || ctx->retries > 1u)
         {
@@ -1170,7 +1171,7 @@ void idemip_dhcp6_input(uint8_t *work)
 
     case IDEMIP_DHCP6_RELEASING:
         // sec 18.2.10.2: "the client considers the Release event completed, regardless of the Status
-        // Code option returned by the server".
+        // Code option ... returned by the server".
         dhcp6_forget_lease(work);
         ctx->state = IDEMIP_DHCP6_IDLE;
         ctx->phase = DHCP6_PHASE_NEW;

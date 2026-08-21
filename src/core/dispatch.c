@@ -940,8 +940,9 @@ typedef enum
 #if IDEMIP_ENABLE_IPV4
 
 // RFC 1122 sec 3.2.1.3 case (g), "{ 127, <any> } Internal host loopback address. Addresses of this
-// form MUST NOT appear outside a host", and RFC 4291 sec 2.5.3 of ::1: "It must not be used as the
-// source address in IPv6 packets that are sent outside of a single node ... An IPv6 packet with a
+// form MUST NOT appear outside a host", and RFC 4291 sec 2.5.3 of ::1: "The loopback address must not
+// be used as the source address in IPv6 packets that are sent outside of a single node ... An IPv6
+// packet with a
 // destination address of loopback must never be sent outside of a single node and must never be
 // forwarded by an IPv6 router." RFC 6890 Table 4 records 127.0.0.0/8 with Destination False. So a
 // loopback address names this host only on the interface no wire reaches.
@@ -1535,8 +1536,9 @@ static DispatchDest d_ip6_dest(uint8_t *work, const uint8_t *dst)
             return D_DEST_LOCAL;
         }
     }
-    // RFC 4291 sec 2.7.1: "A node is required to compute and join the associated Solicited-Node
-    // multicast addresses for all unicast and anycast addresses that have been configured."
+    // RFC 4291 sec 2.7.1: "A node is required to compute and join ... the associated Solicited-Node
+    // multicast addresses for all unicast and anycast addresses that have been configured for the
+    // node's interfaces (manually or automatically)."
     if (ctx->ip6_addr == NULL || ctx->netif == NULL)
     {
         return D_DEST_DROP;
@@ -1601,8 +1603,10 @@ static void d_icmp6_nd(uint8_t *work, const uint8_t *ip6, const uint8_t *msg, si
         }
     }
 
-    // RFC 4443 sec 2.3: "an ICMPv6 message ... the checksum ... MUST be verified". icmp6_in keeps
-    // this for the types it answers; these do not go through it.
+    // RFC 4443 sec 2.3 takes the checksum over "the entire ICMPv6 message, starting with the ICMPv6
+    // message type field, and prepended with a 'pseudo-header' of IPv6 header fields", so recomputing
+    // it over the same span is what says the message arrived intact. icmp6_in keeps this for the types
+    // it answers; these do not go through it.
     if (idemip_icmp6_cksum_compute(msg, msg_len, idemip_ip6_src(ip6), idemip_ip6_dst(ip6)) != 0u)
     {
         d_bump(work, IDEMIP_STAT_ICMP6_IN_ERRORS);
