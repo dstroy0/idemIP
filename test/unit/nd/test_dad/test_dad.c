@@ -41,7 +41,7 @@ static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_DAD_BORROW + 16];
 
 // RFC 2464 sec 4 prints the interface identifier for the Ethernet address 34-56-78-9A-BC-DE as
 // 36-56-78-FF-FE-9A-BC-DE, and sec 5 appends it to FE80::/64.
-static const uint8_t g_ll_hw[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0x80, 0, 0, 0,    0,    0,    0,
+static const uint8_t g_ll_hw[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0x80, 0,    0,    0,    0,    0,    0,
                                                      0x36, 0x56, 0x78, 0xFF, 0xFE, 0x9A, 0xBC, 0xDE};
 static const uint8_t g_ll_other[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
 // RFC 3849 reserves 2001:DB8::/32 for documentation.
@@ -199,7 +199,8 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
 void test_the_published_offsets_are_ordered_and_do_not_overlap(void)
 {
     TEST_ASSERT_EQUAL_size_t(0u, (size_t)IDEMIP_DAD_OFF_IO);
-    TEST_ASSERT_TRUE_MESSAGE((size_t)IDEMIP_DAD_OFF_CTX >= sizeof(DadIo), "the context starts inside the operand block");
+    TEST_ASSERT_TRUE_MESSAGE((size_t)IDEMIP_DAD_OFF_CTX >= sizeof(DadIo),
+                             "the context starts inside the operand block");
     TEST_ASSERT_TRUE_MESSAGE(TABLE_OFF >= (size_t)IDEMIP_DAD_OFF_CTX, "the table starts before the context");
     TEST_ASSERT_EQUAL_size_t(TABLE_OFF + ((size_t)IDEMIP_IP6_ADDRESSES << IDEMIP_DAD_ENTRY_SHIFT), STATE_END);
     TEST_ASSERT_TRUE_MESSAGE(STATE_END <= (size_t)IDEMIP_DAD_BORROW, "the map runs past IDEMIP_DAD_BORROW");
@@ -466,7 +467,7 @@ void test_the_solicitation_target_is_the_address_being_checked(void)
 // the target address".
 void test_the_solicited_node_address_is_the_prefix_and_the_low_24_bits(void)
 {
-    static const uint8_t expected[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0,    0,
+    static const uint8_t expected[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0,    0,    0,    0,
                                                           0,    0,    0, 1, 0xFF, 0x9A, 0xBC, 0xDE};
     bind_cfg(work_a, &g_cfg_one);
     start_at(work_a, g_ll_hw, 0u, IDEMIP_FALSE, IDEMIP_TRUE, 1000u, 0u);
@@ -478,8 +479,7 @@ void test_the_solicited_node_address_is_the_prefix_and_the_low_24_bits(void)
 void test_the_solicited_node_address_lies_in_the_printed_range(void)
 {
     static const uint8_t low[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0xFF, 0, 0, 0};
-    static const uint8_t high[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0,    0,    0,    0,   0, 0,
-                                                      0,    0,    0,    1,    0xFF, 0xFF, 0xFF, 0xFF};
+    static const uint8_t high[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0xFF, 0xFF, 0xFF, 0xFF};
     bind_cfg(work_a, &g_cfg_one);
     start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
     TEST_ASSERT_TRUE(memcmp(IO(work_a)->solicited, low, IDEMIP_IP6_ADDR_LEN) >= 0);
@@ -896,4 +896,203 @@ void test_two_borrows_run_independent_machines(void)
     tick_at(work_b, 0u);
     tick_at(work_b, 700u);
     TEST_ASSERT_TRUE_MESSAGE(IO(work_b)->unique, "the second interface's address was held back by the first's");
+}
+
+// --- the operands an entry cannot work from -------------------------------------
+
+// Every entry works over an address the caller holds, and one naming none has nothing to look up. A
+// borrow clear has not run on is not a table either, and neither is one nobody bound a configuration
+// to: RFC 4862 sec 5.4 counts the solicitations by DupAddrDetectTransmits, which the configuration
+// carries.
+void test_the_entries_refuse_a_call_that_names_no_address(void)
+{
+    bind_cfg(work_a, &g_cfg_one);
+    start_at(work_a, g_global, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    IO(work_a)->addr_args.addr = NULL;
+    Dad.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a lookup for no address was answered");
+    Dad.stop(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a stop of no address was made");
+
+    ns_in(work_a, NULL, IDEMIP_TRUE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a solicitation for no target was taken");
+    na_in(work_a, NULL);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "an advertisement for no target was taken");
+
+    // Bytes clear has not run on.
+    memset(work_b, 0xFF, IDEMIP_DAD_BORROW);
+    IO(work_b)->addr_args.addr = g_global;
+    Dad.find(work_b);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "find read an uncleared borrow");
+    Dad.stop(work_b);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "stop read an uncleared borrow");
+    ns_in(work_b, g_global, IDEMIP_TRUE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "ns_in read an uncleared borrow");
+    na_in(work_b, g_global);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "na_in read an uncleared borrow");
+    tick_at(work_b, 1000u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "tick read an uncleared borrow");
+
+    // Cleared, and with no configuration bound to it.
+    Dad.clear(work_b);
+    tick_at(work_b, 1000u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "a tick ran with no configuration bound");
+}
+
+// RFC 4291 sec 2.5.6: the link-local prefix is ten bits, so FEC0::/10 shares the first octet and is
+// not link-local. RFC 4862 sec 5.4.5 stops an interface whose link-local address is a duplicate, and
+// that is the address the rule reads.
+void test_the_link_local_test_is_the_first_ten_bits(void)
+{
+    static const uint8_t site_local[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0xC0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
+    bind_cfg(work_a, &g_cfg_one);
+    start_at(work_a, site_local, 1000u, IDEMIP_FALSE, IDEMIP_TRUE, 1000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    na_in(work_a, site_local);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->disable_ip,
+                              "an address sharing the link-local first octet stopped the interface");
+}
+
+// RFC 4862 sec 5.4.3: an advertisement whose Target Address is one this node holds is a duplicate
+// only while that address is tentative. Once sec 5.4.4 has made it unique the advertisement says
+// nothing about it - the two hosts are the same host, or the neighbour is confused - and RFC 4861
+// sec 7.2.5 is where a reply to it belongs.
+void test_an_advertisement_about_an_address_already_unique_is_not_a_duplicate(void)
+{
+    bind_cfg(work_a, &g_cfg_one);
+    start_at(work_a, g_global, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    tick_at(work_a, 1000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    tick_at(work_a, 3000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    IO(work_a)->addr_args.addr = g_global;
+    Dad.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DAD_STATE_UNIQUE, IO(work_a)->state, "the address never became unique");
+
+    na_in(work_a, g_global);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->tentative, "a unique address was reported as tentative");
+    IO(work_a)->addr_args.addr = g_global;
+    Dad.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DAD_STATE_UNIQUE, IO(work_a)->state,
+                                  "an advertisement made a unique address a duplicate");
+}
+
+// RFC 4862 sec 5.4.3's second test is on "the actual number of Neighbor Solicitations received
+// exceeds the number expected based on the loopback semantics", so an interface that loops its own
+// back expects every one it sent. DupAddrDetectTransmits is one octet, so an interface can be asked
+// for as many solicitations as the count of received ones can hold - and the count holds there
+// rather than turning over and reading as fewer than were sent.
+void test_the_count_of_looped_back_solicitations_holds_at_the_top_of_its_width(void)
+{
+    static const IdemIpDadCfg cfg_many = {0xFFu, IDEMIP_TRUE};
+    bind_cfg(work_a, &cfg_many);
+    start_at(work_a, g_global, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    // One solicitation out and the same one back, as many times as the octet holds.
+    uint32_t now = 1000u;
+    for (uint32_t k = 0; k < 0xFFu; k++)
+    {
+        tick_at(work_a, now);
+        now += 1000u;
+        ns_in(work_a, g_global, IDEMIP_TRUE);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    }
+
+    // The count is at the top of its octet now, and the address is still waiting out the last
+    // solicitation. Two more loopbacks land on a count that cannot rise, and do not read as
+    // solicitations from somebody else.
+    ns_in(work_a, g_global, IDEMIP_TRUE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    ns_in(work_a, g_global, IDEMIP_TRUE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    // Every solicitation it saw was one of its own, so the address is still tentative and not a
+    // duplicate: the count never rose above the number sent.
+    IO(work_a)->addr_args.addr = g_global;
+    Dad.find(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_NOT_EQUAL_INT_MESSAGE(IDEMIP_DAD_STATE_DUPLICATE, IO(work_a)->state,
+                                      "the count of loopbacks turned over and read as another node's");
+}
+
+// RFC 4862 sec 5.4.5: an address the detection found a duplicate for "MUST NOT be assigned to an
+// interface", and the sweep that runs the detection has nothing left to do for it - the same way it
+// has nothing left for one already unique. Both are passed over, and the entry behind them is not.
+void test_the_sweep_passes_over_an_address_it_has_already_decided(void)
+{
+    bind_cfg(work_a, &g_cfg_one);
+
+    // One address made a duplicate by an advertisement while it was tentative.
+    start_at(work_a, g_global, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    tick_at(work_a, 1000u);
+    na_in(work_a, g_global);
+    IO(work_a)->addr_args.addr = g_global;
+    Dad.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DAD_STATE_DUPLICATE, IO(work_a)->state,
+                                  "the advertisement was not a duplicate");
+
+    // A second address behind it, which the sweep does reach.
+    start_at(work_a, g_global2, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    tick_at(work_a, 2000u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
+                                  "the sweep stopped at the address it had already decided");
+    IO(work_a)->addr_args.addr = g_global2;
+    Dad.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1u, IO(work_a)->sent, "the second address never had its solicitation sent");
+}
+
+// RFC 4862 sec 5.4.4: the address is unique once "no Neighbor Advertisement is received" over the
+// whole of the detection, which includes the interval after the last solicitation goes out. An
+// advertisement arriving inside that interval is still about a tentative address.
+void test_an_advertisement_inside_the_last_interval_is_still_about_a_tentative_address(void)
+{
+    bind_cfg(work_a, &g_cfg_one);
+    start_at(work_a, g_global, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    tick_at(work_a, 1000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    // The one solicitation this configuration asks for has gone out and the wait is running.
+    IO(work_a)->addr_args.addr = g_global;
+    Dad.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DAD_STATE_WAIT, IO(work_a)->state, "the solicitation did not start the wait");
+
+    na_in(work_a, g_global);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->tentative, "an address inside its last interval was not tentative");
+    IO(work_a)->addr_args.addr = g_global;
+    Dad.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DAD_STATE_DUPLICATE, IO(work_a)->state,
+                                  "an advertisement inside the last interval did not make the address a duplicate");
+}
+
+// RFC 4862 sec 5.4 sends DupAddrDetectTransmits solicitations, and the address is tentative for all
+// of them: an advertisement arriving between two of them is about a tentative address as much as one
+// arriving after the last.
+void test_an_advertisement_between_two_solicitations_is_about_a_tentative_address(void)
+{
+    bind_cfg(work_a, &g_cfg_three);
+    start_at(work_a, g_global, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    tick_at(work_a, 1000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    IO(work_a)->addr_args.addr = g_global;
+    Dad.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DAD_STATE_PROBING, IO(work_a)->state,
+                                  "the first of three solicitations did not leave the address probing");
+
+    na_in(work_a, g_global);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->tentative, "an address between two solicitations was not tentative");
+    IO(work_a)->addr_args.addr = g_global;
+    Dad.find(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DAD_STATE_DUPLICATE, IO(work_a)->state);
 }

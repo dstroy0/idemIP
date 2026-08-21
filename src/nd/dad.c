@@ -40,8 +40,7 @@ typedef struct
     idemip_bool hw_derived;
     idemip_bool used;
     uint8_t pad[(1u << IDEMIP_DAD_ENTRY_SHIFT) -
-                (sizeof(IdemIpMs) + 4u + IDEMIP_IP6_ADDR_LEN + sizeof(IdemIpDadState) +
-                 (4u * sizeof(idemip_bool)))];
+                (sizeof(IdemIpMs) + 4u + IDEMIP_IP6_ADDR_LEN + sizeof(IdemIpDadState) + (4u * sizeof(idemip_bool)))];
 } DadEntry;
 
 // The running context: the sec 5.1 configuration this interface was bound to, and the mark.
@@ -91,8 +90,7 @@ static_assert(IDEMIP_ND6_MAX_RTR_SOLICITATION_DELAY_MS < 0x10000u,
 // RFC 4291 sec 2.7.1: a solicited-node multicast address "is formed by taking the low-order 24 bits
 // of an address (unicast or anycast) and appending those bits to the prefix
 // FF02:0:0:0:0:1:FF00::/104", which is these 13 octets.
-static const uint8_t dad_solicited_prefix[13] = {0xFFu, 0x02u, 0u, 0u, 0u, 0u, 0u,
-                                                 0u,    0u,    0u, 0u, 0x01u, 0xFFu};
+static const uint8_t dad_solicited_prefix[13] = {0xFFu, 0x02u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0x01u, 0xFFu};
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
 static idemip_bool dad_ready(uint8_t *work)
@@ -270,12 +268,21 @@ static void dad_fire(uint8_t *work)
     for (uint8_t i = 0; i < DAD_ENTRIES; i++)
     {
         const DadEntry *e = DAD_AT(work, i);
-        if (!e->used || e->state == IDEMIP_DAD_STATE_FREE || e->state == IDEMIP_DAD_STATE_UNIQUE ||
+        // Not measured on the second: idemip_dad_start puts an entry in DELAY or PROBING as it takes
+        // it, and the state is only IDEMIP_DAD_STATE_FREE where the entry is not in use - which the
+        // test before it answers. It is written because the state is what the switch below reads,
+        // and a state with no detection running is not one it has a case for.
+        if (!e->used || e->state == IDEMIP_DAD_STATE_FREE ||
+            e->state == IDEMIP_DAD_STATE_UNIQUE || // GCOVR_EXCL_BR_LINE
             e->state == IDEMIP_DAD_STATE_DUPLICATE || !dad_due(now, e->deadline))
         {
             continue;
         }
-        switch (e->state)
+        // gcov counts a switch's arms on the switch line, so the line is out of the measurement: the
+        // test above passes over FREE, UNIQUE and DUPLICATE, which leaves the three states below and
+        // nothing for the default to take. It is written because the state is one octet in an entry
+        // the caller's borrow holds, and a walk over it must say what it does with a stranger.
+        switch (e->state) // GCOVR_EXCL_BR_LINE
         {
         case IDEMIP_DAD_STATE_DELAY:
             // sec 5.4.2: "Before sending a Neighbor Solicitation, an interface MUST join the
@@ -290,8 +297,8 @@ static void dad_fire(uint8_t *work)
         case IDEMIP_DAD_STATE_WAIT:
             dad_pass(work, i);
             break;
-        default:
-            break;
+        default:   // GCOVR_EXCL_LINE
+            break; // GCOVR_EXCL_LINE
         }
         dad_publish(work, i);
         io->status = IDEMIP_OK;
@@ -384,8 +391,7 @@ void idemip_dad_start(uint8_t *work)
     // sec 5.4: "Duplicate Address Detection MUST NOT be performed on anycast addresses (note that
     // anycast addresses cannot syntactically be distinguished from unicast addresses)." The octets
     // cannot say which it is, so the operand does.
-    if (dad_is_multicast(io->start_args.addr) || dad_is_unspecified(io->start_args.addr) ||
-        io->start_args.anycast)
+    if (dad_is_multicast(io->start_args.addr) || dad_is_unspecified(io->start_args.addr) || io->start_args.anycast)
     {
         return;
     }
@@ -403,8 +409,8 @@ void idemip_dad_start(uint8_t *work)
 
     DadEntry *e = DAD_AT(work, index);
     memcpy(e->addr, io->start_args.addr, IDEMIP_IP6_ADDR_LEN);
-    const uint32_t retrans = (io->start_args.retrans_ms != 0u) ? io->start_args.retrans_ms
-                                                         : (uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS;
+    const uint32_t retrans =
+        (io->start_args.retrans_ms != 0u) ? io->start_args.retrans_ms : (uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS;
     e->retrans_ms = retrans;
     e->sent = 0u;
     e->received = 0u;
@@ -419,11 +425,12 @@ void idemip_dad_start(uint8_t *work)
         e->state = IDEMIP_DAD_STATE_DELAY;
         // sec 5.4.2 draws the delay "between 0 and MAX_RTR_SOLICITATION_DELAY"; without one the
         // first solicitation is due on the next tick.
-        const IdemIpMs start = idemip_ms_extend(&DAD_CTX(work)->tick_ms, &DAD_CTX(work)->tick_hi, io->start_args.now_ms);
-        e->deadline = io->start_args.delay
-                          ? start + (IdemIpMs)dad_draw(io->start_args.rand,
-                                                       (uint32_t)IDEMIP_ND6_MAX_RTR_SOLICITATION_DELAY_MS)
-                          : start;
+        const IdemIpMs start =
+            idemip_ms_extend(&DAD_CTX(work)->tick_ms, &DAD_CTX(work)->tick_hi, io->start_args.now_ms);
+        e->deadline =
+            io->start_args.delay
+                ? start + (IdemIpMs)dad_draw(io->start_args.rand, (uint32_t)IDEMIP_ND6_MAX_RTR_SOLICITATION_DELAY_MS)
+                : start;
     }
     dad_publish(work, index);
     io->status = IDEMIP_OK;
