@@ -2291,9 +2291,10 @@ void test_a_record_whose_rdlength_runs_past_the_message_ends_the_walk(void)
                                   "a record naming more octets than arrived was read");
 }
 
-// RFC 5452 sec 6: a record is an answer only if it is "for the name asked about". The owner written
-// out in full rather than as a sec 4.1.4 pointer is compared label by label against the question, and
-// one character of one label is enough to make it another name.
+// RFC 5452 sec 4.2: "Incoming responses should be verified to have a question section that is
+// equivalent to that of the outgoing query", and a record is an answer only if its owner is that
+// question's name. The owner written out in full rather than as a sec 4.1.4 pointer is compared label
+// by label against it, and one character of one label is enough to make it another name.
 void test_a_record_whose_owner_differs_in_one_character_is_not_an_answer(void)
 {
     static const char spell[2] = {'f', 'e'};
