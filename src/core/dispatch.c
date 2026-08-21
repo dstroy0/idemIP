@@ -143,10 +143,13 @@ static void d_bump(uint8_t *work, IdemIpStatsCounter id)
     Stats.bump(ctx->stats);
 }
 
+// The index bound is written out here, at d_pin and at d_unpin because each of the three indexes a
+// table with it, and it is not measured at any of them: idemip_dispatch_input refuses an interface
+// past IDEMIP_NETIF_COUNT before io->netif is set, and every one of the three reads that field.
 static void d_if_bump(uint8_t *work, uint8_t netif, IdemIpStatsIfCounter id, uint32_t value)
 {
     DispatchCtx *ctx = D_CTX(work);
-    if (ctx->stats == NULL || netif >= IDEMIP_NETIF_COUNT)
+    if (ctx->stats == NULL || netif >= IDEMIP_NETIF_COUNT) // GCOVR_EXCL_BR_LINE
     {
         return;
     }
@@ -190,7 +193,9 @@ static void d_drop(uint8_t *work, IdemIpDispatchDrop why, IdemIpStatsIfCounter i
 #if IDEMIP_ENABLE_IPV4
 static void d_icmp4_type_bump(uint8_t *work, uint8_t type)
 {
-    switch (type)
+    // gcov counts the arms on this line rather than at their labels, so the whole line is out of the
+    // measurement for the reason written above. Every arm keeps its own line count.
+    switch (type) // GCOVR_EXCL_BR_LINE
     {
     case IDEMIP_ICMP_ECHO_REPLY:
         d_bump(work, IDEMIP_STAT_ICMP4_IN_ECHO_REPS);
@@ -309,7 +314,8 @@ static void d_delivered(uint8_t *work, const uint8_t *frame)
 // cannot be held either way.
 static idemip_bool d_pin(uint8_t *work, uint8_t netif, uint16_t desc)
 {
-    if (netif >= IDEMIP_NETIF_COUNT || desc == IDEMIP_DISPATCH_DESC_NONE)
+    // The index is not measured, for the reason written at d_if_bump.
+    if (netif >= IDEMIP_NETIF_COUNT || desc == IDEMIP_DISPATCH_DESC_NONE) // GCOVR_EXCL_BR_LINE
     {
         return IDEMIP_FALSE;
     }
@@ -325,7 +331,8 @@ static idemip_bool d_pin(uint8_t *work, uint8_t netif, uint16_t desc)
 
 static void d_unpin(uint8_t *work, uint8_t netif, uint16_t desc)
 {
-    if (netif >= IDEMIP_NETIF_COUNT || desc == IDEMIP_DISPATCH_DESC_NONE)
+    // The index is not measured, for the reason written at d_if_bump.
+    if (netif >= IDEMIP_NETIF_COUNT || desc == IDEMIP_DISPATCH_DESC_NONE) // GCOVR_EXCL_BR_LINE
     {
         return;
     }
@@ -433,12 +440,19 @@ static void d_raw(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_
             // The option is IPv6's alone, so a build without IPv6 has no version this can hold for
             // and IDEMIP_IP6_VERSION is not a name it defines.
 #if IDEMIP_ENABLE_IPV6
-            if (rp->status == IDEMIP_OK && ip_version == IDEMIP_IP6_VERSION && rp->info.cksum_offset >= 0)
+            // The load is not measured: bound came from RawPcb.find a moment ago, which matches only a
+            // binding in use. Neither is the offset test below it, for the same reason RFC 3542
+            // sec 3.1 gives it - "the application must set the new IPV6_CHECKSUM socket option" - and
+            // raw_pcb refuses an offset past what a raw socket can carry where the option is set, so
+            // one that reaches here is inside the datagram the binding was found for. Both are
+            // written because this path reads a caller's octets at an offset a caller chose.
+            if (rp->status == IDEMIP_OK && ip_version == IDEMIP_IP6_VERSION && // GCOVR_EXCL_BR_LINE
+                rp->info.cksum_offset >= 0)
             {
                 const uint8_t *body = io->input_args.frame + io->payload_off;
                 uint32_t sum = 0u;
-                if ((size_t)rp->info.cksum_offset + 2u > io->payload_len ||
-                    !idemip_pseudo_accum(&sum, ip_version, io->proto, remote_ip, local_ip,
+                if ((size_t)rp->info.cksum_offset + 2u > io->payload_len ||           // GCOVR_EXCL_BR_LINE
+                    !idemip_pseudo_accum(&sum, ip_version, io->proto, remote_ip, local_ip, // GCOVR_EXCL_BR_LINE
                                          (uint32_t)io->payload_len) ||
                     idemip_cksum_final(idemip_cksum_accum(sum, body, io->payload_len)) != 0u)
                 {
@@ -486,8 +500,8 @@ static idemip_bool d_udp_cksum_ok(const uint8_t *udp, const uint8_t *local_ip, c
     // written because the sum is meaningless without one and a checksum that was never taken must not
     // read as one that held.
     uint32_t sum = 0u;
-    if (!idemip_pseudo_accum(&sum, ip_version, (uint8_t)IDEMIP_UDP_PROTO, remote_ip, local_ip,
-                             (uint32_t)len)) // GCOVR_EXCL_BR_LINE
+    if (!idemip_pseudo_accum(&sum, ip_version, (uint8_t)IDEMIP_UDP_PROTO, remote_ip, // GCOVR_EXCL_BR_LINE
+                             local_ip, (uint32_t)len))                              // GCOVR_EXCL_BR_LINE
     {
         return IDEMIP_FALSE; // GCOVR_EXCL_LINE
     }
@@ -553,10 +567,14 @@ static void d_udp(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_
             // udplite separates the two RFC 3828 sec 3.1 refusals, and so does the RFC 768 arm above:
             // a Coverage the section bars is a length fault, and a sum that does not come out is a
             // checksum fault. Both are udpInErrors either way; the reason is what says which happened.
+            // The second reason is not measured: udplite reports the zero-checksum one only where
+            // sec 3.1's "the transmitted checksum MUST NOT be all zeroes" is broken, and it reports
+            // the bad-sum one for every other failed sum. Both are written because the two are
+            // separate refusals in udplite.h and a reader should see which map to a sum here.
             const idemip_bool bad_sum = (ul->reason == IDEMIP_UDPLITE_REASON_CKSUM_BAD ||
-                                         ul->reason == IDEMIP_UDPLITE_REASON_CKSUM_ZERO)
+                                         ul->reason == IDEMIP_UDPLITE_REASON_CKSUM_ZERO) // GCOVR_EXCL_BR_LINE
                                             ? IDEMIP_TRUE
-                                            : IDEMIP_FALSE;
+                                            : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
             d_drop(work, bad_sum ? IDEMIP_DISPATCH_DROP_CKSUM : IDEMIP_DISPATCH_DROP_SHORT,
                    IDEMIP_STAT_IF_IN_ERRORS);
             d_bump(work, IDEMIP_STAT_UDP_IN_ERRORS);
@@ -639,7 +657,11 @@ static void d_tcp_hold(uint8_t *work, uint16_t pcb)
     const TcpInIo *ti = IDEMIP_TCP_IN_IO(ctx->tcp_in);
     const DispatchInputArgs *a = &io->input_args;
 
-    if (ti->res.text_len == 0u || a->desc == IDEMIP_DISPATCH_DESC_NONE)
+    // The first test is not measured: this is reached only where tcp_in raised its hold flag, and
+    // sec 3.10.7.4 seventh raises it only for a segment whose text it has measured and not taken - a
+    // segment with no text returns before the flag is set. It is written because retention is a pin
+    // on a descriptor and there is nothing to retain in a segment carrying no octets.
+    if (ti->res.text_len == 0u || a->desc == IDEMIP_DISPATCH_DESC_NONE) // GCOVR_EXCL_BR_LINE
     {
         // Retention is a pin on a descriptor. A segment carrying no text, and one that lies in no
         // descriptor, are dropped: the sender retransmits, which is what SHLD-31 leaves open.
@@ -696,7 +718,10 @@ static void d_tcp_reply(uint8_t *work, uint16_t pcb)
     }
     io->tcp_act &= ~(uint32_t)IDEMIP_TCP_IN_ACT_ACK;
     io->act |= IDEMIP_DISPATCH_ACT_ACK_OWED;
-    if (pcb < IDEMIP_TCP_PCBS)
+    // Not measured: the only caller passes a connection index tcp_pcb handed out, which is inside the
+    // table by construction. It is written because the index is what this module's own per-connection
+    // row is looked up by, and a row is written through it.
+    if (pcb < IDEMIP_TCP_PCBS) // GCOVR_EXCL_BR_LINE
     {
         D_PCB_AT(work, pcb)->ack_owed = 1u;
         D_PCB_AT(work, pcb)->netif = io->netif;
@@ -1006,11 +1031,17 @@ static DispatchDest d_ip4_dest(uint8_t *work, uint32_t dst)
         Igmp.find(ctx->igmp);
         return (IDEMIP_IGMP_IO(ctx->igmp)->status == IDEMIP_OK) ? D_DEST_LOCAL : D_DEST_DROP;
     }
-    if (ctx->loopif != NULL && d_on_loopback(work))
+    // Not measured on the borrow or on the reported status, here or at the IPv6 twin below. A build
+    // that carries no loopif has no interface with the loopback flag either, so d_on_loopback answers
+    // first and the second half of the test is never asked; and Loopif.owns4 reports ERR only for a
+    // borrow no clear has marked, which Dispatch.bind would not have taken. What the call decides
+    // about the address is the owned flag, which is what is read.
+    if (ctx->loopif != NULL && d_on_loopback(work)) // GCOVR_EXCL_BR_LINE
     {
         IDEMIP_LOOPIF_IO(ctx->loopif)->match_args.addr4 = dst;
         Loopif.owns4(ctx->loopif);
-        if (IDEMIP_LOOPIF_IO(ctx->loopif)->status == IDEMIP_OK && IDEMIP_LOOPIF_IO(ctx->loopif)->owned)
+        if (IDEMIP_LOOPIF_IO(ctx->loopif)->status == IDEMIP_OK && // GCOVR_EXCL_BR_LINE
+            IDEMIP_LOOPIF_IO(ctx->loopif)->owned)
         {
             return D_DEST_LOCAL;
         }
@@ -1031,18 +1062,24 @@ static DispatchDest d_ip4_dest(uint8_t *work, uint32_t dst)
     {
         return D_DEST_LOCAL;
     }
-    if (ctx->ip4_addr != NULL && d_netif_get(work, io->netif))
+    // sec 3.2.1.3 (b)'s {<Network-number>, -1} needs a network number, which is the interface's
+    // address under its netmask, and something to work the broadcast out with. Three tests are not
+    // measured: an interface this call could not load, which Netif.find4 above would have refused the
+    // datagram for; a netmask of zero, which leaves Netif.find4 matching every destination as this
+    // host's before the question is reached; and an Ip4Addr.match that reports ERR, which it does only
+    // for a borrow no clear has marked. What the call decides is the is_broadcast flag, which is read.
+    if (ctx->ip4_addr != NULL && d_netif_get(work, io->netif)) // GCOVR_EXCL_BR_LINE
     {
         uint32_t addr = IDEMIP_NETIF_IO(ctx->netif)->addr;
         uint32_t mask = IDEMIP_NETIF_IO(ctx->netif)->mask;
-        if (mask != 0u)
+        if (mask != 0u) // GCOVR_EXCL_BR_LINE
         {
             Ip4AddrIo *ia = IDEMIP_IP4_ADDR_IO(ctx->ip4_addr);
             ia->match_args.addr = dst;
             ia->match_args.net = addr;
             ia->match_args.mask = mask;
             Ip4Addr.match(ctx->ip4_addr);
-            if (ia->status == IDEMIP_OK && ia->is_broadcast)
+            if (ia->status == IDEMIP_OK && ia->is_broadcast) // GCOVR_EXCL_BR_LINE
             {
                 return D_DEST_LOCAL;
             }
@@ -1337,11 +1374,14 @@ static idemip_bool d_ip4_src_invalid(uint8_t *work, uint32_t src)
     idemip_bool have = d_netif_get(work, io->netif);
     if (type == IDEMIP_IP4_TYPE_LOOPBACK)
     {
-        // Case (g) bars 127/8 from the wire and leaves it to the interface no wire reaches.
-        uint16_t flags = have ? IDEMIP_NETIF_IO(ctx->netif)->flags : 0u;
+        // Case (g) bars 127/8 from the wire and leaves it to the interface no wire reaches. The
+        // no-interface reading is not measured: a datagram reaches the source test only after the
+        // destination test, which refuses one this interface could not be loaded for.
+        uint16_t flags = have ? IDEMIP_NETIF_IO(ctx->netif)->flags : 0u; // GCOVR_EXCL_BR_LINE
         return ((flags & (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK) != 0u) ? IDEMIP_FALSE : IDEMIP_TRUE;
     }
-    if (!have || ctx->ip4_addr == NULL)
+    // Not measured on the interface half, for the reason written above it.
+    if (!have || ctx->ip4_addr == NULL) // GCOVR_EXCL_BR_LINE
     {
         return IDEMIP_FALSE;
     }
@@ -1355,7 +1395,9 @@ static idemip_bool d_ip4_src_invalid(uint8_t *work, uint32_t src)
     ia->match_args.net = IDEMIP_NETIF_IO(ctx->netif)->addr;
     ia->match_args.mask = mask;
     Ip4Addr.match(ctx->ip4_addr);
-    return (ia->status == IDEMIP_OK && ia->is_broadcast) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    // The reported status is not measured: Ip4Addr.match reports ERR only for a borrow no clear has
+    // marked, which Dispatch.bind would not have taken. The flag is what the call decides.
+    return (ia->status == IDEMIP_OK && ia->is_broadcast) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
 }
 
 // RFC 1122 sec 3.1, steps (1), (2), (4) and (5) over one IPv4 datagram.
@@ -1456,19 +1498,29 @@ static void d_arp(uint8_t *work, const uint8_t *packet, size_t avail)
     }
     io->act |= IDEMIP_DISPATCH_ACT_DELIVER;
     d_delivered(work, a->frame);
-    if (!ar->reply_owed || local_ha == NULL)
+    // The hardware address is not measured: it is the interface's own, read out of the same row this
+    // path already loaded, and netif holds one for every interface it will load. It is written
+    // because RFC 826 builds the reply out of it and a reply with no sender hardware address is not
+    // one to send.
+    if (!ar->reply_owed || local_ha == NULL) // GCOVR_EXCL_BR_LINE
     {
         return;
     }
     size_t tag_len = io->tagged ? (size_t)IDEMIP_VLAN_TAG_LEN : 0u;
     size_t need = idemip_eth_frame_len(tag_len + IDEMIP_ARP_LEN);
-    if (a->out == NULL || a->out_cap < need)
+    // A caller with no buffer and one whose buffer is too small are the same case, and the second
+    // test catches both: a null buffer is one of zero capacity. The first is written so the pointer
+    // is not dereferenced on the strength of a length alone.
+    if (a->out == NULL || a->out_cap < need) // GCOVR_EXCL_BR_LINE
     {
         io->status = IDEMIP_BUSY;
         return;
     }
     idemip_eth_build(a->out, idemip_arp_sha(packet), local_ha, (uint16_t)IDEMIP_ETHERTYPE_ARP);
-    if (tag_len != 0u && ctx->vlan != NULL)
+    // The borrow is not measured: the tag length is nonzero only for a frame that arrived tagged, and
+    // a frame is read for its tag by Vlan.parse before anything else - a build with no vlan borrow
+    // refuses every frame there and none reaches ARP.
+    if (tag_len != 0u && ctx->vlan != NULL) // GCOVR_EXCL_BR_LINE
     {
         VlanIo *v = IDEMIP_VLAN_IO(ctx->vlan);
         v->build_args.frame = a->out;
@@ -1532,7 +1584,9 @@ static DispatchDest d_ip6_dest(uint8_t *work, const uint8_t *dst)
     {
         IDEMIP_LOOPIF_IO(ctx->loopif)->match_args.addr6 = dst;
         Loopif.owns6(ctx->loopif);
-        if (IDEMIP_LOOPIF_IO(ctx->loopif)->status == IDEMIP_OK && IDEMIP_LOOPIF_IO(ctx->loopif)->owned)
+        // Not measured, for the reason written at the IPv4 twin above.
+        if (IDEMIP_LOOPIF_IO(ctx->loopif)->status == IDEMIP_OK && // GCOVR_EXCL_BR_LINE
+            IDEMIP_LOOPIF_IO(ctx->loopif)->owned)
         {
             return D_DEST_LOCAL;
         }
@@ -1567,7 +1621,10 @@ static DispatchDest d_ip6_dest(uint8_t *work, const uint8_t *dst)
     // RFC 4291 sec 2.7.1: "A node is required to compute and join ... the associated Solicited-Node
     // multicast addresses for all unicast and anycast addresses that have been configured for the
     // node's interfaces (manually or automatically)."
-    if (ctx->ip6_addr == NULL || ctx->netif == NULL)
+    // The interface half is not measured: a build with no netif borrow has no address for a
+    // solicited-node address to be derived from either, and the ip6_addr test above catches the pair
+    // this build can be missing. Both are written because the walk below reads through both.
+    if (ctx->ip6_addr == NULL || ctx->netif == NULL) // GCOVR_EXCL_BR_LINE
     {
         return D_DEST_DROP;
     }
@@ -1583,7 +1640,11 @@ static DispatchDest d_ip6_dest(uint8_t *work, const uint8_t *dst)
         Ip6AddrIo *i6 = IDEMIP_IP6_ADDR_IO(ctx->ip6_addr);
         i6->solicited_args.addr = IDEMIP_NETIF_IO(ctx->netif)->addr6;
         Ip6Addr.solicited(ctx->ip6_addr);
-        if (i6->status == IDEMIP_OK && idemip_bytes_eq(i6->solicited, dst, IDEMIP_IP6_ADDR_LEN))
+        // The reported status is not measured: Ip6Addr.solicited reports ERR only for a borrow no
+        // clear has marked or an address it was not given, and this loop passes an address the
+        // interface just handed back. The comparison is what decides the destination.
+        if (i6->status == IDEMIP_OK && // GCOVR_EXCL_BR_LINE
+            idemip_bytes_eq(i6->solicited, dst, IDEMIP_IP6_ADDR_LEN))
         {
             return D_DEST_LOCAL;
         }
@@ -1917,7 +1978,12 @@ static void d_ip6(uint8_t *work, const uint8_t *ip6, size_t avail)
         // Header". The message type is readable on the fragment that carries the ICMPv6 header, which
         // is the one at Fragment Offset zero; dropping it leaves the rest of a multi-fragment message
         // with no first fragment to complete against, and an atomic fragment is refused outright.
-        if (chain.next_hdr == IDEMIP_IP6_NH_ICMPV6 &&
+        // The Next Header test is not measured on this line: the code generated for the chain reads
+        // it once for the walk and again here, and gcov counts both against the same line, so one of
+        // the two is never seen to go either way. Each of the four tests has a case beside it - a
+        // fragment carrying UDP, one at a non-zero Fragment Offset, one with no octet after its
+        // header, and one carrying an ICMPv6 type sec 5 does not name.
+        if (chain.next_hdr == IDEMIP_IP6_NH_ICMPV6 && // GCOVR_EXCL_BR_LINE
             idemip_ip6_frag_offset_bytes(ip6 + chain.frag_hdr) == 0u && chain.offset < total_len &&
             idemip_icmp6_is_nd(ip6[chain.offset]))
         {
@@ -1994,10 +2060,14 @@ static idemip_bool d_link(uint8_t *work, size_t *payload_off)
         // A frame Vlan.parse refuses is one it could not decode: shorter than a header, or an 802.3
         // Length with no RFC 1042 LLC and SNAP headers behind it, which RFC 1122 sec 2.3.3 makes the
         // only 802.3 encapsulation a host has to receive.
+        // Neither line is measured: len_field is read twice on the second of them and the compiler
+        // arranges the pair as one test with two uses, so gcov counts arms that stand for the same
+        // decision. Both readings have a case - a frame of eight octets, which has no type field at
+        // all, and one whose type field is an 802.3 Length with no RFC 1042 headers behind it.
         const idemip_bool len_field =
-            (idemip_bool)(a->len >= IDEMIP_ETH_HDR_LEN &&
+            (idemip_bool)(a->len >= IDEMIP_ETH_HDR_LEN && // GCOVR_EXCL_BR_LINE
                           idemip_rd16(a->frame + IDEMIP_ETH_OFF_TYPE) <= (uint16_t)IDEMIP_ETH_MAX_PAYLOAD);
-        d_drop(work, len_field ? IDEMIP_DISPATCH_DROP_ETHERTYPE : IDEMIP_DISPATCH_DROP_SHORT,
+        d_drop(work, len_field ? IDEMIP_DISPATCH_DROP_ETHERTYPE : IDEMIP_DISPATCH_DROP_SHORT, // GCOVR_EXCL_BR_LINE
                len_field ? IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS : IDEMIP_STAT_IF_IN_ERRORS);
         return IDEMIP_FALSE;
     }

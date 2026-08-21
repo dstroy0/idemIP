@@ -890,6 +890,92 @@ void test_a_loopback_interface_carries_the_address_loopif_owns(void)
                                      "a datagram that reached the transport was counted as an address error");
 }
 
+// The other half of case (g). loopif answers for the whole "{ 127, <any> }" block, so on a loopback
+// interface every address in it is this host's - and every address outside it is not loopif's to
+// answer for. The interface's own address arriving there is not the loopback address, so loopif hands
+// it back and the interface table is what recognizes it.
+void test_an_address_outside_the_loopback_block_is_not_loopifs_to_own(void)
+{
+    uint16_t pcb = bind_udp4(4001u);
+    NetifIo *ni = IDEMIP_NETIF_IO(netif_mem);
+    ni->if_args.index = 0u;
+    ni->if_args.set = (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK;
+    ni->if_args.clear = 0u;
+    Netif.set_flags(netif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ni->status);
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp4(g_frame, off, REMOTE_IP4, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_UDP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "the interface's own address was not recognized on a loopback interface");
+    TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
+}
+
+#if IDEMIP_ENABLE_IPV6
+
+// The RFC 4291 sec 2.5.3 twin: the loopback address is one address, so an address that is not it is
+// not the loopback interface's either, and sec 2.5.3's "A packet received on an interface with a
+// destination address of loopback must be dropped" leaves it nowhere else to go.
+void test_an_ipv6_address_the_loopback_interface_does_not_own_is_not_ours(void)
+{
+    NetifIo *ni = IDEMIP_NETIF_IO(netif_mem);
+    ni->if_args.index = 0u;
+    ni->if_args.set = (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK;
+    ni->if_args.clear = 0u;
+    Netif.set_flags(netif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ni->status);
+
+    // A global address the loopback interface was not bound to, arriving on it.
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_UDP, g_remote_ip6, g_other_ip6, IDEMIP_UDP_HDR_LEN);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp6(g_frame, off, g_remote_ip6, g_other_ip6);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    TEST_ASSERT_FALSE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u,
+                              "an address the loopback interface does not own was taken as this node's");
+}
+
+#endif // IDEMIP_ENABLE_IPV6
+
+// A frame shorter than the fourteen octets of an Ethernet header carries no type field to read, so
+// the fault is the frame's length and not the encapsulation it names: ifInErrors, "contained errors
+// preventing them from being deliverable to a higher-layer protocol", and not ifInUnknownProtos.
+void test_a_frame_shorter_than_an_ethernet_header_is_an_error_not_an_unknown_proto(void)
+{
+    memset(g_frame, 0, 16u);
+    input(work_a, 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a frame with no type field to read was reported as an encapsulation");
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS),
+                                     "a frame too short to name a protocol was counted against one");
+}
+
+#if IDEMIP_ENABLE_IPV6
+
+// RFC 6980 sec 5 is read off the message type, and the type is the first octet of the message. A
+// fragment carrying a Fragment header and nothing behind it has no type to read: RFC 8200 sec 4.5
+// puts "The fragment itself" after the header, and there is none, so the packet reaches the
+// reassembler as any other fragment does rather than being matched against sec 5's list.
+void test_a_fragment_with_no_octet_after_its_header_is_not_matched_against_the_type_list(void)
+{
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    const size_t fh = off + IDEMIP_IPV6_HDR_LEN;
+    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_FRAGMENT, g_remote_ip6, g_local_ip6, IDEMIP_IP6_FRAG_HDR_LEN);
+    idemip_ip6_frag_build(g_frame + fh, IDEMIP_IP6_NH_ICMPV6, 0u, IDEMIP_TRUE, 0x12345678u);
+
+    input(work_a, fh + IDEMIP_IP6_FRAG_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_NOT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP6_FRAG_ND, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                      "a fragment with no message octet was matched against the type list");
+}
+
+#endif // IDEMIP_ENABLE_IPV6
+
 // RFC 1122 sec 4.1.3.1: with no binding, "UDP SHOULD send an ICMP Port Unreachable message", and
 // udpNoPorts is what counts it.
 void test_an_unbound_udp_port_counts_no_ports(void)
@@ -4873,6 +4959,69 @@ void test_an_echo_request_is_answered_with_no_preferred_address_to_take(void)
 }
 
 #endif // IDEMIP_ENABLE_IPV6
+
+// RFC 1122 sec 2.3.3: "Every Internet host connected to a 10Mbps Ethernet cable ... MUST be able to
+// send and receive packets using RFC 894 encapsulation" and "SHOULD be able to receive RFC 1042
+// packets". A frame whose type field is a Length rather than an EtherType is an 802.3 frame, and one
+// with no RFC 1042 LLC and SNAP headers behind it is an encapsulation this host does not read - which
+// is ifInUnknownProtos, "discarded because of an unknown or unsupported protocol", and not the
+// malformed frame a short one is.
+void test_an_802_3_length_field_with_no_snap_header_counts_unknown_protos(void)
+{
+    // A type field of 46, which is inside 802.3's Length range, and payload that is not LLC/SNAP.
+    size_t off = build_eth(g_frame, g_local_mac, 46u);
+    memset(g_frame + off, 0xEE, 46u);
+    input(work_a, off + 46u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_ETHERTYPE, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "an 802.3 frame was reported as a malformed one");
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS),
+                                     "a frame that decoded was counted as an error");
+}
+
+#if IDEMIP_ENABLE_TCP
+
+// RFC 9293 sec 3.10.7.4: "If a segment's contents straddle the boundary between old and new, only the
+// new parts are processed." A held segment is delivered once RCV.NXT reaches it, and by then RCV.NXT
+// may have passed the whole of it - a retransmission filled the gap and the octets behind it at once.
+// There is nothing new left to deliver, so the entry is freed and its descriptor handed back without
+// a delivery.
+void test_a_held_segment_rcv_nxt_has_passed_entirely_is_freed_without_a_delivery(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    // Four octets at 105, held because 101 through 104 are missing.
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 105u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, 3u);
+    TEST_ASSERT_TRUE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_PINNED) != 0u,
+                             "the segment ahead of the window was not held");
+
+    // Eight octets at 101, which fills the gap and covers the held segment as well.
+    end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, IDEMIP_TCP_ACK, 8u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(109u, tp->vars.rcv_nxt, "the second segment did not cover the held one");
+
+    IDEMIP_DISPATCH_IO(work_a)->tcp_args.pcb = pcb;
+    Dispatch.tcp_deliver(work_a);
+    const DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, io->status, "the held entry was not taken off the queue");
+    TEST_ASSERT_FALSE_MESSAGE((io->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u,
+                              "octets already taken were delivered a second time");
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(3u, io->desc, "the descriptor the entry pinned did not come back");
+
+    // And RCV.NXT is where the second segment left it: nothing moved it again.
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_UINT32(109u, tp->vars.rcv_nxt);
+}
+
+#endif // IDEMIP_ENABLE_TCP
 
 // The tag is read before anything else, so an unbound vlan stops every frame there.
 void test_a_frame_with_no_vlan_borrow_is_refused(void)
