@@ -707,7 +707,8 @@ void idemip_tcp_pcb_bind(uint8_t *work)
 
 // RFC 9293 sec 3.9.1.1 (MUST-46): "A TCP implementation MUST reject as an error a local OPEN call for
 // an invalid remote IP address (e.g., a broadcast or multicast address)". RFC 1122 sec 3.2.1.3 adds
-// the unspecified address, which "MUST NOT be used as a destination address". A directed broadcast is
+// the unspecified address, case (a), which "MUST NOT be sent, except as a source address as part of an
+// initialization procedure by which the host learns its own IP address". A directed broadcast is
 // the network's own prefix with a host part of all ones, which is not derivable from the address
 // alone, so it is not among these.
 static idemip_bool tcp_pcb_remote_invalid(uint8_t ip_version, const uint8_t *ip)

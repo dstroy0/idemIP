@@ -157,9 +157,10 @@ static idemip_bool ip4_forward_dst_is_bcast(const Ip4ForwardArgs *a, uint32_t ds
     return (idemip_bool)((dst | a->out_mask) == IP4_FORWARD_LIMITED_BCAST || (dst & ~a->out_mask) == 0u);
 }
 
-// The same classification under sec 5.3.5.2's own condition: the switch it requires applies "only in
-// the last hop router", which is a route that transmits directly. sec 4.2.3.1 (1)'s "MUST treat as IP
-// broadcasts" carries no such condition, so sec 4.3.2.7's ICMP suppression reads the helper above.
+// The same classification under sec 5.3.5.2's own condition: the decision it requires is "by
+// definition only possible in the last hop router", which is a route that transmits directly.
+// sec 4.2.3.1 (1)'s "MUST treat as IP broadcasts" carries no such condition, so sec 4.3.2.7's ICMP
+// suppression reads the helper above.
 static idemip_bool ip4_forward_is_directed_bcast(const Ip4ForwardArgs *a, uint32_t dst)
 {
     if (!a->routed || !a->direct)

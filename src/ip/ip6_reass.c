@@ -289,7 +289,7 @@ static uint8_t ip6_reass_scan(uint8_t *work, uint8_t d, uint16_t offset, uint16_
 
 // RFC 815 sec 3 steps one through seven, over one datagram's hole list. A hole the fragment reaches
 // is deleted, and step five puts back the part in front of the fragment and step six the part behind
-// it, the second only "if fragment.more fragments is true". The fragment is [first, end), so RFC
+// it, the second only if "fragment.more fragments is true". The fragment is [first, end), so RFC
 // 815's fragment.last is end - 1 and its two tests read as end <= hole.first and end <= hole.last.
 // Returns false when the second replacement has no free descriptor.
 static idemip_bool ip6_reass_carve(uint8_t *work, uint8_t d, uint32_t first, uint32_t end, idemip_bool more)
@@ -738,8 +738,8 @@ void idemip_ip6_reass_input(uint8_t *work)
 }
 
 // RFC 8200 sec 4.5, whose Fragmentable Part "is constructed from the fragments following the Fragment
-// headers", each fragment's "relative position in Fragmentable Part computed from its Fragment Offset
-// value". The list rises with Fragment Offset, so index is that position.
+// headers", each fragment's "relative position in Fragmentable Part is computed from its Fragment
+// Offset value". The list rises with Fragment Offset, so index is that position.
 void idemip_ip6_reass_frag_at(uint8_t *work)
 {
     if (!work)

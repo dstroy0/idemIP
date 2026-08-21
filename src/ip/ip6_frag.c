@@ -107,7 +107,8 @@ static Ip6FragChain ip6_frag_walk(const uint8_t *pkt, size_t len)
             c.fragmented = IDEMIP_TRUE;
             return c;
         }
-        // sec 4.1: the Hop-by-Hop Options header "must appear immediately after an IPv6 header only".
+        // sec 4.1: the Hop-by-Hop Options header is the one "restricted to appear immediately after an
+        // IPv6 header only".
         if (nh == IDEMIP_IP6_NH_HOPOPT && hops != 0u)
         {
             return c;

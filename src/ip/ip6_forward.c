@@ -114,7 +114,7 @@ static uint8_t ip6_forward_scope(const uint8_t *a)
 // --- the header ------------------------------------------------------------
 
 // RFC 8200 sec 3: the Version is 6, and the Payload Length is "the rest of the packet following this
-// header, in octets", so the header and it together fit the span the link layer delivered.
+// IPv6 header, in octets", so the header and it together fit the span the link layer delivered.
 static idemip_bool ip6_forward_header_ok(const uint8_t *h, size_t len)
 {
     if (len < IDEMIP_IPV6_HDR_LEN)

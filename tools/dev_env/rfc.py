@@ -71,8 +71,21 @@ TIMEOUT = 30
 # A page break, the running footer above it and the running header below it. All three are furniture
 # the document's own text does not include, and a quote that spans a page boundary has to step over
 # them to match.
+# A list marker at the start of a line. The dashes and plusses this tree's documents use are dropped
+# with the other punctuation, but RFC 2131, RFC 4007 and RFC 9293 all mark items with a lowercase "o",
+# which is a letter and survives everything else: RFC 9293's "- SYN-RECEIVED STATE o If the connection
+# was initiated with a passive OPEN" is one heading and one item, and a comment quoting the pair reads
+# "SYN-RECEIVED STATE: If the connection ...". The colon is the marker, written the way a comment can
+# write it.
+BULLET = re.compile(r"^[ \t]*[o+*\u2022][ \t]+", re.M)
+
 PAGE = re.compile(r"\n?\f\n?")
 FOOTER = re.compile(r"^.*\[Page \d+\]\s*$", re.M)
+
+# The older documents number their pages with the number alone on a line. RFC 815 puts one between
+# "in the first octets" and "of the hole itself", and it reads as part of the sentence once the text
+# is flattened.
+PAGENO = re.compile(r"^[ \t]*\d{1,3}[ \t]*$", re.M)
 # RFC 1122 and its contemporaries print the running header as "RFC1122 LINK LAYER October 1989",
 # with no space after RFC, and one left in the middle of a sentence breaks every quotation that
 # spans that page break.
@@ -142,8 +155,10 @@ def fetch(number):
 def flatten(text):
     """One line, one space between words, no page furniture. What a quote is matched against."""
     text = FOOTER.sub("", text)
+    text = PAGENO.sub("", text)
     text = PAGE.sub("\n", text)
     text = HEADER.sub("", text)
+    text = BULLET.sub("", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -230,12 +245,22 @@ def contains(flat, quote):
         return -1
     hay, idx = squeeze(flat)
     first = hay.find(parts[0])
+    if first < 0:
+        return -1
+    # In document order where the document allows it, anywhere where it does not. RFC 791 defines the
+    # End of Option List twice, once in the sec 3.1 table and once in the prose below it, and a comment
+    # assembling the definition from both - "This option indicates the end of the option list... This
+    # option occupies only 1 octet" - has quoted the document either way round. The claim an elision
+    # makes is that the parts are all there.
     at = first
     for part in parts[1:]:
-        if at < 0:
+        nxt = hay.find(part, at)
+        if nxt < 0:
+            nxt = hay.find(part)
+        if nxt < 0:
             return -1
-        at = hay.find(part, at)
-    return idx[first] if (at >= 0 and first >= 0) else -1
+        at = nxt
+    return idx[first]
 
 
 def line_of(text, flat_index):
