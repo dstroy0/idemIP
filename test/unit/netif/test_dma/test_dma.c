@@ -55,6 +55,7 @@ static uint16_t g_eng_len[ENGINE_Q];
 static unsigned g_eng_head;
 static unsigned g_eng_tail;
 static const uint8_t *g_eng_addr; // when set, the address rx_claim reports instead of the buffer's
+static int g_eng_no_addr;         // when set, rx_claim reports a length and no address at all
 static int g_released;
 
 static uint8_t *rx_buf_at(unsigned i)
@@ -115,7 +116,7 @@ static size_t fake_rx_claim(const uint8_t **frame)
     }
     unsigned k = g_eng_tail & (ENGINE_Q - 1u);
     g_eng_tail++;
-    *frame = (g_eng_addr != NULL) ? g_eng_addr : rx_buf_at(g_eng_idx[k]);
+    *frame = g_eng_no_addr ? NULL : ((g_eng_addr != NULL) ? g_eng_addr : rx_buf_at(g_eng_idx[k]));
     return g_eng_len[k];
 }
 static void fake_rx_release(void)
@@ -420,6 +421,34 @@ void test_an_uncleared_borrow_is_refused(void)
     memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
     Dma.pinned(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
+
+    // The five that name a descriptor read the ring out of those same bytes, so each refuses them
+    // before the index is used to reach one.
+    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
+    IDEMIP_DMA_IO(work_a)->desc_args.len = 64u;
+    Dma.rx_post(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status, "rx_post read an uncleared borrow");
+
+    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
+    Dma.pin(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status, "pin read an uncleared borrow");
+
+    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
+    Dma.unpin(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status, "unpin read an uncleared borrow");
+
+    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
+    IDEMIP_DMA_IO(work_a)->desc_args.len = 64u;
+    Dma.tx_post(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status, "tx_post read an uncleared borrow");
+
+    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    Dma.tx_reap(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status, "tx_reap read an uncleared borrow");
 }
 
 // A ring with no driver behind it has no cache maintenance and no buffers, so nothing may be taken
@@ -649,8 +678,7 @@ void test_rx_take_reports_the_descriptor_the_engine_filled(void)
     TEST_ASSERT_EQUAL_UINT8(3u, IDEMIP_DMA_IO(work_a)->index);
     TEST_ASSERT_EQUAL_PTR(rx_buf_at(3u), IDEMIP_DMA_IO(work_a)->buf);
     TEST_ASSERT_EQUAL_UINT16(100u, IDEMIP_DMA_IO(work_a)->len);
-    TEST_ASSERT_EQUAL_HEX16((uint16_t)(IDEMIP_DMA_FLAG_HELD | IDEMIP_DMA_FLAG_LAST),
-                            IDEMIP_DMA_IO(work_a)->flags);
+    TEST_ASSERT_EQUAL_HEX16((uint16_t)(IDEMIP_DMA_FLAG_HELD | IDEMIP_DMA_FLAG_LAST), IDEMIP_DMA_IO(work_a)->flags);
     TEST_ASSERT_EQUAL_HEX8(0x22u, IDEMIP_DMA_IO(work_a)->buf[0]);
 }
 
@@ -883,8 +911,7 @@ void test_a_pinned_frame_survives_the_ring_wrapping_past_it(void)
             Dma.rx_take(work_a);
             TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
             TEST_ASSERT_EQUAL_UINT8((uint8_t)i, IDEMIP_DMA_IO(work_a)->index);
-            TEST_ASSERT_TRUE_MESSAGE(IDEMIP_DMA_IO(work_a)->buf != pinned_buf,
-                                     "a pinned buffer was handed out again");
+            TEST_ASSERT_TRUE_MESSAGE(IDEMIP_DMA_IO(work_a)->buf != pinned_buf, "a pinned buffer was handed out again");
             post_rx(work_a, (uint8_t)i);
             TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
             expect_released++;
@@ -1094,4 +1121,120 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
     Dma.tx_post(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
     TEST_ASSERT_EQUAL_PTR(first_buf, IDEMIP_DMA_IO(work_a)->buf);
+}
+
+// --- the operands a ring cannot take --------------------------------------------
+
+// Every entry that names a descriptor reads the index out of the operand block and uses it to reach
+// one, so each holds it against its own ring's count first. The two rings are counted separately.
+void test_the_entries_refuse_an_index_past_their_own_ring(void)
+{
+    bind_ok(work_a);
+
+    IDEMIP_DMA_IO(work_a)->desc_args.index = (uint16_t)IDEMIP_RX_DESCRIPTORS;
+    IDEMIP_DMA_IO(work_a)->desc_args.len = 64u;
+    Dma.rx_post(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status,
+                                  "rx_post took an index past the receive ring");
+    Dma.pin(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status, "pin took an index past the receive ring");
+    Dma.unpin(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status,
+                                  "unpin took an index past the receive ring");
+
+    IDEMIP_DMA_IO(work_a)->desc_args.index = (uint16_t)IDEMIP_TX_DESCRIPTORS;
+    Dma.tx_post(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status,
+                                  "tx_post took an index past the transmit ring");
+}
+
+// A frame of no octets is not a frame, and RFC 894 fixes the largest one Ethernet carries, so a
+// length past that is not one either. A descriptor the caller never took is not one to post.
+void test_tx_post_refuses_a_length_that_is_not_a_frame_or_a_descriptor_it_does_not_hold(void)
+{
+    bind_ok(work_a);
+    Dma.tx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    const uint16_t held = IDEMIP_DMA_IO(work_a)->index;
+
+    IDEMIP_DMA_IO(work_a)->desc_args.index = held;
+    IDEMIP_DMA_IO(work_a)->desc_args.len = 0u;
+    Dma.tx_post(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status, "a frame of no octets was posted");
+
+    IDEMIP_DMA_IO(work_a)->desc_args.index = held;
+    IDEMIP_DMA_IO(work_a)->desc_args.len = (uint16_t)(IDEMIP_ETH_FRAME_MAX + 1u);
+    Dma.tx_post(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status,
+                                  "a frame longer than the link carries was posted");
+
+    // A descriptor of the ring that nobody took: the caller does not hold it, so it is not theirs to
+    // fill in and hand back.
+    IDEMIP_DMA_IO(work_a)->desc_args.index = (uint16_t)(held == 0u ? 1u : 0u);
+    IDEMIP_DMA_IO(work_a)->desc_args.len = 64u;
+    Dma.tx_post(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status,
+                                  "a descriptor the caller never took was posted");
+}
+
+// A descriptor the caller neither holds nor has pinned is not one to give back, whichever way it is
+// given: the pin count and the hold are what say it is out of the ring at all.
+void test_a_descriptor_that_is_neither_held_nor_pinned_is_not_given_back(void)
+{
+    bind_ok(work_a);
+
+    IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
+    Dma.pin(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status, "a descriptor nobody holds was pinned");
+    Dma.rx_post(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status,
+                                  "a descriptor nobody holds was handed back to the engine");
+}
+
+// The driver reports the length and the address of a claimed frame together, so a length with no
+// address behind it is not a frame this unit can hand on: it is BUSY, the same as no frame at all,
+// since the next claim may bring one.
+void test_a_claim_with_a_length_and_no_address_is_no_frame(void)
+{
+    bind_ok(work_a);
+    engine_fill(0u, 100u, 0x11u);
+    g_eng_no_addr = 1;
+    Dma.rx_take(work_a);
+    g_eng_no_addr = 0;
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DMA_IO(work_a)->status,
+                                  "a claim with no address behind it was taken as a frame");
+}
+
+// A frame handed back to the engine while a pin is still out on it is still pinned: the hold and the
+// pin count are separate, and either one keeps the descriptor out of the caller's reach. So a
+// descriptor that is no longer held can still be one a pin refers to.
+void test_a_descriptor_no_longer_held_can_still_be_one_a_pin_refers_to(void)
+{
+    bind_ok(work_a);
+    engine_fill(0u, 100u, 0x11u);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    const uint16_t desc = IDEMIP_DMA_IO(work_a)->index;
+
+    IDEMIP_DMA_IO(work_a)->desc_args.index = desc;
+    Dma.pin(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+
+    // Handed back with the pin still out: the buffer stays out of the ring until the pin goes.
+    IDEMIP_DMA_IO(work_a)->desc_args.index = desc;
+    Dma.rx_post(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+
+    // A second pin on it: no longer held, and still pinned, so it is still a descriptor to pin.
+    IDEMIP_DMA_IO(work_a)->desc_args.index = desc;
+    Dma.pin(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status,
+                                  "a descriptor with a pin still out was refused a second one");
+
+    IDEMIP_DMA_IO(work_a)->desc_args.index = desc;
+    Dma.unpin(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    IDEMIP_DMA_IO(work_a)->desc_args.index = desc;
+    Dma.unpin(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
 }

@@ -266,8 +266,7 @@ void idemip_dma_rx_post(uint8_t *work)
     }
     DmaIo *io = DMA_IO(work);
     io->status = IDEMIP_ERR;
-    if (DMA_CTX(work)->ready != DMA_READY || DMA_CTX(work)->drv == NULL ||
-        io->desc_args.index >= IDEMIP_RX_DESCRIPTORS)
+    if (DMA_CTX(work)->ready != DMA_READY || DMA_CTX(work)->drv == NULL || io->desc_args.index >= IDEMIP_RX_DESCRIPTORS)
     {
         return;
     }
@@ -305,8 +304,7 @@ void idemip_dma_pin(uint8_t *work)
     DmaIo *io = DMA_IO(work);
     io->status = IDEMIP_ERR;
     io->pins = 0u;
-    if (DMA_CTX(work)->ready != DMA_READY || DMA_CTX(work)->drv == NULL ||
-        io->desc_args.index >= IDEMIP_RX_DESCRIPTORS)
+    if (DMA_CTX(work)->ready != DMA_READY || DMA_CTX(work)->drv == NULL || io->desc_args.index >= IDEMIP_RX_DESCRIPTORS)
     {
         return;
     }
@@ -345,8 +343,7 @@ void idemip_dma_unpin(uint8_t *work)
     DmaIo *io = DMA_IO(work);
     io->status = IDEMIP_ERR;
     io->pins = 0u;
-    if (DMA_CTX(work)->ready != DMA_READY || DMA_CTX(work)->drv == NULL ||
-        io->desc_args.index >= IDEMIP_RX_DESCRIPTORS)
+    if (DMA_CTX(work)->ready != DMA_READY || DMA_CTX(work)->drv == NULL || io->desc_args.index >= IDEMIP_RX_DESCRIPTORS)
     {
         return;
     }
@@ -440,7 +437,11 @@ void idemip_dma_tx_post(uint8_t *work)
     }
     const DmaCtx *ctx = DMA_CTX(work);
     DmaDesc *d = DMA_TX_AT(work, io->desc_args.index);
-    if ((d->flags & (uint16_t)IDEMIP_DMA_FLAG_HELD) == 0u || d->buf == NULL)
+    // Not measured on the buffer: idemip_dma_bind gives every transmit descriptor its buffer out of
+    // the array the caller declared, and nothing clears it, so a descriptor the caller holds has one.
+    // It is written because the buffer is what the frame was written into and what is handed to the
+    // engine, and neither may be done through a null.
+    if ((d->flags & (uint16_t)IDEMIP_DMA_FLAG_HELD) == 0u || d->buf == NULL) // GCOVR_EXCL_BR_LINE
     {
         return;
     }
