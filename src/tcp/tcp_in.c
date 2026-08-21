@@ -112,10 +112,14 @@ static idemip_bool tcp_in_ts_lt(uint32_t s, uint32_t t)
 
 // RFC 5961 sec 3.2 step 3's "within the current receive window (RCV.NXT < SEG.SEQ <
 // RCV.NXT+RCV.WND)", which is the span that earns a challenge ACK rather than a reset.
+//
+// The open end is written out because sec 3.2's span is open at both ends, and it is not measured:
+// the only caller has already refused SEG.SEQ == RCV.NXT, which is the one sequence number the
+// distance can be zero for.
 static idemip_bool tcp_in_rst_in_window(uint32_t seq, uint32_t rcv_nxt, uint32_t rcv_wnd)
 {
     uint32_t at = tcp_in_from(seq, rcv_nxt);
-    return (at != 0u && at < rcv_wnd) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (at != 0u && at < rcv_wnd) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
 }
 
 // --- the replies -----------------------------------------------------------
@@ -552,7 +556,12 @@ void idemip_tcp_in_syn_sent(uint8_t *work)
         {
             tcp_in_check_urg(io);
             tcp_in_check_text(io);
-            if ((io->res.act & IDEMIP_TCP_IN_ACT_HOLD) == 0u)
+            // The seventh check holds the "Segments with higher beginning sequence numbers", and
+            // one arriving here has none: RCV.NXT was set to SEG.SEQ+1 four lines above, which is
+            // exactly where this segment's text begins. The guard is written because the eighth check must
+            // not run on a held segment wherever it is called from, and its held arm is not measured
+            // from here, because sec 3.10.7.3 leaves nothing for the seventh check to hold.
+            if ((io->res.act & IDEMIP_TCP_IN_ACT_HOLD) == 0u) // GCOVR_EXCL_BR_LINE
             {
                 tcp_in_check_fin(io);
             }
@@ -597,7 +606,11 @@ static idemip_bool tcp_in_check_rst(uint8_t *work, TcpInIo *io)
     // 2) "If the RST bit is set and the sequence number exactly matches the next expected sequence
     // number (RCV.NXT), then TCP endpoints MUST reset the connection in the manner prescribed below
     // according to the connection state."
-    switch (io->state)
+    //
+    // The arms are not measured on this line: gcov counts them here rather than at their labels, and
+    // the default below is unreachable for the reason written beside it. Every arm keeps its own
+    // line count.
+    switch (io->state) // GCOVR_EXCL_BR_LINE
     {
     case IDEMIP_TCP_STATE_SYN_RECEIVED:
         // "If this connection was initiated with a passive OPEN (i.e., came from the LISTEN state),
@@ -634,8 +647,12 @@ static idemip_bool tcp_in_check_rst(uint8_t *work, TcpInIo *io)
         io->state = IDEMIP_TCP_STATE_CLOSED;
         io->res.act |= IDEMIP_TCP_IN_ACT_FLUSH | IDEMIP_TCP_IN_ACT_DELETE;
         return IDEMIP_TRUE;
-    default:
-        return IDEMIP_TRUE;
+    // The eight arms above are the eight states this entry accepts; sec 3.10.7.1, sec 3.10.7.2 and
+    // sec 3.10.7.3 hold CLOSED, LISTEN and SYN-SENT and are refused at the door. The arm stays so
+    // that a state added later stops here rather than falling out of the switch, and it is not
+    // measured, because no call can arrive in a state the guard did not already pass.
+    default:                // GCOVR_EXCL_LINE
+        return IDEMIP_TRUE; // GCOVR_EXCL_LINE
     }
 }
 
@@ -863,6 +880,12 @@ static void tcp_in_check_text(TcpInIo *io)
     {
         // Every octet is older than RCV.NXT, or the segment begins past it. A segment that begins
         // past RCV.NXT is held; one entirely behind it is an old duplicate and only draws an ACK.
+        //
+        // Neither end of that span is measured. This entry is reached only for a segment sec 3.4
+        // Table 6 accepted, and with SEG.LEN > 0 that test is "RCV.NXT =< SEG.SEQ < RCV.NXT+RCV.WND"
+        // -- the same two ends. A segment failing either was answered and dropped before the seventh
+        // check. The test is written out because this function must hold on its own arguments.
+        // GCOVR_EXCL_BR_START
         if (tcp_in_from(seq, io->vars.rcv_nxt) != 0u && tcp_in_from(seq, io->vars.rcv_nxt) < io->vars.rcv_wnd)
         {
             io->res.text_seq = seq;
@@ -870,6 +893,7 @@ static void tcp_in_check_text(TcpInIo *io)
             io->res.text_len = io->seg.data_len;
             io->res.act |= IDEMIP_TCP_IN_ACT_HOLD;
         }
+        // GCOVR_EXCL_BR_STOP
         tcp_in_put_ack(io);
         return;
     }
@@ -912,7 +936,9 @@ static void tcp_in_check_fin(TcpInIo *io)
     io->vars.rcv_nxt++;
     io->res.act |= IDEMIP_TCP_IN_ACT_CLOSING;
     tcp_in_put_ack(io);
-    switch (io->state)
+    // Not measured on this line, for the reason written beside the TIME-WAIT arm below: gcov counts
+    // the arms here rather than at their labels. Every arm keeps its own line count.
+    switch (io->state) // GCOVR_EXCL_BR_LINE
     {
     case IDEMIP_TCP_STATE_SYN_RECEIVED:
     case IDEMIP_TCP_STATE_ESTABLISHED:
@@ -921,10 +947,19 @@ static void tcp_in_check_fin(TcpInIo *io)
     case IDEMIP_TCP_STATE_FIN_WAIT_1:
         // "If our FIN has been ACKed (perhaps in this segment), then enter TIME-WAIT, start the
         // time-wait timer, turn off the other timers; otherwise, enter the CLOSING state."
-        if (io->vars.snd_una == io->vars.snd_nxt)
+        //
+        // The first half is written because the RFC writes it, and it is not measured, because the
+        // fifth check reached it first: sec 3.10.7.4 fifth reads the same SND.UNA == SND.NXT and
+        // says "if the FIN segment is now acknowledged, then enter FIN-WAIT-2 and continue
+        // processing in that state", so a connection still in FIN-WAIT-1 here is one whose FIN is
+        // not acknowledged. Nothing between the fifth check and this one writes either variable.
+        // The TIME-WAIT half of the sentence is taken through the FIN-WAIT-2 arm below.
+        if (io->vars.snd_una == io->vars.snd_nxt) // GCOVR_EXCL_BR_LINE
         {
+            // GCOVR_EXCL_START
             io->state = IDEMIP_TCP_STATE_TIME_WAIT;
             tcp_in_put_2msl(io);
+            // GCOVR_EXCL_STOP
         }
         else
         {
@@ -936,10 +971,16 @@ static void tcp_in_check_fin(TcpInIo *io)
         io->state = IDEMIP_TCP_STATE_TIME_WAIT;
         tcp_in_put_2msl(io);
         return;
+    // "Remain in the TIME-WAIT state. Restart the 2 MSL time-wait timeout." The arm is written
+    // because sec 3.10.7.4 eighth writes it, and it is not measured, because sec 3.10.7.4 fifth
+    // answers TIME-WAIT itself -- "the only thing that can arrive in this state is a retransmission
+    // of the remote FIN. Acknowledge it, and restart the 2 MSL timeout." -- and stops processing
+    // there, which is where this build's restart is measured.
+    // GCOVR_EXCL_START
     case IDEMIP_TCP_STATE_TIME_WAIT:
-        // "Remain in the TIME-WAIT state. Restart the 2 MSL time-wait timeout."
         tcp_in_put_2msl(io);
         return;
+    // GCOVR_EXCL_STOP
     default:
         return; // CLOSE-WAIT, CLOSING and LAST-ACK each "Remain in the" state they are in.
     }
