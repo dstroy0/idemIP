@@ -418,6 +418,116 @@ static void rtr_set(uint8_t *w, const uint8_t *addr, uint16_t life_s)
     rtr_set_ll(w, addr, NULL, life_s);
 }
 
+// --- RFC 4861 sec 5.1, the tables are finite ---------------------------------
+
+// sec 5.1 gives a host a Neighbor Cache, a Destination Cache, a Prefix List and a Default Router List.
+// This build gives each of them a fixed number of entries, and what a call does when they are all
+// taken is BUSY rather than ERR: sec 6.3.5 times a neighbor out, sec 7.3.3 deletes one that never
+// answered, and a prefix or a router leaves when its lifetime runs down, so the room the caller asked
+// for arrives on a later tick and asking again is the right thing to do.
+static uint8_t g_many[24][IDEMIP_IP6_ADDR_LEN];
+
+// 2001:DB8::n, out of the range RFC 3849 reserves for documentation.
+static const uint8_t *nth(unsigned n)
+{
+    uint8_t *a = g_many[n];
+    memset(a, 0, IDEMIP_IP6_ADDR_LEN);
+    a[0] = 0x20u;
+    a[1] = 0x01u;
+    a[2] = 0x0Du;
+    a[3] = 0xB8u;
+    a[7] = (uint8_t)(n + 1u);  // inside the /64, so two of these are two prefixes
+    a[15] = (uint8_t)(n + 1u); // and inside the interface identifier, so two addresses
+    return a;
+}
+
+void test_a_full_destination_cache_is_busy(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    uint8_t nb = nb_set(work_a, g_addr_a, g_lladdr, IDEMIP_ND6_REACHABLE, T, T, T);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    for (unsigned i = 0; i < (unsigned)IDEMIP_ND6_NUM_DESTINATIONS; i++)
+    {
+        Nd6Io *io = IDEMIP_ND6_IO(work_a);
+        io->dest_args.dst = nth(i);
+        io->dest_args.next_hop = g_addr_a;
+        io->dest_args.pmtu = 0u;
+        io->dest_args.neighbor = nb;
+        Nd6.dest_set(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    }
+
+    Nd6Io *io = IDEMIP_ND6_IO(work_a);
+    io->dest_args.dst = nth((unsigned)IDEMIP_ND6_NUM_DESTINATIONS);
+    io->dest_args.next_hop = g_addr_a;
+    io->dest_args.pmtu = 0u;
+    io->dest_args.neighbor = nb;
+    Nd6.dest_set(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, io->status, "a full Destination Cache is BUSY, not ERR");
+}
+
+// sec 5.1's Destination Cache "maps a destination IP address to the IP address of the next-hop
+// neighbor", so an entry that names no next hop is not one this cache can hold. Nothing is written and
+// the call reports nothing, which is what tells it from the full case above.
+void test_a_destination_with_no_next_hop_is_not_recorded(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    Nd6Io *io = IDEMIP_ND6_IO(work_a);
+    io->dest_args.dst = g_in64;
+    io->dest_args.next_hop = NULL;
+    io->dest_args.pmtu = 0u;
+    io->dest_args.neighbor = IDEMIP_ND6_NONE;
+    Nd6.dest_set(work_a);
+
+    io->dest_args.dst = g_in64;
+    Nd6.dest_find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "a destination with no next hop was recorded");
+}
+
+void test_a_full_prefix_list_is_busy(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    for (unsigned i = 0; i < (unsigned)IDEMIP_ND6_NUM_PREFIXES; i++)
+    {
+        pfx_set(work_a, nth(i), 64u, 1800u, T);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    }
+    pfx_set(work_a, nth((unsigned)IDEMIP_ND6_NUM_PREFIXES), 64u, 1800u, T);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_ND6_IO(work_a)->status,
+                                  "a full Prefix List is BUSY: a prefix leaves when its lifetime runs down");
+}
+
+// sec 6.1.2's first validity check: "IP Source Address is a link-local address. Routers must use their
+// link-local address as the source for Router Advertisement and Redirect messages so that hosts can
+// uniquely identify routers." So a router is named by an fe80:: address and nothing else.
+static const uint8_t *nth_ll(unsigned n)
+{
+    uint8_t *a = g_many[n];
+    memset(a, 0, IDEMIP_IP6_ADDR_LEN);
+    a[0] = 0xFEu;
+    a[1] = 0x80u;
+    a[15] = (uint8_t)(n + 1u);
+    return a;
+}
+
+void test_a_full_default_router_list_is_busy(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    for (unsigned i = 0; i < (unsigned)IDEMIP_ND6_NUM_ROUTERS; i++)
+    {
+        rtr_set_ll(work_a, nth_ll(i), g_lladdr, 1800u); // sec 6.3.4 records the router as a neighbor
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    }
+    rtr_set_ll(work_a, nth_ll((unsigned)IDEMIP_ND6_NUM_ROUTERS), g_lladdr, 1800u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_ND6_IO(work_a)->status,
+                                  "a full Default Router List is BUSY, not ERR");
+}
+
 // RFC 4861 sec 4.6.2: "if the L flag is not set a host MUST NOT conclude that an address derived from
 // the prefix is off-link. That is, it MUST NOT update a previous indication that the address is
 // on-link." sec 6.3.4 gives the one way to cancel it: "advertise that prefix with the L-bit set and
