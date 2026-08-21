@@ -764,6 +764,276 @@ void test_a_push_with_every_queue_entry_held_elsewhere_is_busy(void)
                                      "the oldest entry's descriptor did not come back to be unpinned");
 }
 
+// --- sec 7.3.3, deleting an entry and everything that pointed at it ---------
+
+// RFC 4861 sec 7.3.3: "Neighbor Unreachability Detection signals the need for next-hop determination
+// by deleting a Neighbor Cache entry", and sec 6.3.5 of a router that goes with it: "the node MUST
+// update the Destination Cache in such a way that all entries using the router perform next-hop
+// determination again". The entry, its Default Router List row, the Destination Cache entries reached
+// through it and the frames queued in front of it all go together - a queued frame first, so its
+// descriptor comes back to be unpinned, which is what sec 7.2.2 answers a failed resolution with:
+// "The sender MUST return ICMP destination unreachable indications with code 3 (Address
+// Unreachable) for each packet queued awaiting address resolution."
+void test_deleting_a_neighbor_takes_its_router_its_destinations_and_its_queue(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    rtr_set_ll(work_a, g_addr_a, g_lladdr, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    const uint8_t ni = IDEMIP_ND6_IO(work_a)->neighbor;
+    TEST_ASSERT_NOT_EQUAL_UINT8(IDEMIP_ND6_NONE, ni);
+
+    Nd6Io *io = IDEMIP_ND6_IO(work_a);
+    io->dest_args.dst = g_in64;
+    io->dest_args.next_hop = g_addr_a;
+    io->dest_args.pmtu = 0u;
+    io->dest_args.neighbor = ni;
+    Nd6.dest_set(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    push(work_a, ni, 21u, 100u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+
+    // The queued frame comes back first, and the entry is still there to be asked again.
+    nb_index(work_a, ni);
+    Nd6.neighbor_remove(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, io->status, "the queued frame did not come back before the entry");
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(21u, io->desc, "the descriptor the frame pins was not reported");
+
+    nb_index(work_a, ni);
+    Nd6.neighbor_remove(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, io->status, "the empty queue did not free the entry");
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, nb_find(work_a, g_addr_a), "the Neighbor Cache entry is still there");
+    io->dest_args.dst = g_in64;
+    Nd6.dest_find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "a destination through the deleted entry survived it");
+    Nd6.router_select(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "the Default Router List row survived its neighbor");
+
+    // And every table is empty again, which the counters say by letting a full set be taken.
+    for (unsigned int i = 0u; i < (unsigned int)IDEMIP_ND6_NUM_NEIGHBORS; i++)
+    {
+        (void)nb_set(work_a, nth(i), nth_ll(i), IDEMIP_ND6_REACHABLE, F, T, T);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, io->status, "a slot the deletion should have freed was still held");
+    }
+}
+
+// The same deletion reached the other way: sec 7.3.3 has the tick delete an entry whose solicitations
+// go unanswered, and a Destination Cache entry naming it is freed by the sweep rather than by the
+// call. Nothing else in the cache is disturbed.
+void test_the_sweep_frees_a_destination_whose_next_hop_was_deleted(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    const uint8_t gone = nb_set(work_a, g_addr_a, g_lladdr, IDEMIP_ND6_REACHABLE, F, T, T);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    const uint8_t kept = nb_set(work_a, g_addr_b, g_lladdr_2, IDEMIP_ND6_REACHABLE, F, T, T);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    Nd6Io *io = IDEMIP_ND6_IO(work_a);
+    io->dest_args.dst = g_in64;
+    io->dest_args.next_hop = g_addr_a;
+    io->dest_args.pmtu = 0u;
+    io->dest_args.neighbor = gone;
+    Nd6.dest_set(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    io->dest_args.dst = g_addr_b;
+    io->dest_args.next_hop = g_addr_b;
+    io->dest_args.pmtu = 0u;
+    io->dest_args.neighbor = kept;
+    Nd6.dest_set(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+
+    nb_index(work_a, gone);
+    Nd6.neighbor_remove(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+
+    at(work_a, 1u);
+    Nd6.tick(work_a);
+
+    io->dest_args.dst = g_in64;
+    Nd6.dest_find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "a destination whose next hop is gone was kept");
+    io->dest_args.dst = g_addr_b;
+    Nd6.dest_find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, io->status, "the sweep took a destination whose next hop is still there");
+}
+
+// A queue entry that is not the head of its neighbor's list. Entries come off one table and are
+// handed out lowest free first, so a pop followed by a push puts the freed entry back at the tail:
+// the neighbor's list runs high index to low, and the sweep, which walks the table in index order,
+// meets the tail first. The list has to be re-threaded around it rather than truncated at it.
+void test_a_queued_frame_released_from_the_middle_of_its_list_leaves_the_rest_threaded(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    const uint8_t ni = nb_set(work_a, g_addr_a, NULL, IDEMIP_ND6_INCOMPLETE, F, F, F);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    push(work_a, ni, 31u, 100u); // entry 0
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    push(work_a, ni, 32u, 100u); // entry 1
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    push(work_a, ni, 33u, 100u); // entry 2
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    // The head comes off, freeing entry 0, and the next push takes it back as the tail: the list is
+    // now 1, 2, 0 and the sweep will reach 0 before either of the others.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, pop(work_a, ni));
+    TEST_ASSERT_EQUAL_UINT16(31u, IDEMIP_ND6_IO(work_a)->desc);
+    push(work_a, ni, 34u, 100u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    // Past every deadline, so the sweep hands one frame back per call. The tail goes first, and the
+    // two in front of it are still reachable afterwards, in order.
+    at(work_a, 0xFFFFFu);
+    Nd6.tick(work_a);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(34u, IDEMIP_ND6_IO(work_a)->desc, "the sweep did not reach the tail first");
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, pop(work_a, ni));
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(32u, IDEMIP_ND6_IO(work_a)->desc, "the list was cut at the released entry");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, pop(work_a, ni));
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(33u, IDEMIP_ND6_IO(work_a)->desc, "the entry behind the released one was lost");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, pop(work_a, ni), "the released entry was still on the list");
+}
+
+// RFC 4861 sec 5.1's Destination Cache entry names a next hop, and the caller says which: the index
+// comes in through the operand block, so it can name a Neighbor Cache entry that sec 7.3.3 has since
+// deleted. The sweep is what catches that - "Neighbor Unreachability Detection signals the need for
+// next-hop determination by deleting a Neighbor Cache entry" - and the destination goes with it
+// however it came to name a row that is gone.
+void test_the_sweep_frees_a_destination_naming_a_neighbor_row_that_is_gone(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    const uint8_t ni = nb_set(work_a, g_addr_a, g_lladdr, IDEMIP_ND6_REACHABLE, F, T, T);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    nb_index(work_a, ni);
+    Nd6.neighbor_remove(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    // The caller still holds the index it was given, and records a destination through it.
+    Nd6Io *io = IDEMIP_ND6_IO(work_a);
+    io->dest_args.dst = g_in64;
+    io->dest_args.next_hop = g_addr_a;
+    io->dest_args.pmtu = 1280u;
+    io->dest_args.neighbor = ni;
+    Nd6.dest_set(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+
+    at(work_a, 1u);
+    Nd6.tick(work_a);
+
+    io->dest_args.dst = g_in64;
+    Nd6.dest_find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "a destination naming a deleted row was kept");
+}
+
+// RFC 4861 sec 6.3.2: "BaseReachableTime ... Default: REACHABLE_TIME milliseconds", and sec 10 puts
+// REACHABLE_TIME at 30,000 milliseconds. A host that has heard no Router Advertisement has never been
+// told another value, so the draw sec 6.3.2 asks for - "a uniformly distributed random value between
+// MIN_RANDOM_FACTOR and MAX_RANDOM_FACTOR times BaseReachableTime" - is taken over the default.
+void test_the_reachable_time_is_drawn_over_the_default_base_until_a_router_names_one(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    IDEMIP_ND6_IO(work_a)->tick_args.rand = 0x5A5A5A5Au;
+    Nd6.tick(work_a);
+
+    // params_set is what reports ReachableTime, and one naming no value of its own leaves the draw
+    // the tick above made.
+    memset(&IDEMIP_ND6_IO(work_a)->params_args, 0, sizeof IDEMIP_ND6_IO(work_a)->params_args);
+    Nd6.params_set(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    const uint32_t drawn = IDEMIP_ND6_IO(work_a)->reachable_ms;
+    const uint32_t base = (uint32_t)IDEMIP_ND6_REACHABLE_TIME_MS;
+    TEST_ASSERT_TRUE_MESSAGE(drawn >= (base / 2u), "the draw fell below MIN_RANDOM_FACTOR of the default base");
+    TEST_ASSERT_TRUE_MESSAGE(drawn <= (base * 3u / 2u), "the draw rose above MAX_RANDOM_FACTOR of the default base");
+}
+
+// RFC 4291 sec 2.5.6 gives a link-local address the prefix FE80::/10: the first ten bits are
+// 1111111010, so the first octet is 0xFE and the top two bits of the second are 10. RFC 4861
+// sec 6.1.2 requires a Router Advertisement's source to be one, and an address matching the first
+// octet but not the two bits - a site-local FEC0::/10, which RFC 3879 deprecated - is not one.
+void test_an_address_matching_only_the_first_octet_is_not_link_local(void)
+{
+    static const uint8_t site_local[IDEMIP_IP6_ADDR_LEN] = {0xFEu, 0xC0u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01u};
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    rtr_set_ll(work_a, site_local, g_lladdr, 1800u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status,
+                                  "a site-local address was taken as link-local");
+    Nd6.router_select(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status, "it reached the Default Router List");
+}
+
+// A Prefix Length below eight has no whole octets at all, so sec 5.2's match is the masked bits
+// alone. 2000::/3 is the range RFC 4291 sec 2.4 gives to global unicast.
+void test_a_prefix_length_below_one_octet_matches_on_its_bits_alone(void)
+{
+    static const uint8_t global[IDEMIP_IP6_ADDR_LEN] = {0x20u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    static const uint8_t under[IDEMIP_IP6_ADDR_LEN] = {0x3Fu, 0xFFu, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01u};
+    static const uint8_t over[IDEMIP_IP6_ADDR_LEN] = {0x40u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01u};
+
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    pfx_set(work_a, global, 3u, 1800u, T);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(on_link_of(work_a, under), "the three bits were not compared");
+    TEST_ASSERT_FALSE_MESSAGE(on_link_of(work_a, over), "an address outside the three bits was taken as on-link");
+}
+
+// sec 4.6.2's L bit: "When set, indicates that this prefix can be used for on-link determination." A
+// prefix whose L bit is clear is not on the list an address is matched against, so an address it
+// covers is on-link only if some other prefix says so.
+void test_a_prefix_without_the_on_link_bit_is_not_matched_against(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    pfx_set(work_a, g_in64, 64u, 1800u, F);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(on_link_of(work_a, g_in64), "a prefix with the L bit clear decided on-link");
+
+    pfx_set(work_a, g_in64, 64u, 1800u, T);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(on_link_of(work_a, g_in64), "the same prefix with the L bit set decided nothing");
+}
+
+// sec 5.1's Destination Cache entry holds a next hop, a path MTU and a Neighbor Cache index, and a
+// caller updating one of them leaves the others as they stand: a Packet Too Big carries a MTU and no
+// next hop, and next-hop determination carries a next hop and no MTU.
+void test_a_destination_update_naming_no_next_hop_leaves_the_one_it_has(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    const uint8_t ni = nb_set(work_a, g_addr_a, g_lladdr, IDEMIP_ND6_REACHABLE, T, T, T);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    Nd6Io *io = IDEMIP_ND6_IO(work_a);
+    io->dest_args.dst = g_in64;
+    io->dest_args.next_hop = g_addr_a;
+    io->dest_args.pmtu = 1500u;
+    io->dest_args.neighbor = ni;
+    Nd6.dest_set(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+
+    // The same destination again, carrying only a smaller path MTU.
+    io->dest_args.dst = g_in64;
+    io->dest_args.next_hop = NULL;
+    io->dest_args.pmtu = 1280u;
+    io->dest_args.neighbor = IDEMIP_ND6_NONE;
+    Nd6.dest_set(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1280u, io->pmtu, "the path MTU the update carried was not taken");
+
+    io->dest_args.dst = g_in64;
+    Nd6.dest_find(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(ni, io->neighbor, "the next hop was forgotten by an update that named none");
+    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(g_addr_a, io->next_hop, IDEMIP_IP6_ADDR_LEN,
+                                     "the next-hop address was overwritten with nothing");
+}
+
 // --- what the entries refuse -------------------------------------------------
 
 // Every entry that names an address takes it as a pointer, and the caller can have none to give: a
