@@ -1330,7 +1330,13 @@ void idemip_tcp_pcb_oos_alloc(uint8_t *work)
         io->status = IDEMIP_OK;
         return;
     }
-    io->status = IDEMIP_BUSY; // every held-segment entry taken, and an oos_free returns one
+    // Unreachable while the table is sized as it is, and it is sized this way on purpose:
+    // TCP_PCB_OOSEQ_ENTRIES is IDEMIP_TCP_PCBS * IDEMIP_TCP_OOSEQ_SEGS, so for this search to come up
+    // empty every TCB would have to be holding its own maximum - and then the calling TCB is one of
+    // them and returned at the held >= IDEMIP_TCP_OOSEQ_SEGS check above. The per-TCB bound always
+    // binds first. The arm stays because the search is written to be able to fail and a reader should
+    // see what it would report; it is not measured, because no frame can produce it.
+    io->status = IDEMIP_BUSY; // GCOVR_EXCL_LINE
 }
 
 // RFC 9293 sec 3.10.7.4, reporting one held segment's SEG.SEQ and SEG.LEN.

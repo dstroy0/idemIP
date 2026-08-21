@@ -899,6 +899,39 @@ void test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned(void)
                                     "the abandoned datagram's row was never freed");
 }
 
+// The same abandonment with the fragments in two descriptors, which is the ordinary case: a datagram
+// is only fragmented because it did not fit in one. RFC 8200 sec 4.5's ICMP Time Exceeded is owed "If
+// the first fragment (i.e., the one with a Fragment Offset of zero) has been received", so the sweep
+// keeps that descriptor to hand back with the datagram and unpins every other fragment where it finds
+// it. With one fragment the second half of that split never runs.
+void test_an_expired_ipv6_datagram_returns_the_descriptors_of_every_fragment(void)
+{
+    give_the_interface_an_ipv6_address();
+
+    uint16_t len = fill_ip6_fragment(0u, 0u, IDEMIP_TRUE);
+    engine_queue(0u, len);
+    // Offset 2 * TICK_TEST_DATA leaves a hole the missing middle fragment would fill, so the datagram
+    // is held rather than completed.
+    len = fill_ip6_fragment(1u, (uint16_t)(TICK_TEST_DATA * 2u), IDEMIP_TRUE);
+    engine_queue(1u, len);
+
+    open_tick(work_a, 1000u);
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.drain));
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(2u, IDEMIP_DMA_IO(dma_mem)->pinned,
+                                     "both fragments should be held, and neither completes the datagram");
+
+    open_tick(work_a, 1000u + IDEMIP_IP6_REASS_MAXAGE_MS);
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.drain));
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.service));
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.flush));
+
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(dma_mem)->pinned,
+                                     "an abandoned datagram kept a descriptor one of its fragments pinned");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(2, g_released, "both descriptors go back to the ring, not just the first");
+}
+
 // The same datagram, completed instead of abandoned: the descriptors stay pinned, because the
 // caller has not yet read the reassembled packet out of them.
 void test_a_completed_ipv6_datagram_still_holds_its_descriptors(void)
