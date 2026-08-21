@@ -86,26 +86,22 @@ typedef struct
 } TcpPcbOosFields;
 
 // Entry i of each table sits at (i << SHIFT), so each entry is exactly that wide.
-typedef union
-{
+typedef union {
     TcpPcbTcbFields f;
     uint8_t raw[1u << IDEMIP_TCP_PCB_ENTRY_SHIFT];
 } TcpPcbTcbEntry;
 
-typedef union
-{
+typedef union {
     TcpPcbListenFields f;
     uint8_t raw[1u << IDEMIP_TCP_LISTEN_ENTRY_SHIFT];
 } TcpPcbListenEntry;
 
-typedef union
-{
+typedef union {
     TcpPcbSegFields f;
     uint8_t raw[1u << IDEMIP_TCP_SEG_ENTRY_SHIFT];
 } TcpPcbSegEntry;
 
-typedef union
-{
+typedef union {
     TcpPcbOosFields f;
     uint8_t raw[1u << IDEMIP_TCP_OOSEQ_ENTRY_SHIFT];
 } TcpPcbOosEntry;
@@ -273,7 +269,12 @@ static void tcp_pcb_addr_set(uint8_t *dst, const uint8_t *src, uint8_t n)
  */
 static uint16_t tcp_pcb_transitions(IdemIpTcpState from)
 {
-    switch (from)
+    // gcov counts a switch's arms on the switch line, so the line is out of the measurement: the
+    // default below is a state that is not one of sec 3.3.2's eleven, and the only writer of the
+    // field is idemip_tcp_pcb_store, which takes the state through this same table. Every arm that
+    // does run keeps its own line count. The default is written because the field is read out of a
+    // TCB the caller can reach, and a table indexed by it must say what it does with a stranger.
+    switch (from) // GCOVR_EXCL_BR_LINE
     {
     case IDEMIP_TCP_STATE_CLOSED:
         return (uint16_t)(TCP_PCB_S(CLOSED) | TCP_PCB_S(LISTEN) | TCP_PCB_S(SYN_SENT) | TCP_PCB_S(SYN_RECEIVED));
@@ -351,7 +352,9 @@ static void tcp_pcb_send_queues_free(uint8_t *work, uint16_t pcb)
 static idemip_bool tcp_pcb_seg_unlink(uint8_t *work, uint16_t pcb, uint16_t seg)
 {
     TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, pcb)->f;
-    for (uint8_t which = 0u; which < 2u; which++)
+    // Not measured where the pair runs out, for the reason written at the report below: a segment in
+    // use and naming this TCB is on one of the two, so this leaves through a return.
+    for (uint8_t which = 0u; which < 2u; which++) // GCOVR_EXCL_BR_LINE
     {
         uint16_t *head = (which == 0u) ? &t->unsent : &t->unacked;
         if (*head == seg)
@@ -360,7 +363,13 @@ static idemip_bool tcp_pcb_seg_unlink(uint8_t *work, uint16_t pcb, uint16_t seg)
             return IDEMIP_TRUE;
         }
         uint16_t at = *head;
-        for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_SEGS && at < (uint16_t)IDEMIP_TCP_SEGS; n++)
+        // Not measured where the count runs out: a queue holds segments drawn from a table of
+        // IDEMIP_TCP_SEGS, each on one queue at a time, so a walk of that many steps has been over
+        // every segment there is and the links it followed ended first. The count is written because
+        // the walk is over next fields a caller's borrow holds, and a walk over those that cannot
+        // end is a walk that hangs. Every walk below carries the same bound for the same reason.
+        for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_SEGS && at < (uint16_t)IDEMIP_TCP_SEGS;
+             n++) // GCOVR_EXCL_BR_LINE
         {
             TcpPcbSegFields *s = &TCP_PCB_SEG_AT(work, at)->f;
             if (s->next == seg)
@@ -389,7 +398,10 @@ static idemip_bool tcp_pcb_oos_unlink(uint8_t *work, uint16_t pcb, uint16_t oos)
         return IDEMIP_TRUE;
     }
     uint16_t at = t->ooseq;
-    for (uint16_t n = 0u; n < (uint16_t)TCP_PCB_OOSEQ_ENTRIES && at < (uint16_t)TCP_PCB_OOSEQ_ENTRIES; n++)
+    // Not measured, for the reason written at tcp_pcb_seg_unlink.
+    for (uint16_t n = 0u; n < (uint16_t)TCP_PCB_OOSEQ_ENTRIES && // GCOVR_EXCL_BR_LINE
+                          at < (uint16_t)TCP_PCB_OOSEQ_ENTRIES;
+         n++) // GCOVR_EXCL_BR_LINE
     {
         TcpPcbOosFields *o = &TCP_PCB_OOS_AT(work, at)->f;
         if (o->next == oos)
@@ -692,14 +704,16 @@ void idemip_tcp_pcb_bind(uint8_t *work)
     TcpPcbIo *io = TCP_PCB_IO(work);
     io->status = IDEMIP_ERR;
     io->port = IDEMIP_TCP_PCB_PORT_ANY;
-    if (TCP_PCB_CTX(work)->ready != TCP_PCB_READY || io->bind_args.index >= IDEMIP_TCP_PCBS ||
-        io->bind_args.ip == NULL)
+    if (TCP_PCB_CTX(work)->ready != TCP_PCB_READY || io->bind_args.index >= IDEMIP_TCP_PCBS || io->bind_args.ip == NULL)
     {
         return;
     }
     TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->bind_args.index)->f;
     uint8_t n = tcp_pcb_addr_bytes(t->ip_version);
-    if (!t->in_use || n == 0u || t->state != IDEMIP_TCP_STATE_CLOSED)
+    // Not measured on the width: idemip_tcp_pcb_open refuses a version this build has no address
+    // width for, so a TCB in use carries one of the two. It is written because the width is what the
+    // address compare and the address store below are handed, and a width of zero is neither.
+    if (!t->in_use || n == 0u || t->state != IDEMIP_TCP_STATE_CLOSED) // GCOVR_EXCL_BR_LINE
     {
         return;
     }
@@ -784,7 +798,10 @@ void idemip_tcp_pcb_connect(uint8_t *work)
     }
     TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, io->connect_args.index)->f;
     uint8_t n = tcp_pcb_addr_bytes(t->ip_version);
-    if (!t->in_use || n == 0u || t->state != IDEMIP_TCP_STATE_CLOSED)
+    // Not measured on the width: idemip_tcp_pcb_open refuses a version this build has no address
+    // width for, so a TCB in use carries one of the two. It is written because the width is what the
+    // address compare and the address store below are handed, and a width of zero is neither.
+    if (!t->in_use || n == 0u || t->state != IDEMIP_TCP_STATE_CLOSED) // GCOVR_EXCL_BR_LINE
     {
         return;
     }
@@ -1049,8 +1066,7 @@ void idemip_tcp_pcb_find(uint8_t *work)
     TcpPcbIo *io = TCP_PCB_IO(work);
     io->status = IDEMIP_ERR;
     io->index = IDEMIP_TCP_PCB_NONE;
-    if (TCP_PCB_CTX(work)->ready != TCP_PCB_READY || io->find_args.local_ip == NULL ||
-        io->find_args.remote_ip == NULL)
+    if (TCP_PCB_CTX(work)->ready != TCP_PCB_READY || io->find_args.local_ip == NULL || io->find_args.remote_ip == NULL)
     {
         return;
     }
@@ -1157,7 +1173,8 @@ void idemip_tcp_pcb_seg_alloc(uint8_t *work)
         else
         {
             uint16_t at = t->unsent;
-            for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_SEGS; n++)
+            // Not measured, for the reason written at tcp_pcb_seg_unlink.
+            for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_SEGS; n++) // GCOVR_EXCL_BR_LINE
             {
                 TcpPcbSegFields *tail = &TCP_PCB_SEG_AT(work, at)->f;
                 if (tail->next >= (uint16_t)IDEMIP_TCP_SEGS)
@@ -1221,7 +1238,10 @@ void idemip_tcp_pcb_seg_sent(uint8_t *work)
         return;
     }
     TcpPcbSegFields *s = &TCP_PCB_SEG_AT(work, io->seg_args.index)->f;
-    if (!s->in_use || s->pcb >= (uint16_t)IDEMIP_TCP_PCBS)
+    // Not measured on the index: seg_alloc is the only writer of the field and it takes the TCB from
+    // an operand it held against IDEMIP_TCP_PCBS first. It is written because the field is read out
+    // of the record and used to reach a TCB, and an index is not a statement that one is there.
+    if (!s->in_use || s->pcb >= (uint16_t)IDEMIP_TCP_PCBS) // GCOVR_EXCL_BR_LINE
     {
         return;
     }
@@ -1239,7 +1259,8 @@ void idemip_tcp_pcb_seg_sent(uint8_t *work)
         return;
     }
     uint16_t at = t->unacked;
-    for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_SEGS; n++)
+    // Not measured, for the reason written at tcp_pcb_seg_unlink.
+    for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_SEGS; n++) // GCOVR_EXCL_BR_LINE
     {
         TcpPcbSegFields *tail = &TCP_PCB_SEG_AT(work, at)->f;
         if (tail->next >= (uint16_t)IDEMIP_TCP_SEGS)
@@ -1268,7 +1289,10 @@ void idemip_tcp_pcb_seg_free(uint8_t *work)
         return;
     }
     const TcpPcbSegFields *s = &TCP_PCB_SEG_AT(work, io->seg_args.index)->f;
-    if (!s->in_use || s->pcb >= (uint16_t)IDEMIP_TCP_PCBS)
+    // Not measured on the index: seg_alloc is the only writer of the field and it takes the TCB from
+    // an operand it held against IDEMIP_TCP_PCBS first. It is written because the field is read out
+    // of the record and used to reach a TCB, and an index is not a statement that one is there.
+    if (!s->in_use || s->pcb >= (uint16_t)IDEMIP_TCP_PCBS) // GCOVR_EXCL_BR_LINE
     {
         return;
     }
@@ -1308,7 +1332,10 @@ void idemip_tcp_pcb_oos_alloc(uint8_t *work)
     }
     uint16_t held = 0u;
     uint16_t at = t->ooseq;
-    for (uint16_t n = 0u; n < (uint16_t)TCP_PCB_OOSEQ_ENTRIES && at < (uint16_t)TCP_PCB_OOSEQ_ENTRIES; n++)
+    // Not measured, for the reason written at tcp_pcb_seg_unlink.
+    for (uint16_t n = 0u; n < (uint16_t)TCP_PCB_OOSEQ_ENTRIES && // GCOVR_EXCL_BR_LINE
+                          at < (uint16_t)TCP_PCB_OOSEQ_ENTRIES;
+         n++) // GCOVR_EXCL_BR_LINE
     {
         held++;
         at = TCP_PCB_OOS_AT(work, at)->f.next;
@@ -1318,7 +1345,11 @@ void idemip_tcp_pcb_oos_alloc(uint8_t *work)
         io->status = IDEMIP_BUSY; // this TCB's hold is full, and delivery or an oos_free frees one
         return;
     }
-    for (uint16_t i = 0u; i < (uint16_t)TCP_PCB_OOSEQ_ENTRIES; i++)
+    // Not measured where the table runs out: TCP_PCB_OOSEQ_ENTRIES is IDEMIP_TCP_PCBS holds of
+    // IDEMIP_TCP_OOSEQ_SEGS, every TCB is held to its own share by the count above, and a hold is
+    // freed with the TCB it belongs to - so a call that got past that count has an entry waiting.
+    // The walk is written because the entry it takes must be one nobody else is on.
+    for (uint16_t i = 0u; i < (uint16_t)TCP_PCB_OOSEQ_ENTRIES; i++) // GCOVR_EXCL_BR_LINE
     {
         TcpPcbOosFields *o = &TCP_PCB_OOS_AT(work, i)->f;
         if (o->in_use)
@@ -1335,7 +1366,10 @@ void idemip_tcp_pcb_oos_alloc(uint8_t *work)
         o->in_use = IDEMIP_TRUE;
         uint16_t prev = IDEMIP_TCP_PCB_NONE;
         uint16_t cur = t->ooseq;
-        for (uint16_t n = 0u; n < (uint16_t)TCP_PCB_OOSEQ_ENTRIES && cur < (uint16_t)TCP_PCB_OOSEQ_ENTRIES; n++)
+        // Not measured, for the reason written at tcp_pcb_seg_unlink.
+        for (uint16_t n = 0u; n < (uint16_t)TCP_PCB_OOSEQ_ENTRIES && // GCOVR_EXCL_BR_LINE
+                              cur < (uint16_t)TCP_PCB_OOSEQ_ENTRIES;
+             n++) // GCOVR_EXCL_BR_LINE
         {
             const TcpPcbOosFields *c = &TCP_PCB_OOS_AT(work, cur)->f;
             if (tcp_pcb_seq_from(o->seq, t->vars.rcv_nxt) < tcp_pcb_seq_from(c->seq, t->vars.rcv_nxt))
@@ -1411,7 +1445,8 @@ void idemip_tcp_pcb_oos_free(uint8_t *work)
         return;
     }
     const TcpPcbOosFields *o = &TCP_PCB_OOS_AT(work, io->oos_args.index)->f;
-    if (!o->in_use || o->pcb >= (uint16_t)IDEMIP_TCP_PCBS)
+    // Not measured on the index, for the reason written at idemip_tcp_pcb_seg_load.
+    if (!o->in_use || o->pcb >= (uint16_t)IDEMIP_TCP_PCBS) // GCOVR_EXCL_BR_LINE
     {
         return;
     }

@@ -182,6 +182,12 @@ void test_an_uncleared_borrow_is_refused(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TCP_PCB_IO(work_a)->status);
     TcpPcb.oos_free(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TCP_PCB_IO(work_a)->status);
+    TcpPcb.opt(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TCP_PCB_IO(work_a)->status);
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TCP_PCB_IO(work_a)->status);
+    TcpPcb.seg_sent(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TCP_PCB_IO(work_a)->status);
 }
 
 // --- clear -------------------------------------------------------------------
@@ -571,7 +577,6 @@ void test_the_out_of_order_table_holds_what_the_pin_bound_counts(void)
 // tests the RFC 9293 logic, with the vectors the RFC's own figures print.
 // =============================================================================
 
-
 // A store carries the whole variable set, so a caller loads, adjusts and stores. That is the shape
 // every behavior case below uses.
 static IdemIpStatus put_state(uint8_t *w, uint16_t idx, IdemIpTcpState s)
@@ -603,18 +608,14 @@ static const IdemIpTcpState g_path[IDEMIP_TCP_STATES][4] = {
     /* ESTABLISHED  */ {IDEMIP_TCP_STATE_SYN_SENT, IDEMIP_TCP_STATE_ESTABLISHED},
     /* FIN-WAIT-1   */ {IDEMIP_TCP_STATE_SYN_SENT, IDEMIP_TCP_STATE_ESTABLISHED, IDEMIP_TCP_STATE_FIN_WAIT_1},
     /* FIN-WAIT-2   */
-    {IDEMIP_TCP_STATE_SYN_SENT, IDEMIP_TCP_STATE_ESTABLISHED, IDEMIP_TCP_STATE_FIN_WAIT_1,
-     IDEMIP_TCP_STATE_FIN_WAIT_2},
+    {IDEMIP_TCP_STATE_SYN_SENT, IDEMIP_TCP_STATE_ESTABLISHED, IDEMIP_TCP_STATE_FIN_WAIT_1, IDEMIP_TCP_STATE_FIN_WAIT_2},
     /* CLOSE-WAIT   */ {IDEMIP_TCP_STATE_SYN_SENT, IDEMIP_TCP_STATE_ESTABLISHED, IDEMIP_TCP_STATE_CLOSE_WAIT},
     /* CLOSING      */
-    {IDEMIP_TCP_STATE_SYN_SENT, IDEMIP_TCP_STATE_ESTABLISHED, IDEMIP_TCP_STATE_FIN_WAIT_1,
-     IDEMIP_TCP_STATE_CLOSING},
+    {IDEMIP_TCP_STATE_SYN_SENT, IDEMIP_TCP_STATE_ESTABLISHED, IDEMIP_TCP_STATE_FIN_WAIT_1, IDEMIP_TCP_STATE_CLOSING},
     /* LAST-ACK     */
-    {IDEMIP_TCP_STATE_SYN_SENT, IDEMIP_TCP_STATE_ESTABLISHED, IDEMIP_TCP_STATE_CLOSE_WAIT,
-     IDEMIP_TCP_STATE_LAST_ACK},
+    {IDEMIP_TCP_STATE_SYN_SENT, IDEMIP_TCP_STATE_ESTABLISHED, IDEMIP_TCP_STATE_CLOSE_WAIT, IDEMIP_TCP_STATE_LAST_ACK},
     /* TIME-WAIT    */
-    {IDEMIP_TCP_STATE_SYN_SENT, IDEMIP_TCP_STATE_ESTABLISHED, IDEMIP_TCP_STATE_FIN_WAIT_1,
-     IDEMIP_TCP_STATE_TIME_WAIT},
+    {IDEMIP_TCP_STATE_SYN_SENT, IDEMIP_TCP_STATE_ESTABLISHED, IDEMIP_TCP_STATE_FIN_WAIT_1, IDEMIP_TCP_STATE_TIME_WAIT},
 };
 
 static const uint8_t g_path_len[IDEMIP_TCP_STATES] = {0u, 1u, 1u, 1u, 2u, 3u, 4u, 3u, 4u, 4u, 4u};
@@ -846,8 +847,7 @@ void test_the_ephemeral_draw_steps_over_a_port_a_listener_holds(void)
     IO(work_a)->bind_args.rand = 0u;
     TcpPcb.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-    TEST_ASSERT_NOT_EQUAL_MESSAGE(served, IO(work_a)->port,
-                                  "the draw handed out a port a listener is serving");
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(served, IO(work_a)->port, "the draw handed out a port a listener is serving");
     TEST_ASSERT_TRUE(IO(work_a)->port >= IDEMIP_TCP_PCB_PORT_EPH_FIRST);
 
     // RFC 9293 sec 3.9.1.1 MUST-42 is the converse and still holds: a named bind of that same port
@@ -1039,8 +1039,7 @@ void test_two_connections_share_one_local_port_and_differ_by_the_remote_socket(v
     IO(work_a)->connect_args.ip = peer_b;
     IO(work_a)->connect_args.port = 40001u;
     TcpPcb.connect(work_a);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
-                                  "two peers on one local socket are two connections");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "two peers on one local socket are two connections");
 }
 
 // The pair is where uniqueness lives, so the same pair twice is BUSY: sec 3.10.4's "Delete TCB" frees
@@ -1050,7 +1049,7 @@ void test_the_same_pair_of_sockets_twice_is_busy(void)
     TcpPcb.clear(work_a);
     uint16_t a = open_pcb(work_a);
     uint16_t b = open_pcb(work_a);
-    for (uint16_t idx = a; ; idx = b)
+    for (uint16_t idx = a;; idx = b)
     {
         IO(work_a)->bind_args.index = idx;
         IO(work_a)->bind_args.ip = g_local;
@@ -1150,7 +1149,7 @@ void test_connect_refuses_an_invalid_remote_ip_address(void)
     // below is the one that runs here.
     TEST_PASS();
 #else
-    static const uint8_t all_hosts[IDEMIP_TCP_PCB_ADDR_BYTES] = {224u, 0u, 0u, 1u};   // class D
+    static const uint8_t all_hosts[IDEMIP_TCP_PCB_ADDR_BYTES] = {224u, 0u, 0u, 1u};     // class D
     static const uint8_t limited[IDEMIP_TCP_PCB_ADDR_BYTES] = {255u, 255u, 255u, 255u}; // sec 3.2.1.3 (c)
     static const uint8_t unspec4[IDEMIP_TCP_PCB_ADDR_BYTES] = {0u, 0u, 0u, 0u};
     static const uint8_t *const bad4[3] = {all_hosts, limited, unspec4};
@@ -1163,8 +1162,7 @@ void test_connect_refuses_an_invalid_remote_ip_address(void)
         IO(work_a)->connect_args.ip = bad4[i];
         IO(work_a)->connect_args.port = 80u;
         TcpPcb.connect(work_a);
-        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status,
-                                      "MUST-46 rejects an invalid remote IP address");
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "MUST-46 rejects an invalid remote IP address");
     }
 
     // A unicast remote address at the same port is what MUST-46 leaves alone.
@@ -1202,8 +1200,7 @@ void test_connect_refuses_an_invalid_remote_ipv6_address(void)
         IO(work_a)->connect_args.ip = bad6[i];
         IO(work_a)->connect_args.port = 80u;
         TcpPcb.connect(work_a);
-        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status,
-                                      "MUST-46 rejects an invalid remote IPv6 address");
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "MUST-46 rejects an invalid remote IPv6 address");
     }
 
     TcpPcb.clear(work_a);
@@ -1693,9 +1690,9 @@ void test_figure_5_note_2_reaches_time_wait_straight_from_fin_wait_1(void)
 void test_issuing_a_reset_reaches_time_wait_from_every_state_that_has_a_peer(void)
 {
     static const IdemIpTcpState from[] = {
-        IDEMIP_TCP_STATE_SYN_SENT,    IDEMIP_TCP_STATE_SYN_RECEIVED, IDEMIP_TCP_STATE_ESTABLISHED,
-        IDEMIP_TCP_STATE_FIN_WAIT_1,  IDEMIP_TCP_STATE_FIN_WAIT_2,   IDEMIP_TCP_STATE_CLOSE_WAIT,
-        IDEMIP_TCP_STATE_CLOSING,     IDEMIP_TCP_STATE_LAST_ACK,     IDEMIP_TCP_STATE_TIME_WAIT,
+        IDEMIP_TCP_STATE_SYN_SENT,   IDEMIP_TCP_STATE_SYN_RECEIVED, IDEMIP_TCP_STATE_ESTABLISHED,
+        IDEMIP_TCP_STATE_FIN_WAIT_1, IDEMIP_TCP_STATE_FIN_WAIT_2,   IDEMIP_TCP_STATE_CLOSE_WAIT,
+        IDEMIP_TCP_STATE_CLOSING,    IDEMIP_TCP_STATE_LAST_ACK,     IDEMIP_TCP_STATE_TIME_WAIT,
     };
     for (size_t i = 0; i < sizeof from / sizeof from[0]; i++)
     {
@@ -1745,8 +1742,7 @@ void test_only_syn_received_returns_to_listen(void)
     {
         uint16_t idx = reach(work_a, (IdemIpTcpState)from);
         IdemIpStatus got = put_state(work_a, idx, IDEMIP_TCP_STATE_LISTEN);
-        if (from == IDEMIP_TCP_STATE_SYN_RECEIVED || from == IDEMIP_TCP_STATE_LISTEN ||
-            from == IDEMIP_TCP_STATE_CLOSED)
+        if (from == IDEMIP_TCP_STATE_SYN_RECEIVED || from == IDEMIP_TCP_STATE_LISTEN || from == IDEMIP_TCP_STATE_CLOSED)
         {
             TEST_ASSERT_EQUAL_INT(IDEMIP_OK, got);
         }
@@ -2787,8 +2783,7 @@ void test_a_listener_at_its_backlog_refuses_a_further_connection(void)
     IO(work_a)->accept_args.index = third;
     IO(work_a)->accept_args.listener = lis;
     TcpPcb.accept(work_a);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status,
-                                  "a third connection went past a backlog of two");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status, "a third connection went past a backlog of two");
 
     // A connection that leaves SYN-RECEIVED frees a place at once, because the count is taken over
     // the table rather than tallied: no close path can forget to give it back.
@@ -2977,3 +2972,305 @@ void test_a_close_frees_the_segments_on_the_retransmit_queue_too(void)
     TcpPcb.seg_alloc(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 }
+
+// --- the parts of an operand a table reads ------------------------------------
+
+// The entries that name a row take the index out of the operand block and use it to reach one, so
+// each has to hold it against its own table's count before it is one. A bind, a connect and a
+// segment mark are the three the suite had not asked, and a find with no local address to match on
+// is the same refusal: the call cannot be completed and no retry supplies what it was not given.
+void test_the_remaining_entries_refuse_an_index_past_their_table_and_a_lookup_with_no_address(void)
+{
+    TcpPcb.clear(work_a);
+
+    IO(work_a)->bind_args.index = (uint16_t)IDEMIP_TCP_PCBS;
+    IO(work_a)->bind_args.ip = g_local;
+    IO(work_a)->bind_args.port = 80u;
+    TcpPcb.bind(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a bind took an index past the table");
+
+    IO(work_a)->connect_args.index = (uint16_t)IDEMIP_TCP_PCBS;
+    IO(work_a)->connect_args.ip = g_remote;
+    IO(work_a)->connect_args.port = 80u;
+    TcpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a connect took an index past the table");
+
+    IO(work_a)->seg_args.index = (uint16_t)IDEMIP_TCP_SEGS;
+    TcpPcb.seg_sent(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a segment mark took an index past the table");
+
+    IO(work_a)->find_args.local_ip = NULL;
+    IO(work_a)->find_args.remote_ip = g_remote;
+    IO(work_a)->find_args.local_port = 80u;
+    IO(work_a)->find_args.remote_port = 40000u;
+    IO(work_a)->find_args.ip_version = G_IP_VERSION;
+    TcpPcb.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a lookup with no local address was made");
+}
+
+// RFC 9293 sec 3.3.1 names the connection by "the local and remote IP addresses and port numbers",
+// all four of them, and sec 3.10.7.1 has an arriving segment reach the connection whose TCB carries
+// that name. A segment differing in any one of the four is not for this connection, so each part is
+// checked here rather than trusted to the three beside it.
+void test_a_lookup_differing_in_any_part_of_the_four_tuple_finds_nothing(void)
+{
+    TcpPcb.clear(work_a);
+    const uint16_t idx = open_pcb(work_a);
+    IO(work_a)->bind_args.index = idx;
+    IO(work_a)->bind_args.ip = g_local;
+    IO(work_a)->bind_args.port = 40000u;
+    IO(work_a)->bind_args.zone = 0u;
+    IO(work_a)->bind_args.netif = 0u;
+    TcpPcb.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    IO(work_a)->connect_args.index = idx;
+    IO(work_a)->connect_args.ip = g_remote;
+    IO(work_a)->connect_args.port = 80u;
+    TcpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    // The name as it stands finds it.
+    IO(work_a)->find_args.local_ip = g_local;
+    IO(work_a)->find_args.local_port = 40000u;
+    IO(work_a)->find_args.remote_ip = g_remote;
+    IO(work_a)->find_args.remote_port = 80u;
+    IO(work_a)->find_args.ip_version = G_IP_VERSION;
+    IO(work_a)->find_args.netif = 0u;
+    TcpPcb.find(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16(idx, IO(work_a)->index);
+
+    // The same name with the local address moved by one octet is a different connection.
+    uint8_t other_local[IDEMIP_TCP_PCB_ADDR_BYTES];
+    memcpy(other_local, g_local, sizeof other_local);
+    other_local[G_ADDR_OCTETS - 1u] = (uint8_t)(other_local[G_ADDR_OCTETS - 1u] + 1u);
+    IO(work_a)->find_args.local_ip = other_local;
+    TcpPcb.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status,
+                                  "a connection was found under a local address it does not hold");
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, IO(work_a)->index);
+
+    IO(work_a)->find_args.local_ip = g_local;
+    IO(work_a)->find_args.local_port = 40001u;
+    TcpPcb.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status,
+                                  "a connection was found under a local port it does not hold");
+}
+
+// RFC 9293 sec 3.10.1 answers an active OPEN naming a connection that already stands with Return
+// "error: connection already exists", where the four parts name one the table is already carrying. The scan that says so is over all four, so
+// a table full of connections sharing three of them does not stand in the way of the fourth. Here it
+// is BUSY rather than that error, because the connection holding the name can be closed.
+void test_an_active_open_is_refused_only_where_all_four_parts_already_stand_together(void)
+{
+    TcpPcb.clear(work_a);
+    uint8_t other_remote[IDEMIP_TCP_PCB_ADDR_BYTES];
+    memcpy(other_remote, g_remote, sizeof other_remote);
+    other_remote[G_ADDR_OCTETS - 1u] = (uint8_t)(other_remote[G_ADDR_OCTETS - 1u] + 1u);
+
+    uint8_t other_local[IDEMIP_TCP_PCB_ADDR_BYTES];
+    memcpy(other_local, g_local, sizeof other_local);
+    other_local[G_ADDR_OCTETS - 1u] = (uint8_t)(other_local[G_ADDR_OCTETS - 1u] + 1u);
+
+    // Three connections, each differing from the fourth in exactly one of the four parts: the local
+    // port, the local address, and the remote address. Each is passed over on its own part.
+    const uint16_t ports[3] = {40001u, 40000u, 40000u};
+    const uint8_t *locals[3] = {g_local, other_local, g_local};
+    const uint8_t *remotes[3] = {g_remote, other_remote, g_remote};
+    const uint16_t rports[3] = {80u, 81u, 81u};
+    for (unsigned k = 0; k < 3u; k++)
+    {
+        const uint16_t i = open_pcb(work_a);
+        IO(work_a)->bind_args.index = i;
+        IO(work_a)->bind_args.ip = locals[k];
+        IO(work_a)->bind_args.port = ports[k];
+        IO(work_a)->bind_args.zone = 0u;
+        IO(work_a)->bind_args.netif = 0u;
+        TcpPcb.bind(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        IO(work_a)->connect_args.index = i;
+        IO(work_a)->connect_args.ip = remotes[k];
+        IO(work_a)->connect_args.port = rports[k];
+        TcpPcb.connect(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    }
+
+    // The fourth: every one of the three is passed over on a different part of the name.
+    const uint16_t idx = open_pcb(work_a);
+    IO(work_a)->bind_args.index = idx;
+    IO(work_a)->bind_args.ip = g_local;
+    IO(work_a)->bind_args.port = 40000u;
+    IO(work_a)->bind_args.zone = 0u;
+    IO(work_a)->bind_args.netif = 0u;
+    TcpPcb.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    IO(work_a)->connect_args.index = idx;
+    IO(work_a)->connect_args.ip = other_remote;
+    IO(work_a)->connect_args.port = 81u;
+    TcpPcb.connect(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
+                                  "a connection differing in one part of the name was taken for a duplicate");
+
+    // And the one that does repeat all four is refused, which is what the scan is for.
+    const uint16_t dup = open_pcb(work_a);
+    IO(work_a)->bind_args.index = dup;
+    IO(work_a)->bind_args.ip = g_local;
+    IO(work_a)->bind_args.port = 40000u;
+    IO(work_a)->bind_args.zone = 0u;
+    IO(work_a)->bind_args.netif = 0u;
+    TcpPcb.bind(work_a);
+    IO(work_a)->connect_args.index = dup;
+    IO(work_a)->connect_args.ip = other_remote;
+    IO(work_a)->connect_args.port = 81u;
+    TcpPcb.connect(work_a);
+    // BUSY rather than ERR: sec 3.10.4's "Delete TCB" on the connection standing there frees the name.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status,
+                                  "the connection that already exists was opened twice");
+}
+
+// RFC 9293 sec 3.5 (MUST-11) has a connection remember the passive OPEN it came through, and sec
+// 3.9.1.1 (MUST-41) keeps one passive OPEN from affecting "any previously created connection
+// record". The backlog is therefore counted over the connections that name this listener, and a
+// connection in SYN-RECEIVED under another listener is not one of them.
+void test_a_backlog_counts_only_the_connections_that_came_through_that_listener(void)
+{
+    TcpPcb.clear(work_a);
+    uint16_t listener[2];
+    for (unsigned k = 0; k < 2u; k++)
+    {
+        IO(work_a)->listen_args.ip = g_local;
+        IO(work_a)->listen_args.port = (uint16_t)(80u + k);
+        IO(work_a)->listen_args.zone = 0u;
+        IO(work_a)->listen_args.netif = 0u;
+        IO(work_a)->listen_args.backlog = 1u;
+        IO(work_a)->listen_args.ip_version = G_IP_VERSION;
+        TcpPcb.listen(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        listener[k] = IO(work_a)->index;
+    }
+
+    // One connection through the first listener, held in SYN-RECEIVED, which is its whole backlog.
+    const uint16_t first = open_pcb(work_a);
+    IO(work_a)->accept_args.index = first;
+    IO(work_a)->accept_args.listener = listener[0];
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, first, IDEMIP_TCP_STATE_SYN_RECEIVED));
+
+    // The second listener's backlog is its own, so its first connection is taken.
+    const uint16_t second = open_pcb(work_a);
+    IO(work_a)->accept_args.index = second;
+    IO(work_a)->accept_args.listener = listener[1];
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
+                                  "a connection held under one listener was counted against another");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, put_state(work_a, second, IDEMIP_TCP_STATE_SYN_RECEIVED));
+
+    // A second through the first listener is not: its backlog of one is already held.
+    const uint16_t third = open_pcb(work_a);
+    IO(work_a)->accept_args.index = third;
+    IO(work_a)->accept_args.listener = listener[0];
+    TcpPcb.accept(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status, "a listener took more than its backlog");
+}
+
+// RFC 9293 sec 3.4 case (b) removes a segment "from a retransmission queue" once it is acknowledged,
+// and the queue it is on is not the one it was allocated on: sec 3.10.7.4 moves it as it goes out.
+// So the segment is looked for on both, and the one behind the head of the second is reached by the
+// walk rather than by the head test.
+void test_a_segment_is_taken_off_the_queue_it_moved_to(void)
+{
+    TcpPcb.clear(work_a);
+    const uint16_t pcb = open_pcb(work_a);
+    uint16_t seg[2];
+    for (unsigned k = 0; k < 2u; k++)
+    {
+        IO(work_a)->seg_args.pcb = pcb;
+        IO(work_a)->seg_args.data = NULL;
+        IO(work_a)->seg_args.len = 0u;
+        IO(work_a)->seg_args.seq = (uint32_t)(100u + k);
+        IO(work_a)->seg_args.flags = IDEMIP_TCP_ACK;
+        IO(work_a)->seg_args.opts = 0u;
+        TcpPcb.seg_alloc(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        seg[k] = IO(work_a)->index;
+    }
+    for (unsigned k = 0; k < 2u; k++)
+    {
+        IO(work_a)->seg_args.index = seg[k];
+        TcpPcb.seg_sent(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    }
+
+    // The second of the two, which stands behind the head of the queue they both moved to.
+    IO(work_a)->seg_args.index = seg[1];
+    TcpPcb.seg_free(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
+                                  "a sent segment was not found on the queue it moved to");
+    IO(work_a)->seg_args.index = seg[1];
+    TcpPcb.seg_load(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "the freed segment is still allocated");
+
+    // The first is still there, so the walk unlinked one segment and not the queue behind it.
+    IO(work_a)->seg_args.index = seg[0];
+    TcpPcb.seg_load(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+}
+
+#if IDEMIP_ENABLE_IPV4 && IDEMIP_ENABLE_IPV6
+// The IP version is part of the name. RFC 9293 sec 3.3.1's four-tuple is over "the local and remote
+// IP addresses", and an IPv4 address and an IPv6 address are not the same address whatever their
+// octets say, so a passive OPEN on one version does not hold the socket on the other, and a
+// connection on one version is not the connection the other's scan is looking for.
+void test_the_ip_version_is_part_of_the_name_a_socket_is_held_under(void)
+{
+    static const uint8_t v4_local[IDEMIP_TCP_PCB_ADDR_BYTES] = {192u, 0u, 2u, 1u};
+    static const uint8_t v4_remote[IDEMIP_TCP_PCB_ADDR_BYTES] = {192u, 0u, 2u, 9u};
+    static const uint8_t v6_local[IDEMIP_TCP_PCB_ADDR_BYTES] = {0x20u, 0x01u, 0x0Du, 0xB8u, 0u, 0u, 0u, 0u,
+                                                                0u,    0u,    0u,    0u,    0u, 0u, 0u, 0x01u};
+    static const uint8_t v6_remote[IDEMIP_TCP_PCB_ADDR_BYTES] = {0x20u, 0x01u, 0x0Du, 0xB8u, 0u, 0u, 0u, 0u,
+                                                                 0u,    0u,    0u,    0u,    0u, 0u, 0u, 0x09u};
+    TcpPcb.clear(work_a);
+
+    // The same port, listened on over both versions. The second is not the socket the first holds.
+    IO(work_a)->listen_args.ip = v4_local;
+    IO(work_a)->listen_args.port = 80u;
+    IO(work_a)->listen_args.zone = 0u;
+    IO(work_a)->listen_args.netif = 0u;
+    IO(work_a)->listen_args.backlog = 2u;
+    IO(work_a)->listen_args.ip_version = 4u;
+    TcpPcb.listen(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    IO(work_a)->listen_args.ip = v6_local;
+    IO(work_a)->listen_args.ip_version = 6u;
+    TcpPcb.listen(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
+                                  "a passive OPEN over one version held the socket on the other");
+
+    // One connection over each version, on the same four numbers. Neither is the other's duplicate.
+    const uint8_t versions[2] = {4u, 6u};
+    const uint8_t *locals[2] = {v4_local, v6_local};
+    const uint8_t *remotes[2] = {v4_remote, v6_remote};
+    for (unsigned k = 0; k < 2u; k++)
+    {
+        IO(work_a)->open_args.ip_version = versions[k];
+        TcpPcb.open(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        const uint16_t i = IO(work_a)->index;
+        IO(work_a)->bind_args.index = i;
+        IO(work_a)->bind_args.ip = locals[k];
+        IO(work_a)->bind_args.port = 40000u;
+        IO(work_a)->bind_args.zone = 0u;
+        IO(work_a)->bind_args.netif = 0u;
+        TcpPcb.bind(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        IO(work_a)->connect_args.index = i;
+        IO(work_a)->connect_args.ip = remotes[k];
+        IO(work_a)->connect_args.port = 80u;
+        TcpPcb.connect(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
+                                      "a connection over one version was taken for a duplicate of the other's");
+    }
+}
+#endif
