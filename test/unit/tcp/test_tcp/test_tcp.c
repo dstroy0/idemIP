@@ -256,8 +256,7 @@ void test_walk_over_a_header_with_no_options(void)
 // steps one octet and does not read a length that is not there.
 void test_walk_steps_single_octet_no_operation(void)
 {
-    static const uint8_t opts[4] = {IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_NOP,
-                                    IDEMIP_TCP_OPT_NOP};
+    static const uint8_t opts[4] = {IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_NOP};
     put_opts(seg, opts, sizeof opts);
     IdemIpTcpOptWalk w;
     idemip_tcp_opt_walk(&w, seg);
@@ -318,9 +317,18 @@ void test_walk_steps_the_maximum_segment_size_option(void)
 void test_walk_steps_past_an_unimplemented_kind(void)
 {
     static const uint8_t opts[12] = {
-        0xFDu, 0x06u, 0xAAu, 0xBBu, 0xCCu, 0xDDu, // some kind this stack does not implement
-        0x02u, 0x04u, 0x05u, 0xB4u,               // MSS 1460
-        IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_END,
+        0xFDu,
+        0x06u,
+        0xAAu,
+        0xBBu,
+        0xCCu,
+        0xDDu, // some kind this stack does not implement
+        0x02u,
+        0x04u,
+        0x05u,
+        0xB4u, // MSS 1460
+        IDEMIP_TCP_OPT_NOP,
+        IDEMIP_TCP_OPT_END,
     };
     put_opts(seg, opts, sizeof opts);
     IdemIpTcpOptWalk w;
@@ -379,8 +387,7 @@ void test_walk_refuses_a_length_past_the_options(void)
 // A Case 2 kind in the last octet of the region has no length octet to read at all.
 void test_walk_refuses_a_truncated_length_octet(void)
 {
-    static const uint8_t opts[4] = {IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_NOP,
-                                    IDEMIP_TCP_OPT_MSS};
+    static const uint8_t opts[4] = {IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_MSS};
     put_opts(seg, opts, sizeof opts);
     IdemIpTcpOptWalk w;
     idemip_tcp_opt_walk(&w, seg);
@@ -397,9 +404,15 @@ void test_walk_refuses_a_truncated_length_octet(void)
 // interfere. This is the stateless-header form of test_phy's two-borrow property.
 void test_two_walks_do_not_interfere(void)
 {
-    static const uint8_t a[4] = {0x02u, 0x04u, 0x05u, 0xB4u};                                  // MSS 1460
-    static const uint8_t b[8] = {IDEMIP_TCP_OPT_SACK_PERM, 0x02u, 0x03u, 0x03u, 0x07u, 0x00u,   // and WS 7
-                                 0x00u, 0x00u};
+    static const uint8_t a[4] = {0x02u, 0x04u, 0x05u, 0xB4u}; // MSS 1460
+    static const uint8_t b[8] = {IDEMIP_TCP_OPT_SACK_PERM,
+                                 0x02u,
+                                 0x03u,
+                                 0x03u,
+                                 0x07u,
+                                 0x00u, // and WS 7
+                                 0x00u,
+                                 0x00u};
     put_opts(seg, a, sizeof a);
     put_opts(seg_b, b, sizeof b);
 
@@ -426,8 +439,8 @@ void test_two_walks_do_not_interfere(void)
 // nothing.
 void test_a_walk_repeats(void)
 {
-    static const uint8_t opts[8] = {0x02u, 0x04u, 0x05u, 0xB4u, IDEMIP_TCP_OPT_SACK_PERM, 0x02u,
-                                    IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_END};
+    static const uint8_t opts[8] = {
+        0x02u, 0x04u, 0x05u, 0xB4u, IDEMIP_TCP_OPT_SACK_PERM, 0x02u, IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_END};
     put_opts(seg, opts, sizeof opts);
     uint8_t first[8];
     uint8_t second[8];
@@ -501,8 +514,8 @@ void test_window_scale_reaches_one_gibibyte(void)
 // "|Kind=8 | 10 | TS Value (TSval) |TS Echo Reply (TSecr)|", four octets each.
 void test_timestamps_option_figure(void)
 {
-    static const uint8_t opts[12] = {0x08u, 0x0Au, 0x11u, 0x22u, 0x33u, 0x44u,
-                                     0x55u, 0x66u, 0x77u, 0x88u, IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_END};
+    static const uint8_t opts[12] = {
+        0x08u, 0x0Au, 0x11u, 0x22u, 0x33u, 0x44u, 0x55u, 0x66u, 0x77u, 0x88u, IDEMIP_TCP_OPT_NOP, IDEMIP_TCP_OPT_END};
     put_opts(seg, opts, sizeof opts);
     IdemIpTcpOptWalk w;
     idemip_tcp_opt_walk(&w, seg);
@@ -599,11 +612,11 @@ void test_build_a_syn_option_list(void)
     TEST_ASSERT_EQUAL_size_t(20u, n);
 
     static const uint8_t want[20] = {
-        0x02u, 0x04u, 0x05u, 0xB4u,                                    // MSS 1460
-        0x04u, 0x02u,                                                  // SACK-permitted
+        0x02u, 0x04u, 0x05u, 0xB4u,                                           // MSS 1460
+        0x04u, 0x02u,                                                         // SACK-permitted
         0x08u, 0x0Au, 0x00u, 0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x00u, // TSval 1, TSecr 0
-        0x01u,                                                         // NOP
-        0x03u, 0x03u, 0x07u,                                           // WS shift 7
+        0x01u,                                                                // NOP
+        0x03u, 0x03u, 0x07u,                                                  // WS shift 7
     };
     TEST_ASSERT_EQUAL_UINT8_ARRAY(want, o, sizeof want);
 
@@ -691,10 +704,10 @@ void test_build_fills_the_option_maximum(void)
 {
     uint8_t *o = seg + IDEMIP_TCP_OFF_OPTIONS;
     size_t n = 0;
-    n += idemip_tcp_opt_put_mss(o + n, 1460u);   // 4
-    n += idemip_tcp_opt_put_ts(o + n, 1u, 2u);   // 10
-    n += idemip_tcp_opt_put_sack_perm(o + n);    // 2
-    n += idemip_tcp_opt_put_ws(o + n, 7u);       // 3
+    n += idemip_tcp_opt_put_mss(o + n, 1460u); // 4
+    n += idemip_tcp_opt_put_ts(o + n, 1u, 2u); // 10
+    n += idemip_tcp_opt_put_sack_perm(o + n);  // 2
+    n += idemip_tcp_opt_put_ws(o + n, 7u);     // 3
     while (n < IDEMIP_TCP_OPTS_MAX)
     {
         n += idemip_tcp_opt_put_nop(o + n);
@@ -757,4 +770,24 @@ void test_checksum_pads_an_odd_length(void)
 
     TEST_ASSERT_EQUAL_HEX32(idemip_cksum_accum(0u, seg, 21u), idemip_cksum_accum(0u, seg, 22u));
     TEST_ASSERT_EQUAL_HEX16(ref_cksum(seg, 21u, src, dst, 21u), idemip_tcp_cksum_compute(seg, 21u, src, dst));
+}
+
+// RFC 2018 sec 3: "A SACK option that specifies n blocks will have a length of 8*n+2 bytes", so the
+// two fixed octets are the least an option can carry - and one claiming fewer than that carries no
+// blocks at all rather than a count read from a length that is not there.
+void test_a_sack_option_shorter_than_its_own_fixed_octets_carries_no_blocks(void)
+{
+    uint8_t opt[IDEMIP_TCP_OPTS_MAX];
+    memset(opt, 0, sizeof opt);
+    opt[IDEMIP_TCP_OPT_OFF_KIND] = (uint8_t)IDEMIP_TCP_OPT_SACK;
+
+    for (uint8_t len = 0u; len < (uint8_t)IDEMIP_TCP_OPT_LEN_MIN; len++)
+    {
+        opt[IDEMIP_TCP_OPT_OFF_LEN] = len;
+        TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, idemip_tcp_opt_sack_blocks(opt),
+                                        "blocks were counted out of an option with no length octet in it");
+    }
+
+    opt[IDEMIP_TCP_OPT_OFF_LEN] = (uint8_t)(IDEMIP_TCP_OPT_LEN_MIN + 8u);
+    TEST_ASSERT_EQUAL_UINT8(1u, idemip_tcp_opt_sack_blocks(opt));
 }

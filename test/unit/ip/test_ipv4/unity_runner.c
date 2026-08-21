@@ -48,6 +48,7 @@ extern void test_mask_ones_counts_a_mask_with_holes(void);
 extern void test_every_leading_run_of_ones_is_contiguous(void);
 extern void test_a_mask_with_a_hole_is_not_contiguous(void);
 extern void test_a_contiguous_mask_is_rebuilt_from_its_own_count(void);
+extern void test_a_header_length_below_the_minimum_is_not_a_header(void);
 
 
 /*=======Mock Management=====*/
@@ -148,6 +149,7 @@ int main(void)
   run_test(test_every_leading_run_of_ones_is_contiguous, "test_every_leading_run_of_ones_is_contiguous", 879);
   run_test(test_a_mask_with_a_hole_is_not_contiguous, "test_a_mask_with_a_hole_is_not_contiguous", 889);
   run_test(test_a_contiguous_mask_is_rebuilt_from_its_own_count, "test_a_contiguous_mask_is_rebuilt_from_its_own_count", 900);
+  run_test(test_a_header_length_below_the_minimum_is_not_a_header, "test_a_header_length_below_the_minimum_is_not_a_header", 914);
 
   return UNITY_END();
 }

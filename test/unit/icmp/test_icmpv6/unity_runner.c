@@ -42,6 +42,8 @@ extern void test_rfc4861_sec45_redirect_field_offsets(void);
 extern void test_rfc4861_sec4_each_type_has_its_own_length(void);
 extern void test_rfc4861_sec46_option_length_counts_eight_octet_units(void);
 extern void test_rfc4861_sec46_the_option_walk_refuses_zero_and_overrun(void);
+extern void test_a_type_outside_the_five_has_no_neighbor_discovery_header(void);
+extern void test_an_error_about_a_packet_of_no_octets_carries_no_quote(void);
 
 
 /*=======Mock Management=====*/
@@ -137,6 +139,8 @@ int main(void)
   run_test(test_rfc4861_sec4_each_type_has_its_own_length, "test_rfc4861_sec4_each_type_has_its_own_length", 522);
   run_test(test_rfc4861_sec46_option_length_counts_eight_octet_units, "test_rfc4861_sec46_option_length_counts_eight_octet_units", 540);
   run_test(test_rfc4861_sec46_the_option_walk_refuses_zero_and_overrun, "test_rfc4861_sec46_the_option_walk_refuses_zero_and_overrun", 563);
+  run_test(test_a_type_outside_the_five_has_no_neighbor_discovery_header, "test_a_type_outside_the_five_has_no_neighbor_discovery_header", 591);
+  run_test(test_an_error_about_a_packet_of_no_octets_carries_no_quote, "test_an_error_about_a_packet_of_no_octets_carries_no_quote", 607);
 
   return UNITY_END();
 }

@@ -26,9 +26,8 @@ static const uint8_t vec_src[IDEMIP_MAC_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x
 static const uint8_t vec_broadcast[IDEMIP_MAC_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 // The 14 octets an IPv4 frame carries with those two addresses: dst, src, then 08 00.
-static const uint8_t vec_ip4_header[IDEMIP_ETH_HDR_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x02,
-                                                           0x02, 0x00, 0x00, 0x00, 0x00, 0x01,
-                                                           0x08, 0x00};
+static const uint8_t vec_ip4_header[IDEMIP_ETH_HDR_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x02, 0x02,
+                                                           0x00, 0x00, 0x00, 0x00, 0x01, 0x08, 0x00};
 
 void setUp(void)
 {
@@ -249,4 +248,25 @@ void test_payload_follows_the_header(void)
     frame[IDEMIP_ETH_OFF_PAYLOAD] = 0x45u; // an IPv4 version and IHL, RFC 791 sec 3.1
     TEST_ASSERT_EQUAL_PTR(frame + IDEMIP_ETH_HDR_LEN, idemip_eth_payload(frame));
     TEST_ASSERT_EQUAL_HEX8(0x45u, *idemip_eth_payload(frame));
+}
+
+// RFC 1042 puts an EtherType behind eight octets: "the assigned global SAP value for SNAP" in both
+// SAP fields, the "Unnumbered Information format, control code 3", and a zero Organization Code. A
+// header differing in any one of those six octets is not that header, so each is read.
+void test_the_snap_header_is_read_octet_by_octet(void)
+{
+    uint8_t llc[8];
+    static const uint8_t good[8] = {0xAAu, 0xAAu, 0x03u, 0u, 0u, 0u, 0x08u, 0x00u};
+    memcpy(llc, good, sizeof llc);
+    TEST_ASSERT_TRUE_MESSAGE(idemip_llc_is_snap(llc), "the header RFC 1042 gives was not read as one");
+
+    // One octet at a time, each of the six the test reads.
+    static const uint8_t at[6] = {IDEMIP_LLC_OFF_DSAP, IDEMIP_LLC_OFF_SSAP,     IDEMIP_LLC_OFF_CONTROL,
+                                  IDEMIP_LLC_OFF_ORG,  IDEMIP_LLC_OFF_ORG + 1u, IDEMIP_LLC_OFF_ORG + 2u};
+    for (unsigned k = 0; k < 6u; k++)
+    {
+        memcpy(llc, good, sizeof llc);
+        llc[at[k]] = (uint8_t)(llc[at[k]] + 1u);
+        TEST_ASSERT_FALSE_MESSAGE(idemip_llc_is_snap(llc), "a header differing from RFC 1042's was read as one");
+    }
 }

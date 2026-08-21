@@ -73,6 +73,8 @@ extern void test_the_sweep_keeps_an_estimate_inside_the_timeout(void);
 extern void test_the_sweep_passes_a_row_that_never_carried_an_estimate(void);
 extern void test_a_decrease_restarts_the_age_of_the_estimate(void);
 extern void test_two_tables_route_independently(void);
+extern void test_a_redirect_needs_a_directly_reachable_gateway_and_a_row_to_put_it_in(void);
+extern void test_the_sweep_takes_every_estimate_that_has_aged_out(void);
 
 
 /*=======Mock Management=====*/
@@ -134,29 +136,29 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/ip/test_ip4_route\\test_ip4_route.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 78);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 91);
-  run_test(test_clear_on_one_borrow_leaves_the_other_alone, "test_clear_on_one_borrow_leaves_the_other_alone", 120);
-  run_test(test_clear_reports_ok, "test_clear_reports_ok", 134);
-  run_test(test_clear_zeroes_the_table, "test_clear_zeroes_the_table", 140);
-  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 147);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 159);
-  run_test(test_a_lookup_that_routed_nothing_reports_no_row, "test_a_lookup_that_routed_nothing_reports_no_row", 180);
-  run_test(test_a_lookup_on_an_uncleared_borrow_is_refused, "test_a_lookup_on_an_uncleared_borrow_is_refused", 198);
-  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 208);
-  run_test(test_every_published_offset_is_aligned, "test_every_published_offset_is_aligned", 225);
-  run_test(test_the_borrow_covers_the_published_map, "test_the_borrow_covers_the_published_map", 232);
-  run_test(test_a_row_index_fits_the_published_terminator, "test_a_row_index_fits_the_published_terminator", 238);
-  run_test(test_the_table_starts_aligned, "test_the_table_starts_aligned", 243);
-  run_test(test_the_published_flags_fit_one_octet, "test_the_published_flags_fit_one_octet", 249);
-  run_test(test_the_table_holds_the_rows_the_rfc_1812_vectors_need, "test_the_table_holds_the_rows_the_rfc_1812_vectors_need", 369);
-  run_test(test_add_writes_a_row_and_reports_it, "test_add_writes_a_row_and_reports_it", 376);
-  run_test(test_add_refuses_a_mask_with_a_gap, "test_add_refuses_a_mask_with_a_gap", 386);
-  run_test(test_add_accepts_every_prefix_length, "test_add_accepts_every_prefix_length", 400);
-  run_test(test_add_refuses_a_gateway_route_with_no_gateway, "test_add_refuses_a_gateway_route_with_no_gateway", 413);
-  run_test(test_add_masks_the_destination_down_to_the_prefix, "test_add_masks_the_destination_down_to_the_prefix", 422);
-  run_test(test_add_rewrites_the_row_with_the_same_key, "test_add_rewrites_the_row_with_the_same_key", 433);
-  run_test(test_add_keeps_rows_that_differ_only_in_the_type_of_service, "test_add_keeps_rows_that_differ_only_in_the_type_of_service", 450);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 77);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 90);
+  run_test(test_clear_on_one_borrow_leaves_the_other_alone, "test_clear_on_one_borrow_leaves_the_other_alone", 119);
+  run_test(test_clear_reports_ok, "test_clear_reports_ok", 133);
+  run_test(test_clear_zeroes_the_table, "test_clear_zeroes_the_table", 139);
+  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 146);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 158);
+  run_test(test_a_lookup_that_routed_nothing_reports_no_row, "test_a_lookup_that_routed_nothing_reports_no_row", 179);
+  run_test(test_a_lookup_on_an_uncleared_borrow_is_refused, "test_a_lookup_on_an_uncleared_borrow_is_refused", 197);
+  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 207);
+  run_test(test_every_published_offset_is_aligned, "test_every_published_offset_is_aligned", 224);
+  run_test(test_the_borrow_covers_the_published_map, "test_the_borrow_covers_the_published_map", 231);
+  run_test(test_a_row_index_fits_the_published_terminator, "test_a_row_index_fits_the_published_terminator", 237);
+  run_test(test_the_table_starts_aligned, "test_the_table_starts_aligned", 242);
+  run_test(test_the_published_flags_fit_one_octet, "test_the_published_flags_fit_one_octet", 248);
+  run_test(test_the_table_holds_the_rows_the_rfc_1812_vectors_need, "test_the_table_holds_the_rows_the_rfc_1812_vectors_need", 368);
+  run_test(test_add_writes_a_row_and_reports_it, "test_add_writes_a_row_and_reports_it", 375);
+  run_test(test_add_refuses_a_mask_with_a_gap, "test_add_refuses_a_mask_with_a_gap", 385);
+  run_test(test_add_accepts_every_prefix_length, "test_add_accepts_every_prefix_length", 399);
+  run_test(test_add_refuses_a_gateway_route_with_no_gateway, "test_add_refuses_a_gateway_route_with_no_gateway", 412);
+  run_test(test_add_masks_the_destination_down_to_the_prefix, "test_add_masks_the_destination_down_to_the_prefix", 421);
+  run_test(test_add_rewrites_the_row_with_the_same_key, "test_add_rewrites_the_row_with_the_same_key", 432);
+  run_test(test_add_keeps_rows_that_differ_only_in_the_type_of_service, "test_add_keeps_rows_that_differ_only_in_the_type_of_service", 449);
   run_test(test_the_host_flag_follows_the_mask, "test_the_host_flag_follows_the_mask", 460);
   run_test(test_a_full_table_is_busy_and_a_remove_frees_a_row, "test_a_full_table_is_busy_and_a_remove_frees_a_row", 475);
   run_test(test_remove_drops_the_row_and_the_route_with_it, "test_remove_drops_the_row_and_the_route_with_it", 495);
@@ -199,6 +201,8 @@ int main(void)
   run_test(test_the_sweep_passes_a_row_that_never_carried_an_estimate, "test_the_sweep_passes_a_row_that_never_carried_an_estimate", 1122);
   run_test(test_a_decrease_restarts_the_age_of_the_estimate, "test_a_decrease_restarts_the_age_of_the_estimate", 1136);
   run_test(test_two_tables_route_independently, "test_two_tables_route_independently", 1152);
+  run_test(test_a_redirect_needs_a_directly_reachable_gateway_and_a_row_to_put_it_in, "test_a_redirect_needs_a_directly_reachable_gateway_and_a_row_to_put_it_in", 1176);
+  run_test(test_the_sweep_takes_every_estimate_that_has_aged_out, "test_the_sweep_takes_every_estimate_that_has_aged_out", 1202);
 
   return UNITY_END();
 }

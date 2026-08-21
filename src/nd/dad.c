@@ -272,7 +272,8 @@ static void dad_fire(uint8_t *work)
         // it, and the state is only IDEMIP_DAD_STATE_FREE where the entry is not in use - which the
         // test before it answers. It is written because the state is what the switch below reads,
         // and a state with no detection running is not one it has a case for.
-        if (!e->used || e->state == IDEMIP_DAD_STATE_FREE ||
+        if (!e->used ||                            // GCOVR_EXCL_BR_LINE
+            e->state == IDEMIP_DAD_STATE_FREE ||   // GCOVR_EXCL_BR_LINE
             e->state == IDEMIP_DAD_STATE_UNIQUE || // GCOVR_EXCL_BR_LINE
             e->state == IDEMIP_DAD_STATE_DUPLICATE || !dad_due(now, e->deadline))
         {

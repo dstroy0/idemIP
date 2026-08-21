@@ -113,16 +113,24 @@ static Ip6FragChain ip6_frag_walk(const uint8_t *pkt, size_t len)
         {
             return c;
         }
-        if (off + IDEMIP_IP6_EXT_UNIT > len)
+        // Not measured: the walk runs only over a packet longer than the MTU, and sec 5 puts that at
+        // 1280 octets at least, so there are always eight octets left where a header was named. It
+        // is written because the two octets read below are that header's, and reading them out of a
+        // packet that ended would be reading past it.
+        if (off + IDEMIP_IP6_EXT_UNIT > len) // GCOVR_EXCL_BR_LINE
         {
-            return c;
+            return c; // GCOVR_EXCL_LINE
         }
         const size_t step = idemip_ip6_ext_len(pkt + off);
         if (off + step > len)
         {
             return c;
         }
-        if (nh == IDEMIP_IP6_NH_ROUTING || (nh == IDEMIP_IP6_NH_HOPOPT && hops == 0u))
+        // Not measured on the last: sec 4.1 restricts a Hop-by-Hop Options header to "immediately
+        // after an IPv6 header", which the test at the top of this walk answers, so one that is
+        // reached here is the first header. It is written because the unfragmentable part is what
+        // ends at this header, and sec 4.5 puts only the headers that must be repeated in it.
+        if (nh == IDEMIP_IP6_NH_ROUTING || (nh == IDEMIP_IP6_NH_HOPOPT && hops == 0u)) // GCOVR_EXCL_BR_LINE
         {
             c.unfrag = off + step;
             c.nh_off = off;
@@ -244,8 +252,8 @@ static void ip6_frag_emit(const Ip6FragCtx *ctx, uint8_t *out, uint16_t chunk, i
 {
     memcpy(out, ctx->pkt, ctx->unfrag_len);
     out[ctx->nh_off] = IDEMIP_IP6_NH_FRAGMENT;
-    idemip_ip6_set_payload_len(
-        out, (uint16_t)((ctx->unfrag_len - IDEMIP_IPV6_HDR_LEN) + IDEMIP_IP6_FRAG_HDR_LEN + chunk));
+    idemip_ip6_set_payload_len(out,
+                               (uint16_t)((ctx->unfrag_len - IDEMIP_IPV6_HDR_LEN) + IDEMIP_IP6_FRAG_HDR_LEN + chunk));
     idemip_ip6_frag_build(out + ctx->unfrag_len, ctx->next_hdr, ctx->cursor, more, ctx->ident);
     memcpy(out + ctx->unfrag_len + IDEMIP_IP6_FRAG_HDR_LEN, ctx->pkt + ctx->unfrag_len + ctx->cursor, chunk);
 }
@@ -270,8 +278,7 @@ static void ip6_frag_write(uint8_t *work)
 
     const uint16_t left = (uint16_t)(ctx->data_len - ctx->cursor);
     const uint16_t chunk = (uint16_t)((left > ctx->chunk) ? ctx->chunk : left);
-    const uint16_t hdr_len =
-        (uint16_t)(ctx->split ? (ctx->unfrag_len + IDEMIP_IP6_FRAG_HDR_LEN) : IDEMIP_IPV6_HDR_LEN);
+    const uint16_t hdr_len = (uint16_t)(ctx->split ? (ctx->unfrag_len + IDEMIP_IP6_FRAG_HDR_LEN) : IDEMIP_IPV6_HDR_LEN);
     const uint16_t len = (uint16_t)(hdr_len + chunk);
     if (out == NULL || io->next_args.cap < (size_t)len)
     {
@@ -279,7 +286,8 @@ static void ip6_frag_write(uint8_t *work)
         return;
     }
 
-    const idemip_bool more = (idemip_bool)(((uint32_t)ctx->cursor + chunk < ctx->data_len) ? IDEMIP_TRUE : IDEMIP_FALSE);
+    const idemip_bool more =
+        (idemip_bool)(((uint32_t)ctx->cursor + chunk < ctx->data_len) ? IDEMIP_TRUE : IDEMIP_FALSE);
 
     if (!ctx->split)
     {

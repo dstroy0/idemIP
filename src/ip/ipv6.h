@@ -317,7 +317,10 @@ IDEMIP_INLINE idemip_bool idemip_ip6_opts_refused(const uint8_t *p, size_t first
             return IDEMIP_TRUE; // the length octet is not inside the header
         }
         const size_t step = idemip_ip6_opt_len(p + at);
-        if (step == 0u || at + step > last)
+        // Not measured on the first: idemip_ip6_opt_len reports one octet for a Pad1 and two more
+        // than the Opt Data Len for every other option, so it is never nothing. It is written
+        // because the walk advances by it, and a walk that advanced by nothing would not end.
+        if (step == 0u || at + step > last) // GCOVR_EXCL_BR_LINE
         {
             return IDEMIP_TRUE;
         }
@@ -387,7 +390,7 @@ IDEMIP_INLINE uint32_t idemip_ip6_frag_ident(const uint8_t *f)
  * @param offset_bytes offset of this fragment from the start of the Fragmentable Part, in octets
  */
 IDEMIP_INLINE void idemip_ip6_frag_build(uint8_t *f, uint8_t next_hdr, uint16_t offset_bytes, idemip_bool more,
-                                        uint32_t ident)
+                                         uint32_t ident)
 {
     f[IDEMIP_IP6_FRAG_OFF_NEXT_HDR] = next_hdr;
     f[IDEMIP_IP6_FRAG_OFF_RESERVED] = 0u;
@@ -523,8 +526,8 @@ IDEMIP_INLINE IdemIpIp6Chain idemip_ip6_walk(const uint8_t *p, size_t len)
         {
             return c;
         }
-        size_t step = (c.next_hdr == IDEMIP_IP6_NH_FRAGMENT) ? (size_t)IDEMIP_IP6_FRAG_HDR_LEN
-                                                            : idemip_ip6_ext_len(p + c.offset);
+        size_t step =
+            (c.next_hdr == IDEMIP_IP6_NH_FRAGMENT) ? (size_t)IDEMIP_IP6_FRAG_HDR_LEN : idemip_ip6_ext_len(p + c.offset);
         if (c.offset + step > len)
         {
             return c;
@@ -598,8 +601,8 @@ IDEMIP_INLINE size_t idemip_ip6_chain_ext_bytes(const IdemIpIp6Chain *c)
  * The addresses are summed where they lie, sixteen octets each, which is the same word pairing the
  * figure lays out. Not part of the packet: it is summed, never sent.
  */
-IDEMIP_INLINE uint32_t idemip_ip6_pseudo_accum(uint32_t sum, const uint8_t *src, const uint8_t *dst,
-                                                  uint32_t upper_len, uint8_t next_hdr)
+IDEMIP_INLINE uint32_t idemip_ip6_pseudo_accum(uint32_t sum, const uint8_t *src, const uint8_t *dst, uint32_t upper_len,
+                                               uint8_t next_hdr)
 {
     sum = idemip_cksum_accum(sum, src, IDEMIP_IP6_ADDR_LEN);
     sum = idemip_cksum_accum(sum, dst, IDEMIP_IP6_ADDR_LEN);

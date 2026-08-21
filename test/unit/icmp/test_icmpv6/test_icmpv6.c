@@ -207,8 +207,8 @@ void test_rfc4443_sec33_time_exceeded_build(void)
 // original packet holds an unrecognized Next Header field value." 40 is IDEMIP_IPV6_HDR_LEN.
 void test_rfc4443_sec34_pointer_example(void)
 {
-    size_t len = idemip_icmp6_param_problem_build(msg, IDEMIP_ICMP6_PP_UNREC_NEXT_HDR, IDEMIP_IPV6_HDR_LEN, invoking,
-                                                 128u);
+    size_t len =
+        idemip_icmp6_param_problem_build(msg, IDEMIP_ICMP6_PP_UNREC_NEXT_HDR, IDEMIP_IPV6_HDR_LEN, invoking, 128u);
     TEST_ASSERT_EQUAL_size_t(IDEMIP_ICMP6_ERR_HDR_LEN + 128u, len);
     TEST_ASSERT_EQUAL_UINT8(4u, idemip_icmp6_type(msg));
     TEST_ASSERT_EQUAL_UINT8(1u, idemip_icmp6_code(msg));
@@ -238,10 +238,10 @@ void test_rfc4443_sec3_the_body_word_is_written_at_offset_four(void)
 void test_rfc4443_sec24c_quote_max_derivation(void)
 {
     TEST_ASSERT_EQUAL_size_t(1232u, (size_t)IDEMIP_ICMP6_ERR_QUOTE_MAX);
-    TEST_ASSERT_EQUAL_size_t(1280u, (size_t)IDEMIP_IPV6_HDR_LEN + IDEMIP_ICMP6_ERR_HDR_LEN +
-                                        IDEMIP_ICMP6_ERR_QUOTE_MAX);
-    TEST_ASSERT_EQUAL_size_t(IDEMIP_IPV6_MIN_MTU, (size_t)IDEMIP_IPV6_HDR_LEN + IDEMIP_ICMP6_ERR_HDR_LEN +
-                                                      IDEMIP_ICMP6_ERR_QUOTE_MAX);
+    TEST_ASSERT_EQUAL_size_t(1280u,
+                             (size_t)IDEMIP_IPV6_HDR_LEN + IDEMIP_ICMP6_ERR_HDR_LEN + IDEMIP_ICMP6_ERR_QUOTE_MAX);
+    TEST_ASSERT_EQUAL_size_t(IDEMIP_IPV6_MIN_MTU,
+                             (size_t)IDEMIP_IPV6_HDR_LEN + IDEMIP_ICMP6_ERR_HDR_LEN + IDEMIP_ICMP6_ERR_QUOTE_MAX);
 }
 
 // An invoking packet longer than the bound is truncated, and the message plus its IPv6 header lands
@@ -586,3 +586,32 @@ void test_rfc4861_sec46_the_option_walk_refuses_zero_and_overrun(void)
     TEST_ASSERT_FALSE_MESSAGE(idemip_icmp6_nd_opts_ok(opts, 17u), "a trailing octet is not an option");
 }
 
+// RFC 4861 sec 4 defines five message types, and each one's fixed fields are a length of their own.
+// A type outside those five is not one of them, so it has no such length.
+void test_a_type_outside_the_five_has_no_neighbor_discovery_header(void)
+{
+    TEST_ASSERT_EQUAL_size_t_MESSAGE(0u, idemip_icmp6_nd_hdr_len((uint8_t)IDEMIP_ICMP6_ECHO_REQUEST),
+                                     "a type sec 4 does not define was given one of its headers");
+    TEST_ASSERT_EQUAL_size_t(0u, idemip_icmp6_nd_hdr_len(0u));
+
+    // The five it does define each carry their own.
+    TEST_ASSERT_EQUAL_size_t(IDEMIP_ICMP6_RS_HDR_LEN, idemip_icmp6_nd_hdr_len((uint8_t)IDEMIP_ICMP6_ROUTER_SOLICIT));
+    TEST_ASSERT_EQUAL_size_t(IDEMIP_ICMP6_RA_HDR_LEN, idemip_icmp6_nd_hdr_len((uint8_t)IDEMIP_ICMP6_ROUTER_ADVERT));
+    TEST_ASSERT_EQUAL_size_t(IDEMIP_ICMP6_NS_HDR_LEN, idemip_icmp6_nd_hdr_len((uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT));
+    TEST_ASSERT_EQUAL_size_t(IDEMIP_ICMP6_NA_HDR_LEN, idemip_icmp6_nd_hdr_len((uint8_t)IDEMIP_ICMP6_NEIGHBOR_ADVERT));
+    TEST_ASSERT_EQUAL_size_t(IDEMIP_ICMP6_RD_HDR_LEN, idemip_icmp6_nd_hdr_len((uint8_t)IDEMIP_ICMP6_REDIRECT));
+}
+
+// RFC 4443 sec 3.1: an error message carries "as much of invoking packet as possible without the
+// ICMPv6 packet exceeding the minimum IPv6 MTU", and a packet of no octets leaves nothing to carry.
+void test_an_error_about_a_packet_of_no_octets_carries_no_quote(void)
+{
+    uint8_t out[IDEMIP_ICMP6_ERR_HDR_LEN + 8u];
+    static const uint8_t invoking[8] = {0};
+    memset(out, 0xEE, sizeof out);
+
+    const size_t len = idemip_icmp6_err_build(out, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH,
+                                              0u, invoking, 0u);
+    TEST_ASSERT_EQUAL_size_t_MESSAGE((size_t)IDEMIP_ICMP6_ERR_HDR_LEN, len,
+                                     "an error about no octets carried a quote of some");
+}

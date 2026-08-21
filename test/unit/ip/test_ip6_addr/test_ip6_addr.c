@@ -298,8 +298,7 @@ void test_sec2_7_transient_flag(void)
 
     a6(addr_a, 0xFF15u, 0, 0, 0, 0, 0, 0, 0x0101u);
     classify(work_a, addr_a);
-    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP6_MCAST_FLAG_T,
-                            IDEMIP_IP6_ADDR_IO(work_a)->flags & IDEMIP_IP6_MCAST_FLAG_T);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP6_MCAST_FLAG_T, IDEMIP_IP6_ADDR_IO(work_a)->flags & IDEMIP_IP6_MCAST_FLAG_T);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_SCOPE_SITE_LOCAL, IDEMIP_IP6_ADDR_IO(work_a)->scope);
 }
 
@@ -645,4 +644,106 @@ void test_no_entry_ever_reports_busy(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_ADDR_IO(work_a)->status);
     zone_of(work_a, addr_a, 1u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_ADDR_IO(work_a)->status);
+}
+
+// RFC 4291 sec 2.5.6 and RFC 3879 sec 2 each name a prefix by its first ten bits, and RFC 4291 sec
+// 2.5.5 puts an IPv4 address behind eighty zero bits with either FFFF or 0000 in the two octets
+// between. An address differing from any of those in the bits that name it is a different kind.
+void test_the_type_of_an_address_is_read_to_the_width_of_its_prefix(void)
+{
+    // FE00::/10 shares the site-local first octet and differs in the two bits behind it.
+    static const uint8_t near_site[16] = {0xFE, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
+    TEST_ASSERT_NOT_EQUAL_INT_MESSAGE(IDEMIP_IP6_TYPE_SITE_LOCAL, idemip_ip6_addr_type(near_site),
+                                      "an address sharing the site-local first octet was read as site-local");
+
+    // Eighty zero bits and two octets that are neither FFFF nor 0000: not an embedded IPv4 address.
+    static const uint8_t neither[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x12, 0x34, 192u, 0u, 2u, 1u};
+    TEST_ASSERT_NOT_EQUAL_INT_MESSAGE(IDEMIP_IP6_TYPE_V4_MAPPED, idemip_ip6_addr_type(neither),
+                                      "an address with neither tag was read as a mapped one");
+
+    // FFFF in one octet and not the other, which is neither tag: the two octets are read as a pair.
+    static const uint8_t half_mapped[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0x00, 192u, 0u, 2u, 1u};
+    TEST_ASSERT_NOT_EQUAL_INT_MESSAGE(IDEMIP_IP6_TYPE_V4_MAPPED, idemip_ip6_addr_type(half_mapped),
+                                      "an address with half the mapped tag was read as mapped");
+    static const uint8_t half_compat[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x12, 192u, 0u, 2u, 1u};
+    TEST_ASSERT_NOT_EQUAL_INT_MESSAGE(IDEMIP_IP6_TYPE_V4_MAPPED, idemip_ip6_addr_type(half_compat),
+                                      "an address with half the compatible tag was read as mapped");
+}
+
+// RFC 4291 sec 2.7 gives a multicast address four flag bits, and sec 2.7.1's all-nodes group is
+// assigned with none of them set. An address with a flag set is a different group, and one that is
+// not multicast at all is not that group either.
+void test_the_all_nodes_group_is_the_assigned_one_and_not_a_transient_copy(void)
+{
+    static const uint8_t flagged[16] = {0xFF, 0x12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
+    TEST_ASSERT_FALSE_MESSAGE(idemip_ip6_addr_is_all_nodes(flagged),
+                              "a transient group with the all-nodes identifier was read as the assigned one");
+
+    static const uint8_t unicast[16] = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
+    TEST_ASSERT_FALSE_MESSAGE(idemip_ip6_addr_is_all_nodes(unicast), "a unicast address was read as a group");
+}
+
+// Each entry works over an address the caller holds, and RFC 4291 sec 2.3 gives a prefix at most 128
+// bits, so a call naming no address or a longer prefix than an address has is refused.
+void test_the_entries_refuse_what_no_address_can_answer(void)
+{
+    Ip6Addr.clear(work_a);
+    a6(addr_a, 0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    a6(addr_b, 0x2001u, 0x0DB8u, 0, 0, 0, 0, 0, 1u);
+
+    IDEMIP_IP6_ADDR_IO(work_a)->zone_args.addr = NULL;
+    IDEMIP_IP6_ADDR_IO(work_a)->zone_args.netif = 1u;
+    Ip6Addr.zone(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IP6_ADDR_IO(work_a)->status, "a zone was derived for no address");
+
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.a = NULL;
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.b = addr_b;
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.prefix_len = 64u;
+    Ip6Addr.match(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IP6_ADDR_IO(work_a)->status,
+                                  "a match was made against no address");
+
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.a = addr_b;
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.b = NULL;
+    Ip6Addr.match(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IP6_ADDR_IO(work_a)->status,
+                                  "a match was made with no second address");
+
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.b = addr_b;
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.prefix_len = (uint8_t)(IDEMIP_IP6_ADDR_BITS + 1u);
+    Ip6Addr.match(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IP6_ADDR_IO(work_a)->status,
+                                  "a prefix longer than an address was matched on");
+}
+
+// RFC 4007 sec 6: "the same non-global address may be in use in more than one zone of the same
+// scope", so two equal
+// non-global addresses in different zones are different addresses - and two equal global ones are
+// the same address whatever zone either was named in.
+void test_two_equal_addresses_in_different_zones_are_not_the_same_address(void)
+{
+    Ip6Addr.clear(work_a);
+    a6(addr_a, 0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.a = addr_a;
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.b = addr_a;
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.prefix_len = 64u;
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.a_zone = 1u;
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.b_zone = 2u;
+    Ip6Addr.match(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_ADDR_IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP6_ADDR_IO(work_a)->equal,
+                              "one link-local address in two zones was read as one address");
+
+    // The same octets in one zone are the one address.
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.b_zone = 1u;
+    Ip6Addr.match(work_a);
+    TEST_ASSERT_TRUE(IDEMIP_IP6_ADDR_IO(work_a)->equal);
+
+    // And a zone nobody named is not a second zone: sec 6 leaves the zone of an address a caller
+    // gave none for to be decided by whoever holds it, so it does not tell the two apart.
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.a_zone = 1u;
+    IDEMIP_IP6_ADDR_IO(work_a)->match_args.b_zone = IDEMIP_IP6_ZONE_DEFAULT;
+    Ip6Addr.match(work_a);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP6_ADDR_IO(work_a)->equal, "a zone nobody named was read as one that differs");
 }

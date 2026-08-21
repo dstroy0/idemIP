@@ -301,14 +301,14 @@ void test_arp_in_refuses_no_packet(void)
 // intended to be modifiable by implementers, operators, or end users."
 void test_the_timing_constants_are_the_ones_rfc_5227_prints(void)
 {
-    TEST_ASSERT_EQUAL_UINT32(1000u, IDEMIP_ACD_PROBE_WAIT_MS);        // 1 second
-    TEST_ASSERT_EQUAL_UINT32(3u, IDEMIP_ACD_PROBE_NUM);               // 3 probe packets
-    TEST_ASSERT_EQUAL_UINT32(1000u, IDEMIP_ACD_PROBE_MIN_MS);         // 1 second
-    TEST_ASSERT_EQUAL_UINT32(2000u, IDEMIP_ACD_PROBE_MAX_MS);         // 2 seconds
-    TEST_ASSERT_EQUAL_UINT32(2000u, IDEMIP_ACD_ANNOUNCE_WAIT_MS);     // 2 seconds
-    TEST_ASSERT_EQUAL_UINT32(2u, IDEMIP_ACD_ANNOUNCE_NUM);            // 2 Announcement packets
-    TEST_ASSERT_EQUAL_UINT32(2000u, IDEMIP_ACD_ANNOUNCE_INTERVAL_MS); // 2 seconds
-    TEST_ASSERT_EQUAL_UINT32(10u, IDEMIP_ACD_MAX_CONFLICTS);          // 10 conflicts
+    TEST_ASSERT_EQUAL_UINT32(1000u, IDEMIP_ACD_PROBE_WAIT_MS);           // 1 second
+    TEST_ASSERT_EQUAL_UINT32(3u, IDEMIP_ACD_PROBE_NUM);                  // 3 probe packets
+    TEST_ASSERT_EQUAL_UINT32(1000u, IDEMIP_ACD_PROBE_MIN_MS);            // 1 second
+    TEST_ASSERT_EQUAL_UINT32(2000u, IDEMIP_ACD_PROBE_MAX_MS);            // 2 seconds
+    TEST_ASSERT_EQUAL_UINT32(2000u, IDEMIP_ACD_ANNOUNCE_WAIT_MS);        // 2 seconds
+    TEST_ASSERT_EQUAL_UINT32(2u, IDEMIP_ACD_ANNOUNCE_NUM);               // 2 Announcement packets
+    TEST_ASSERT_EQUAL_UINT32(2000u, IDEMIP_ACD_ANNOUNCE_INTERVAL_MS);    // 2 seconds
+    TEST_ASSERT_EQUAL_UINT32(10u, IDEMIP_ACD_MAX_CONFLICTS);             // 10 conflicts
     TEST_ASSERT_EQUAL_UINT32(60000u, IDEMIP_ACD_RATE_LIMIT_INTERVAL_MS); // 60 seconds
     TEST_ASSERT_EQUAL_UINT32(10000u, IDEMIP_ACD_DEFEND_INTERVAL_MS);     // 10 seconds
 }
@@ -1361,4 +1361,17 @@ void test_a_defense_on_one_borrow_does_not_arm_the_others_interval(void)
     TEST_ASSERT_TRUE(IDEMIP_ACD_IO(work_b)->send_announce);
     TEST_ASSERT_FALSE(IDEMIP_ACD_IO(work_b)->abandon);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ACD_STATE_ONGOING, IDEMIP_ACD_IO(work_b)->state);
+}
+
+// RFC 5227 sec 1.1 names an ARP Probe "an ARP Request packet ... with an all-zero 'sender IP
+// address'", so a Request carrying a sender address is not a probe - it is sec 2.1's ordinary
+// traffic, or the Announcement of sec 2.3, and the probe rules do not read it as one.
+void test_a_request_carrying_a_sender_address_is_not_a_probe(void)
+{
+    clear_and_start(work_a, ADDR_A, IDEMIP_ACD_DEFEND_ONCE, 0u, 0u);
+
+    mk_request(g_other_mac, ADDR_B, ADDR_B);
+    arp_at(work_a, 500u);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_ACD_IO(work_a)->conflict,
+                              "a Request about another address was read as a conflict");
 }

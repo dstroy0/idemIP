@@ -760,3 +760,43 @@ void test_pack_writes_no_octet_of_the_frame(void)
     pack_tag(work_a, 4u, IDEMIP_TRUE, 42u);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(before, frame, FRAME_BYTES);
 }
+
+// RFC 1122 sec 2.3.3 tells an 802.3 Length from an EtherType by the value, and RFC 1042 puts the
+// EtherType behind eight octets of LLC and SNAP. A frame naming a Length with fewer octets than
+// those eight, or with something else in them, is not an encapsulation this decodes - tagged or not.
+void test_a_length_frame_that_carries_no_snap_header_is_not_decoded(void)
+{
+    ready(work_a);
+
+    // Untagged, with a Length and nothing behind it.
+    memset(frame, 0, FRAME_BYTES);
+    make_untagged(46u);
+    parse_frame(work_a, (size_t)IDEMIP_ETH_HDR_LEN + 4u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status,
+                                  "a frame with no room for the LLC and SNAP headers was decoded");
+
+    // Untagged, with the eight octets there and something other than a SNAP header in them.
+    memset(frame, 0, FRAME_BYTES);
+    make_untagged(46u);
+    frame[IDEMIP_ETH_OFF_PAYLOAD] = 0x42u;
+    parse_frame(work_a, (size_t)IDEMIP_ETH_HDR_LEN + IDEMIP_LLC_SNAP_LEN + 4u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status,
+                                  "a frame carrying something other than a SNAP header was decoded");
+
+    // Tagged, with a Length behind the tag and nothing behind that.
+    memset(frame, 0, FRAME_BYTES);
+    make_tagged(0x0064u, 46u);
+    parse_frame(work_a, (size_t)IDEMIP_VLAN_OFF_PAYLOAD + 4u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status,
+                                  "a tagged frame with no room for the SNAP header was decoded");
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_VLAN_IO(work_a)->tagged,
+                              "a tagged frame this does not decode was still reported as tagged");
+
+    // Tagged, with the eight octets there and something other than a SNAP header in them.
+    memset(frame, 0, FRAME_BYTES);
+    make_tagged(0x0064u, 46u);
+    frame[IDEMIP_VLAN_OFF_PAYLOAD] = 0x42u;
+    parse_frame(work_a, (size_t)IDEMIP_VLAN_OFF_PAYLOAD + IDEMIP_LLC_SNAP_LEN);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status,
+                                  "a tagged frame carrying something other than a SNAP header was decoded");
+}

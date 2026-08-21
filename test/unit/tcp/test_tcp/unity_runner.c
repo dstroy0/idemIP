@@ -38,6 +38,7 @@ extern void test_build_clamps_the_window_scale_shift(void);
 extern void test_build_fills_the_option_maximum(void);
 extern void test_pseudo_header_checksum(void);
 extern void test_checksum_pads_an_odd_length(void);
+extern void test_a_sack_option_shorter_than_its_own_fixed_octets_carries_no_blocks(void);
 
 
 /*=======Mock Management=====*/
@@ -108,27 +109,28 @@ int main(void)
   run_test(test_option_kind_numbers, "test_option_kind_numbers", 223);
   run_test(test_walk_over_a_header_with_no_options, "test_walk_over_a_header_with_no_options", 243);
   run_test(test_walk_steps_single_octet_no_operation, "test_walk_steps_single_octet_no_operation", 257);
-  run_test(test_walk_stops_at_end_of_option_list, "test_walk_stops_at_end_of_option_list", 278);
-  run_test(test_walk_steps_the_maximum_segment_size_option, "test_walk_steps_the_maximum_segment_size_option", 301);
-  run_test(test_walk_steps_past_an_unimplemented_kind, "test_walk_steps_past_an_unimplemented_kind", 318);
-  run_test(test_walk_refuses_an_illegal_option_length, "test_walk_refuses_an_illegal_option_length", 350);
-  run_test(test_walk_refuses_a_length_past_the_options, "test_walk_refuses_a_length_past_the_options", 369);
-  run_test(test_walk_refuses_a_truncated_length_octet, "test_walk_refuses_a_truncated_length_octet", 380);
-  run_test(test_two_walks_do_not_interfere, "test_two_walks_do_not_interfere", 398);
-  run_test(test_a_walk_repeats, "test_a_walk_repeats", 427);
-  run_test(test_window_scale_option_figure, "test_window_scale_option_figure", 456);
-  run_test(test_window_scale_over_fourteen_reads_as_fourteen, "test_window_scale_over_fourteen_reads_as_fourteen", 470);
-  run_test(test_window_scale_reaches_one_gibibyte, "test_window_scale_reaches_one_gibibyte", 484);
-  run_test(test_timestamps_option_figure, "test_timestamps_option_figure", 502);
-  run_test(test_sack_permitted_option_figure, "test_sack_permitted_option_figure", 519);
-  run_test(test_sack_option_blocks, "test_sack_option_blocks", 536);
-  run_test(test_sack_block_count_bounds, "test_sack_block_count_bounds", 575);
-  run_test(test_build_a_syn_option_list, "test_build_a_syn_option_list", 590);
-  run_test(test_build_helpers_write_only_what_they_report, "test_build_helpers_write_only_what_they_report", 632);
-  run_test(test_build_clamps_the_window_scale_shift, "test_build_clamps_the_window_scale_shift", 678);
-  run_test(test_build_fills_the_option_maximum, "test_build_fills_the_option_maximum", 690);
-  run_test(test_pseudo_header_checksum, "test_pseudo_header_checksum", 723);
-  run_test(test_checksum_pads_an_odd_length, "test_checksum_pads_an_odd_length", 749);
+  run_test(test_walk_stops_at_end_of_option_list, "test_walk_stops_at_end_of_option_list", 277);
+  run_test(test_walk_steps_the_maximum_segment_size_option, "test_walk_steps_the_maximum_segment_size_option", 300);
+  run_test(test_walk_steps_past_an_unimplemented_kind, "test_walk_steps_past_an_unimplemented_kind", 317);
+  run_test(test_walk_refuses_an_illegal_option_length, "test_walk_refuses_an_illegal_option_length", 358);
+  run_test(test_walk_refuses_a_length_past_the_options, "test_walk_refuses_a_length_past_the_options", 377);
+  run_test(test_walk_refuses_a_truncated_length_octet, "test_walk_refuses_a_truncated_length_octet", 388);
+  run_test(test_two_walks_do_not_interfere, "test_two_walks_do_not_interfere", 405);
+  run_test(test_a_walk_repeats, "test_a_walk_repeats", 440);
+  run_test(test_window_scale_option_figure, "test_window_scale_option_figure", 469);
+  run_test(test_window_scale_over_fourteen_reads_as_fourteen, "test_window_scale_over_fourteen_reads_as_fourteen", 483);
+  run_test(test_window_scale_reaches_one_gibibyte, "test_window_scale_reaches_one_gibibyte", 497);
+  run_test(test_timestamps_option_figure, "test_timestamps_option_figure", 515);
+  run_test(test_sack_permitted_option_figure, "test_sack_permitted_option_figure", 532);
+  run_test(test_sack_option_blocks, "test_sack_option_blocks", 549);
+  run_test(test_sack_block_count_bounds, "test_sack_block_count_bounds", 588);
+  run_test(test_build_a_syn_option_list, "test_build_a_syn_option_list", 603);
+  run_test(test_build_helpers_write_only_what_they_report, "test_build_helpers_write_only_what_they_report", 645);
+  run_test(test_build_clamps_the_window_scale_shift, "test_build_clamps_the_window_scale_shift", 691);
+  run_test(test_build_fills_the_option_maximum, "test_build_fills_the_option_maximum", 703);
+  run_test(test_pseudo_header_checksum, "test_pseudo_header_checksum", 736);
+  run_test(test_checksum_pads_an_odd_length, "test_checksum_pads_an_odd_length", 762);
+  run_test(test_a_sack_option_shorter_than_its_own_fixed_octets_carries_no_blocks, "test_a_sack_option_shorter_than_its_own_fixed_octets_carries_no_blocks", 778);
 
   return UNITY_END();
 }

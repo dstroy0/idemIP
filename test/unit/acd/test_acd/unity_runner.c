@@ -78,6 +78,7 @@ extern void test_off_and_rate_limit_find_no_conflict_in_any_packet(void);
 extern void test_an_entry_clears_every_result_member_it_did_not_set(void);
 extern void test_two_machines_probe_and_conflict_independently(void);
 extern void test_a_defense_on_one_borrow_does_not_arm_the_others_interval(void);
+extern void test_a_request_carrying_a_sender_address_is_not_a_probe(void);
 
 
 /*=======Mock Management=====*/
@@ -209,6 +210,7 @@ int main(void)
   run_test(test_an_entry_clears_every_result_member_it_did_not_set, "test_an_entry_clears_every_result_member_it_did_not_set", 1281);
   run_test(test_two_machines_probe_and_conflict_independently, "test_two_machines_probe_and_conflict_independently", 1318);
   run_test(test_a_defense_on_one_borrow_does_not_arm_the_others_interval, "test_a_defense_on_one_borrow_does_not_arm_the_others_interval", 1347);
+  run_test(test_a_request_carrying_a_sender_address_is_not_a_probe, "test_a_request_carrying_a_sender_address_is_not_a_probe", 1369);
 
   return UNITY_END();
 }

@@ -261,8 +261,7 @@ IDEMIP_INLINE size_t idemip_ip4_options_len(const uint8_t *h)
 /** @brief Version 4 in the high nibble, @p ihl words in the low one. */
 IDEMIP_INLINE void idemip_ip4_set_ver_ihl(uint8_t *h, uint8_t ihl)
 {
-    h[IDEMIP_IP4_OFF_VER_IHL] =
-        (uint8_t)((IDEMIP_IP4_VERSION << IDEMIP_IP4_VER_SHIFT) | (ihl & IDEMIP_IP4_IHL_MASK));
+    h[IDEMIP_IP4_OFF_VER_IHL] = (uint8_t)((IDEMIP_IP4_VERSION << IDEMIP_IP4_VER_SHIFT) | (ihl & IDEMIP_IP4_IHL_MASK));
 }
 
 IDEMIP_INLINE void idemip_ip4_set_tos(uint8_t *h, uint8_t tos)
@@ -387,7 +386,11 @@ IDEMIP_INLINE idemip_bool idemip_ip4_version_ok(const uint8_t *h)
 IDEMIP_INLINE idemip_bool idemip_ip4_ihl_ok(const uint8_t *h)
 {
     const uint8_t ihl = idemip_ip4_ihl(h);
-    return (idemip_bool)(ihl >= IDEMIP_IP4_IHL_MIN && ihl <= IDEMIP_IP4_IHL_MAX);
+    // Not measured on the ceiling: the field is four bits, so idemip_ip4_ihl reports at most 15,
+    // which is IDEMIP_IP4_IHL_MAX. It is written because the header length this reports on is what
+    // every walk over the options is bounded by, and the two ends of sec 3.1's range are stated
+    // together there.
+    return (idemip_bool)(ihl >= IDEMIP_IP4_IHL_MIN && ihl <= IDEMIP_IP4_IHL_MAX); // GCOVR_EXCL_BR_LINE
 }
 
 /**

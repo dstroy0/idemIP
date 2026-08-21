@@ -41,6 +41,10 @@ extern void test_a_global_address_ignores_zone_indices(void);
 extern void test_prefix_equality_over_the_leading_bits(void);
 extern void test_a_prefix_longer_than_the_address_is_refused(void);
 extern void test_no_entry_ever_reports_busy(void);
+extern void test_the_type_of_an_address_is_read_to_the_width_of_its_prefix(void);
+extern void test_the_all_nodes_group_is_the_assigned_one_and_not_a_transient_copy(void);
+extern void test_the_entries_refuse_what_no_address_can_answer(void);
+extern void test_two_equal_addresses_in_different_zones_are_not_the_same_address(void);
 
 
 /*=======Mock Management=====*/
@@ -114,27 +118,31 @@ int main(void)
   run_test(test_sec2_5_5_embedded_ipv4_forms, "test_sec2_5_5_embedded_ipv4_forms", 247);
   run_test(test_sec2_7_ntp_group_scopes, "test_sec2_7_ntp_group_scopes", 269);
   run_test(test_sec2_7_transient_flag, "test_sec2_7_transient_flag", 292);
-  run_test(test_a_unicast_address_reports_no_multicast_flags, "test_a_unicast_address_reports_no_multicast_flags", 307);
-  run_test(test_sec2_7_1_worked_example, "test_sec2_7_1_worked_example", 319);
-  run_test(test_sec2_7_1_range_endpoints, "test_sec2_7_1_range_endpoints", 332);
-  run_test(test_sec2_7_1_high_order_bits_alias, "test_sec2_7_1_high_order_bits_alias", 350);
-  run_test(test_solicited_refuses_a_multicast_or_unspecified_address, "test_solicited_refuses_a_multicast_or_unspecified_address", 368);
-  run_test(test_rfc4007_link_local_takes_the_interface_index, "test_rfc4007_link_local_takes_the_interface_index", 388);
-  run_test(test_rfc4007_interface_zero_does_not_derive_the_default_zone, "test_rfc4007_interface_zero_does_not_derive_the_default_zone", 406);
-  run_test(test_rfc4007_interface_local_multicast_takes_the_interface_index, "test_rfc4007_interface_local_multicast_takes_the_interface_index", 435);
-  run_test(test_rfc4291_a_scop_f_multicast_address_has_global_scope, "test_rfc4291_a_scop_f_multicast_address_has_global_scope", 450);
-  run_test(test_rfc4007_global_scope_is_the_default_zone, "test_rfc4007_global_scope_is_the_default_zone", 476);
-  run_test(test_rfc4007_a_site_zone_is_not_derived, "test_rfc4007_a_site_zone_is_not_derived", 488);
-  run_test(test_a_reserved_scop_of_zero_has_no_zone, "test_a_reserved_scop_of_zero_has_no_zone", 501);
-  run_test(test_a_reserved_scop_of_f_takes_the_global_zone, "test_a_reserved_scop_of_f_takes_the_global_zone", 512);
-  run_test(test_the_unspecified_address_has_no_scope, "test_the_unspecified_address_has_no_scope", 524);
-  run_test(test_the_loopback_address_has_link_local_scope, "test_the_loopback_address_has_link_local_scope", 536);
-  run_test(test_the_same_link_local_address_in_two_zones_is_not_one_interface, "test_the_same_link_local_address_in_two_zones_is_not_one_interface", 548);
-  run_test(test_the_default_zone_matches_whatever_the_other_names, "test_the_default_zone_matches_whatever_the_other_names", 568);
-  run_test(test_a_global_address_ignores_zone_indices, "test_a_global_address_ignores_zone_indices", 583);
-  run_test(test_prefix_equality_over_the_leading_bits, "test_prefix_equality_over_the_leading_bits", 598);
-  run_test(test_a_prefix_longer_than_the_address_is_refused, "test_a_prefix_longer_than_the_address_is_refused", 625);
-  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 637);
+  run_test(test_a_unicast_address_reports_no_multicast_flags, "test_a_unicast_address_reports_no_multicast_flags", 306);
+  run_test(test_sec2_7_1_worked_example, "test_sec2_7_1_worked_example", 318);
+  run_test(test_sec2_7_1_range_endpoints, "test_sec2_7_1_range_endpoints", 331);
+  run_test(test_sec2_7_1_high_order_bits_alias, "test_sec2_7_1_high_order_bits_alias", 349);
+  run_test(test_solicited_refuses_a_multicast_or_unspecified_address, "test_solicited_refuses_a_multicast_or_unspecified_address", 367);
+  run_test(test_rfc4007_link_local_takes_the_interface_index, "test_rfc4007_link_local_takes_the_interface_index", 387);
+  run_test(test_rfc4007_interface_zero_does_not_derive_the_default_zone, "test_rfc4007_interface_zero_does_not_derive_the_default_zone", 405);
+  run_test(test_rfc4007_interface_local_multicast_takes_the_interface_index, "test_rfc4007_interface_local_multicast_takes_the_interface_index", 434);
+  run_test(test_rfc4291_a_scop_f_multicast_address_has_global_scope, "test_rfc4291_a_scop_f_multicast_address_has_global_scope", 449);
+  run_test(test_rfc4007_global_scope_is_the_default_zone, "test_rfc4007_global_scope_is_the_default_zone", 475);
+  run_test(test_rfc4007_a_site_zone_is_not_derived, "test_rfc4007_a_site_zone_is_not_derived", 487);
+  run_test(test_a_reserved_scop_of_zero_has_no_zone, "test_a_reserved_scop_of_zero_has_no_zone", 500);
+  run_test(test_a_reserved_scop_of_f_takes_the_global_zone, "test_a_reserved_scop_of_f_takes_the_global_zone", 511);
+  run_test(test_the_unspecified_address_has_no_scope, "test_the_unspecified_address_has_no_scope", 523);
+  run_test(test_the_loopback_address_has_link_local_scope, "test_the_loopback_address_has_link_local_scope", 535);
+  run_test(test_the_same_link_local_address_in_two_zones_is_not_one_interface, "test_the_same_link_local_address_in_two_zones_is_not_one_interface", 547);
+  run_test(test_the_default_zone_matches_whatever_the_other_names, "test_the_default_zone_matches_whatever_the_other_names", 567);
+  run_test(test_a_global_address_ignores_zone_indices, "test_a_global_address_ignores_zone_indices", 582);
+  run_test(test_prefix_equality_over_the_leading_bits, "test_prefix_equality_over_the_leading_bits", 597);
+  run_test(test_a_prefix_longer_than_the_address_is_refused, "test_a_prefix_longer_than_the_address_is_refused", 624);
+  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 636);
+  run_test(test_the_type_of_an_address_is_read_to_the_width_of_its_prefix, "test_the_type_of_an_address_is_read_to_the_width_of_its_prefix", 652);
+  run_test(test_the_all_nodes_group_is_the_assigned_one_and_not_a_transient_copy, "test_the_all_nodes_group_is_the_assigned_one_and_not_a_transient_copy", 676);
+  run_test(test_the_entries_refuse_what_no_address_can_answer, "test_the_entries_refuse_what_no_address_can_answer", 688);
+  run_test(test_two_equal_addresses_in_different_zones_are_not_the_same_address, "test_two_equal_addresses_in_different_zones_are_not_the_same_address", 723);
 
   return UNITY_END();
 }

@@ -863,3 +863,41 @@ void test_a_tick_in_one_borrow_does_not_advance_the_other(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, expire_next(work_a));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, expire_next(work_b));
 }
+
+// A deadline is cancelled wherever it stands in the list, not only at the front: the walk finds the
+// one before it and links past it, so the deadlines behind it are still there in order.
+void test_a_deadline_is_cancelled_from_behind_the_front_of_the_list(void)
+{
+    Timeouts.clear(work_a);
+
+    for (uint8_t k = 0u; k < 3u; k++)
+    {
+        IDEMIP_TIMEOUTS_IO(work_a)->arm_args.unit = IDEMIP_TIMEOUT_UNIT_ARP;
+        IDEMIP_TIMEOUTS_IO(work_a)->arm_args.arg = k;
+        IDEMIP_TIMEOUTS_IO(work_a)->arm_args.deadline_ms = (uint32_t)(1000u + (k * 1000u));
+        IDEMIP_TIMEOUTS_IO(work_a)->arm_args.flags = IDEMIP_TIMEOUT_FLAG_ARMED;
+        Timeouts.arm(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TIMEOUTS_IO(work_a)->status);
+    }
+
+    // The last of the three, so the walk steps over the two in front of it to find the one before.
+    IDEMIP_TIMEOUTS_IO(work_a)->cancel_args.unit = IDEMIP_TIMEOUT_UNIT_ARP;
+    IDEMIP_TIMEOUTS_IO(work_a)->cancel_args.arg = 2u;
+    Timeouts.cancel(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TIMEOUTS_IO(work_a)->status);
+
+    // The two that are left still fire, in the order their deadlines fall.
+    IDEMIP_TIMEOUTS_IO(work_a)->tick_args.now_ms = 4000u;
+    Timeouts.tick(work_a);
+    Timeouts.expire(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TIMEOUTS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, IDEMIP_TIMEOUTS_IO(work_a)->arg,
+                                    "the first deadline went with the cancelled one");
+    Timeouts.expire(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TIMEOUTS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, IDEMIP_TIMEOUTS_IO(work_a)->arg,
+                                    "the deadline in front of the cancelled one was lost with it");
+    Timeouts.expire(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_TIMEOUTS_IO(work_a)->status,
+                                  "the cancelled deadline fired anyway");
+}

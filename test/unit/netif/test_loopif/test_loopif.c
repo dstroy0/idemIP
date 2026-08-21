@@ -563,9 +563,8 @@ void test_the_frame_comes_back_inside_the_borrow(void)
     const uint8_t *got = IDEMIP_LOOPIF_IO(work_a)->frame;
     TEST_ASSERT_TRUE(got >= work_a + IDEMIP_LOOPIF_OFF_FRAMES);
     TEST_ASSERT_TRUE(got + sizeof sent <= work_a + IDEMIP_LOOPIF_OFF_END);
-    TEST_ASSERT_EQUAL_PTR(work_a + IDEMIP_LOOPIF_OFF_FRAMES +
-                              ((size_t)IDEMIP_LOOPIF_IO(work_a)->slot << IDEMIP_LOOPIF_FRAME_SHIFT),
-                          got);
+    TEST_ASSERT_EQUAL_PTR(
+        work_a + IDEMIP_LOOPIF_OFF_FRAMES + ((size_t)IDEMIP_LOOPIF_IO(work_a)->slot << IDEMIP_LOOPIF_FRAME_SHIFT), got);
 }
 
 // The caller's buffer is the caller's: output takes a copy, so overwriting the source after the call
@@ -911,4 +910,20 @@ void test_every_entry_is_present(void)
 #if IDEMIP_ENABLE_IPV6
     TEST_ASSERT_NOT_NULL(Loopif.owns6);
 #endif
+}
+
+// The match works over an address the caller holds, so a call naming none has nothing to compare
+// against RFC 4291 sec 2.5.3's loopback address.
+void test_a_match_that_names_no_address_is_refused(void)
+{
+    Loopif.clear(work_a);
+    IDEMIP_LOOPIF_IO(work_a)->match_args.addr6 = NULL;
+    Loopif.owns6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status, "a match was made against no address");
+
+    // And bytes clear has not run on are not an interface to match against either.
+    memset(work_a, 0xFF, IDEMIP_LOOPIF_BORROW);
+    IDEMIP_LOOPIF_IO(work_a)->match_args.addr6 = g_lo6;
+    Loopif.owns6(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status, "owns6 read an uncleared borrow");
 }

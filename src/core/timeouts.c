@@ -138,11 +138,16 @@ static void timeouts_unlink(uint8_t *work, uint8_t i)
         return;
     }
     uint8_t prev = ctx->head;
-    while (prev != TIMEOUTS_NONE && TIMEOUTS_AT(work, prev)->next != i)
+    // The two readings for a list that does not hold this entry are not measured: an entry is
+    // unlinked only where it was found on the list, and the head is answered above, so the walk
+    // meets the one before it. They are written because the walk is over next fields the caller's
+    // borrow holds, and a walk over one of those that cannot end is a walk that hangs.
+    while (prev != TIMEOUTS_NONE && // GCOVR_EXCL_BR_LINE
+           TIMEOUTS_AT(work, prev)->next != i)
     {
         prev = TIMEOUTS_AT(work, prev)->next;
     }
-    if (prev != TIMEOUTS_NONE)
+    if (prev != TIMEOUTS_NONE) // GCOVR_EXCL_BR_LINE
     {
         TIMEOUTS_AT(work, prev)->next = TIMEOUTS_AT(work, i)->next;
     }

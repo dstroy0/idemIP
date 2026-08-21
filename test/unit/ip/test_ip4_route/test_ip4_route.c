@@ -48,8 +48,7 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 static void dirty_table(uint8_t *w)
 {
-    memset(w + IDEMIP_IP4_ROUTE_OFF_TAB, DIRT,
-           (size_t)IDEMIP_IP4_ROUTE_BORROW - (size_t)IDEMIP_IP4_ROUTE_OFF_TAB);
+    memset(w + IDEMIP_IP4_ROUTE_OFF_TAB, DIRT, (size_t)IDEMIP_IP4_ROUTE_BORROW - (size_t)IDEMIP_IP4_ROUTE_OFF_TAB);
 }
 
 static void assert_table_zero(const uint8_t *w)
@@ -451,7 +450,8 @@ void test_add_keeps_rows_that_differ_only_in_the_type_of_service(void)
 {
     Ip4Route.clear(work_a);
     TEST_ASSERT_EQUAL_UINT8(0u, add_row(work_a, NET_10_8, M8, GW_10_0_0_1, IDEMIP_IP4_ROUTE_F_GATEWAY, 1u, 0u, 0u));
-    TEST_ASSERT_EQUAL_UINT8(1u, add_row(work_a, NET_10_8, M8, GW_192_168_1_1, IDEMIP_IP4_ROUTE_F_GATEWAY, 2u, 0x10u, 0u));
+    TEST_ASSERT_EQUAL_UINT8(1u,
+                            add_row(work_a, NET_10_8, M8, GW_192_168_1_1, IDEMIP_IP4_ROUTE_F_GATEWAY, 2u, 0x10u, 0u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP4_ROUTE_IO(work_a)->status);
 }
 
@@ -910,8 +910,8 @@ void test_a_redirect_leaves_a_static_row_it_may_not_override(void)
 {
     Ip4Route.clear(work_a);
     add_net(work_a, LAN_192_168_1_24, M24);
-    add_row(work_a, IP_10_144_2_5, M32, GW_192_168_1_1,
-            IDEMIP_IP4_ROUTE_F_GATEWAY | IDEMIP_IP4_ROUTE_F_STATIC, 1u, 0u, 0u);
+    add_row(work_a, IP_10_144_2_5, M32, GW_192_168_1_1, IDEMIP_IP4_ROUTE_F_GATEWAY | IDEMIP_IP4_ROUTE_F_STATIC, 1u, 0u,
+            0u);
 
     redirect(work_a, IP_10_144_2_5, GW_192_168_1_9);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IP4_ROUTE_IO(work_a)->status);
@@ -1167,4 +1167,63 @@ void test_two_tables_route_independently(void)
     // b holds no LAN row, so a's gateway is off every connected net of b.
     look(work_b, GW_192_168_1_9, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_IP4_ROUTE_IO(work_b)->status);
+}
+
+// RFC 1122 sec 3.3.1.2 takes a Redirect only for "a new first-hop gateway" the host can reach
+// directly, so a gateway this table has no route to at all is not one, and neither is one reached
+// through another gateway. The table is finite besides: a Redirect that would need a row it has none
+// of is BUSY, since a remove frees one.
+void test_a_redirect_needs_a_directly_reachable_gateway_and_a_row_to_put_it_in(void)
+{
+    Ip4Route.clear(work_a);
+
+    // Nothing in the table at all: the gateway is reachable through nothing.
+    redirect(work_a, 0x0A000009u, GW_10_0_0_1);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IP4_ROUTE_IO(work_a)->status,
+                                  "a Redirect to a gateway with no route to it was taken");
+
+    // One connected network and every other row taken, then a Redirect for a host on that network:
+    // the host route it would derive has nowhere to go.
+    Ip4Route.clear(work_a);
+    (void)add_net(work_a, 0x0A000000u, M24);
+    for (uint8_t k = 1u; k < (uint8_t)IDEMIP_IP4_ROUTES; k++)
+    {
+        const uint8_t at = add_net(work_a, 0x0A000000u + ((uint32_t)k << 8u), M24);
+        TEST_ASSERT_NOT_EQUAL_UINT8_MESSAGE((uint8_t)IDEMIP_IP4_ROUTE_INDEX_NONE, at, "a free row was refused");
+    }
+
+    redirect(work_a, 0x0A000009u, GW_10_0_0_1);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_IP4_ROUTE_IO(work_a)->status,
+                                  "a table with no free row took a Redirect anyway");
+}
+
+// RFC 1191 sec 6.3 ages an estimate out of every row that carries one, so a sweep past the timeout
+// takes them all rather than stopping at the first.
+void test_the_sweep_takes_every_estimate_that_has_aged_out(void)
+{
+    Ip4Route.clear(work_a);
+    (void)add_net(work_a, 0x0A000000u, M24);
+    (void)add_net(work_a, 0x0A000100u, M24);
+
+    set_pmtu(work_a, 0x0A000009u, 1006u, 1000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP4_ROUTE_IO(work_a)->status);
+    set_pmtu(work_a, 0x0A000109u, 1006u, 1000u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP4_ROUTE_IO(work_a)->status);
+
+    IDEMIP_IP4_ROUTE_IO(work_a)->now_ms = 1000u + (uint32_t)IDEMIP_IP4_ROUTE_PMTU_TIMEOUT_MS;
+    Ip4Route.tick(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP4_ROUTE_IO(work_a)->status);
+
+    // Every row is taken now - two networks and the two host routes the estimates were kept on - so
+    // an estimate for a third destination has no row to keep it on until a remove frees one.
+    set_pmtu(work_a, 0x0A00000Au, 1006u, 1000u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_IP4_ROUTE_IO(work_a)->status,
+                                  "an estimate was kept on a table with no row for it");
+
+    // Neither row carries an estimate now, which is the state sec 3 starts a path in: "the PMTU of
+    // a path is the (known) MTU of its first hop" until a message lowers it.
+    look(work_a, 0x0A000009u, 0u);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_IP4_ROUTE_IO(work_a)->pmtu, "the first estimate outlived the sweep");
+    look(work_a, 0x0A000109u, 0u);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_IP4_ROUTE_IO(work_a)->pmtu, "the sweep stopped at the first estimate");
 }

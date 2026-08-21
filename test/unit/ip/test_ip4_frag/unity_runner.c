@@ -44,6 +44,7 @@ extern void test_next_past_the_last_fragment_is_refused(void);
 extern void test_a_short_buffer_is_refused_and_consumes_nothing(void);
 extern void test_begin_restarts_an_open_split(void);
 extern void test_the_report_agrees_with_the_fragment(void);
+extern void test_the_option_walk_stops_where_the_header_does_and_a_bad_fragment_is_refused(void);
 
 
 /*=======Mock Management=====*/
@@ -125,9 +126,9 @@ int main(void)
   run_test(test_every_fragment_verifies_and_fits_the_mtu, "test_every_fragment_verifies_and_fits_the_mtu", 429);
   run_test(test_the_fragments_carry_the_whole_datagram, "test_the_fragments_carry_the_whole_datagram", 443);
   run_test(test_the_untouched_header_fields_are_carried, "test_the_untouched_header_fields_are_carried", 460);
-  run_test(test_a_fragment_of_a_fragment_carries_ofo_and_omf, "test_a_fragment_of_a_fragment_carries_ofo_and_omf", 478);
-  run_test(test_an_unaligned_fragment_input_is_refused, "test_an_unaligned_fragment_input_is_refused", 500);
-  run_test(test_no_emitted_fragment_carries_mf_off_the_boundary, "test_no_emitted_fragment_carries_mf_off_the_boundary", 517);
+  run_test(test_a_fragment_of_a_fragment_carries_ofo_and_omf, "test_a_fragment_of_a_fragment_carries_ofo_and_omf", 479);
+  run_test(test_an_unaligned_fragment_input_is_refused, "test_an_unaligned_fragment_input_is_refused", 501);
+  run_test(test_no_emitted_fragment_carries_mf_off_the_boundary, "test_no_emitted_fragment_carries_mf_off_the_boundary", 518);
   run_test(test_a_split_past_the_thirteen_bit_offset_is_refused, "test_a_split_past_the_thirteen_bit_offset_is_refused", 535);
   run_test(test_the_widest_header_at_the_floor_still_advances, "test_the_widest_header_at_the_floor_still_advances", 547);
   run_test(test_the_first_fragment_keeps_the_whole_option_area, "test_the_first_fragment_keeps_the_whole_option_area", 563);
@@ -141,6 +142,7 @@ int main(void)
   run_test(test_a_short_buffer_is_refused_and_consumes_nothing, "test_a_short_buffer_is_refused_and_consumes_nothing", 672);
   run_test(test_begin_restarts_an_open_split, "test_begin_restarts_an_open_split", 695);
   run_test(test_the_report_agrees_with_the_fragment, "test_the_report_agrees_with_the_fragment", 710);
+  run_test(test_the_option_walk_stops_where_the_header_does_and_a_bad_fragment_is_refused, "test_the_option_walk_stops_where_the_header_does_and_a_bad_fragment_is_refused", 740);
 
   return UNITY_END();
 }

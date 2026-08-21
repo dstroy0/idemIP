@@ -72,12 +72,12 @@ static const uint8_t g_src[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0d, 0xb8, 0, 0,
 static const uint8_t g_dst[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02};
 
 static const uint8_t g_hdr[IDEMIP_IPV6_HDR_LEN] = {
-    0x62, 0xf1, 0x23, 0x45,                                                                         // ver/tc/flow
-    0x00, 0x14,                                                                                     // payload len
-    0x06,                                                                                           // next header
-    0x40,                                                                                           // hop limit
-    0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01,                                  // source
-    0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02,                                  // destination
+    0x62, 0xf1, 0x23, 0x45,                                        // ver/tc/flow
+    0x00, 0x14,                                                    // payload len
+    0x06,                                                          // next header
+    0x40,                                                          // hop limit
+    0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, // source
+    0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02, // destination
 };
 
 // Lay the fixed header into pkt and return the offset of the payload.
@@ -234,14 +234,14 @@ void test_the_field_writers_touch_only_their_own_field(void)
 // Each value is the one the section that defines the header states.
 void test_next_header_values_match_the_defining_sections(void)
 {
-    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_IP6_NH_HOPOPT);   // sec 4.3
-    TEST_ASSERT_EQUAL_UINT8(6u, IDEMIP_IP6_NH_TCP);      // sec 8.1, "6 for TCP"
-    TEST_ASSERT_EQUAL_UINT8(17u, IDEMIP_IP6_NH_UDP);     // sec 8.1, "17 for UDP"
-    TEST_ASSERT_EQUAL_UINT8(43u, IDEMIP_IP6_NH_ROUTING); // sec 4.4
-    TEST_ASSERT_EQUAL_UINT8(44u, IDEMIP_IP6_NH_FRAGMENT);// sec 4.5
-    TEST_ASSERT_EQUAL_UINT8(58u, IDEMIP_IP6_NH_ICMPV6);  // sec 8.1, "the value 58"
-    TEST_ASSERT_EQUAL_UINT8(59u, IDEMIP_IP6_NH_NONE);    // sec 4.7
-    TEST_ASSERT_EQUAL_UINT8(60u, IDEMIP_IP6_NH_DSTOPTS); // sec 4.6
+    TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_IP6_NH_HOPOPT);    // sec 4.3
+    TEST_ASSERT_EQUAL_UINT8(6u, IDEMIP_IP6_NH_TCP);       // sec 8.1, "6 for TCP"
+    TEST_ASSERT_EQUAL_UINT8(17u, IDEMIP_IP6_NH_UDP);      // sec 8.1, "17 for UDP"
+    TEST_ASSERT_EQUAL_UINT8(43u, IDEMIP_IP6_NH_ROUTING);  // sec 4.4
+    TEST_ASSERT_EQUAL_UINT8(44u, IDEMIP_IP6_NH_FRAGMENT); // sec 4.5
+    TEST_ASSERT_EQUAL_UINT8(58u, IDEMIP_IP6_NH_ICMPV6);   // sec 8.1, "the value 58"
+    TEST_ASSERT_EQUAL_UINT8(59u, IDEMIP_IP6_NH_NONE);     // sec 4.7
+    TEST_ASSERT_EQUAL_UINT8(60u, IDEMIP_IP6_NH_DSTOPTS);  // sec 4.6
 }
 
 // sec 4 names six extension headers and specifies four. The four are stepped; Authentication (51)
@@ -410,8 +410,7 @@ void test_fragment_build_writes_the_last_fragment(void)
     TEST_ASSERT_EQUAL_HEX16(0x0578u, idemip_rd16(fragbuf + IDEMIP_IP6_FRAG_OFF_OFFS_M));
     TEST_ASSERT_EQUAL_UINT16(1400u, idemip_ip6_frag_offset_bytes(fragbuf));
     TEST_ASSERT_FALSE(idemip_ip6_frag_more(fragbuf));
-    TEST_ASSERT_EQUAL_HEX8(0u, (uint8_t)(idemip_rd16(fragbuf + IDEMIP_IP6_FRAG_OFF_OFFS_M) &
-                                         IDEMIP_IP6_FRAG_RES_MASK));
+    TEST_ASSERT_EQUAL_HEX8(0u, (uint8_t)(idemip_rd16(fragbuf + IDEMIP_IP6_FRAG_OFF_OFFS_M) & IDEMIP_IP6_FRAG_RES_MASK));
     TEST_ASSERT_EQUAL_HEX32(0xA5A5A5A5u, idemip_ip6_frag_ident(fragbuf));
 }
 
@@ -779,8 +778,7 @@ void test_pseudo_header_sum_matches_the_section_8_1_figure(void)
     ph[39] = IDEMIP_IP6_NH_TCP;
 
     uint16_t laid = idemip_cksum_final(idemip_cksum_accum(0u, ph, sizeof ph));
-    uint16_t accumulated =
-        idemip_cksum_final(idemip_ip6_pseudo_accum(0u, g_src, g_dst, 20u, IDEMIP_IP6_NH_TCP));
+    uint16_t accumulated = idemip_cksum_final(idemip_ip6_pseudo_accum(0u, g_src, g_dst, 20u, IDEMIP_IP6_NH_TCP));
     TEST_ASSERT_EQUAL_HEX16(laid, accumulated);
 }
 
@@ -800,4 +798,64 @@ void test_pseudo_header_sums_both_halves_of_the_length(void)
     uint16_t accumulated =
         idemip_cksum_final(idemip_ip6_pseudo_accum(0u, g_src, g_dst, 0x00012345u, IDEMIP_IP6_NH_ICMPV6));
     TEST_ASSERT_EQUAL_HEX16(laid, accumulated);
+}
+
+// RFC 8200 sec 4.2: every option but Pad1 is "Option Type, Opt Data Len, Option Data", so an option
+// area that ends before the length octet has no length to read, and one whose length runs past the
+// area is not inside it. Both are a header this walk could not step, which it reports without
+// naming an Option Type - the caller tells the two apart by whether the pointer moved.
+void test_an_option_area_that_ends_inside_an_option_is_malformed(void)
+{
+    uint8_t opts[8];
+    size_t bad;
+
+    // An Option Type at the last octet of the area, with no length octet behind it.
+    memset(opts, 0, sizeof opts);
+    opts[0] = IDEMIP_IP6_OPT_PADN;
+    opts[1] = 0u;
+    opts[2] = IDEMIP_IP6_OPT_PADN;
+    bad = 0xFFFFu;
+    TEST_ASSERT_TRUE_MESSAGE(idemip_ip6_opts_refused(opts, 0u, 3u, &bad),
+                             "an area ending before an option's length octet was walked through");
+    TEST_ASSERT_EQUAL_size_t_MESSAGE(0xFFFFu, bad, "a malformed area named an Option Type");
+
+    // An option whose length runs past the area it stands in.
+    memset(opts, 0, sizeof opts);
+    opts[0] = IDEMIP_IP6_OPT_PADN;
+    opts[1] = 6u;
+    bad = 0xFFFFu;
+    TEST_ASSERT_TRUE_MESSAGE(idemip_ip6_opts_refused(opts, 0u, 4u, &bad),
+                             "an option claiming more octets than the area holds was walked through");
+    TEST_ASSERT_EQUAL_size_t_MESSAGE(0xFFFFu, bad, "an option past the area named an Option Type");
+
+    // A Pad1 at the last octet is one octet and needs no length, so the area is walked to its end.
+    memset(opts, 0, sizeof opts);
+    opts[0] = IDEMIP_IP6_OPT_PAD1;
+    opts[1] = IDEMIP_IP6_OPT_PAD1;
+    bad = 0xFFFFu;
+    TEST_ASSERT_FALSE_MESSAGE(idemip_ip6_opts_refused(opts, 0u, 2u, &bad),
+                              "an area of Pad1 options was read as malformed");
+}
+
+// RFC 8200 sec 4.2: an option the node does not recognize with action bits above 00 stops the packet,
+// and the Parameter Problem it answers with points at "the unrecognized Option Type". Only the first
+// such option is pointed at: a packet carrying two headers of options is stopped by the first one,
+// and the second is not walked for another.
+void test_the_first_refused_option_is_the_one_the_walk_keeps(void)
+{
+    // A Hop-by-Hop header carrying a refused option, then a Destination Options header carrying one.
+    size_t at = lay_hdr(IDEMIP_IP6_NH_HOPOPT, 36u);
+    lay_ext(at, IDEMIP_IP6_NH_DSTOPTS, 0u);
+    pkt[at + 2u] = (uint8_t)(IDEMIP_IP6_OPT_ACT_DISCARD | 0x0Au);
+    pkt[at + 3u] = 4u;
+    const size_t second = at + 8u;
+    lay_ext(second, IDEMIP_IP6_NH_TCP, 0u);
+    pkt[second + 2u] = (uint8_t)(IDEMIP_IP6_OPT_ACT_DISCARD_ICMP | 0x0Bu);
+    pkt[second + 3u] = 4u;
+
+    IdemIpIp6Chain c = idemip_ip6_walk(pkt, at + 36u);
+    TEST_ASSERT_TRUE(c.ok);
+    TEST_ASSERT_TRUE_MESSAGE(c.refused, "an option above skip did not stop the packet");
+    TEST_ASSERT_EQUAL_size_t_MESSAGE(at + 2u, c.opt_hdr,
+                                     "the walk pointed at an option behind the first one it refused");
 }

@@ -265,8 +265,8 @@ void test_flag_bit_positions(void)
     TEST_ASSERT_EQUAL_HEX16(0x4000u, IDEMIP_IP4_FLAG_DF);
     TEST_ASSERT_EQUAL_HEX16(0x2000u, IDEMIP_IP4_FLAG_MF);
     TEST_ASSERT_EQUAL_HEX16(0x1FFFu, IDEMIP_IP4_FRAG_OFF_MASK);
-    TEST_ASSERT_EQUAL_HEX16(0xFFFFu, (uint16_t)(IDEMIP_IP4_FLAG_RESERVED | IDEMIP_IP4_FLAG_DF |
-                                                IDEMIP_IP4_FLAG_MF | IDEMIP_IP4_FRAG_OFF_MASK));
+    TEST_ASSERT_EQUAL_HEX16(0xFFFFu, (uint16_t)(IDEMIP_IP4_FLAG_RESERVED | IDEMIP_IP4_FLAG_DF | IDEMIP_IP4_FLAG_MF |
+                                                IDEMIP_IP4_FRAG_OFF_MASK));
     TEST_ASSERT_EQUAL_HEX16(0u, (uint16_t)(IDEMIP_IP4_FRAG_OFF_MASK &
                                            (IDEMIP_IP4_FLAG_RESERVED | IDEMIP_IP4_FLAG_DF | IDEMIP_IP4_FLAG_MF)));
 }
@@ -695,7 +695,7 @@ void test_verify_rejects_a_header_longer_than_the_buffer(void)
     uint8_t buf[64];
     arm(buf, sizeof buf, 40u);
     build_figure5(buf);
-    idemip_ip4_set_ver_ihl(buf, 8u);   // 32 octets of header
+    idemip_ip4_set_ver_ihl(buf, 8u); // 32 octets of header
     idemip_ip4_set_total_len(buf, 40u);
     idemip_ip4_recksum(buf);
 
@@ -906,4 +906,24 @@ void test_a_contiguous_mask_is_rebuilt_from_its_own_count(void)
         const uint32_t rebuilt = (ones == 0u) ? 0u : (uint32_t)(0xFFFFFFFFu << (32u - ones));
         TEST_ASSERT_EQUAL_UINT32_MESSAGE(mask, rebuilt, "route.length must name the mask it came from");
     }
+}
+
+// RFC 791 sec 3.1: "the minimum value for a correct header is 5", so an Internet Header Length below
+// that names a header shorter than the fixed fields it is made of, and one at the top of its four
+// bits is the longest header the field can name.
+void test_a_header_length_below_the_minimum_is_not_a_header(void)
+{
+    uint8_t h[IDEMIP_IPV4_HDR_LEN];
+    memset(h, 0, sizeof h);
+
+    for (uint8_t ihl = 0u; ihl < (uint8_t)IDEMIP_IP4_IHL_MIN; ihl++)
+    {
+        idemip_ip4_set_ver_ihl(h, ihl);
+        TEST_ASSERT_FALSE_MESSAGE(idemip_ip4_ihl_ok(h), "a header length below the minimum was taken as one");
+    }
+
+    idemip_ip4_set_ver_ihl(h, (uint8_t)IDEMIP_IP4_IHL_MIN);
+    TEST_ASSERT_TRUE(idemip_ip4_ihl_ok(h));
+    idemip_ip4_set_ver_ihl(h, (uint8_t)IDEMIP_IP4_IHL_MAX);
+    TEST_ASSERT_TRUE_MESSAGE(idemip_ip4_ihl_ok(h), "the longest header the field can name was refused");
 }

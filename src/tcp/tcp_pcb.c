@@ -368,8 +368,9 @@ static idemip_bool tcp_pcb_seg_unlink(uint8_t *work, uint16_t pcb, uint16_t seg)
         // every segment there is and the links it followed ended first. The count is written because
         // the walk is over next fields a caller's borrow holds, and a walk over those that cannot
         // end is a walk that hangs. Every walk below carries the same bound for the same reason.
-        for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_SEGS && at < (uint16_t)IDEMIP_TCP_SEGS;
-             n++) // GCOVR_EXCL_BR_LINE
+        for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_SEGS && // GCOVR_EXCL_BR_LINE
+                              at < (uint16_t)IDEMIP_TCP_SEGS;  // GCOVR_EXCL_BR_LINE
+             n++)
         {
             TcpPcbSegFields *s = &TCP_PCB_SEG_AT(work, at)->f;
             if (s->next == seg)

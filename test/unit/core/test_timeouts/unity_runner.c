@@ -59,6 +59,7 @@ extern void test_an_armed_deadline_never_reports_forever(void);
 extern void test_two_borrows_hold_independent_lists(void);
 extern void test_an_expire_is_a_function_of_its_borrow_alone(void);
 extern void test_a_tick_in_one_borrow_does_not_advance_the_other(void);
+extern void test_a_deadline_is_cancelled_from_behind_the_front_of_the_list(void);
 
 
 /*=======Mock Management=====*/
@@ -171,6 +172,7 @@ int main(void)
   run_test(test_two_borrows_hold_independent_lists, "test_two_borrows_hold_independent_lists", 826);
   run_test(test_an_expire_is_a_function_of_its_borrow_alone, "test_an_expire_is_a_function_of_its_borrow_alone", 839);
   run_test(test_a_tick_in_one_borrow_does_not_advance_the_other, "test_a_tick_in_one_borrow_does_not_advance_the_other", 856);
+  run_test(test_a_deadline_is_cancelled_from_behind_the_front_of_the_list, "test_a_deadline_is_cancelled_from_behind_the_front_of_the_list", 869);
 
   return UNITY_END();
 }

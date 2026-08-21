@@ -57,6 +57,7 @@ extern void test_split_reports_the_reserved_vlan_id_rather_than_refusing_it(void
 extern void test_split_and_pack_round_trip_over_every_value(void);
 extern void test_split_agrees_with_parse(void);
 extern void test_pack_writes_no_octet_of_the_frame(void);
+extern void test_a_length_frame_that_carries_no_snap_header_is_not_decoded(void);
 
 
 /*=======Mock Management=====*/
@@ -167,6 +168,7 @@ int main(void)
   run_test(test_split_and_pack_round_trip_over_every_value, "test_split_and_pack_round_trip_over_every_value", 718);
   run_test(test_split_agrees_with_parse, "test_split_agrees_with_parse", 739);
   run_test(test_pack_writes_no_octet_of_the_frame, "test_pack_writes_no_octet_of_the_frame", 754);
+  run_test(test_a_length_frame_that_carries_no_snap_header_is_not_decoded, "test_a_length_frame_that_carries_no_snap_header_is_not_decoded", 767);
 
   return UNITY_END();
 }

@@ -65,9 +65,9 @@ static int g_frags;
 // The options a copied-flag test uses. Loose Source and Record Route is type 131, the copied flag
 // set; Record Route is type 7, clear; Stream Identifier is type 136, set (RFC 791 sec 3.1).
 static const uint8_t g_opts[16] = {
-    131u, 7u, 4u, 10u, 0u, 0u, 1u,      // LSRR, 7 octets, one route address
-    7u,   7u, 4u, 0u,  0u, 0u, 0u,      // Record Route, 7 octets, empty route area
-    0u,   0u                            // two End of Option List octets, padding to 16
+    131u, 7u, 4u, 10u, 0u, 0u, 1u, // LSRR, 7 octets, one route address
+    7u,   7u, 4u, 0u,  0u, 0u, 0u, // Record Route, 7 octets, empty route area
+    0u,   0u                       // two End of Option List octets, padding to 16
 };
 
 // A datagram with @p data_len octets of data behind @p opt_len octets of options, flags and fragment
@@ -470,7 +470,8 @@ void test_the_untouched_header_fields_are_carried(void)
         TEST_ASSERT_EQUAL_UINT8(idemip_ip4_ttl(g_dgram), idemip_ip4_ttl(g_frag[i]));
         TEST_ASSERT_EQUAL_UINT8(idemip_ip4_proto(g_dgram), idemip_ip4_proto(g_frag[i]));
         TEST_ASSERT_EQUAL_UINT8(idemip_ip4_tos(g_dgram), idemip_ip4_tos(g_frag[i]));
-        TEST_ASSERT_FALSE_MESSAGE(idemip_ip4_reserved(g_frag[i]), "RFC 791 sec 3.1 reserves flags bit 0 and it must be zero");
+        TEST_ASSERT_FALSE_MESSAGE(idemip_ip4_reserved(g_frag[i]),
+                                  "RFC 791 sec 3.1 reserves flags bit 0 and it must be zero");
     }
 }
 
@@ -523,8 +524,7 @@ void test_no_emitted_fragment_carries_mf_off_the_boundary(void)
     {
         if (idemip_ip4_mf(g_frag[i]))
         {
-            TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u,
-                                             (uint16_t)(idemip_ip4_payload_len(g_frag[i]) % IDEMIP_IP4_FRAG_UNIT),
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, (uint16_t)(idemip_ip4_payload_len(g_frag[i]) % IDEMIP_IP4_FRAG_UNIT),
                                              "a fragment carries MF with a length off the 8-octet boundary");
         }
     }
@@ -730,4 +730,52 @@ void test_the_report_agrees_with_the_fragment(void)
         TEST_ASSERT_EQUAL_INT(idemip_ip4_mf(g_out) ? 1 : 0, io->more ? 1 : 0);
         TEST_ASSERT_EQUAL_UINT16((uint16_t)(io->hdr_len + io->data_len), io->len);
     }
+}
+
+// RFC 791 sec 3.1: an option that is not End of Option List or No Operation carries "the option
+// length which includes the option type code and the length octet", so an option area that ends
+// before that octet, or an option claiming more than the header holds, is where the walk stops.
+// RFC 791 sec 3.2 breaks a datagram "on 8 octet boundaries", so one already carrying More Fragments
+// whose data is not a multiple of eight is not one this can split further.
+void test_the_option_walk_stops_where_the_header_does_and_a_bad_fragment_is_refused(void)
+{
+    // Three No Operations and a type octet with no length behind it, filling one option word.
+    static const uint8_t ends_mid_option[4] = {1u, 1u, 1u, 0x83u};
+    (void)make_dgram(64u, ends_mid_option, sizeof ends_mid_option, 0u);
+    begin_ok(work_a, 68u);
+    drain(work_a);
+    TEST_ASSERT_TRUE_MESSAGE(g_frags > 1u, "an option area that ends mid-option stopped the fragmentation");
+
+    // An option claiming more octets than the header holds.
+    static const uint8_t claims_too_much[4] = {0x83u, 40u, 0u, 0u};
+    (void)make_dgram(64u, claims_too_much, sizeof claims_too_much, 0u);
+    begin_ok(work_a, 68u);
+    drain(work_a);
+    TEST_ASSERT_TRUE_MESSAGE(g_frags > 1u, "an option claiming more than the header holds stopped the split");
+
+    // An option whose length octet is below the two an option is at minimum.
+    static const uint8_t too_short[4] = {0x83u, 1u, 0u, 0u};
+    (void)make_dgram(64u, too_short, sizeof too_short, 0u);
+    begin_ok(work_a, 68u);
+    drain(work_a);
+    TEST_ASSERT_TRUE_MESSAGE(g_frags > 1u, "an option shorter than its own two octets stopped the split");
+
+    // A datagram already carrying More Fragments and no data at all.
+    (void)make_dgram(0u, NULL, 0u, (uint16_t)IDEMIP_IP4_FLAG_MF);
+    IDEMIP_IP4_FRAG_IO(work_a)->begin_args.dgram = g_dgram;
+    IDEMIP_IP4_FRAG_IO(work_a)->begin_args.len = g_dgram_len;
+    IDEMIP_IP4_FRAG_IO(work_a)->begin_args.mtu = 68u;
+    Ip4Frag.begin(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IP4_FRAG_IO(work_a)->status,
+                                  "a fragment carrying no data was split further");
+
+    // A datagram already carrying More Fragments, whose own data is not a multiple of eight.
+    (void)make_dgram(60u, NULL, 0u, (uint16_t)IDEMIP_IP4_FLAG_MF);
+    IDEMIP_IP4_FRAG_IO(work_a)->begin_args.dgram = g_dgram;
+    IDEMIP_IP4_FRAG_IO(work_a)->begin_args.len = g_dgram_len;
+    IDEMIP_IP4_FRAG_IO(work_a)->begin_args.mtu = 68u;
+    Ip4Frag.begin(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IP4_FRAG_IO(work_a)->status,
+                                  "a fragment whose data is not a multiple of eight was split further");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FRAG_ERR_HEADER, IDEMIP_IP4_FRAG_IO(work_a)->err);
 }
