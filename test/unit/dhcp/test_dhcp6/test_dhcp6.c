@@ -1460,6 +1460,62 @@ void test_t1_starts_the_renew_and_t2_the_rebind(void)
     TEST_ASSERT_NOT_NULL(out_opt(IDEMIP_DHCP6_OPT_IA_NA, &l));
 }
 
+// sec 18.2.10.1: the client "Sends a Request message to the server that responded if any of the IAs
+// in the Reply message contain the NoBinding status code." Without it a Renew answered that way just
+// keeps retransmitting until its MRD is spent, which is minutes to hours to recover a binding that
+// one Request would have restored.
+void test_a_no_binding_reply_to_a_renew_sends_a_request(void)
+{
+    to_bound(work_a, &g_cfg_a, 10u, 20u, 300u, 400u);
+    tick(work_a, 10000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_RENEWING, IDEMIP_DHCP6_IO(work_a)->state);
+    tick(work_a, 10000u, 0u);
+    build(work_a);
+
+    msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, IDEMIP_DHCP6_IO(work_a)->xid);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+    msg_ia_na(g_cfg_a.iaid, 0u, 0u, NULL, 0u, 0u, 1, (uint16_t)IDEMIP_DHCP6_STATUS_NO_BINDING);
+    feed(work_a);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_REQUESTING, IDEMIP_DHCP6_IO(work_a)->state,
+                                  "sec 18.2.10.1 answers NoBinding with a Request");
+    tick(work_a, 10000u, 0u);
+    TEST_ASSERT_TRUE(build(work_a) > 0u);
+    TEST_ASSERT_EQUAL_HEX8_MESSAGE(IDEMIP_DHCP6_REQUEST, g_out[IDEMIP_DHCP6_MSG_OFF_TYPE],
+                                   "the message after a NoBinding Reply is not a Request");
+}
+
+// The same sentence over the Rebind. sec 18.2.5 sends that one to no particular server, so the
+// Request that follows can only go to the server whose Reply named itself.
+void test_a_no_binding_reply_to_a_rebind_sends_a_request(void)
+{
+    to_bound(work_a, &g_cfg_a, 10u, 20u, 300u, 400u);
+    tick(work_a, 10000u, 0u);
+    tick(work_a, 20000u, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_REBINDING, IDEMIP_DHCP6_IO(work_a)->state);
+    tick(work_a, 20000u, 0u);
+    build(work_a);
+
+    msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, IDEMIP_DHCP6_IO(work_a)->xid);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(g_sduid2, (uint16_t)sizeof g_sduid2);
+    msg_ia_na(g_cfg_a.iaid, 0u, 0u, NULL, 0u, 0u, 1, (uint16_t)IDEMIP_DHCP6_STATUS_NO_BINDING);
+    feed(work_a);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_REQUESTING, IDEMIP_DHCP6_IO(work_a)->state,
+                                  "sec 18.2.10.1 answers NoBinding with a Request from REBINDING too");
+    tick(work_a, 20000u, 0u);
+    TEST_ASSERT_TRUE(build(work_a) > 0u);
+    TEST_ASSERT_EQUAL_HEX8(IDEMIP_DHCP6_REQUEST, g_out[IDEMIP_DHCP6_MSG_OFF_TYPE]);
+    uint16_t l = 0u;
+    const uint8_t *d = out_opt(IDEMIP_DHCP6_OPT_SERVERID, &l);
+    TEST_ASSERT_NOT_NULL(d);
+    TEST_ASSERT_EQUAL_UINT16(sizeof g_sduid2, l);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(g_sduid2, d, sizeof g_sduid2,
+                                         "the Request named a server other than the one that answered");
+}
+
 // sec 18.2.5: the Rebind "is terminated when the valid lifetimes of all leases across all IAs have
 // expired, at which time the client uses the Solicit message to locate a new DHCP server".
 void test_the_rebind_ends_when_the_valid_lifetime_expires(void)
