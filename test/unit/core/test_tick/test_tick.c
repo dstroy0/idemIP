@@ -286,8 +286,9 @@ static void open_tick(uint8_t *w, uint32_t now_ms)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TICK_IO(w)->status);
 }
 
-// One IPv4 datagram into receive buffer @p slot, and its length. RFC 1700 leaves protocol 253 to
-// "use for experimentation and testing", so nothing here claims it and the receive path is visible
+// One IPv4 datagram into receive buffer @p slot, and its length. RFC 3692: "For the purposes of
+// experimentation and testing, IANA has assigned the two values 253 and 254 for this purpose", so
+// nothing here claims protocol 253 and the receive path is visible
 // through RFC 1213 ipInUnknownProtos without any transport binding.
 #define TICK_TEST_PROTO 253u
 #define TICK_TEST_DATA 8u

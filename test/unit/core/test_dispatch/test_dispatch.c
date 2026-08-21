@@ -995,10 +995,10 @@ void test_an_igmp_query_with_a_good_checksum_is_processed(void)
 
 // The report delay a Query arms, and where it comes from. RFC 2236 sec 3: "When a host receives a
 // General Query, it sets delay timers for each group ... of which it is a member on the interface
-// from which it received the query. ... Timers are set to a different random value, using the
-// highest clock granularity available on the host, selected from the range (0, Max Response Time]",
-// and the sentence before it says what the randomness is for: "In order to avoid an 'implosion' of
-// concurrent reports". A delay every member of the group draws independently is what lets the first
+// from which it received the query. Each timer is set to a different random value, using the highest
+// clock granularity available on the host, selected from the range (0, Max Response Time]", and
+// RFC 1112 sec 7.2 says what the randomness is for: "In order to avoid an 'implosion' of concurrent
+// Reports". A delay every member of the group draws independently is what lets the first
 // Report suppress the rest, which is the whole of sec 3's suppression rule.
 //
 // The word that value comes out of is DispatchInputArgs::rand, and this path took now_ms instead.

@@ -1177,7 +1177,8 @@ void test_options_overloaded_into_file_and_sname_are_read(void)
     TEST_ASSERT_EQUAL_UINT32(600u, IDEMIP_DHCP4_IO(work_a)->lease_s);
 }
 
-// RFC 2132 sec 9.3: "Legal values for this option are 1, 2, 3", so anything else is not that option.
+// RFC 2132 sec 9.3: "Legal values for this option are:" 1, 2 and 3, so anything else is not that
+// option.
 void test_an_illegal_overload_value_is_discarded(void)
 {
     to_selecting(work_a);

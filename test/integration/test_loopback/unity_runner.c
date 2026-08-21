@@ -161,14 +161,14 @@ int main(void)
   run_test(test_a_series_of_queued_segments_draws_one_acknowledgment, "test_a_series_of_queued_segments_draws_one_acknowledgment", 2279);
   run_test(test_the_held_segments_are_bs_borrow_alone, "test_the_held_segments_are_bs_borrow_alone", 2298);
   run_test(test_the_two_tcb_tables_are_two_borrows, "test_the_two_tcb_tables_are_two_borrows", 2324);
-  run_test(test_an_oversized_datagram_is_cut_into_fragments, "test_an_oversized_datagram_is_cut_into_fragments", 2431);
-  run_test(test_the_fragments_reassemble_into_the_original_datagram, "test_the_fragments_reassemble_into_the_original_datagram", 2441);
-  run_test(test_the_reassembled_datagram_reaches_the_binding, "test_the_reassembled_datagram_reaches_the_binding", 2458);
-  run_test(test_reassembly_hands_every_pinned_descriptor_back, "test_reassembly_hands_every_pinned_descriptor_back", 2477);
-  run_test(test_the_receive_ring_never_laps_a_pinned_buffer, "test_the_receive_ring_never_laps_a_pinned_buffer", 2499);
-  run_test(test_the_pcap_global_header_declares_dlt_en10mb, "test_the_pcap_global_header_declares_dlt_en10mb", 2517);
-  run_test(test_the_pcap_record_header_layout, "test_the_pcap_record_header_layout", 2537);
-  run_test(test_the_whole_exchange_is_written_as_a_pcap, "test_the_whole_exchange_is_written_as_a_pcap", 2554);
+  run_test(test_an_oversized_datagram_is_cut_into_fragments, "test_an_oversized_datagram_is_cut_into_fragments", 2432);
+  run_test(test_the_fragments_reassemble_into_the_original_datagram, "test_the_fragments_reassemble_into_the_original_datagram", 2442);
+  run_test(test_the_reassembled_datagram_reaches_the_binding, "test_the_reassembled_datagram_reaches_the_binding", 2459);
+  run_test(test_reassembly_hands_every_pinned_descriptor_back, "test_reassembly_hands_every_pinned_descriptor_back", 2478);
+  run_test(test_the_receive_ring_never_laps_a_pinned_buffer, "test_the_receive_ring_never_laps_a_pinned_buffer", 2500);
+  run_test(test_the_pcap_global_header_declares_dlt_en10mb, "test_the_pcap_global_header_declares_dlt_en10mb", 2518);
+  run_test(test_the_pcap_record_header_layout, "test_the_pcap_record_header_layout", 2538);
+  run_test(test_the_whole_exchange_is_written_as_a_pcap, "test_the_whole_exchange_is_written_as_a_pcap", 2555);
 
   return UNITY_END();
 }

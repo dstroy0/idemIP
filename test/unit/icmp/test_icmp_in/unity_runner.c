@@ -181,10 +181,10 @@ int main(void)
   run_test(test_error_refuses_a_null_datagram_and_a_null_out, "test_error_refuses_a_null_datagram_and_a_null_out", 832);
   run_test(test_a_suppressed_error_never_becomes_ok_on_a_retry, "test_a_suppressed_error_never_becomes_ok_on_a_retry", 848);
   run_test(test_originated_errors_are_rate_limited, "test_originated_errors_are_rate_limited", 868);
-  run_test(test_source_quench_is_rate_limited, "test_source_quench_is_rate_limited", 910);
-  run_test(test_the_rate_limit_is_per_borrow, "test_the_rate_limit_is_per_borrow", 927);
-  run_test(test_an_error_quotes_a_header_with_options_whole, "test_an_error_quotes_a_header_with_options_whole", 947);
-  run_test(test_a_built_error_repeats, "test_a_built_error_repeats", 977);
+  run_test(test_source_quench_is_rate_limited, "test_source_quench_is_rate_limited", 911);
+  run_test(test_the_rate_limit_is_per_borrow, "test_the_rate_limit_is_per_borrow", 928);
+  run_test(test_an_error_quotes_a_header_with_options_whole, "test_an_error_quotes_a_header_with_options_whole", 948);
+  run_test(test_a_built_error_repeats, "test_a_built_error_repeats", 978);
 
   return UNITY_END();
 }

@@ -700,7 +700,7 @@ void test_overlapping_fragments_abandon_the_packet(void)
     TEST_ASSERT_EQUAL_HEX16(1u, IDEMIP_IP6_REASS_IO(work_a)->frag_desc);
 }
 
-// RFC 815 sec 3 step six creates the hole behind a fragment only "if fragment.more fragments is
+// RFC 815 sec 3 step six creates the hole behind a fragment only if "fragment.more fragments is
 // true", which discards "that hole descriptor which reaches from the last octet of the buffer to
 // infinity". A hole whose last is finite was cut by a fragment lying beyond it, so a last fragment
 // landing inside one leaves octets still missing.

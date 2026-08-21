@@ -775,8 +775,8 @@ void test_a_lookup_blocked_only_by_the_type_of_service_says_so(void)
     TEST_ASSERT_FALSE(IDEMIP_IP4_ROUTE_IO(work_a)->tos_blocked);
 }
 
-// RFC 1812 sec 5.2.4.3 rule 4: "if route.metric is strictly inferior for one when compared with the
-// other, then the one with the inferior metric is discarded".
+// RFC 1812 sec 5.2.4.3 rule 4, where "route.metric is strictly inferior for one when compared with
+// the other, then the one with the inferior metric is discarded".
 void test_best_metric_discards_the_inferior_metric(void)
 {
     Ip4Route.clear(work_a);

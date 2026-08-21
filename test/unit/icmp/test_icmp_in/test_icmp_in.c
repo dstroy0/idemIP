@@ -867,7 +867,8 @@ void test_a_suppressed_error_never_becomes_ok_on_a_retry(void)
 // configuration of the router."
 void test_originated_errors_are_rate_limited(void)
 {
-    // A full bucket allows the burst the section's "allowing a burst of messages to be sent" names.
+    // A full bucket allows a burst. The section leaves the mechanism to "the implementor's discretion";
+    // the bucket is RFC 4443 sec 2.4 (f)'s recommendation for the IPv6 twin.
     put_victim();
     for (uint8_t n = 0u; n < (uint8_t)IDEMIP_ICMP4_ERR_BUCKET; n++)
     {

@@ -629,7 +629,7 @@ void test_a_wrong_version_is_discarded(void)
     TEST_ASSERT_FALSE(IDEMIP_IP6_FORWARD_IO(work_a)->icmp);
 }
 
-// RFC 8200 sec 3: the Payload Length is "the rest of the packet following this header, in octets", so
+// RFC 8200 sec 3: the Payload Length is "the rest of the packet following this IPv6 header, in octets", so
 // one naming more octets than the link delivered is not a packet this router can act on.
 void test_a_payload_length_past_the_span_is_discarded(void)
 {

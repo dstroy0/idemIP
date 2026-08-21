@@ -503,7 +503,8 @@ void test_a_source_on_network_127_is_not_forwarded(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_SRC, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
 }
 
-// "An IP source address is invalid if ... it is not a unicast address." Class D is multicast,
+// RFC 1812 sec 5.3.7: "An IP source address is invalid if ... or is not a unicast address." Class D
+// is multicast,
 // sec 4.2.2.11.
 void test_a_multicast_source_is_not_forwarded(void)
 {

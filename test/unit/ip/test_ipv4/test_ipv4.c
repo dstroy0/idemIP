@@ -747,7 +747,8 @@ void test_verify_accepts_a_buffer_longer_than_total_length(void)
 
 // RFC 791 sec 3.1 requires a sender to zero Flags bit 0. Neither RFC 791 nor RFC 1122 sec 3.2.1
 // makes a receiver discard a datagram carrying it set, and RFC 791 sec 3.2 says an implementation
-// "must be liberal in its receiving behavior", so verify reads it and passes.
+// "must be conservative in its sending behavior, and liberal in its receiving behavior", so verify
+// reads it and passes.
 void test_reserved_flag_is_readable_and_does_not_fail_verify(void)
 {
     uint8_t buf[32];

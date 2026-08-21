@@ -92,10 +92,11 @@ void test_empty_span(void)
 
 // --- the word path against the definition ------------------------------------
 
-// RFC 1071 sec 1 written out on its own terms, with nothing shared with the unit under test: "the
-// 16-bit 1's complement of the 1's complement sum of all 16-bit words", the words being [A,B] and an
-// odd count taking the last byte as [Z,0]. Every carry is applied as it goes, so the value is the
-// folded one whatever the length.
+// RFC 1071 sec 1 written out on its own terms, with nothing shared with the unit under test:
+// "Adjacent octets to be checksummed are paired to form 16-bit integers, and the 1's complement sum of
+// these 16-bit integers is formed", then "the 1's complement of this sum is placed in the checksum
+// field". The pairs are [A,B] and an odd count takes the last byte as [Z,0]. Every carry is applied as
+// it goes, so the value is the folded one whatever the length.
 static uint16_t reference_sum(const uint8_t *p, size_t len)
 {
     uint32_t sum = 0u;

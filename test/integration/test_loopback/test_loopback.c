@@ -2426,8 +2426,9 @@ static int send_fragmented(Node *n, uint32_t dst_ip, uint16_t mtu, uint16_t payl
     return sent;
 }
 
-// "If the total length is larger than the maximum transmission unit ... then fragment", so a
-// datagram over the MTU comes out as more than one fragment and the last one clears MF.
+// RFC 791 sec 3.2: "If the total length is less than or equal the maximum transmission unit then
+// submit this datagram to the next step in datagram processing", and a datagram over the MTU is cut
+// instead, so it comes out as more than one fragment and the last one clears MF.
 void test_an_oversized_datagram_is_cut_into_fragments(void)
 {
     resolve_both();

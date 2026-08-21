@@ -386,7 +386,8 @@ void test_sec2_1_a_zone_qualified_row_answers_only_its_own_zone(void)
     const uint8_t *ll = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
 
     // In its own zone the qualified row wins, and it wins on length: ::/0 matches this address too,
-    // and sec 2.1 takes "the entry that has the longest matching prefix".
+    // and sec 2.1 makes the policy table "a longest-matching-prefix lookup table, much like a routing
+    // table".
     lookup_in(work_a, ll, 2u);
     TEST_ASSERT_EQUAL_UINT8_MESSAGE(55u, IDEMIP_IP6_SELECT_IO(work_a)->precedence,
                                     "a row qualified with the queried zone did not answer it");

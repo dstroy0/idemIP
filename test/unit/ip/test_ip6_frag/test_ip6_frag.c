@@ -308,7 +308,7 @@ void test_a_packet_already_fragmented_is_refused(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FRAG_ERR_FRAGMENTED, begin_err(work_a, IDEMIP_IPV6_MIN_MTU));
 }
 
-// sec 4.1: the Hop-by-Hop Options header "must appear immediately after an IPv6 header only".
+// sec 4.1: the Hop-by-Hop Options header "restricted to appear immediately after an IPv6 header only".
 void test_a_hop_by_hop_header_out_of_place_is_refused(void)
 {
     pkt_start(IDEMIP_IP6_NH_DSTOPTS);

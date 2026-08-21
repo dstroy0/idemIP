@@ -137,17 +137,17 @@ int main(void)
   run_test(test_verify_rejects_total_length_below_the_header, "test_verify_rejects_total_length_below_the_header", 709);
   run_test(test_verify_rejects_total_length_past_the_buffer, "test_verify_rejects_total_length_past_the_buffer", 725);
   run_test(test_verify_accepts_a_buffer_longer_than_total_length, "test_verify_accepts_a_buffer_longer_than_total_length", 738);
-  run_test(test_reserved_flag_is_readable_and_does_not_fail_verify, "test_reserved_flag_is_readable_and_does_not_fail_verify", 751);
-  run_test(test_build_is_a_function_of_its_fields_alone, "test_build_is_a_function_of_its_fields_alone", 766);
-  run_test(test_build_round_trips_every_field, "test_build_round_trips_every_field", 784);
-  run_test(test_length_constants, "test_length_constants", 824);
-  run_test(test_minimum_forwardable_datagram_is_sixty_eight_octets, "test_minimum_forwardable_datagram_is_sixty_eight_octets", 834);
-  run_test(test_five_hundred_seventy_six_is_the_required_reassembly_size, "test_five_hundred_seventy_six_is_the_required_reassembly_size", 842);
-  run_test(test_mask_ones_counts_every_prefix_length, "test_mask_ones_counts_every_prefix_length", 855);
-  run_test(test_mask_ones_counts_a_mask_with_holes, "test_mask_ones_counts_a_mask_with_holes", 867);
-  run_test(test_every_leading_run_of_ones_is_contiguous, "test_every_leading_run_of_ones_is_contiguous", 878);
-  run_test(test_a_mask_with_a_hole_is_not_contiguous, "test_a_mask_with_a_hole_is_not_contiguous", 888);
-  run_test(test_a_contiguous_mask_is_rebuilt_from_its_own_count, "test_a_contiguous_mask_is_rebuilt_from_its_own_count", 899);
+  run_test(test_reserved_flag_is_readable_and_does_not_fail_verify, "test_reserved_flag_is_readable_and_does_not_fail_verify", 752);
+  run_test(test_build_is_a_function_of_its_fields_alone, "test_build_is_a_function_of_its_fields_alone", 767);
+  run_test(test_build_round_trips_every_field, "test_build_round_trips_every_field", 785);
+  run_test(test_length_constants, "test_length_constants", 825);
+  run_test(test_minimum_forwardable_datagram_is_sixty_eight_octets, "test_minimum_forwardable_datagram_is_sixty_eight_octets", 835);
+  run_test(test_five_hundred_seventy_six_is_the_required_reassembly_size, "test_five_hundred_seventy_six_is_the_required_reassembly_size", 843);
+  run_test(test_mask_ones_counts_every_prefix_length, "test_mask_ones_counts_every_prefix_length", 856);
+  run_test(test_mask_ones_counts_a_mask_with_holes, "test_mask_ones_counts_a_mask_with_holes", 868);
+  run_test(test_every_leading_run_of_ones_is_contiguous, "test_every_leading_run_of_ones_is_contiguous", 879);
+  run_test(test_a_mask_with_a_hole_is_not_contiguous, "test_a_mask_with_a_hole_is_not_contiguous", 889);
+  run_test(test_a_contiguous_mask_is_rebuilt_from_its_own_count, "test_a_contiguous_mask_is_rebuilt_from_its_own_count", 900);
 
   return UNITY_END();
 }
