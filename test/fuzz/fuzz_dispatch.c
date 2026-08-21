@@ -335,8 +335,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         size_t want;
         if (size - at < 2u)
         {
-            want = size - at; // a record with no length left is the octets themselves
-            at = size;
+            // A record with no room for a length is the octets themselves. `at` is left where it
+            // is: the copy below reads from it, and the one advance at the end of the loop is what
+            // moves it. Advancing here as well read one octet past the input, which is the first
+            // thing this harness found - about itself.
+            want = size - at;
         }
         else
         {

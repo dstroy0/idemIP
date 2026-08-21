@@ -220,6 +220,11 @@ def seeds():
     s.append(("runt", record(b"\x01\x02\x03"),
               "a frame with no room for an Ethernet header, which is an error and not an unknown protocol"))
     s.append(("empty", record(b""), "a frame of no octets, which the entry refuses"))
+
+    # Not a case about the walk: a case about the harness's own framing. A trailing octet with no
+    # room for a length is a record of itself, and reading it was the first thing the fuzzer found.
+    s.append(("trailing_octet", record(eth(BROADCAST, REMOTE_MAC, ETHERTYPE_ARP) + arp_req) + b"\x01",
+              "an input ending in an octet with no length field, which is a record of one octet"))
     return s
 
 
