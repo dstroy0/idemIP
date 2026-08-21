@@ -105,7 +105,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/ip/test_ip4_frag\\test_ip4_frag.c");
+  UnityBegin("test/unit/ip/test_ip4_frag/test_ip4_frag.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 159);
   run_test(test_an_uncleared_borrow_refuses_work, "test_an_uncleared_borrow_refuses_work", 167);
   run_test(test_clear_reports_ok, "test_clear_reports_ok", 181);

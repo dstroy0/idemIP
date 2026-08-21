@@ -109,7 +109,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/ip/test_ipv4\\test_ipv4.c");
+  UnityBegin("test/unit/ip/test_ipv4/test_ipv4.c");
   run_test(test_rfc791_figure4_offsets, "test_rfc791_figure4_offsets", 124);
   run_test(test_each_accessor_reads_only_its_own_field, "test_each_accessor_reads_only_its_own_field", 142);
   run_test(test_version_and_ihl_share_the_first_octet, "test_version_and_ihl_share_the_first_octet", 198);

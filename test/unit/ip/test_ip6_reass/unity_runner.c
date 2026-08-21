@@ -146,7 +146,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/ip/test_ip6_reass\\test_ip6_reass.c");
+  UnityBegin("test/unit/ip/test_ip6_reass/test_ip6_reass.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 73);
   run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 81);
   run_test(test_clear_on_one_borrow_leaves_the_other_untouched, "test_clear_on_one_borrow_leaves_the_other_untouched", 99);

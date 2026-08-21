@@ -109,7 +109,9 @@ extern void test_a_lookup_differing_in_any_part_of_the_four_tuple_finds_nothing(
 extern void test_an_active_open_is_refused_only_where_all_four_parts_already_stand_together(void);
 extern void test_a_backlog_counts_only_the_connections_that_came_through_that_listener(void);
 extern void test_a_segment_is_taken_off_the_queue_it_moved_to(void);
+#if (IDEMIP_ENABLE_IPV4 && IDEMIP_ENABLE_IPV6)
 extern void test_the_ip_version_is_part_of_the_name_a_socket_is_held_under(void);
+#endif
 
 
 /*=======Mock Management=====*/
@@ -170,7 +172,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/tcp/test_tcp_pcb\\test_tcp_pcb.c");
+  UnityBegin("test/unit/tcp/test_tcp_pcb/test_tcp_pcb.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 119);
   run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 128);
   run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 145);
@@ -271,7 +273,9 @@ int main(void)
   run_test(test_an_active_open_is_refused_only_where_all_four_parts_already_stand_together, "test_an_active_open_is_refused_only_where_all_four_parts_already_stand_together", 3064);
   run_test(test_a_backlog_counts_only_the_connections_that_came_through_that_listener, "test_a_backlog_counts_only_the_connections_that_came_through_that_listener", 3135);
   run_test(test_a_segment_is_taken_off_the_queue_it_moved_to, "test_a_segment_is_taken_off_the_queue_it_moved_to", 3181);
+#if (IDEMIP_ENABLE_IPV4 && IDEMIP_ENABLE_IPV6)
   run_test(test_the_ip_version_is_part_of_the_name_a_socket_is_held_under, "test_the_ip_version_is_part_of_the_name_a_socket_is_held_under", 3225);
+#endif
 
   return UNITY_END();
 }

@@ -104,7 +104,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/icmp/test_icmpv6\\test_icmpv6.c");
+  UnityBegin("test/unit/icmp/test_icmpv6/test_icmpv6.c");
   run_test(test_rfc4443_sec21_head_fields_read_out_of_the_message, "test_rfc4443_sec21_head_fields_read_out_of_the_message", 53);
   run_test(test_rfc4443_sec21_type_class_split, "test_rfc4443_sec21_type_class_split", 68);
   run_test(test_rfc4443_sec21_assigned_types, "test_rfc4443_sec21_assigned_types", 87);

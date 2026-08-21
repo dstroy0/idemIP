@@ -40,15 +40,26 @@ extern void test_a_datagram_for_somewhere_else_is_reported_for_forwarding(void);
 extern void test_the_limited_broadcast_is_local(void);
 extern void test_the_directed_broadcast_of_our_subnet_is_local(void);
 extern void test_a_group_we_never_joined_is_an_address_error(void);
+#if (IDEMIP_ENABLE_UDP)
 extern void test_a_bound_udp_port_takes_the_datagram(void);
 extern void test_a_loopback_interface_carries_the_address_loopif_owns(void);
 extern void test_an_address_outside_the_loopback_block_is_not_loopifs_to_own(void);
+#endif
+#if (IDEMIP_ENABLE_UDP) && (IDEMIP_ENABLE_IPV6)
 extern void test_an_ipv6_address_the_loopback_interface_does_not_own_is_not_ours(void);
+#endif
+#if (IDEMIP_ENABLE_UDP)
 extern void test_a_frame_shorter_than_an_ethernet_header_is_an_error_not_an_unknown_proto(void);
+#endif
+#if (IDEMIP_ENABLE_UDP) && (IDEMIP_ENABLE_IPV6)
 extern void test_a_fragment_with_no_octet_after_its_header_is_not_matched_against_the_type_list(void);
+#endif
+#if (IDEMIP_ENABLE_UDP)
 extern void test_an_unbound_udp_port_counts_no_ports(void);
 extern void test_a_datagram_whose_source_address_is_barred_is_discarded(void);
 extern void test_the_unspecified_source_an_address_request_carries_still_arrives(void);
+#endif
+#if (IDEMIP_ENABLE_UDP) && (IDEMIP_ENABLE_IPV4)
 extern void test_an_igmp_query_with_a_good_checksum_is_processed(void);
 extern void test_the_igmp_report_delay_is_drawn_from_the_random_word_and_not_the_clock(void);
 extern void test_an_igmp_message_longer_than_eight_octets_sums_over_the_whole_payload(void);
@@ -60,10 +71,13 @@ extern void test_an_rfc_1042_encapsulated_datagram_is_received(void);
 extern void test_an_igmp_query_with_a_bad_checksum_is_discarded(void);
 extern void test_the_all_hosts_group_is_this_node_s_whether_or_not_it_joined_one(void);
 extern void test_an_igmp_report_with_a_bad_checksum_is_discarded(void);
+#endif
+#if (IDEMIP_ENABLE_UDP)
 extern void test_a_bad_udp_checksum_is_discarded(void);
 extern void test_a_zero_udp_checksum_is_accepted_over_ipv4(void);
 extern void test_a_udp_datagram_shorter_than_its_header_is_an_error(void);
 extern void test_a_udp_length_past_the_ip_payload_is_an_error(void);
+#endif
 extern void test_a_broadcast_delivery_counts_non_unicast(void);
 extern void test_an_icmp_echo_counts_itself_by_message_and_by_type(void);
 extern void test_each_icmp_error_type_counts_itself_by_type(void);
@@ -73,8 +87,10 @@ extern void test_an_icmp_message_with_a_bad_checksum_counts_as_an_error(void);
 extern void test_an_icmp_message_of_unknown_type_is_discarded(void);
 extern void test_an_icmp_message_too_short_for_its_type_is_an_error(void);
 extern void test_an_unclaimed_ip_protocol_counts_unknown_protos(void);
+#if (IDEMIP_ENABLE_IPV6)
 extern void test_an_unclaimed_ipv6_next_header_counts_unknown_protos(void);
 extern void test_a_raw_ipv6_binding_with_ipv6_checksum_verifies_the_received_checksum(void);
+#endif
 extern void test_a_raw_binding_takes_an_unclaimed_protocol(void);
 extern void test_an_echo_request_builds_a_reply(void);
 extern void test_a_reply_with_no_transmit_buffer_is_busy(void);
@@ -89,6 +105,7 @@ extern void test_a_fragment_with_no_descriptor_is_discarded(void);
 extern void test_a_fragment_the_reassembler_kept_pins_its_descriptor(void);
 extern void test_a_fragment_the_reassembler_refuses_counts_a_reassembly_failure(void);
 extern void test_the_last_fragment_completes_the_datagram(void);
+#if (IDEMIP_ENABLE_IPV6) && (IDEMIP_ENABLE_UDP)
 extern void test_an_ipv6_packet_for_our_address_is_delivered(void);
 extern void test_a_fragmented_neighbor_discovery_message_is_ignored(void);
 extern void test_a_fragmented_echo_request_is_not_ignored(void);
@@ -106,6 +123,8 @@ extern void test_an_icmpv6_message_shorter_than_its_own_header_is_an_error(void)
 extern void test_an_icmpv6_echo_request_with_no_room_for_the_reply_is_busy(void);
 extern void test_a_zero_udp_checksum_is_discarded_over_ipv6(void);
 extern void test_a_bad_udp_checksum_is_discarded_over_ipv6(void);
+#endif
+#if (IDEMIP_ENABLE_IPV6)
 extern void test_an_ipv6_packet_for_somewhere_else_is_reported_for_forwarding(void);
 extern void test_an_ipv6_payload_length_past_the_frame_is_a_truncated_packet(void);
 extern void test_an_ipv6_version_that_is_not_six_is_a_header_error(void);
@@ -138,6 +157,8 @@ extern void test_an_ipv6_fragment_the_reassembler_kept_pins_its_descriptor(void)
 extern void test_the_last_ipv6_fragment_completes_the_datagram(void);
 extern void test_an_ipv6_fragment_with_no_descriptor_is_discarded(void);
 extern void test_an_ipv6_fragment_the_reassembler_refuses_counts_a_reassembly_failure(void);
+#endif
+#if (IDEMIP_ENABLE_TCP)
 extern void test_a_bare_rst_at_a_listener_creates_no_tcb(void);
 extern void test_a_reset_that_belongs_to_no_connection_is_not_answered_with_another(void);
 extern void test_a_syn_with_no_control_block_left_takes_no_connection(void);
@@ -165,35 +186,60 @@ extern void test_a_redelivery_owes_the_aggregate_acknowledgment(void);
 extern void test_tcp_deliver_refuses_a_pcb_past_the_table(void);
 extern void test_a_short_tcp_segment_is_an_error(void);
 extern void test_a_challenge_acknowledgment_is_not_aggregated(void);
+#endif
+#if (IDEMIP_ENABLE_TCP) && (IDEMIP_ENABLE_IPV6)
 extern void test_a_syn_at_an_ipv6_listener_takes_a_connection(void);
 extern void test_a_tcp_segment_over_ipv6_with_a_bad_checksum_reaches_no_connection(void);
+#endif
+#if (IDEMIP_ENABLE_UDP)
 extern void test_a_udp_lite_datagram_reaches_a_lite_binding(void);
 extern void test_a_udp_length_below_its_own_header_is_refused(void);
 extern void test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded(void);
 extern void test_a_udp_lite_coverage_of_zero_is_the_whole_packet(void);
 extern void test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault(void);
+#endif
+#if (IDEMIP_ENABLE_UDP) && (IDEMIP_ENABLE_IPV6)
 extern void test_a_udp_lite_datagram_over_ipv6_reaches_a_lite_binding(void);
+#endif
 extern void test_a_frame_with_no_stats_borrow_is_still_delivered(void);
 extern void test_a_unicast_destination_with_no_netif_borrow_is_an_address_error(void);
 extern void test_a_multicast_destination_with_no_igmp_borrow_is_not_ours(void);
 extern void test_an_arp_packet_with_no_netif_borrow_is_refused(void);
+#if (IDEMIP_ENABLE_IPV6)
 extern void test_a_loopback_destination_off_a_wire_is_dropped(void);
 extern void test_a_multicast_destination_with_no_ip6_addr_borrow_is_not_ours(void);
+#endif
 extern void test_a_source_that_would_be_a_directed_broadcast_needs_a_mask_to_be_one(void);
 extern void test_an_echo_request_at_a_build_with_no_netif_borrow_is_still_answered(void);
+#if (IDEMIP_ENABLE_IPV6)
 extern void test_an_ipv6_unicast_destination_with_no_netif_borrow_is_left_to_the_forwarder(void);
 extern void test_an_ipv6_multicast_destination_with_no_mld6_borrow_is_not_ours(void);
 extern void test_an_icmpv6_echo_request_at_a_build_with_no_netif_borrow_is_still_answered(void);
+#endif
+#if (IDEMIP_ENABLE_TCP)
 extern void test_a_delivery_at_a_build_with_no_tcp_pcb_borrow_is_refused(void);
+#endif
 extern void test_a_reply_with_no_transmit_buffer_at_all_is_busy(void);
+#if (IDEMIP_ENABLE_IPV6)
 extern void test_an_echo_request_is_answered_with_no_preferred_address_to_take(void);
+#endif
 extern void test_an_802_3_length_field_with_no_snap_header_counts_unknown_protos(void);
+#if (IDEMIP_ENABLE_TCP)
 extern void test_a_held_segment_rcv_nxt_has_passed_entirely_is_freed_without_a_delivery(void);
+#endif
 extern void test_a_frame_with_no_vlan_borrow_is_refused(void);
+#if (IDEMIP_ENABLE_IPV4)
 extern void test_an_ipv4_frame_with_an_unbound_unit_is_refused(void);
+#endif
+#if (IDEMIP_ENABLE_IPV6)
 extern void test_an_ipv6_frame_with_an_unbound_unit_is_refused(void);
+#endif
+#if (IDEMIP_ENABLE_UDP)
 extern void test_a_udp_datagram_with_an_unbound_unit_is_refused(void);
+#endif
+#if (IDEMIP_ENABLE_TCP)
 extern void test_a_tcp_segment_with_an_unbound_unit_is_refused(void);
+#endif
 
 
 /*=======Mock Management=====*/
@@ -254,7 +300,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/core/test_dispatch\\test_dispatch.c");
+  UnityBegin("test/unit/core/test_dispatch/test_dispatch.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 470);
   run_test(test_every_entry_refuses_an_uncleared_borrow, "test_every_entry_refuses_an_uncleared_borrow", 485);
   run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 506);
@@ -280,15 +326,26 @@ int main(void)
   run_test(test_the_limited_broadcast_is_local, "test_the_limited_broadcast_is_local", 797);
   run_test(test_the_directed_broadcast_of_our_subnet_is_local, "test_the_directed_broadcast_of_our_subnet_is_local", 807);
   run_test(test_a_group_we_never_joined_is_an_address_error, "test_a_group_we_never_joined_is_an_address_error", 835);
+#if (IDEMIP_ENABLE_UDP)
   run_test(test_a_bound_udp_port_takes_the_datagram, "test_a_bound_udp_port_takes_the_datagram", 847);
   run_test(test_a_loopback_interface_carries_the_address_loopif_owns, "test_a_loopback_interface_carries_the_address_loopif_owns", 872);
   run_test(test_an_address_outside_the_loopback_block_is_not_loopifs_to_own, "test_an_address_outside_the_loopback_block_is_not_loopifs_to_own", 897);
+#endif
+#if (IDEMIP_ENABLE_UDP) && (IDEMIP_ENABLE_IPV6)
   run_test(test_an_ipv6_address_the_loopback_interface_does_not_own_is_not_ours, "test_an_ipv6_address_the_loopback_interface_does_not_own_is_not_ours", 923);
+#endif
+#if (IDEMIP_ENABLE_UDP)
   run_test(test_a_frame_shorter_than_an_ethernet_header_is_an_error_not_an_unknown_proto, "test_a_frame_shorter_than_an_ethernet_header_is_an_error_not_an_unknown_proto", 948);
+#endif
+#if (IDEMIP_ENABLE_UDP) && (IDEMIP_ENABLE_IPV6)
   run_test(test_a_fragment_with_no_octet_after_its_header_is_not_matched_against_the_type_list, "test_a_fragment_with_no_octet_after_its_header_is_not_matched_against_the_type_list", 965);
+#endif
+#if (IDEMIP_ENABLE_UDP)
   run_test(test_an_unbound_udp_port_counts_no_ports, "test_an_unbound_udp_port_counts_no_ports", 981);
   run_test(test_a_datagram_whose_source_address_is_barred_is_discarded, "test_a_datagram_whose_source_address_is_barred_is_discarded", 998);
   run_test(test_the_unspecified_source_an_address_request_carries_still_arrives, "test_the_unspecified_source_an_address_request_carries_still_arrives", 1025);
+#endif
+#if (IDEMIP_ENABLE_UDP) && (IDEMIP_ENABLE_IPV4)
   run_test(test_an_igmp_query_with_a_good_checksum_is_processed, "test_an_igmp_query_with_a_good_checksum_is_processed", 1069);
   run_test(test_the_igmp_report_delay_is_drawn_from_the_random_word_and_not_the_clock, "test_the_igmp_report_delay_is_drawn_from_the_random_word_and_not_the_clock", 1126);
   run_test(test_an_igmp_message_longer_than_eight_octets_sums_over_the_whole_payload, "test_an_igmp_message_longer_than_eight_octets_sums_over_the_whole_payload", 1168);
@@ -300,10 +357,13 @@ int main(void)
   run_test(test_an_igmp_query_with_a_bad_checksum_is_discarded, "test_an_igmp_query_with_a_bad_checksum_is_discarded", 1363);
   run_test(test_the_all_hosts_group_is_this_node_s_whether_or_not_it_joined_one, "test_the_all_hosts_group_is_this_node_s_whether_or_not_it_joined_one", 1382);
   run_test(test_an_igmp_report_with_a_bad_checksum_is_discarded, "test_an_igmp_report_with_a_bad_checksum_is_discarded", 1400);
+#endif
+#if (IDEMIP_ENABLE_UDP)
   run_test(test_a_bad_udp_checksum_is_discarded, "test_a_bad_udp_checksum_is_discarded", 1418);
   run_test(test_a_zero_udp_checksum_is_accepted_over_ipv4, "test_a_zero_udp_checksum_is_accepted_over_ipv4", 1439);
   run_test(test_a_udp_datagram_shorter_than_its_header_is_an_error, "test_a_udp_datagram_shorter_than_its_header_is_an_error", 1458);
   run_test(test_a_udp_length_past_the_ip_payload_is_an_error, "test_a_udp_length_past_the_ip_payload_is_an_error", 1474);
+#endif
   run_test(test_a_broadcast_delivery_counts_non_unicast, "test_a_broadcast_delivery_counts_non_unicast", 1495);
   run_test(test_an_icmp_echo_counts_itself_by_message_and_by_type, "test_an_icmp_echo_counts_itself_by_message_and_by_type", 1515);
   run_test(test_each_icmp_error_type_counts_itself_by_type, "test_each_icmp_error_type_counts_itself_by_type", 1539);
@@ -313,8 +373,10 @@ int main(void)
   run_test(test_an_icmp_message_of_unknown_type_is_discarded, "test_an_icmp_message_of_unknown_type_is_discarded", 1691);
   run_test(test_an_icmp_message_too_short_for_its_type_is_an_error, "test_an_icmp_message_too_short_for_its_type_is_an_error", 1716);
   run_test(test_an_unclaimed_ip_protocol_counts_unknown_protos, "test_an_unclaimed_ip_protocol_counts_unknown_protos", 1740);
+#if (IDEMIP_ENABLE_IPV6)
   run_test(test_an_unclaimed_ipv6_next_header_counts_unknown_protos, "test_an_unclaimed_ipv6_next_header_counts_unknown_protos", 1754);
   run_test(test_a_raw_ipv6_binding_with_ipv6_checksum_verifies_the_received_checksum, "test_a_raw_ipv6_binding_with_ipv6_checksum_verifies_the_received_checksum", 1774);
+#endif
   run_test(test_a_raw_binding_takes_an_unclaimed_protocol, "test_a_raw_binding_takes_an_unclaimed_protocol", 1836);
   run_test(test_an_echo_request_builds_a_reply, "test_an_echo_request_builds_a_reply", 1861);
   run_test(test_a_reply_with_no_transmit_buffer_is_busy, "test_a_reply_with_no_transmit_buffer_is_busy", 1892);
@@ -329,6 +391,7 @@ int main(void)
   run_test(test_a_fragment_the_reassembler_kept_pins_its_descriptor, "test_a_fragment_the_reassembler_kept_pins_its_descriptor", 2040);
   run_test(test_a_fragment_the_reassembler_refuses_counts_a_reassembly_failure, "test_a_fragment_the_reassembler_refuses_counts_a_reassembly_failure", 2066);
   run_test(test_the_last_fragment_completes_the_datagram, "test_the_last_fragment_completes_the_datagram", 2092);
+#if (IDEMIP_ENABLE_IPV6) && (IDEMIP_ENABLE_UDP)
   run_test(test_an_ipv6_packet_for_our_address_is_delivered, "test_an_ipv6_packet_for_our_address_is_delivered", 2139);
   run_test(test_a_fragmented_neighbor_discovery_message_is_ignored, "test_a_fragmented_neighbor_discovery_message_is_ignored", 2186);
   run_test(test_a_fragmented_echo_request_is_not_ignored, "test_a_fragmented_echo_request_is_not_ignored", 2201);
@@ -346,6 +409,8 @@ int main(void)
   run_test(test_an_icmpv6_echo_request_with_no_room_for_the_reply_is_busy, "test_an_icmpv6_echo_request_with_no_room_for_the_reply_is_busy", 2574);
   run_test(test_a_zero_udp_checksum_is_discarded_over_ipv6, "test_a_zero_udp_checksum_is_discarded_over_ipv6", 2604);
   run_test(test_a_bad_udp_checksum_is_discarded_over_ipv6, "test_a_bad_udp_checksum_is_discarded_over_ipv6", 2628);
+#endif
+#if (IDEMIP_ENABLE_IPV6)
   run_test(test_an_ipv6_packet_for_somewhere_else_is_reported_for_forwarding, "test_an_ipv6_packet_for_somewhere_else_is_reported_for_forwarding", 2655);
   run_test(test_an_ipv6_payload_length_past_the_frame_is_a_truncated_packet, "test_an_ipv6_payload_length_past_the_frame_is_a_truncated_packet", 2671);
   run_test(test_an_ipv6_version_that_is_not_six_is_a_header_error, "test_an_ipv6_version_that_is_not_six_is_a_header_error", 2690);
@@ -378,6 +443,8 @@ int main(void)
   run_test(test_the_last_ipv6_fragment_completes_the_datagram, "test_the_last_ipv6_fragment_completes_the_datagram", 3470);
   run_test(test_an_ipv6_fragment_with_no_descriptor_is_discarded, "test_an_ipv6_fragment_with_no_descriptor_is_discarded", 3493);
   run_test(test_an_ipv6_fragment_the_reassembler_refuses_counts_a_reassembly_failure, "test_an_ipv6_fragment_the_reassembler_refuses_counts_a_reassembly_failure", 3513);
+#endif
+#if (IDEMIP_ENABLE_TCP)
   run_test(test_a_bare_rst_at_a_listener_creates_no_tcb, "test_a_bare_rst_at_a_listener_creates_no_tcb", 3586);
   run_test(test_a_reset_that_belongs_to_no_connection_is_not_answered_with_another, "test_a_reset_that_belongs_to_no_connection_is_not_answered_with_another", 3612);
   run_test(test_a_syn_with_no_control_block_left_takes_no_connection, "test_a_syn_with_no_control_block_left_takes_no_connection", 3635);
@@ -405,35 +472,60 @@ int main(void)
   run_test(test_tcp_deliver_refuses_a_pcb_past_the_table, "test_tcp_deliver_refuses_a_pcb_past_the_table", 4232);
   run_test(test_a_short_tcp_segment_is_an_error, "test_a_short_tcp_segment_is_an_error", 4240);
   run_test(test_a_challenge_acknowledgment_is_not_aggregated, "test_a_challenge_acknowledgment_is_not_aggregated", 4252);
+#endif
+#if (IDEMIP_ENABLE_TCP) && (IDEMIP_ENABLE_IPV6)
   run_test(test_a_syn_at_an_ipv6_listener_takes_a_connection, "test_a_syn_at_an_ipv6_listener_takes_a_connection", 4317);
   run_test(test_a_tcp_segment_over_ipv6_with_a_bad_checksum_reaches_no_connection, "test_a_tcp_segment_over_ipv6_with_a_bad_checksum_reaches_no_connection", 4342);
+#endif
+#if (IDEMIP_ENABLE_UDP)
   run_test(test_a_udp_lite_datagram_reaches_a_lite_binding, "test_a_udp_lite_datagram_reaches_a_lite_binding", 4364);
   run_test(test_a_udp_length_below_its_own_header_is_refused, "test_a_udp_length_below_its_own_header_is_refused", 4417);
   run_test(test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded, "test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded", 4434);
   run_test(test_a_udp_lite_coverage_of_zero_is_the_whole_packet, "test_a_udp_lite_coverage_of_zero_is_the_whole_packet", 4451);
   run_test(test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault, "test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault", 4496);
+#endif
+#if (IDEMIP_ENABLE_UDP) && (IDEMIP_ENABLE_IPV6)
   run_test(test_a_udp_lite_datagram_over_ipv6_reaches_a_lite_binding, "test_a_udp_lite_datagram_over_ipv6_reaches_a_lite_binding", 4532);
+#endif
   run_test(test_a_frame_with_no_stats_borrow_is_still_delivered, "test_a_frame_with_no_stats_borrow_is_still_delivered", 4611);
   run_test(test_a_unicast_destination_with_no_netif_borrow_is_an_address_error, "test_a_unicast_destination_with_no_netif_borrow_is_an_address_error", 4634);
   run_test(test_a_multicast_destination_with_no_igmp_borrow_is_not_ours, "test_a_multicast_destination_with_no_igmp_borrow_is_not_ours", 4653);
   run_test(test_an_arp_packet_with_no_netif_borrow_is_refused, "test_an_arp_packet_with_no_netif_borrow_is_refused", 4674);
+#if (IDEMIP_ENABLE_IPV6)
   run_test(test_a_loopback_destination_off_a_wire_is_dropped, "test_a_loopback_destination_off_a_wire_is_dropped", 4692);
   run_test(test_a_multicast_destination_with_no_ip6_addr_borrow_is_not_ours, "test_a_multicast_destination_with_no_ip6_addr_borrow_is_not_ours", 4713);
+#endif
   run_test(test_a_source_that_would_be_a_directed_broadcast_needs_a_mask_to_be_one, "test_a_source_that_would_be_a_directed_broadcast_needs_a_mask_to_be_one", 4740);
   run_test(test_an_echo_request_at_a_build_with_no_netif_borrow_is_still_answered, "test_an_echo_request_at_a_build_with_no_netif_borrow_is_still_answered", 4776);
+#if (IDEMIP_ENABLE_IPV6)
   run_test(test_an_ipv6_unicast_destination_with_no_netif_borrow_is_left_to_the_forwarder, "test_an_ipv6_unicast_destination_with_no_netif_borrow_is_left_to_the_forwarder", 4795);
   run_test(test_an_ipv6_multicast_destination_with_no_mld6_borrow_is_not_ours, "test_an_ipv6_multicast_destination_with_no_mld6_borrow_is_not_ours", 4815);
   run_test(test_an_icmpv6_echo_request_at_a_build_with_no_netif_borrow_is_still_answered, "test_an_icmpv6_echo_request_at_a_build_with_no_netif_borrow_is_still_answered", 4836);
+#endif
+#if (IDEMIP_ENABLE_TCP)
   run_test(test_a_delivery_at_a_build_with_no_tcp_pcb_borrow_is_refused, "test_a_delivery_at_a_build_with_no_tcp_pcb_borrow_is_refused", 4865);
+#endif
   run_test(test_a_reply_with_no_transmit_buffer_at_all_is_busy, "test_a_reply_with_no_transmit_buffer_at_all_is_busy", 4884);
+#if (IDEMIP_ENABLE_IPV6)
   run_test(test_an_echo_request_is_answered_with_no_preferred_address_to_take, "test_an_echo_request_is_answered_with_no_preferred_address_to_take", 4928);
+#endif
   run_test(test_an_802_3_length_field_with_no_snap_header_counts_unknown_protos, "test_an_802_3_length_field_with_no_snap_header_counts_unknown_protos", 4969);
+#if (IDEMIP_ENABLE_TCP)
   run_test(test_a_held_segment_rcv_nxt_has_passed_entirely_is_freed_without_a_delivery, "test_a_held_segment_rcv_nxt_has_passed_entirely_is_freed_without_a_delivery", 4989);
+#endif
   run_test(test_a_frame_with_no_vlan_borrow_is_refused, "test_a_frame_with_no_vlan_borrow_is_refused", 5027);
+#if (IDEMIP_ENABLE_IPV4)
   run_test(test_an_ipv4_frame_with_an_unbound_unit_is_refused, "test_an_ipv4_frame_with_an_unbound_unit_is_refused", 5038);
+#endif
+#if (IDEMIP_ENABLE_IPV6)
   run_test(test_an_ipv6_frame_with_an_unbound_unit_is_refused, "test_an_ipv6_frame_with_an_unbound_unit_is_refused", 5082);
+#endif
+#if (IDEMIP_ENABLE_UDP)
   run_test(test_a_udp_datagram_with_an_unbound_unit_is_refused, "test_a_udp_datagram_with_an_unbound_unit_is_refused", 5108);
+#endif
+#if (IDEMIP_ENABLE_TCP)
   run_test(test_a_tcp_segment_with_an_unbound_unit_is_refused, "test_a_tcp_segment_with_an_unbound_unit_is_refused", 5139);
+#endif
 
   return UNITY_END();
 }

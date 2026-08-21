@@ -101,7 +101,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/pmtu/test_pmtu4\\test_pmtu4.c");
+  UnityBegin("test/unit/pmtu/test_pmtu4/test_pmtu4.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 115);
   run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 126);
   run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 142);

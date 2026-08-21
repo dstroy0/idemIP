@@ -118,7 +118,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/ethernet/test_vlan\\test_vlan.c");
+  UnityBegin("test/unit/ethernet/test_vlan/test_vlan.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 145);
   run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 157);
   run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 178);

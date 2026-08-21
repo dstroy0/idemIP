@@ -95,7 +95,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/base/test_clock\\test_clock.c");
+  UnityBegin("test/unit/base/test_clock/test_clock.c");
   run_test(test_a_refresh_reports_the_reading_it_was_handed, "test_a_refresh_reports_the_reading_it_was_handed", 41);
   run_test(test_the_epoch_climbs_through_a_reading_that_wraps, "test_the_epoch_climbs_through_a_reading_that_wraps", 49);
   run_test(test_now_and_the_epoch_disagree_once_the_reading_has_wrapped, "test_now_and_the_epoch_disagree_once_the_reading_has_wrapped", 64);

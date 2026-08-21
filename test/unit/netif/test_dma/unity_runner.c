@@ -122,7 +122,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/netif/test_dma\\test_dma.c");
+  UnityBegin("test/unit/netif/test_dma/test_dma.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 266);
   run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 274);
   run_test(test_the_two_operand_blocks_are_different_bytes, "test_the_two_operand_blocks_are_different_bytes", 302);

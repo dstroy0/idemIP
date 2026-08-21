@@ -25,19 +25,25 @@ extern void test_output_refuses_a_null_frame_and_a_zero_length(void);
 extern void test_bind_refuses_an_unusable_mtu(void);
 extern void test_bind_refuses_an_index_past_the_netif_table(void);
 extern void test_a_claim_that_found_nothing_reports_no_frame(void);
+#if (IDEMIP_ENABLE_IPV6)
 extern void test_owns6_refuses_a_null_address(void);
 extern void test_bind_refuses_a_missing_ipv6_address(void);
 extern void test_match_operands_on_two_borrows_are_independent(void);
+#endif
 extern void test_bind_accepts_the_loopback_addresses(void);
 extern void test_bind_accepts_any_host_part_on_network_127(void);
 extern void test_bind_refuses_an_address_off_network_127(void);
+#if (IDEMIP_ENABLE_IPV6)
 extern void test_bind_refuses_an_ipv6_address_that_is_not_the_loopback(void);
+#endif
 extern void test_owns4_answers_for_every_host_part_on_network_127(void);
 extern void test_owns4_disowns_addresses_off_network_127(void);
 extern void test_owns4_is_not_narrowed_by_the_bound_address(void);
+#if (IDEMIP_ENABLE_IPV6)
 extern void test_owns6_answers_for_the_one_loopback_address(void);
 extern void test_owns6_disowns_every_other_address(void);
 extern void test_owns6_disowns_an_address_one_bit_off(void);
+#endif
 extern void test_a_frame_written_comes_back_on_the_next_claim(void);
 extern void test_the_frame_comes_back_inside_the_borrow(void);
 extern void test_the_looped_frame_does_not_follow_the_callers_buffer(void);
@@ -118,7 +124,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/netif/test_loopif\\test_loopif.c");
+  UnityBegin("test/unit/netif/test_loopif/test_loopif.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 94);
   run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 102);
   run_test(test_the_two_operand_blocks_are_different_bytes, "test_the_two_operand_blocks_are_different_bytes", 125);
@@ -136,19 +142,25 @@ int main(void)
   run_test(test_bind_refuses_an_unusable_mtu, "test_bind_refuses_an_unusable_mtu", 277);
   run_test(test_bind_refuses_an_index_past_the_netif_table, "test_bind_refuses_an_index_past_the_netif_table", 292);
   run_test(test_a_claim_that_found_nothing_reports_no_frame, "test_a_claim_that_found_nothing_reports_no_frame", 302);
+#if (IDEMIP_ENABLE_IPV6)
   run_test(test_owns6_refuses_a_null_address, "test_owns6_refuses_a_null_address", 312);
   run_test(test_bind_refuses_a_missing_ipv6_address, "test_bind_refuses_a_missing_ipv6_address", 320);
   run_test(test_match_operands_on_two_borrows_are_independent, "test_match_operands_on_two_borrows_are_independent", 330);
+#endif
   run_test(test_bind_accepts_the_loopback_addresses, "test_bind_accepts_the_loopback_addresses", 353);
   run_test(test_bind_accepts_any_host_part_on_network_127, "test_bind_accepts_any_host_part_on_network_127", 363);
   run_test(test_bind_refuses_an_address_off_network_127, "test_bind_refuses_an_address_off_network_127", 380);
+#if (IDEMIP_ENABLE_IPV6)
   run_test(test_bind_refuses_an_ipv6_address_that_is_not_the_loopback, "test_bind_refuses_an_ipv6_address_that_is_not_the_loopback", 398);
+#endif
   run_test(test_owns4_answers_for_every_host_part_on_network_127, "test_owns4_answers_for_every_host_part_on_network_127", 424);
   run_test(test_owns4_disowns_addresses_off_network_127, "test_owns4_disowns_addresses_off_network_127", 439);
   run_test(test_owns4_is_not_narrowed_by_the_bound_address, "test_owns4_is_not_narrowed_by_the_bound_address", 454);
+#if (IDEMIP_ENABLE_IPV6)
   run_test(test_owns6_answers_for_the_one_loopback_address, "test_owns6_answers_for_the_one_loopback_address", 466);
   run_test(test_owns6_disowns_every_other_address, "test_owns6_disowns_every_other_address", 477);
   run_test(test_owns6_disowns_an_address_one_bit_off, "test_owns6_disowns_an_address_one_bit_off", 498);
+#endif
   run_test(test_a_frame_written_comes_back_on_the_next_claim, "test_a_frame_written_comes_back_on_the_next_claim", 536);
   run_test(test_the_frame_comes_back_inside_the_borrow, "test_the_frame_comes_back_inside_the_borrow", 554);
   run_test(test_the_looped_frame_does_not_follow_the_callers_buffer, "test_the_looped_frame_does_not_follow_the_callers_buffer", 572);

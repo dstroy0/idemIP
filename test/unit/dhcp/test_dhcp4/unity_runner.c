@@ -154,7 +154,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/dhcp/test_dhcp4\\test_dhcp4.c");
+  UnityBegin("test/unit/dhcp/test_dhcp4/test_dhcp4.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 79);
   run_test(test_the_published_offsets_are_ordered_and_fit, "test_the_published_offsets_are_ordered_and_fit", 96);
   run_test(test_the_io_macro_lands_on_the_published_offset, "test_the_io_macro_lands_on_the_published_offset", 105);

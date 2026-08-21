@@ -175,7 +175,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/dhcp/test_dhcp6\\test_dhcp6.c");
+  UnityBegin("test/unit/dhcp/test_dhcp6/test_dhcp6.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 82);
   run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 98);
   run_test(test_the_duid_region_holds_the_longest_duid, "test_the_duid_region_holds_the_longest_duid", 111);

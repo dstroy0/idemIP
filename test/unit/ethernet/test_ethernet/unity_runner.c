@@ -84,7 +84,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/ethernet/test_ethernet\\test_ethernet.c");
+  UnityBegin("test/unit/ethernet/test_ethernet/test_ethernet.c");
   run_test(test_rfc894_ipv4_type_code_is_0800, "test_rfc894_ipv4_type_code_is_0800", 50);
   run_test(test_rfc1042_assigned_type_codes_in_decimal, "test_rfc1042_assigned_type_codes_in_decimal", 62);
   run_test(test_rfc2464_ipv6_type_code_bit_figure, "test_rfc2464_ipv6_type_code_bit_figure", 75);

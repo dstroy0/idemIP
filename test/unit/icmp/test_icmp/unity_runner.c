@@ -95,7 +95,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/icmp/test_icmp\\test_icmp.c");
+  UnityBegin("test/unit/icmp/test_icmp/test_icmp.c");
   run_test(test_rfc792_common_fields_are_the_first_word, "test_rfc792_common_fields_are_the_first_word", 70);
   run_test(test_rfc792_summary_of_message_types, "test_rfc792_summary_of_message_types", 83);
   run_test(test_rfc1122_error_and_query_classes, "test_rfc1122_error_and_query_classes", 101);

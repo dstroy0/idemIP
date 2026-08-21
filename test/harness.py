@@ -41,25 +41,40 @@ NOT_A_CASE = ("setUp", "tearDown", "main", "suiteSetUp", "suiteTearDown")
 # test/CMakeLists.txt's map: which capabilities a suite needs before the build carries it.
 SUITE_CAP = re.compile(r"^set\(IDEMIP_SUITE_CAP_(\w+)\s+([^)]*)\)", re.M)
 
-# A conditional over a capability, and the two directives that end or invert one.
-CAP_IF = re.compile(r"^[ \t]*#[ \t]*if[ \t]+IDEMIP_ENABLE_(\w+)[ \t]*$", re.M)
+# A conditional this can mirror into the runner: IDEMIP_ENABLE_ terms joined by && or ||, and
+# nothing else. Every capability reaches every target as a definition of the library itself
+# (target_compile_definitions(idemip PUBLIC IDEMIP_ENABLE_<cap>=0|1)), so the runner reads one the
+# same way the suite it registers does. A conditional over anything else is not mirrored: the macro
+# may not be visible in the runner's translation unit, and an undefined macro reads as zero, which
+# would drop the case in silence rather than say so.
+CAP_IF = re.compile(r"^[ \t]*#[ \t]*if[ \t]+"
+                    r"(IDEMIP_ENABLE_\w+(?:[ \t]*(?:&&|\|\|)[ \t]*IDEMIP_ENABLE_\w+)*)[ \t]*$", re.M)
+CAP_TERM = re.compile(r"IDEMIP_ENABLE_(\w+)")
 ANY_IF = re.compile(r"^[ \t]*#[ \t]*if")
 ANY_ELSE = re.compile(r"^[ \t]*#[ \t]*el(se|if)")
 ANY_ENDIF = re.compile(r"^[ \t]*#[ \t]*endif")
 
+# The two lines a runner names a case on, which are the two this has to guard.
+RUNNER_EXTERN = re.compile(r"^extern void (test_\w+)\(void\);[ \t]*$")
+RUNNER_RUN = re.compile(r"^[ \t]*run_test\((test_\w+),")
+
 
 def guarded_cases(path):
-    """Each registered case in @p path, with the capabilities whose #if it sits inside.
+    """Each registered case in @p path, with the conditionals it sits inside, outermost first.
 
     Unity's generator reads the case names out of the source text and does not see a preprocessor
-    conditional, so a case inside a capability's #if is still declared and called by the runner. With
-    that capability off the definition is gone and the suite fails to LINK, which is what makes this
-    the same finding as a capability the map does not name.
+    conditional, so a case inside a capability's #if would still be declared and called by the
+    runner. With that capability off the definition is gone and the suite fails to LINK. What this
+    reads is what generate_runner mirrors onto the two lines the runner names the case on, so the
+    case leaves the runner exactly where it leaves the suite.
+
+    An entry is the conditional's text where CAP_IF can mirror it and None where it cannot, so a
+    case standing under something this cannot carry across is a finding and not a silence.
     """
     with open(path, encoding="utf-8") as fh:
         lines = fh.read().splitlines()
     out = {}
-    stack = []  # one entry per open #if: the capability it tests, or None
+    stack = []  # one entry per open #if: the conditional's text, or None where it is not mirrorable
     for line in lines:
         if ANY_ENDIF.match(line):
             if stack:
@@ -67,7 +82,7 @@ def guarded_cases(path):
             continue
         if ANY_ELSE.match(line):
             if stack:
-                stack[-1] = None  # the other arm is not the capability's
+                stack[-1] = None  # the other arm is not the one the #if names
             continue
         if ANY_IF.match(line):
             m = CAP_IF.match(line)
@@ -75,8 +90,13 @@ def guarded_cases(path):
             continue
         m = UNITY_CASE.match(line)
         if m:
-            out[m.group(1)] = sorted({c for c in stack if c})
+            out[m.group(1)] = list(stack)
     return out
+
+
+def caps_of(guards):
+    """The capabilities named anywhere in a case's conditionals."""
+    return sorted({c for g in guards if g for c in CAP_TERM.findall(g)})
 
 
 def suite_caps():
@@ -123,6 +143,54 @@ def find_ruby():
     return shutil.which("ruby")
 
 
+def guard_runner(runner, src):
+    """Carry @p src's conditionals onto the two lines @p runner names each case on.
+
+    Unity's generator does not see a preprocessor conditional; this does, and it is the whole of
+    what the runner needs. Mirroring the #if is what lets a capability compile a single case out
+    instead of the suite around it: with the capability off the definition is gone from the suite
+    and the declaration and the call are gone from the runner, so the reduced build links and runs
+    every case it still holds.
+
+    The conditional is copied across rather than interpreted, so && and || and a nest of them all
+    carry. What is not copied is a conditional over something other than a capability - see CAP_IF.
+    """
+    guards = {case: g for case, g in guarded_cases(src).items() if g}
+    unreadable = sorted(case for case, g in guards.items() if any(x is None for x in g))
+    if unreadable:
+        raise SystemExit(
+            "runners: %s holds %d cases inside a conditional the runner cannot be given.\n"
+            "  Only IDEMIP_ENABLE_ terms are carried across, because only those are defined for\n"
+            "  every translation unit; anything else may be invisible where the runner is compiled,\n"
+            "  and an undefined macro reads as zero, which would drop the case in silence: %s\n"
+            "  Put the conditional inside the case body, where the case still registers and the\n"
+            "  build it does not apply to can say so."
+            % (os.path.relpath(src, ROOT), len(unreadable), ", ".join(unreadable))
+        )
+    if not guards:
+        return
+    # A nest is a conjunction: every #if a case stands inside held for it to be compiled at all.
+    expr = {case: " && ".join("(%s)" % g for g in gs) for case, gs in guards.items()}
+    with open(runner, encoding="utf-8") as fh:
+        lines = fh.read().split("\n")
+    out = []
+    standing = None  # the conditional the emitted lines are inside, so a run of them opens one #if
+    for line in lines:
+        m = RUNNER_EXTERN.match(line) or RUNNER_RUN.match(line)
+        want = expr.get(m.group(1)) if m else None
+        if want != standing:
+            if standing is not None:
+                out.append("#endif")
+            if want is not None:
+                out.append("#if %s" % want)
+            standing = want
+        out.append(line)
+    if standing is not None:
+        out.append("#endif")
+    with open(runner, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(out))
+
+
 def generate_runner(suite_dir, unity_rb):
     """Emit suite_dir/unity_runner.c from the one source that holds the cases."""
     candidates = [f for f in sorted(os.listdir(suite_dir)) if f.endswith(".c") and f != GENERATED_RUNNER]
@@ -156,7 +224,13 @@ def generate_runner(suite_dir, unity_rb):
         raise SystemExit("runners: Unity's generate_test_runner.rb not found at %s" % unity_rb)
     src = os.path.join(suite_dir, sources[0])
     out = os.path.join(suite_dir, GENERATED_RUNNER)
-    subprocess.run([ruby, unity_rb, src, out], check=True)
+    # The generator writes the path it was handed into the runner's own UnityBegin(), so an absolute
+    # one puts the machine that ran it into a file the tree tracks, and a second checkout regenerates
+    # a file that differs from the committed one in nothing but where it was built. Handing it a
+    # path relative to the root, from the root, is what makes the bytes the same everywhere - which
+    # is what lets a build check that the committed runner is the one the sources generate.
+    rel = [os.path.relpath(p, ROOT).replace("\\", "/") for p in (src, out)]
+    subprocess.run([ruby, unity_rb] + rel, check=True, cwd=ROOT)
     # Unity's generator opens its output in text mode, so on Windows every line lands CRLF while
     # .gitattributes holds this tree at "LF in the repository and LF in the working copy". The runner
     # is tracked, so that difference shows as a modified file after every build that regenerates one.
@@ -169,6 +243,7 @@ def generate_runner(suite_dir, unity_rb):
     if lf != written:
         with open(out, "wb") as fh:
             fh.write(lf)
+    guard_runner(out, src)
     # Report the near misses even on success: the runner is written, and these still never ran.
     _, missed = runner_cases(src)
     if missed:
@@ -253,7 +328,8 @@ def cmd_deps(a):
 
 def cmd_suites(a):
     caps = suite_caps()
-    unnamed = []
+    unreadable = []
+    compiled_out = []
     for d in discover():
         src = suite_source(d)
         found, missed = runner_cases(src)
@@ -261,28 +337,42 @@ def cmd_suites(a):
         need = caps.get(name, [])
         note = "" if not missed else "   NOT REGISTERED: " + ", ".join(missed)
         for case, guards in guarded_cases(src).items():
-            for cap in guards:
-                if cap not in need:
-                    unnamed.append((name, cap, case))
+            if any(g is None for g in guards):
+                unreadable.append((name, case))
+                continue
+            # A capability the suite already names holds wherever the suite is built at all, so a
+            # conditional over one of those takes no case out of any run. The rest do.
+            takes = [c for c in caps_of(guards) if c not in need]
+            if takes:
+                compiled_out.append((name, " ".join(takes), case))
         print("%-52s %2d cases  %-18s%s"
               % (os.path.relpath(d, ROOT).replace("\\", "/"), len(found), " ".join(need) or "-", note))
 
-    if not unnamed:
-        print("\nevery case a capability guards is in a suite that names that capability")
+    if compiled_out:
+        print("\n%d cases stand inside a capability their suite does not name. The suite is still\n"
+              "built without it, and the case leaves the runner with the definition, so what the\n"
+              "reduced run covers is the suite minus these:\n" % len(compiled_out))
+        for suite, cap, case in compiled_out:
+            print("   %-22s without %-10s %s" % (suite, cap, case))
+
+    if not unreadable:
+        print("\nevery conditional standing over a case is one the runner can be given as well")
         return 0
 
-    print("\n%d cases sit inside a capability their suite does not name:\n" % len(unnamed))
-    for suite, cap, case in unnamed:
-        print("   %-22s needs %-10s %s" % (suite, cap, case))
+    print("\n%d cases sit inside a conditional the runner cannot be given:\n" % len(unreadable))
+    for suite, case in unreadable:
+        print("   %-22s %s" % (suite, case))
     print("""
   Unity's generator reads the case names out of the source text and does not see a
-  preprocessor conditional, so the runner declares and calls each of these however the
-  capability is set. With it off the definition is gone and the suite fails to LINK, so
-  the reduced build breaks while the full one stays green.
+  preprocessor conditional; harness.py copies each one onto the runner's declaration and
+  call so the case leaves both together. Only IDEMIP_ENABLE_ terms are copied, because the
+  build defines those for every translation unit - a conditional over anything else may be
+  invisible where the runner is compiled, and an undefined macro reads as zero, so the case
+  would stop running without failing.
 
-  Fix one of two ways: add the capability to the suite's IDEMIP_SUITE_CAP_ line in
-  test/CMakeLists.txt, which gates the whole suite on it, or move the cases to a suite
-  that already names it.""")
+  Fix one of two ways: state the conditional over IDEMIP_ENABLE_ terms, or move it inside
+  the case body, where the case still registers and the build it does not apply to can say
+  so rather than vanish.""")
     return 1 if a.strict else 0
 
 

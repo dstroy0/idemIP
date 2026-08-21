@@ -118,7 +118,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/raw/test_raw_pcb\\test_raw_pcb.c");
+  UnityBegin("test/unit/raw/test_raw_pcb/test_raw_pcb.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 77);
   run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 86);
   run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 100);

@@ -103,7 +103,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/ethernet/test_mii\\test_mii.c");
+  UnityBegin("test/unit/ethernet/test_mii/test_mii.c");
   run_test(test_register_addresses_match_both_sources, "test_register_addresses_match_both_sources", 40);
   run_test(test_register_addresses_fit_the_five_bit_field, "test_register_addresses_fit_the_five_bit_field", 54);
   run_test(test_bmcr_bits_match_both_sources, "test_bmcr_bits_match_both_sources", 69);

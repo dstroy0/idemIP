@@ -137,7 +137,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/icmp/test_icmp6_in\\test_icmp6_in.c");
+  UnityBegin("test/unit/icmp/test_icmp6_in/test_icmp6_in.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 190);
   run_test(test_uncleared_borrow_refuses_work, "test_uncleared_borrow_refuses_work", 198);
   run_test(test_clear_fills_the_token_bucket, "test_clear_fills_the_token_bucket", 214);

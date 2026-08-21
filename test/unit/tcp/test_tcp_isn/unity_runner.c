@@ -103,7 +103,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/tcp/test_tcp_isn\\test_tcp_isn.c");
+  UnityBegin("test/unit/tcp/test_tcp_isn/test_tcp_isn.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 84);
   run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 94);
   run_test(test_the_connection_id_block_holds_the_prf_inputs, "test_the_connection_id_block_holds_the_prf_inputs", 112);

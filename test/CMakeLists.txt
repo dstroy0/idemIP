@@ -34,9 +34,11 @@ endif()
 # SKIPPED LOUDLY: silently dropping it would leave a passing run that tested less than it looks like.
 #
 # The list is what a suite that joins capabilities needs: core/dispatch walks a frame to an IPv4 or
-# IPv6 header and on to a TCP or UDP binding, so its suite needs all four. Unity's runner generator
-# reads the case names out of the source text and does not see a preprocessor conditional, so a case
-# cannot be compiled out of a suite: the whole suite is what a capability gates.
+# IPv6 header and on to a TCP or UDP binding, so its suite needs all four. It is not what every case
+# in it needs. Unity's runner generator reads the case names out of the source text and does not see
+# a preprocessor conditional, but harness.py does, and it copies each one onto the two lines the
+# runner names the case on - so a capability can take a single case out of a suite that is still
+# built, and the case leaves the runner with the definition rather than being called without one.
 set(IDEMIP_SUITE_CAP_test_ethernet ETHERNET)
 set(IDEMIP_SUITE_CAP_test_mii      ETHERNET)
 set(IDEMIP_SUITE_CAP_test_phy      ETHERNET)

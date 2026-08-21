@@ -116,7 +116,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/ip/test_ipv6\\test_ipv6.c");
+  UnityBegin("test/unit/ip/test_ipv6/test_ipv6.c");
   run_test(test_version_traffic_class_and_flow_label_split_the_first_word, "test_version_traffic_class_and_flow_label_split_the_first_word", 103);
   run_test(test_the_fixed_fields_sit_where_the_section_3_figure_puts_them, "test_the_fixed_fields_sit_where_the_section_3_figure_puts_them", 111);
   run_test(test_payload_length_excludes_the_fixed_header, "test_payload_length_excludes_the_fixed_header", 122);

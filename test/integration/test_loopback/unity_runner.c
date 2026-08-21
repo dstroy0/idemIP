@@ -119,7 +119,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/integration/test_loopback\\test_loopback.c");
+  UnityBegin("test/integration/test_loopback/test_loopback.c");
   run_test(test_two_instances_occupy_disjoint_storage, "test_two_instances_occupy_disjoint_storage", 1533);
   run_test(test_driving_a_changes_no_byte_of_b, "test_driving_a_changes_no_byte_of_b", 1547);
   run_test(test_a_frame_is_the_only_thing_that_reaches_b, "test_a_frame_is_the_only_thing_that_reaches_b", 1563);

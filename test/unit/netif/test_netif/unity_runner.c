@@ -24,17 +24,21 @@ extern void test_bind_refuses_a_missing_link_or_address(void);
 extern void test_set_flags_refuses_a_reserved_bit(void);
 extern void test_set_offload_refuses_a_reserved_bit(void);
 extern void test_an_unbound_interface_is_refused(void);
+#if (IDEMIP_ENABLE_IPV6)
 extern void test_an_addr6_slot_past_the_table_is_refused(void);
 extern void test_add_addr6_refuses_a_valid_lifetime_under_the_preferred_one(void);
 extern void test_add_addr6_refuses_the_invalid_state(void);
 extern void test_addr6_entries_refuse_a_null_address(void);
 extern void test_addr6_operands_on_two_borrows_are_independent(void);
 extern void test_the_infinite_lifetime_is_all_one_bits(void);
+#endif
 extern void test_every_entry_is_present(void);
 extern void test_the_masks_cover_their_enums(void);
+#if (IDEMIP_ENABLE_IPV6)
 extern void test_lowering_the_loopback_flag_is_refused_while_a_loopback_address_is_held(void);
 extern void test_find_addr6_reports_neither_a_duplicate_nor_a_tentative_address(void);
 extern void test_a_lifetime_past_the_millisecond_clocks_range_still_expires(void);
+#endif
 extern void test_bind_then_get_reports_the_link_the_address_and_the_mtu(void);
 extern void test_bind_refuses_an_mtu_no_ethernet_frame_carries(void);
 extern void test_a_rebind_lands_where_its_operands_name(void);
@@ -62,6 +66,7 @@ extern void test_local4_follows_the_mask_it_was_given(void);
 extern void test_local4_passes_a_limited_broadcast_and_a_multicast_to_the_link(void);
 extern void test_local4_answers_per_interface_on_a_multihomed_host(void);
 extern void test_the_interface_records_of_two_borrows_are_independent(void);
+#if (IDEMIP_ENABLE_IPV6)
 extern void test_add_addr6_then_get_addr6_round_trips(void);
 extern void test_add_addr6_fills_the_slots_then_reports_busy(void);
 extern void test_add_addr6_rewrites_an_address_the_interface_already_holds(void);
@@ -80,8 +85,11 @@ extern void test_tick_leaves_an_infinite_lifetime_where_it_is(void);
 extern void test_tick_counts_every_address_it_moved(void);
 extern void test_unbind_drops_every_address_on_the_interface(void);
 extern void test_the_addr6_tables_of_two_borrows_are_independent(void);
+#endif
 extern void test_the_mask_says_which_fields_the_rule_reads(void);
+#if (IDEMIP_ENABLE_IPV6)
 extern void test_an_address_is_taken_on_its_own_terms_and_its_lifetimes_in_order(void);
+#endif
 
 
 /*=======Mock Management=====*/
@@ -142,7 +150,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/netif/test_netif\\test_netif.c");
+  UnityBegin("test/unit/netif/test_netif/test_netif.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 92);
   run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 100);
   run_test(test_the_two_operand_blocks_are_different_bytes, "test_the_two_operand_blocks_are_different_bytes", 134);
@@ -159,17 +167,21 @@ int main(void)
   run_test(test_set_flags_refuses_a_reserved_bit, "test_set_flags_refuses_a_reserved_bit", 385);
   run_test(test_set_offload_refuses_a_reserved_bit, "test_set_offload_refuses_a_reserved_bit", 401);
   run_test(test_an_unbound_interface_is_refused, "test_an_unbound_interface_is_refused", 411);
+#if (IDEMIP_ENABLE_IPV6)
   run_test(test_an_addr6_slot_past_the_table_is_refused, "test_an_addr6_slot_past_the_table_is_refused", 424);
   run_test(test_add_addr6_refuses_a_valid_lifetime_under_the_preferred_one, "test_add_addr6_refuses_a_valid_lifetime_under_the_preferred_one", 435);
   run_test(test_add_addr6_refuses_the_invalid_state, "test_add_addr6_refuses_the_invalid_state", 449);
   run_test(test_addr6_entries_refuse_a_null_address, "test_addr6_entries_refuse_a_null_address", 461);
   run_test(test_addr6_operands_on_two_borrows_are_independent, "test_addr6_operands_on_two_borrows_are_independent", 476);
   run_test(test_the_infinite_lifetime_is_all_one_bits, "test_the_infinite_lifetime_is_all_one_bits", 488);
+#endif
   run_test(test_every_entry_is_present, "test_every_entry_is_present", 501);
   run_test(test_the_masks_cover_their_enums, "test_the_masks_cover_their_enums", 523);
+#if (IDEMIP_ENABLE_IPV6)
   run_test(test_lowering_the_loopback_flag_is_refused_while_a_loopback_address_is_held, "test_lowering_the_loopback_flag_is_refused_while_a_loopback_address_is_held", 662);
   run_test(test_find_addr6_reports_neither_a_duplicate_nor_a_tentative_address, "test_find_addr6_reports_neither_a_duplicate_nor_a_tentative_address", 719);
   run_test(test_a_lifetime_past_the_millisecond_clocks_range_still_expires, "test_a_lifetime_past_the_millisecond_clocks_range_still_expires", 764);
+#endif
   run_test(test_bind_then_get_reports_the_link_the_address_and_the_mtu, "test_bind_then_get_reports_the_link_the_address_and_the_mtu", 798);
   run_test(test_bind_refuses_an_mtu_no_ethernet_frame_carries, "test_bind_refuses_an_mtu_no_ethernet_frame_carries", 816);
   run_test(test_a_rebind_lands_where_its_operands_name, "test_a_rebind_lands_where_its_operands_name", 838);
@@ -197,6 +209,7 @@ int main(void)
   run_test(test_local4_passes_a_limited_broadcast_and_a_multicast_to_the_link, "test_local4_passes_a_limited_broadcast_and_a_multicast_to_the_link", 1217);
   run_test(test_local4_answers_per_interface_on_a_multihomed_host, "test_local4_answers_per_interface_on_a_multihomed_host", 1234);
   run_test(test_the_interface_records_of_two_borrows_are_independent, "test_the_interface_records_of_two_borrows_are_independent", 1257);
+#if (IDEMIP_ENABLE_IPV6)
   run_test(test_add_addr6_then_get_addr6_round_trips, "test_add_addr6_then_get_addr6_round_trips", 1287);
   run_test(test_add_addr6_fills_the_slots_then_reports_busy, "test_add_addr6_fills_the_slots_then_reports_busy", 1314);
   run_test(test_add_addr6_rewrites_an_address_the_interface_already_holds, "test_add_addr6_rewrites_an_address_the_interface_already_holds", 1336);
@@ -215,8 +228,11 @@ int main(void)
   run_test(test_tick_counts_every_address_it_moved, "test_tick_counts_every_address_it_moved", 1584);
   run_test(test_unbind_drops_every_address_on_the_interface, "test_unbind_drops_every_address_on_the_interface", 1610);
   run_test(test_the_addr6_tables_of_two_borrows_are_independent, "test_the_addr6_tables_of_two_borrows_are_independent", 1637);
+#endif
   run_test(test_the_mask_says_which_fields_the_rule_reads, "test_the_mask_says_which_fields_the_rule_reads", 1670);
+#if (IDEMIP_ENABLE_IPV6)
   run_test(test_an_address_is_taken_on_its_own_terms_and_its_lifetimes_in_order, "test_an_address_is_taken_on_its_own_terms_and_its_lifetimes_in_order", 1711);
+#endif
 
   return UNITY_END();
 }

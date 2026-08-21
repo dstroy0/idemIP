@@ -111,7 +111,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/udp/test_udp\\test_udp.c");
+  UnityBegin("test/unit/udp/test_udp/test_udp.c");
   run_test(test_field_offsets_are_the_rfc_768_figure, "test_field_offsets_are_the_rfc_768_figure", 81);
   run_test(test_accessors_read_the_figure_fields, "test_accessors_read_the_figure_fields", 90);
   run_test(test_accessors_read_at_an_odd_address, "test_accessors_read_at_an_odd_address", 100);

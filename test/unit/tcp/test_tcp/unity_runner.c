@@ -99,7 +99,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/tcp/test_tcp\\test_tcp.c");
+  UnityBegin("test/unit/tcp/test_tcp/test_tcp.c");
   run_test(test_figure_1_field_offsets, "test_figure_1_field_offsets", 111);
   run_test(test_control_bits_are_the_figure_order, "test_control_bits_are_the_figure_order", 140);
   run_test(test_each_control_bit_reads_alone, "test_each_control_bit_reads_alone", 154);

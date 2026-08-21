@@ -86,7 +86,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/arp/test_arp\\test_arp.c");
+  UnityBegin("test/unit/arp/test_arp/test_arp.c");
   run_test(test_constants_match_rfc826_definitions, "test_constants_match_rfc826_definitions", 88);
   run_test(test_protocol_address_space_is_the_ethernet_type, "test_protocol_address_space_is_the_ethernet_type", 99);
   run_test(test_field_offsets_match_rfc826_packet_format, "test_field_offsets_match_rfc826_packet_format", 106);

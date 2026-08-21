@@ -120,7 +120,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/autoip/test_autoip\\test_autoip.c");
+  UnityBegin("test/unit/autoip/test_autoip/test_autoip.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 84);
   run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 93);
   run_test(test_clear_on_one_borrow_leaves_the_other_untouched, "test_clear_on_one_borrow_leaves_the_other_untouched", 122);

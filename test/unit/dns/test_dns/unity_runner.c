@@ -182,7 +182,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/dns/test_dns\\test_dns.c");
+  UnityBegin("test/unit/dns/test_dns/test_dns.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 76);
   run_test(test_the_published_offsets_abut_and_fill_the_borrow, "test_the_published_offsets_abut_and_fill_the_borrow", 93);
   run_test(test_every_published_offset_is_aligned, "test_every_published_offset_is_aligned", 110);

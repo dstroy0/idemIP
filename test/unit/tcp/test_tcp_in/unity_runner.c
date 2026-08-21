@@ -171,7 +171,7 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 /*=======MAIN=====*/
 int main(void)
 {
-  UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/tcp/test_tcp_in\\test_tcp_in.c");
+  UnityBegin("test/unit/tcp/test_tcp_in/test_tcp_in.c");
   run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 171);
   run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 179);
   run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 191);
