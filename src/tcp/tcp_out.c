@@ -378,9 +378,14 @@ void idemip_tcp_out_send(uint8_t *work)
     if (io->res.send_now)
     {
         io->res.send_len = (m > io->send_args.eff_snd_mss) ? io->send_args.eff_snd_mss : m;
-        if (io->res.send_len == 0u)
+        // Not measured: min(D,U) is nonzero on every rule that set the decision above. (1) needs it
+        // at Eff.snd.MSS, which the entry refuses at zero; (3) and (4) test it against zero
+        // themselves; and (2) needs D nonzero with D <= U, which puts U there too. The test is
+        // written because sec 3.8.6.2.1 decides whether to send before it decides how much, and a
+        // decision to send nothing is not one the caller should be handed.
+        if (io->res.send_len == 0u) // GCOVR_EXCL_BR_LINE
         {
-            io->res.send_now = IDEMIP_FALSE;
+            io->res.send_now = IDEMIP_FALSE; // GCOVR_EXCL_LINE
         }
         else
         {

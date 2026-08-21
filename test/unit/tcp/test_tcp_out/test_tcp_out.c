@@ -441,8 +441,8 @@ void test_a_built_ipv6_segment_checks_out_against_the_rfc_8200_pseudo_header(voi
     IO(work_a)->build_args.ip_version = 6u;
     TcpOut.build(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-    uint32_t sum = idemip_ip6_pseudo_accum(0u, g_local6, g_remote6, (uint32_t)IO(work_a)->res.built,
-                                           (uint8_t)IDEMIP_IP6_NH_TCP);
+    uint32_t sum =
+        idemip_ip6_pseudo_accum(0u, g_local6, g_remote6, (uint32_t)IO(work_a)->res.built, (uint8_t)IDEMIP_IP6_NH_TCP);
     TEST_ASSERT_EQUAL_UINT16(0u, idemip_cksum_final(idemip_cksum_accum(sum, g_buf, IO(work_a)->res.built)));
 }
 
@@ -1323,4 +1323,303 @@ void test_the_same_operands_on_two_borrows_decide_alike(void)
     TEST_ASSERT_EQUAL_UINT32(IO(work_a)->res.usable, IO(work_b)->res.usable);
     TEST_ASSERT_EQUAL_UINT32(IO(work_a)->res.send_len, IO(work_b)->res.send_len);
     TEST_ASSERT_EQUAL_INT((int)IO(work_a)->res.send_now, (int)IO(work_b)->res.send_now);
+}
+
+// --- what the operands rule out ------------------------------------------------
+
+// RFC 9293 sec 3.1 gives the segment a source and a destination, and the checksum of sec 3.1 is taken
+// over a pseudo-header holding both. A call naming neither has nothing to write and nothing to sum.
+void test_the_build_refuses_a_segment_with_no_address_at_either_end(void)
+{
+    aim_build(work_a, 1000u, 0u, IDEMIP_TCP_ACK, 0u, NULL);
+    IO(work_a)->build_args.local_ip = NULL;
+    TcpOut.build(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a segment was built with no source address");
+
+    aim_build(work_a, 1000u, 0u, IDEMIP_TCP_ACK, 0u, NULL);
+    IO(work_a)->build_args.remote_ip = NULL;
+    TcpOut.build(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a segment was built with no destination address");
+}
+
+// RFC 9293 sec 3.1 gives Data Offset four bits, so the header ends inside 60 octets and the options
+// have 40 of them - which RFC 2018 sec 3 counts against as well: "A SACK option that specifies n
+// blocks will have a length of 8*n+2 bytes, so the 40 bytes available for TCP options" bound it.
+// Every option this build knows, with the largest SACK the sender may send, does not fit in that, and
+// a header that cannot be written is not written short.
+void test_the_build_refuses_more_options_than_the_data_offset_can_reach(void)
+{
+    aim_build(work_a, 1000u, 2000u, (uint8_t)(IDEMIP_TCP_SYN | IDEMIP_TCP_ACK), 0u, NULL);
+    IO(work_a)->build_args.opts =
+        (uint16_t)(IDEMIP_TCP_OUT_OPT_MSS | IDEMIP_TCP_OUT_OPT_WS | IDEMIP_TCP_OUT_OPT_TS | IDEMIP_TCP_OUT_OPT_SACK);
+    IO(work_a)->build_args.mss = 1460u;
+    IO(work_a)->build_args.ws = 7u;
+    IO(work_a)->build_args.sack_blocks = (uint8_t)IDEMIP_TCP_SACK_BLOCKS_MAX;
+    TcpOut.build(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status,
+                                  "a header longer than Data Offset can reach was built");
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IO(work_a)->res.built, "the refused build reported a length");
+}
+
+// RFC 2018 sec 3: the option "contains a list of some of the blocks of contiguous sequence space
+// occupied by data that has been received and queued within the window", so it is written for the
+// blocks there are. A caller asking for it with none is asking for a list of nothing, and what goes
+// out is the segment without it.
+void test_a_sack_option_with_no_blocks_is_not_written(void)
+{
+    aim_build(work_a, 1000u, 2000u, IDEMIP_TCP_ACK, 0u, NULL);
+    IO(work_a)->build_args.opts = IDEMIP_TCP_OUT_OPT_SACK;
+    IO(work_a)->build_args.sack_blocks = 0u;
+    TcpOut.build(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE((uint16_t)IDEMIP_TCP_HDR_LEN, IO(work_a)->res.hdr_len,
+                                     "an empty SACK option took space in the header");
+
+    // Beside an option the header does carry, so the writer runs and still writes no SACK: RFC 7323
+    // sec 3.2's timestamp is ten octets and two NOPs, and that is the whole of the options.
+    aim_build(work_a, 1000u, 2000u, IDEMIP_TCP_ACK, 0u, NULL);
+    IO(work_a)->build_args.opts = (uint16_t)(IDEMIP_TCP_OUT_OPT_TS | IDEMIP_TCP_OUT_OPT_SACK);
+    IO(work_a)->build_args.tsval = 0x11223344u;
+    IO(work_a)->build_args.tsecr = 0x55667788u;
+    IO(work_a)->build_args.sack_blocks = 0u;
+    TcpOut.build(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE((uint16_t)(IDEMIP_TCP_HDR_LEN + 12u), IO(work_a)->res.hdr_len,
+                                     "an empty SACK option took space beside the timestamp");
+}
+
+// RFC 7323 sec 2.3 right-shifts SEG.WND by Rcv.Wind.Shift, and sec 2.3 bounds that count: "the shift
+// count MUST be limited to 14 (which allows windows of 2^30 = 1 GiB)". A shift past it is held at it,
+// so the window announced is the one the far end can still read.
+void test_a_receive_scale_past_the_maximum_shifts_by_the_maximum(void)
+{
+    aim_build(work_a, 1000u, 2000u, IDEMIP_TCP_ACK, 0u, NULL);
+    IO(work_a)->build_args.wnd = 0x40000000u; // 1 GiB, which 14 shifts down to 65535
+    IO(work_a)->build_args.rcv_scale = 15u;
+    TcpOut.build(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0xFFFFu, idemip_rd16(g_buf + 14), "a shift past the maximum was taken as written");
+}
+
+// RFC 9293 sec 3.8.6.2.1 rule (2) sends "if the data is pushed and all queued data can be sent now",
+// and a push with nothing queued is not that: there is no segment in it to send.
+void test_a_push_with_nothing_queued_sends_nothing(void)
+{
+    conn(work_a, 1000u, 1000u, 4000u);
+    IO(work_a)->send_args.eff_snd_mss = 536u;
+    IO(work_a)->send_args.queued = 0u;
+    IO(work_a)->send_args.push = IDEMIP_TRUE;
+    TcpOut.send(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.send_now, "a push with nothing queued put a segment on the wire");
+    TEST_ASSERT_EQUAL_UINT32(0u, IO(work_a)->res.send_len);
+}
+
+// RFC 5681 sec 4.1 restarts the window only after "an interval exceeding the retransmission timeout",
+// and the restart is to "RW", which is "min(IW,cwnd)": a window already below IW stays where it is.
+void test_a_gap_inside_the_timeout_is_not_idle_and_the_restart_never_raises_the_window(void)
+{
+    conn(work_a, 1000u, 1000u, 64000u);
+    IO(work_a)->send_args.eff_snd_mss = 1460u;
+    IO(work_a)->send_args.queued = 0u;
+    IO(work_a)->ctl.cwnd = 20000u;
+    IO(work_a)->ctl.rto = 1000u;
+    IO(work_a)->ctl.last_send_ms = 10000u;
+
+    // One millisecond inside the timeout is not an idle interval.
+    IO(work_a)->send_args.now_ms = 11000u;
+    TcpOut.send(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(20000u, IO(work_a)->ctl.cwnd, "a gap of exactly the RTO was taken as idle");
+
+    // Past it, with a window already under IW: min(IW,cwnd) is the window that was there.
+    IO(work_a)->ctl.cwnd = 2000u;
+    IO(work_a)->send_args.now_ms = 40000u;
+    TcpOut.send(work_a);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(2000u, IO(work_a)->ctl.cwnd, "the idle restart raised the congestion window");
+}
+
+// RFC 6298 sec 2 takes a measurement of R, and a call carrying none has nothing to measure.
+void test_the_rtt_entry_refuses_a_measurement_of_nothing(void)
+{
+    TcpOut.clear(work_a);
+    IO(work_a)->timer_args.sample_ms = 0u;
+    TcpOut.rtt(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a sample of zero milliseconds was taken");
+    TEST_ASSERT_EQUAL_UINT32(0u, IO(work_a)->ctl.srtt);
+}
+
+// RFC 6298 (2.3): "RTTVAR <- (1 - beta) * RTTVAR + beta * |SRTT - R'|". The bars are the point - a
+// measurement above the smoothed estimate moves the variance by the same amount one below it does.
+void test_a_measurement_above_the_estimate_moves_the_variance_the_same_way_one_below_it_does(void)
+{
+    TcpOut.clear(work_a);
+    IO(work_a)->timer_args.sample_ms = 400u;
+    TcpOut.rtt(work_a); // (2.2): SRTT 400, RTTVAR 200
+    TEST_ASSERT_EQUAL_UINT32(400u, IO(work_a)->ctl.srtt);
+
+    IO(work_a)->timer_args.sample_ms = 800u; // R above SRTT, |SRTT - R| is 400
+    TcpOut.rtt(work_a);
+    TEST_ASSERT_EQUAL_UINT32(200u - (200u >> 2) + (400u >> 2), IO(work_a)->ctl.rttvar);
+    TEST_ASSERT_EQUAL_UINT32(400u - (400u >> 3) + (800u >> 3), IO(work_a)->ctl.srtt);
+
+    // The same estimate, met from below. The distance is what the variance takes, not the direction.
+    TcpOut.clear(work_a);
+    memset(&IO(work_a)->ctl, 0, sizeof IO(work_a)->ctl);
+    IO(work_a)->timer_args.sample_ms = 400u;
+    TcpOut.rtt(work_a);
+    IO(work_a)->timer_args.sample_ms = 100u; // R under SRTT, |SRTT - R| is 300
+    TcpOut.rtt(work_a);
+    TEST_ASSERT_EQUAL_UINT32(200u - (200u >> 2) + (300u >> 2), IO(work_a)->ctl.rttvar);
+    TEST_ASSERT_EQUAL_UINT32(400u - (400u >> 3) + (100u >> 3), IO(work_a)->ctl.srtt);
+}
+
+// RFC 6298 (2.1): "Until a round-trip time (RTT) measurement has been made for a segment sent between
+// the sender and receiver, the sender SHOULD set RTO <- 1 second." Both timers that start one take
+// that value where no measurement has set another.
+void test_a_timer_started_before_any_measurement_runs_at_one_second(void)
+{
+    TcpOut.clear(work_a);
+    IO(work_a)->state = IDEMIP_TCP_STATE_ESTABLISHED;
+    IO(work_a)->timer_args.now_ms = 5000u;
+    TcpOut.rtx_arm(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE((uint32_t)IDEMIP_TCP_RTO_INIT_MS, IO(work_a)->ctl.rto,
+                                     "an unmeasured timer was armed at something other than one second");
+    TEST_ASSERT_EQUAL_UINT32(5000u + (uint32_t)IDEMIP_TCP_RTO_INIT_MS, IO(work_a)->ctl.rtx_deadline);
+
+    // (5.6) restarts it on the transmission that ends Karn's ambiguity, from the same second.
+    TcpOut.clear(work_a);
+    memset(&IO(work_a)->ctl, 0, sizeof IO(work_a)->ctl);
+    IO(work_a)->state = IDEMIP_TCP_STATE_ESTABLISHED;
+    IO(work_a)->timer_args.now_ms = 5000u;
+    TcpOut.rtx_restart(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE((uint32_t)IDEMIP_TCP_RTO_INIT_MS, IO(work_a)->ctl.rto,
+                                     "an unmeasured timer was restarted at something other than one second");
+    TEST_ASSERT_EQUAL_UINT32(5000u + (uint32_t)IDEMIP_TCP_RTO_INIT_MS, IO(work_a)->ctl.rtx_deadline);
+
+    // (5.5) doubles it on expiry, and the doubling starts from that same second.
+    TcpOut.clear(work_a);
+    memset(&IO(work_a)->ctl, 0, sizeof IO(work_a)->ctl);
+    IO(work_a)->state = IDEMIP_TCP_STATE_ESTABLISHED;
+    IO(work_a)->timer_args.now_ms = 5000u;
+    IO(work_a)->timer_args.smss = 536u;
+    TcpOut.rtx_expire(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(2u * (uint32_t)IDEMIP_TCP_RTO_INIT_MS, IO(work_a)->ctl.rto,
+                                     "the backoff did not start from the unmeasured second");
+}
+
+// RFC 6298 (5.1) arms the timer "so that it will expire after RTO seconds". TCP_OUT_RTX_OFF names the
+// timer that is not running, so a deadline that lands on that instant takes the next millisecond
+// rather than reading as a timer nobody started.
+void test_a_deadline_landing_on_the_instant_that_names_a_stopped_timer_takes_the_next_one(void)
+{
+    TcpOut.clear(work_a);
+    IO(work_a)->state = IDEMIP_TCP_STATE_ESTABLISHED;
+    IO(work_a)->ctl.rto = 1000u;
+    IO(work_a)->timer_args.now_ms = 0xFFFFFFFFu - 1000u + 1u; // now + RTO wraps to exactly zero
+    TcpOut.rtx_arm(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, IO(work_a)->ctl.rtx_deadline,
+                                     "an armed timer landed on the value that names a stopped one");
+}
+
+// RFC 6298 (5.7): "If the timer expires awaiting the ACK of a SYN segment and the TCP implementation
+// is using an RTO less than 3 seconds, the RTO MUST be re-initialized to 3 seconds when data
+// transmission begins (i.e., after the three-way handshake completes)." Before the handshake
+// completes there is no data transmission to begin, so the mark stands and the RTO is left alone;
+// after it, an RTO already at or above three seconds is left alone too, and the mark clears either
+// way it is read.
+void test_the_syn_floor_waits_for_the_handshake_and_never_lowers_an_rto_already_past_it(void)
+{
+    for (unsigned k = 0; k < 2u; k++)
+    {
+        TcpOut.clear(work_a);
+        IO(work_a)->state = (k == 0u) ? IDEMIP_TCP_STATE_SYN_SENT : IDEMIP_TCP_STATE_SYN_RECEIVED;
+        IO(work_a)->ctl.flags |= (uint16_t)IDEMIP_TCP_CTL_SYN_RTX;
+        IO(work_a)->ctl.rto = 1000u;
+        IO(work_a)->timer_args.now_ms = 100u;
+        TcpOut.rtx_arm(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(1000u, IO(work_a)->ctl.rto,
+                                         "the floor was taken before the handshake completed");
+        TEST_ASSERT_TRUE_MESSAGE((IO(work_a)->ctl.flags & IDEMIP_TCP_CTL_SYN_RTX) != 0u,
+                                 "the mark cleared before the handshake completed");
+    }
+
+    // Past the handshake with an RTO already over the floor: the mark clears and nothing moves.
+    TcpOut.clear(work_a);
+    IO(work_a)->state = IDEMIP_TCP_STATE_ESTABLISHED;
+    IO(work_a)->ctl.flags |= (uint16_t)IDEMIP_TCP_CTL_SYN_RTX;
+    IO(work_a)->ctl.rto = 4000u;
+    IO(work_a)->timer_args.now_ms = 100u;
+    TcpOut.rtx_arm(work_a);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(4000u, IO(work_a)->ctl.rto, "the floor lowered an RTO that was already past it");
+    TEST_ASSERT_FALSE_MESSAGE((IO(work_a)->ctl.flags & IDEMIP_TCP_CTL_SYN_RTX) != 0u, "the mark did not clear");
+}
+
+// RFC 6298 (5.7)'s precondition is the timer expiring "awaiting the ACK of a SYN segment", which is
+// either end of the handshake: the side that sent the SYN and the side that answered one. RFC 9293
+// sec 3.8.3 keeps its own count for those - "the values of R1 and R2 may be different for SYN and
+// data segments" - so a SYN retransmission is measured against R2 for SYNs.
+void test_a_timeout_on_a_syn_is_marked_and_counted_as_a_syn_at_either_end_of_the_handshake(void)
+{
+    TcpOut.clear(work_a);
+    IO(work_a)->state = IDEMIP_TCP_STATE_SYN_RECEIVED;
+    IO(work_a)->timer_args.smss = 536u;
+    IO(work_a)->timer_args.now_ms = 1000u;
+    IO(work_a)->ctl.rto = 1000u;
+    IO(work_a)->ctl.r2_syn = 2u;
+    IO(work_a)->ctl.r2 = 0xFFu; // the data threshold, which this must not be measured against
+    TcpOut.rtx_expire(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE((IO(work_a)->ctl.flags & IDEMIP_TCP_CTL_SYN_RTX) != 0u,
+                             "a timeout awaiting the ACK of our SYN|ACK was not marked");
+    TEST_ASSERT_FALSE(IO(work_a)->res.r2);
+
+    TcpOut.rtx_expire(work_a);
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->res.r2, "the second SYN timeout was not measured against R2 for SYNs");
+}
+
+// RFC 5681 sec 3.1 sets IW "using the following guidelines", every one of which is a multiple of
+// SMSS, and RFC 3465 sec 2.1 counts "the number of previously unacknowledged bytes acknowledged".
+// Neither has anything to say without an SMSS, and an acknowledgment of no bytes moves no window.
+void test_the_congestion_entries_refuse_a_segment_size_of_nothing_and_an_acknowledgment_of_nothing(void)
+{
+    TcpOut.clear(work_a);
+    IO(work_a)->timer_args.smss = 0u;
+    TcpOut.cc_init(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "an initial window was set with no segment size");
+    TEST_ASSERT_EQUAL_UINT32(0u, IO(work_a)->ctl.cwnd);
+
+    TcpOut.clear(work_a);
+    IO(work_a)->state = IDEMIP_TCP_STATE_ESTABLISHED;
+    IO(work_a)->timer_args.smss = 536u;
+    TcpOut.cc_init(work_a);
+    const uint32_t iw = IO(work_a)->ctl.cwnd;
+    IO(work_a)->timer_args.acked = 0u;
+    TcpOut.cc_ack(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(iw, IO(work_a)->ctl.cwnd, "an acknowledgment of no bytes opened the window");
+}
+
+// RFC 5681 sec 3.2 counts duplicate acknowledgments to reach the threshold of three and then to open
+// the window "by SMSS" for each one past it. The count is what a peer can send without bound, so it
+// holds at the top of its own width rather than turning over and reading as the first of a new run.
+void test_the_duplicate_count_holds_at_the_top_of_its_width(void)
+{
+    TcpOut.clear(work_a);
+    IO(work_a)->state = IDEMIP_TCP_STATE_ESTABLISHED;
+    IO(work_a)->timer_args.smss = 536u;
+    IO(work_a)->timer_args.flight = 10000u;
+    IO(work_a)->ctl.cwnd = 10000u;
+    IO(work_a)->ctl.dupacks = 0xFFu;
+    const uint32_t before = IO(work_a)->ctl.cwnd;
+    TcpOut.cc_dupack(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0xFFu, IO(work_a)->ctl.dupacks, "the duplicate count turned over");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(before + 536u, IO(work_a)->ctl.cwnd,
+                                     "the count that held did not still open the window by SMSS");
 }
