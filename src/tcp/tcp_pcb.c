@@ -725,8 +725,8 @@ static idemip_bool tcp_pcb_remote_invalid(uint8_t ip_version, const uint8_t *ip)
     (void)ip_version;
 #endif
 #if IDEMIP_ENABLE_IPV6
-    // RFC 4291 sec 2.7: "An IPv6 multicast address ... must never be used as source addresses in IPv6
-    // packets or appear in any Routing header", and sec 2.5.2 makes :: unusable as a destination.
+    // RFC 4291 sec 2.7: "Multicast addresses must not be used as source addresses in IPv6 packets or
+    // appear in any Routing header", and sec 2.5.2 makes :: unusable as a destination.
     IdemIpIp6Type type = idemip_ip6_addr_type(ip);
     return (type == IDEMIP_IP6_TYPE_MULTICAST || type == IDEMIP_IP6_TYPE_UNSPECIFIED) ? IDEMIP_TRUE : IDEMIP_FALSE;
 #else

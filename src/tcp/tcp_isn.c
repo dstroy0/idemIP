@@ -11,7 +11,8 @@
  *
  * The PRF is FIPS 180-4 SHA-256, taken over the connection-id block. RFC 6528 sec 3: "The PRF could
  * be implemented as a cryptographic hash of the concatenation of the connection-id and some secret
- * data; MD5 would be a good choice for the hash function... However, implementations should consider
+ * data; MD5 ... would be a good choice for the hash function... However, implementations should
+ * consider
  * the trade-offs involved in using functions with stronger security properties, and employ them if
  * it is deemed appropriate."
  */

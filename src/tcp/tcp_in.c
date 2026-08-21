@@ -649,9 +649,9 @@ static idemip_bool tcp_in_check_syn(uint8_t *work, TcpInIo *io)
     {
         return IDEMIP_FALSE;
     }
-    // "SYN-RECEIVED STATE: If the connection was initiated with a passive OPEN, then return this
-    // connection to the LISTEN state and return. Otherwise, handle per the directions for
-    // synchronized states below."
+    // RFC 9293 sec 3.10.7.4: "SYN-RECEIVED STATE: If the connection was initiated with a passive
+    // OPEN, then return this connection to the LISTEN state and return. Otherwise, handle per the
+    // directions for synchronized states below."
     //
     // That bullet sits under sec 3.10.7.4 fourth, which sec 3.10.7.4 first reaches only for a segment
     // that passed Table 6: "After sending the acknowledgment, drop the unacceptable segment and
@@ -832,8 +832,10 @@ static void tcp_in_check_urg(TcpInIo *io)
     }
 }
 
-// RFC 9293 sec 3.4: "The SYN control flag ... occupies one sequence number", so on a SYN segment the
-// first data octet sits at SEG.SEQ+1 and the FIN after the last one.
+// RFC 9293 sec 3.4: "For sequence number purposes, the SYN is considered to occur before the first
+// actual data octet of the segment in which it occurs, while the FIN is considered to occur after the
+// last actual data octet in a segment in which it occurs." So on a SYN segment the first data octet
+// sits at SEG.SEQ+1.
 static uint32_t tcp_in_text_seq(const TcpInIo *io)
 {
     return io->seg.seq + (((io->seg.flags & IDEMIP_TCP_SYN) != 0u) ? 1u : 0u);

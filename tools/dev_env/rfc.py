@@ -170,25 +170,25 @@ def squeeze(text):
     """The form a quotation and a document are compared in, and where each surviving character came
     from in the input.
 
-    Commas go with them. A document that sets a list down the page - RFC 9293's "SND.WND <- SEG.WND"
-    and "SND.WL1 <- SEG.SEQ" on their own lines, RFC 2131's three message types as bullets - is quoted
-    in a comment that has one line to work with, and a comma is how a line break gets written there.
-    That is a faithful transcription of a list, not a bent sentence, and the audit is looking for bent
-    sentences.
+    Letters and digits only, because everything else is layout. A printed RFC breaks a line wherever
+    the column runs out and the break leaves nothing reliable behind: RFC 1213 wraps "re-assembly" as
+    "re-" then "assembly" and RFC 4291 wraps "address" as "addr-" then "ess", so one needs the hyphen
+    kept and the other needs it dropped and nothing in the text says which. A document that sets a
+    list down the page - RFC 9293's "SND.WND <- SEG.WND" and "SND.WL1 <- SEG.SEQ" on their own lines,
+    each behind a "+", RFC 2131's message types behind bullets - is quoted in a comment with one line
+    to work with, so the breaks come back as commas and the markers do not come back at all.
 
-    Whitespace and hyphens both go, because a printed RFC breaks a line wherever the column runs out
-    and the break leaves neither behind reliably: RFC 1213 wraps "re-assembly" as "re-" and then
-    "assembly", which flattens to "re- assembly", and RFC 4291 wraps "address" as "addr-" and "ess",
-    which flattens to a hyphen that is not in the word at all. One of those needs the hyphen kept and
-    the other needs it dropped, and nothing in the text says which - so neither is compared. A run of
-    sixteen characters with the spaces and hyphens taken out does not match by accident.
+    None of that is what the audit is for. It is looking for a word that was bent to fit the sentence
+    around it, a subject swapped for a pronoun, a sentence nobody wrote - and every one of those still
+    shows, because the words themselves are what is compared. A run of sixteen alphanumerics does not
+    match by accident.
 
     fold() maps one character to one character, so an index into the folded text is an index into the
     input, and the map returned here carries that through the squeeze.
     """
     out, idx = [], []
     for i, ch in enumerate(fold(text)):
-        if ch.isspace() or ch in "-,":
+        if not ch.isalnum():
             continue
         out.append(ch)
         idx.append(i)
