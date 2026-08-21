@@ -92,6 +92,15 @@ jobs:
       - name: Check which MIB counters the library reaches
         run: python3 tools/dev_env/counters.py
 
+      # Nearly every comment in src/ and test/ cites an RFC and most of them quote it, and a quote
+      # written from memory reads exactly like one that was checked. This reads all 3677 of them back
+      # against docs/learn/RFC, which is vendored, so the run needs no network. The three kinds it
+      # cannot check - a state diagram read down a column, RFC 791's pseudocode, a quotation of
+      # something that is not an RFC - are registered in tools/dev_env/rfc_exempt.txt with the reason,
+      # and an entry there that matches nothing any more fails the run too.
+      - name: Check every RFC quotation against the document it cites
+        run: python3 tools/dev_env/rfc.py --audit
+
       # A field the caller was asked for, that was validated and stored and then decided nothing.
       # loopif's MTU and tcp_pcb's listen backlog were both that, and neither was a warning, a
       # failing case or a broken capability set: the code compiles and the field reads back whatever

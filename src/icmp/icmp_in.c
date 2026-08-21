@@ -57,14 +57,14 @@ static_assert(IDEMIP_ICMP_IN_OFF_CTX + sizeof(IcmpInCtx) <= IDEMIP_ICMP_IN_BORRO
 #define ICMP_IN_LOOPBACK_NET 127u
 #define ICMP_IN_NET_SHIFT 24u
 
-// RFC 1112 sec 4: "Host groups are identified by class D IP addresses, i.e., those with "1110" as
+// RFC 1112 sec 4: "Host groups are identified by class D IP addresses, i.e., those with '1110' as
 // their high-order four bits."
 static idemip_bool icmp_in_is_multicast(uint32_t addr)
 {
     return ((addr >> ICMP_IN_CLASS_SHIFT) == ICMP_IN_CLASS_D) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
 
-// RFC 1112 sec 4: "Class E IP addresses, i.e., those with "1111" as their high-order four bits, are
+// RFC 1112 sec 4: "Class E IP addresses, i.e., those with '1111' as their high-order four bits, are
 // reserved for future addressing modes."
 static idemip_bool icmp_in_is_class_e(uint32_t addr)
 {

@@ -691,9 +691,9 @@ void test_no_redirect_to_a_next_hop_that_is_not_link_local(void)
     TEST_ASSERT_FALSE_MESSAGE(io->redirect, "a redirect named a global-scope router address");
 }
 
-// The other half of sec 4.5: "If the Reserved field of the Redirect message is set ... the Target
-// Address field MUST be set to the same value as the Destination Address field" when the target is
-// the destination itself, which is on-link and therefore not required to be link-local.
+// The other half of sec 4.5: "When the target is the actual endpoint of communication, i.e., the
+// destination is a neighbor, the Target Address field MUST contain the same value as the ICMP
+// Destination Address field." That target is on-link and therefore not required to be link-local.
 void test_a_redirect_to_the_destination_itself_is_owed(void)
 {
     clear_ok(work_a);

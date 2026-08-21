@@ -98,7 +98,7 @@ static idemip_bool igmp_ready(uint8_t *work)
     return (idemip_bool)(IGMP_CTX(work)->ready == IGMP_READY);
 }
 
-// RFC 1112 sec 4: "Host groups are identified by class D IP addresses, i.e., those with "1110" as
+// RFC 1112 sec 4: "Host groups are identified by class D IP addresses, i.e., those with '1110' as
 // their high-order four bits." RFC 2236 sec 3 excludes the all-systems group from the memberships a
 // host reports.
 static idemip_bool igmp_group_ok(uint32_t group)

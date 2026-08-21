@@ -411,8 +411,9 @@ void test_the_window_field_is_shifted_on_every_segment_but_a_syn(void)
     TEST_ASSERT_EQUAL_UINT16(0xFFFFu, idemip_tcp_window(g_buf));
 }
 
-// The Acknowledgment Number and the Urgent Pointer are "significant only when" their control bit is
-// set (RFC 9293 sec 3.1), so a segment carrying neither sends zeros.
+// RFC 9293 sec 3.1 defines the Acknowledgment Number as what the field holds "If the ACK control bit
+// is set", and the Urgent Pointer as "only to be interpreted in segments with the URG control bit
+// set", so a segment carrying neither sends zeros.
 void test_the_acknowledgment_and_urgent_fields_go_out_zero_without_their_bits(void)
 {
     aim_build(work_a, 100u, 999u, (uint8_t)IDEMIP_TCP_SYN, 0u, NULL);
@@ -884,7 +885,7 @@ void test_a_segment_already_retransmitted_holds_ssthresh_constant(void)
 
 // --- congestion control (RFC 5681 sec 3, RFC 3465) ----------------------------
 
-// RFC 5681 sec 3.1 equation (2): "cwnd += min (N, SMSS) where N is the number of previously
+// RFC 5681 sec 3.1 equation (2): "cwnd += min (N, SMSS)" ... "where N is the number of previously
 // unacknowledged bytes acknowledged in the incoming ACK", used "when cwnd < ssthresh".
 void test_slow_start_grows_cwnd_by_the_lesser_of_n_and_smss(void)
 {

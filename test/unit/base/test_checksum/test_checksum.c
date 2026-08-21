@@ -23,8 +23,9 @@ void tearDown(void)
 static const uint8_t rfc1071_example[8] = {0x00, 0x01, 0xf2, 0x03, 0xf4, 0xf5, 0xf6, 0xf7};
 
 // RFC 1071 sec 3, the "Normal Order" column: Sum1 is 2ddf0 before the carries fold, Sum2 is ddf2
-// after, and the checksum is Sum2's complement. sec 1 applies the end-around carry "until none
-// remains", so the two are one number written two ways; the accumulator reports it folded, which is
+// after, and the checksum is Sum2's complement. sec 1's end-around carry adds "any overflows from the
+// most significant bits ... into the least significant bits", and repeating that until there are none
+// left makes the two one number written two ways; the accumulator reports it folded, which is
 // what makes the value the same however a span was split or whichever route a call took through it.
 void test_rfc1071_section3_example(void)
 {

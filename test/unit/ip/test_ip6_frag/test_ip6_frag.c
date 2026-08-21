@@ -15,9 +15,9 @@
 //   headers changed to 44."
 //   "(2) A Fragment header containing: The Next Header value that identifies the first header after
 //   the Per-Fragment headers of the original packet. A Fragment Offset containing the offset of the
-//   fragment, in 8-octet units... An M flag value of 0 if the fragment is the last ("rightmost")
+//   fragment, in 8-octet units... An M flag value of 0 if the fragment is the last ('rightmost')
 //   one, else an M flag value of 1. The Identification value generated for the original packet."
-//   "Each complete fragment, except possibly the last ("rightmost") one, is an integer multiple of 8
+//   "Each complete fragment, except possibly the last ('rightmost') one, is an integer multiple of 8
 //   octets long."
 //   "PL.orig = PL.first - FL.first - 8 + (8 * FO.last) + FL.last"
 //   sec 5: "IPv6 requires that every link in the Internet have an MTU of 1280 octets or greater."
@@ -482,7 +482,7 @@ void test_the_mtu_boundary_is_where_the_division_starts(void)
     TEST_ASSERT_EQUAL_INT(2, g_frags);
 }
 
-// "Each complete fragment, except possibly the last ("rightmost") one, is an integer multiple of 8
+// "Each complete fragment, except possibly the last ('rightmost') one, is an integer multiple of 8
 // octets long", and the M flag is "1 = more fragments; 0 = last fragment".
 void test_every_fragment_but_the_last_is_a_multiple_of_eight_with_m_set(void)
 {
@@ -509,7 +509,7 @@ void test_every_fragment_but_the_last_is_a_multiple_of_eight_with_m_set(void)
 }
 
 // "A Fragment Offset containing the offset of the fragment, in 8-octet units, relative to the start
-// of the Fragmentable Part of the original packet. The Fragment Offset of the first ("leftmost")
+// of the Fragmentable Part of the original packet. The Fragment Offset of the first ('leftmost')
 // fragment is 0."
 void test_offsets_are_contiguous_from_zero(void)
 {

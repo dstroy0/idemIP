@@ -1,0 +1,126 @@
+# Quotations tools/dev_env/rfc.py --audit cannot check, and why.
+#
+# The audit compares a quoted string against the RFCs the comment around it cites. Three kinds of
+# quotation defeat that by construction, and every one of them is a correct quotation. They are listed
+# here so the audit can reach zero and be a gate: an entry that stops matching a quotation in the tree
+# is reported as stale, the same way tools/dev_env/counters.py reports a register that has drifted.
+#
+# One quotation per line, exactly as the comment writes it between its marks. A line starting with #
+# is a comment and a blank line is nothing. Sections are named by a line of the form [name].
+
+[figure]
+# The words are in the document and they are inside a picture. RFC 2236 and RFC 2710 draw the host
+# state machine in ASCII art and "send report, set flag, start timer" is read DOWN a column of one box,
+# with two other columns between its lines. RFC 2131 Figure 5 and RFC 9293 Figures 5 and 10 are the
+# same. Flattened to one line the words are still all there, in an order no reader would recognise, so
+# no substring of the document matches what the comment correctly says the picture reads.
+# src/dhcp/dhcp4.c
+Select offer/send DHCPREQUEST
+# src/dhcp/dhcp4.c - RFC 2131 Table 5, one cell of a three-column table
+0 or seconds since DHCP process started
+# src/igmp/igmp.c
+send leave if flag set
+# src/igmp/igmp.c
+send report, set flag
+# src/igmp/igmp.c
+send report, set flag, start timer
+# src/mld/mld6.c
+(send report, set flag, start timer)
+# src/mld/mld6.c
+(stop timer, send done if flag set)
+# src/mld/mld6.c
+timer expired (send report, set flag)
+# test/unit/dhcp/test_dhcp4/test_dhcp4.c
+DHCPNAK/Halt network
+# test/unit/dhcp/test_dhcp4/test_dhcp4.c
+DHCPOFFER, DHCPACK, DHCPNAK/Discard
+# test/unit/dhcp/test_dhcp4/test_dhcp4.c
+Select offer/ send DHCPREQUEST
+# test/unit/igmp/test_igmp/test_igmp.c
+stop timer, send leave if flag set
+# test/unit/ip/test_ip6_addr/test_ip6_addr.c
+Site-Local addresses have the following format: 1111111011
+# test/unit/mld/test_mld6/test_mld6.c
+(send done if flag set)
+# test/unit/mld/test_mld6/test_mld6.c
+(send report, set flag)
+# test/unit/mld/test_mld6/test_mld6.c
+send done if flag set
+# test/unit/tcp/test_tcp_in/test_tcp_in.c
+TCP Peer A detects that the ACK field is incorrect and returns a RST with its SEQ field selected to make the segment believable
+# test/unit/tcp/test_tcp_pcb/test_tcp_pcb.c
+Timeout=2MSL delete TCB
+
+[procedure]
+# RFC 791's numbered fragmentation and reassembly procedures, which are pseudocode set out one step per
+# line with the step number in front. A comment quoting three steps writes them as a sentence with
+# semicolons, and the document has them as a column.
+# src/ip/ip4_frag.h
+(7) Selectively copy the internet header (some options are not copied, see option definitions); (8) Append the remaining data; (9) Correct the header: IHL <- (((OIHL*4)-(length of options not copied))+3)/4; TL <- OTL - NFB*8 - (OIHL-IHL)*4); FO <- OFO + NFB; MF <- OMF; Recompute Checksum;
+# src/ip/ip4_reass.c
+IF FO = 0 AND MF = 0 THEN IF buffer with BUFID is allocated THEN flush all reassembly for this BUFID; Submit datagram to next step
+# test/unit/ip/test_ip4_frag/test_ip4_frag.c
+(3) NFB <- (MTU-IHL*4)/8; (4) Attach the first NFB*8 data octets; (5) MF <- 1; TL <- (IHL*4)+(NFB*8)
+# test/unit/ip/test_ip4_frag/test_ip4_frag.c
+(9) IHL <- (((OIHL*4)-(length of options not copied))+3)/4
+# test/unit/ip/test_ip4_frag/test_ip4_frag.c
+(9) IHL <- (((OIHL*4)-(length of options not copied))+3)/4; TL <- OTL - NFB*8 - (OIHL-IHL)*4); FO <- OFO + NFB; MF <- OMF; Recompute Checksum;
+# test/unit/ip/test_ip4_reass/test_ip4_reass.c
+IF FO = 0 AND MF = 0 THEN IF buffer with BUFID is allocated THEN flush all reassembly for this BUFID
+
+[not-an-rfc]
+# A quotation of something that is not an RFC. This tree quotes its own headers - endian.h's alignment
+# rule, dispatch.h's pin contract - and it quotes lwIP where a case exists because lwIP does it
+# differently, and IEEE 802.3ac through lwIP's comment on it. The audit has no way to tell those from a
+# quotation of the RFC named nearby, and there is nothing to check them against on the RFC path.
+
+# src/checksum.h
+a cast to a wider type at an odd address is a fault on the parts in the target list that require natural alignment
+# src/core/dispatch.h
+come back and it can work
+# src/core/stats.h
+the out counters of both groups
+# src/core/tick.c
+and post the descriptor back when the last pin goes
+# src/dhcp/dhcp6.c
+no transaction-id and no first message yet
+# src/ethernet/phy.c
+come back on a later tick
+# src/ethernet/vlan.h
+According to 802.3ac, the packet can be 4 bytes longer
+# src/ethernet/vlan.h - IEEE 802.1Q field names, which no RFC defines
+Canonical Format Indicator / Drop Eligible Indicator
+# src/idemip_config.h
+The number of multicast groups whose network interfaces can be members at the same time
+# src/ip/ip4_reass.c
+A pinned descriptor is released when the retaining unit is done with it: reassembly on completion or timeout
+# src/tcp/tcp_pcb.c
+first try specific local IP
+# test/integration/test_loopback/test_loopback.c
+A segment that begins past RCV.NXT is held
+# test/integration/test_loopback/test_loopback.c
+begins past RCV.NXT
+# test/unit/acd/test_acd/test_acd.c
+We use option b) ... We use option a)
+# test/unit/core/test_dispatch/test_dispatch.c
+nothing discarded
+# test/unit/core/test_dispatch/test_dispatch.c
+that would have needed it reports IDEMIP_DISPATCH_DROP_UNBOUND rather than calling through a null pointer
+# test/unit/core/test_tick/test_tick.c
+returned to the only one
+# test/unit/core/test_tick/test_tick.c
+returned to the right one
+# test/unit/ip/test_ip4_reass/test_ip4_reass.c
+no pin outlives its unit's own bound
+# test/unit/ip/test_ip6_select/test_ip6_select.c
+deliberately deviate[s]
+# test/unit/netif/test_netif/test_netif.c
+this interface holds no link
+# test/unit/raw/test_raw_pcb/test_raw_pcb.c
+'Perfect match' pcbs (connected to the remote port & ip address) are preferred. If no perfect match is found, the first unconnected pcb ... gets the datagram.
+# test/unit/raw/test_raw_pcb/test_raw_pcb.c
+prefer specific IPs over catch-all
+# test/unit/tcp/test_tcp_isn/test_tcp_isn.c
+the RFC equation
+# test/unit/tcp/test_tcp_out/test_tcp_out.c
+the two 128-bit addresses, a 32-bit Upper-Layer Packet Length, twenty-four zero bits, and the Next Header

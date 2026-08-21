@@ -443,7 +443,7 @@ void test_a_refused_call_reports_no_entry(void)
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_IGMP_NONE, IDEMIP_IGMP_IO(work_a)->index);
 }
 
-// RFC 1112 sec 4: "Host groups are identified by class D IP addresses, i.e., those with "1110" as their
+// RFC 1112 sec 4: "Host groups are identified by class D IP addresses, i.e., those with '1110' as their
 // high-order four bits", so nothing else can be joined.
 void test_a_membership_needs_a_class_d_address(void)
 {

@@ -1633,7 +1633,8 @@ void test_a_raw_ipv6_binding_with_ipv6_checksum_verifies_the_received_checksum(v
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_RAW, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
     TEST_ASSERT_BITS_HIGH(IDEMIP_DISPATCH_ACT_DELIVER, IDEMIP_DISPATCH_IO(work_a)->act);
 
-    // sec 3.1's disabled state, "-1 ... disables the checksum", takes the packet either way.
+    // sec 3.1's disabled state - "Setting the offset to -1 also disables the option" - takes the packet
+    // either way.
     rp->opt_args.index = pcb;
     rp->opt_args.ttl = 64u;
     rp->opt_args.cksum_offset = -1;

@@ -25,7 +25,7 @@
  * it "be different than that of any other fragmented packet sent recently with the same Source
  * Address and Destination Address", which is a property of the sender and not of one split.
  *
- * "Each complete fragment, except possibly the last ("rightmost") one, is an integer multiple of 8
+ * "Each complete fragment, except possibly the last ('rightmost') one, is an integer multiple of 8
  * octets long", and "Fragments must not be created that overlap with any other fragments created
  * from the original packet", so the cut walks forward in 8-octet units and never revisits one.
  *

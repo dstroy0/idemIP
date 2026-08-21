@@ -49,7 +49,7 @@ typedef enum IDEMIP_ENUM_PACKED
 // ---------------------------------------------------------------------------
 // Destination Unreachable, Source Quench, Time Exceeded, Parameter Problem and Redirect share one
 // shape: Type, Code, Checksum, one 32-bit field the type fixes, then the datagram that triggered
-// the message. RFC 792: "Any field labeled "unused" is reserved for later extensions and must be
+// the message. RFC 792: "Any field labeled 'unused' is reserved for later extensions and must be
 // zero when sent".
 
 #define IDEMIP_ICMP_OFF_UNUSED 4u     ///< 32-bit unused (types 3, 4 and 11)

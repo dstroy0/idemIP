@@ -536,7 +536,8 @@ void test_an_overlap_reaching_back_over_held_octets_abandons_the_datagram(void)
 }
 
 // The abandoned row is retired by its own deadline, and RFC 1122 sec 3.3.2's Time Exceeded is not
-// owed for it: the section conditions the message on reassembly failing "due to missing fragments",
+// owed for it: the message is owed to reassembly that failed, in RFC 792's words, "due to missing
+// fragments",
 // and this datagram was not missing any - it was told two different things about the same octets.
 void test_an_abandoned_row_times_out_without_an_icmp_answer(void)
 {

@@ -242,7 +242,7 @@ void test_rfc1122_port_unreachable_message(void)
     TEST_ASSERT_EQUAL_UINT8_ARRAY(quoted, idemip_icmp_quote(msg), sizeof quoted);
 }
 
-// RFC 792: "Any field labeled "unused" is reserved for later extensions and must be zero when sent".
+// RFC 792: "Any field labeled 'unused' is reserved for later extensions and must be zero when sent".
 // Types 3, 4 and 11 all label the word at octet 4 unused.
 void test_rfc792_unused_word_is_zero_when_sent(void)
 {

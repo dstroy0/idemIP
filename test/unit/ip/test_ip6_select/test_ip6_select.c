@@ -917,7 +917,8 @@ void test_dest_rule1_ties_and_rule2_breaks_it(void)
 }
 
 // Rule 3: "Avoid deprecated addresses. If Source(DA) is deprecated and Source(DB) is not, then prefer
-// DB." RFC 4862 sec 5.5.4 is what deprecates one: "An address ... to be used with caution."
+// DB." RFC 4862 is what deprecates one, and calls it "An address assigned to an interface whose use
+// is discouraged, but not forbidden".
 void test_dest_rule3_avoids_a_deprecated_source(void)
 {
     Ip6Select.clear(work_a);

@@ -542,7 +542,7 @@ void test_a_short_fragment_with_more_set_is_a_payload_length_problem(void)
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP6_REASS_NONE, IDEMIP_IP6_REASS_IO(work_a)->datagram);
 }
 
-// sec 4.5: "Each complete fragment, except possibly the last ("rightmost") one, is an integer multiple
+// sec 4.5: "Each complete fragment, except possibly the last ('rightmost') one, is an integer multiple
 // of 8 octets long", and the error condition above names only the M flag of 1. A last fragment of
 // twelve octets is therefore taken.
 void test_a_short_last_fragment_is_taken(void)

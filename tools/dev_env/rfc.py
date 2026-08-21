@@ -37,6 +37,13 @@ nonzero when a quote does not hold, so it can be run as a gate.
     python tools/dev_env/rfc.py --audit
     python tools/dev_env/rfc.py --audit src/dhcp
 
+Three kinds of quotation defeat a text comparison by construction and every one of them is correct:
+the words of a state diagram read down a column of ASCII art, RFC 791's numbered pseudocode, and a
+quotation of something that is not an RFC at all - this tree's own headers, lwIP, IEEE 802.3ac.
+rfc_exempt.txt lists those with the reason, so the audit can reach zero and be a gate. An entry that
+matches nothing in the tree any more is reported as stale and fails the run, the same way
+tools/dev_env/counters.py reports a register that has drifted.
+
 A quote the audit cannot find is not always wrong: an RFC quoting another RFC, a phrase assembled
 from two sentences, a word this file's own prose put in quotes. It is always worth reading, which is
 why the report prints the text rather than a count.
@@ -121,7 +128,13 @@ RFC_REF = re.compile(r"\bRFC\s?(\d{3,5})\b")
 # has been folded to one line, because this tree wraps a quotation across as many comment lines as it
 # needs and a per-line match pairs the wrong quotes: the open quote of one sentence with the close
 # quote of the next, which reports prose nobody claimed an RFC said.
-QUOTED = re.compile(r'"([^"]{16,})"')
+# Every quoted run, however short, because the pairing depends on it. A pattern that only matches runs
+# of sixteen characters or more cannot match a short quotation, so it starts again at that quotation's
+# CLOSING mark and pairs it with the next one's opening mark - and from there every pairing in the
+# block is off by one, reporting the prose between quotations as though someone had claimed an RFC said
+# it. Length is a filter on the captures, applied after they are paired.
+QUOTED = re.compile(r'"([^"\n]*)"')
+QUOTE_MIN = 16
 
 # A capture that opens on punctuation, or on a lowercase word after one, is the tell of a block whose
 # quote marks did not pair the way the writer meant: what got matched is the prose BETWEEN two
@@ -361,6 +374,19 @@ def cmd_quote(text, number, quote):
     return 0
 
 
+def trailing_comment(raw):
+    """The // comment behind code on @p raw, or None. The quote count in front of the marker is what
+    tells a comment from the // inside a string literal or a URL."""
+    at = 0
+    while True:
+        at = raw.find("//", at)
+        if at < 0:
+            return None
+        if raw[:at].count('"') % 2 == 0 and not raw[:at].rstrip().endswith(":"):
+            return re.sub(r"^\s*/+<?\s?", "", raw[at:])
+        at += 2
+
+
 def comment_blocks(path):
     """(first_line, text) for each run of adjacent comment lines. // and /* */ alike, because this
     tree writes both and a block is a paragraph either way."""
@@ -371,6 +397,17 @@ def comment_blocks(path):
     for n, raw in enumerate(lines, 1):
         line = raw.strip()
         is_comment = in_c or line.startswith("//") or line.startswith("/*") or line.startswith("*")
+        if not is_comment:
+            # A comment behind code on the same line. src/tcp/tcp_pcb.h defines eleven TCP states as
+            # trailing ///< quotations of RFC 9293 sec 3.3.2, each running onto the lines below it, and
+            # a walk that only sees whole-line comments reads the continuations without the openings
+            # and calls every one of them unpaired.
+            tail = trailing_comment(raw)
+            if tail is not None:
+                if not cur:
+                    start = n
+                cur.append(tail)
+                continue
         if line.startswith("/*") and "*/" not in line:
             in_c = True
         if in_c and "*/" in line:
@@ -385,6 +422,33 @@ def comment_blocks(path):
     if cur:
         blocks.append((start, "\n".join(cur)))
     return blocks
+
+
+EXEMPT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfc_exempt.txt")
+
+
+def exempt():
+    """The quotations the audit cannot check, by section, keyed on their squeezed form.
+
+    rfc_exempt.txt says what each section is and why the quotations in it defeat a text comparison.
+    Keyed on the squeeze rather than the raw string so that rewrapping a comment, or changing the
+    spacing inside one, does not silently drop an entry out of the register.
+    """
+    out = {}
+    if not os.path.exists(EXEMPT_FILE):
+        return out
+    section = "?"
+    for line in read(EXEMPT_FILE).splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1]
+            continue
+        key, _ = squeeze(normalize(line))
+        if key:
+            out[key] = section
+    return out
 
 
 def cmd_find(quote):
@@ -431,15 +495,30 @@ def cmd_audit(paths):
                     files.append(os.path.join(dirpath, name))
 
     flats = {}
-    checked = skipped = unpaired = 0
+    checked = skipped = unpaired = punctuation = 0
     bad = []
+    registered = exempt()
+    unattributed = []
+    used = set()
+    excused = {}
     for path in sorted(files):
         # The RFC a stretch of file is about is often named on a banner above it rather than in the
         # comment doing the quoting: "// --- RFC 3828 sec 3.5, Jumbograms ---" and then a case whose
         # comment quotes sec 3.5 without naming the document again, because a reader four lines below
         # the banner does not need telling twice. So a block's candidates carry forward.
         recent = []
-        for start, block in comment_blocks(path):
+        # The RFCs the file's own @brief names are its subject, and a quotation anywhere in it can be
+        # theirs. src/pmtu/pmtu4.c is "The RFC 1191 decision" and then mentions RFC 791 for the minimum
+        # MTU and RFC 792 for the Type and Code, and by the time a comment two hundred lines down quotes
+        # RFC 1191 the nearest RFC named is one of the others. A reader disambiguates by knowing what
+        # the file is about; this is that.
+        blocks = comment_blocks(path)
+        subject = []
+        for _, head in blocks[:3]:  # the SPDX header, the @file block, and whatever follows it
+            for ref in RFC_REF.findall(normalize(head)):
+                if ref not in subject:
+                    subject.append(ref)
+        for start, block in blocks:
             flat_block = normalize(block)
             marks = [(m.start(), m.group(1)) for m in RFC_REF.finditer(flat_block)]
             for _, ref in marks:
@@ -447,20 +526,23 @@ def cmd_audit(paths):
                     recent.remove(ref)
                 recent.insert(0, ref)
             del recent[6:]
-            if not marks and not recent:
-                skipped += len([q for q in QUOTED.findall(flat_block) if " " in q])
+            if not marks and not recent and not subject:
+                for q in QUOTED.findall(flat_block):
+                    if " " in q and len(q) >= QUOTE_MIN and not NOT_A_QUOTATION.search(q):
+                        skipped += 1
+                        unattributed.append((path, start, normalize(q)))
                 continue
             # An odd number of marks means every pairing after the first is wrong, so the block is
             # reported as unpaired rather than as a page of misquotes.
             if flat_block.count('"') % 2 == 1:
-                unpaired += len([q for q in QUOTED.findall(flat_block) if " " in q])
+                unpaired += len([q for q in QUOTED.findall(flat_block) if " " in q and len(q) >= QUOTE_MIN])
                 continue
             for m in QUOTED.finditer(flat_block):
                 q = m.group(1)
-                if " " not in q:
+                if " " not in q or len(q) < QUOTE_MIN:
                     continue
                 if NOT_A_QUOTATION.search(q):
-                    unpaired += 1
+                    punctuation += 1
                     continue
                 # Every RFC the block names is a candidate, nearest-before first because that is
                 # usually the one, and the quote is a finding only when NONE of them holds it. A
@@ -478,8 +560,10 @@ def cmd_audit(paths):
                         break
                 cands = ([near] if near else []) + [r for _, r in marks if r != near]
                 cands += [r for r in recent if r not in cands]
+                cands += [r for r in subject if r not in cands]
                 if not cands:
                     skipped += 1
+                    unattributed.append((path, start, normalize(q)))
                     continue
                 checked += 1
                 found = False
@@ -490,7 +574,13 @@ def cmd_audit(paths):
                         found = True
                         break
                 if not found:
-                    bad.append((path, start, cands[0], normalize(q)))
+                    key, _ = squeeze(normalize(q))
+                    section = registered.get(key)
+                    if section:
+                        used.add(key)
+                        excused[section] = excused.get(section, 0) + 1
+                    else:
+                        bad.append((path, start, cands[0], normalize(q)))
 
     for path, line, number, q in bad:
         print("%s:%d: no RFC this comment cites contains (nearest is RFC %s)" % (path.replace(os.sep, "/"), line, number))
@@ -498,10 +588,27 @@ def cmd_audit(paths):
     print("")
     print("%d quotes checked against %d RFCs, %d not found" % (checked, len(flats), len(bad)))
     if skipped:
-        print("%d quotes with no RFC named before them, not checked" % skipped)
+        print("")
+        print("%d quotes with no RFC named anywhere in reach, so there is nothing to check them" % skipped)
+        print("against. Every one of these should be a quotation of something that is not an RFC:")
+        for path, line, q in unattributed:
+            print("  %s:%d  %s" % (path.replace(os.sep, "/"), line, q[:88]))
     if unpaired:
         print("%d in a comment whose quote marks do not pair, not checked" % unpaired)
-    return 1 if bad else 0
+    if punctuation:
+        print("%d that open on punctuation, so the marks around them paired wrong, not checked" % punctuation)
+    if excused:
+        print(
+            "%d registered in rfc_exempt.txt: %s"
+            % (sum(excused.values()), ", ".join("%d %s" % (n, k) for k, n in sorted(excused.items())))
+        )
+    stale = [k for k in registered if k not in used]
+    if stale:
+        print("")
+        print("%d entries in rfc_exempt.txt match no quotation in the tree." % len(stale))
+        print("A quotation that was fixed, or a comment that was deleted, leaves one behind. Read them")
+        print("and take them out - the register is only worth having if every line of it is still true.")
+    return 1 if (bad or stale) else 0
 
 
 def main():

@@ -83,7 +83,7 @@ IDEMIP_BEGIN_DECLS
 #define IDEMIP_ICMP_IN_SUPPRESS_DST_MCAST 3u  ///< "or IP multicast address"
 #define IDEMIP_ICMP_IN_SUPPRESS_LINK_BCAST 4u ///< "a datagram sent as a link-layer broadcast"
 #define IDEMIP_ICMP_IN_SUPPRESS_FRAGMENT 5u   ///< "a non-initial fragment"
-#define IDEMIP_ICMP_IN_SUPPRESS_SRC 6u        ///< "a source address does not define a single host"
+#define IDEMIP_ICMP_IN_SUPPRESS_SRC 6u        ///< "whose source address does not define a single host"
 
 /**
  * @brief RFC 1122 sec 3.2.2.2: "A host SHOULD NOT send an ICMP Redirect message; Redirects are to be

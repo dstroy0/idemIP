@@ -21,7 +21,7 @@ IDEMIP_BEGIN_DECLS
  * @brief Smallest datagram every IPv4 host must be able to reassemble.
  *
  * RFC 1122 sec 3.3.2: "We designate the largest datagram size that can be reassembled by EMTU_R
- * ("Effective MTU to receive")... EMTU_R MUST be greater than or equal to 576".
+ * ('Effective MTU to receive')... EMTU_R MUST be greater than or equal to 576".
  */
 #define IDEMIP_IPV4_MIN_MTU 576u
 

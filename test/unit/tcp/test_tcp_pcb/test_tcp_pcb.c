@@ -690,7 +690,8 @@ void test_a_call_on_a_tcb_that_is_not_open_is_refused(void)
 
 // --- bind and connect --------------------------------------------------------
 
-// RFC 9293 sec 3.3.1's "local... IP address and port number", which sec 3.10.1's OPEN fills in.
+// The local half of what RFC 9293 sec 3.3.1 lists in the TCB, "the local and remote IP addresses and
+// port numbers", which sec 3.10.1's OPEN fills in.
 void test_bind_sets_the_local_half_of_the_four_tuple(void)
 {
     TcpPcb.clear(work_a);
@@ -978,8 +979,9 @@ void test_connect_refuses_an_unspecified_remote_socket(void)
 
 // RFC 9293 sec 3.9.1.1 MUST-46: "A TCP implementation MUST reject as an error a local OPEN call for
 // an invalid remote IP address (e.g., a broadcast or multicast address)". RFC 1122 sec 4.2.3.10
-// carries the same sentence. RFC 1122 sec 3.2.1.3 adds the unspecified address, which "MUST NOT be
-// used as a destination address".
+// carries the same sentence. RFC 1122 sec 3.2.1.3 adds the unspecified address, case (a), which
+// "MUST NOT be sent, except as a source address as part of an initialization procedure by which the
+// host learns its own IP address".
 void test_connect_refuses_an_invalid_remote_ip_address(void)
 {
 #if !IDEMIP_ENABLE_IPV4

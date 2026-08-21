@@ -78,15 +78,15 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("C:/Users/Douglas/Desktop/git_project/work/idemIP/test/unit/base/test_checksum\\test_checksum.c");
-  run_test(test_rfc1071_section3_example, "test_rfc1071_section3_example", 29);
-  run_test(test_rfc1071_byte_order_independence, "test_rfc1071_byte_order_independence", 49);
-  run_test(test_checksum_over_itself_is_zero, "test_checksum_over_itself_is_zero", 61);
-  run_test(test_odd_length_pads_high_half, "test_odd_length_pads_high_half", 71);
-  run_test(test_accumulation_splits, "test_accumulation_splits", 80);
-  run_test(test_empty_span, "test_empty_span", 88);
-  run_test(test_the_word_path_matches_the_section_1_definition, "test_the_word_path_matches_the_section_1_definition", 123);
-  run_test(test_a_split_sum_matches_a_whole_one_at_every_cut, "test_a_split_sum_matches_a_whole_one_at_every_cut", 154);
-  run_test(test_a_sealed_span_verifies_at_every_length, "test_a_sealed_span_verifies_at_every_length", 175);
+  run_test(test_rfc1071_section3_example, "test_rfc1071_section3_example", 30);
+  run_test(test_rfc1071_byte_order_independence, "test_rfc1071_byte_order_independence", 50);
+  run_test(test_checksum_over_itself_is_zero, "test_checksum_over_itself_is_zero", 62);
+  run_test(test_odd_length_pads_high_half, "test_odd_length_pads_high_half", 72);
+  run_test(test_accumulation_splits, "test_accumulation_splits", 81);
+  run_test(test_empty_span, "test_empty_span", 89);
+  run_test(test_the_word_path_matches_the_section_1_definition, "test_the_word_path_matches_the_section_1_definition", 124);
+  run_test(test_a_split_sum_matches_a_whole_one_at_every_cut, "test_a_split_sum_matches_a_whole_one_at_every_cut", 155);
+  run_test(test_a_sealed_span_verifies_at_every_length, "test_a_sealed_span_verifies_at_every_length", 176);
 
   return UNITY_END();
 }

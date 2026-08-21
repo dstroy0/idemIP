@@ -139,7 +139,7 @@ IDEMIP_BEGIN_DECLS
 /**
  * @brief The bound a sec 21.24 or sec 21.25 override must sit inside.
  *
- * Both sections read "MUST be in this range: 60 <= \"value\" <= 86400 (1 day)", and both add that a
+ * Both sections read "MUST be in this range: 60 <= 'value' <= 86400 (1 day)", and both add that a
  * client "MUST ignore any ... option values that are less than 60 or more than 86400".
  */
 #define IDEMIP_DHCP6_MAX_RT_MIN_S 60u
