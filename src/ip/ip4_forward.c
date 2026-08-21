@@ -64,7 +64,8 @@ typedef struct
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
 // holds it. common.h's IDEMIP_ASSERT_REGION states both.
-IDEMIP_ASSERT_REGION(IDEMIP_IP4_FORWARD_OFF_CTX, sizeof(Ip4ForwardCtx), IDEMIP_IP4_FORWARD_BORROW, "ip4_forward's context");
+IDEMIP_ASSERT_REGION(IDEMIP_IP4_FORWARD_OFF_CTX, sizeof(Ip4ForwardCtx), IDEMIP_IP4_FORWARD_BORROW,
+                     "ip4_forward's context");
 
 // The caller's borrow, split: the operand block, then the context. ip4_forward.h publishes the
 // offsets; the assert proves the span covers them before anything runs.
@@ -260,7 +261,11 @@ static idemip_bool ip4_forward_is_icmp_error(uint8_t type)
 // fragment, and at least one octet of payload to read it from.
 static idemip_bool ip4_forward_carries_icmp_error(const uint8_t *h)
 {
-    if (idemip_ip4_proto(h) != (uint8_t)IDEMIP_IP4_PROTO_ICMP || idemip_ip4_frag_units(h) != 0u)
+    // Not measured on the offset: the only caller is ip4_forward_icmp_allowed, which answers sec
+    // 4.3.2.7's own clause about "Any fragment of a datagram other then the first fragment" before it
+    // asks this. It is written because the Type octet is read out of the payload below, and only
+    // fragment zero carries one.
+    if (idemip_ip4_proto(h) != (uint8_t)IDEMIP_IP4_PROTO_ICMP || idemip_ip4_frag_units(h) != 0u) // GCOVR_EXCL_BR_LINE
     {
         return IDEMIP_FALSE;
     }
@@ -353,8 +358,7 @@ void idemip_ip4_forward_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IP4_FORWARD_OFF_CTX, 0,
-           (size_t)IDEMIP_IP4_FORWARD_BORROW - IDEMIP_IP4_FORWARD_OFF_CTX);
+    memset(work + IDEMIP_IP4_FORWARD_OFF_CTX, 0, (size_t)IDEMIP_IP4_FORWARD_BORROW - IDEMIP_IP4_FORWARD_OFF_CTX);
     Ip4ForwardCtx *ctx = IP4_FORWARD_CTX(work);
     ctx->ready = IP4_FORWARD_READY;
     ctx->policy = IDEMIP_IP4_FORWARD_P_MASK;

@@ -1158,3 +1158,249 @@ void test_nothing_is_ever_busy(void)
     Ip4Forward.set_policy(work_a);
     TEST_ASSERT_NOT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_IP4_FORWARD_IO(work_a)->status);
 }
+
+// --- the prefixes a classification is made under --------------------------------
+
+// RFC 1812 sec 5.3.7 makes "a destination address on network 127" invalid, the same way network 0 is.
+void test_a_destination_on_the_loopback_network_is_not_forwarded(void)
+{
+    clear_ok(work_a);
+    const size_t len = build_plain(TEST_NET_1_HOST, IP4(127, 0, 0, 1), TTL_COMMON);
+    args_default(work_a, len);
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, IDEMIP_IP4_FORWARD_IO(work_a)->action);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_FORWARD_R_DST, IDEMIP_IP4_FORWARD_IO(work_a)->reason,
+                                  "a destination on network 127 was forwarded");
+}
+
+// RFC 1812 sec 5.3.5.2 classifies a broadcast under "the router's understanding (if any) of the
+// subnet structure of the destination network", and a router with no understanding of it has none to
+// make: a mask of zero, a mask of all ones, and RFC 3021 sec 3.1's 31-bit prefix, where "the two
+// addresses above MUST be interpreted as host addresses", each leave it a host address. So does one
+// outside the prefix the mask names.
+void test_a_directed_broadcast_needs_a_prefix_to_be_directed_under(void)
+{
+    const uint32_t masks[3] = {0u, IP4(255, 255, 255, 255), IP4(255, 255, 255, 254)};
+    for (int i = 0; i < 3; i++)
+    {
+        clear_ok(work_a);
+        const size_t len = build_plain(TEST_NET_2_HOST, TEST_NET_1_BCAST, TTL_COMMON);
+        args_default(work_a, len);
+        IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_addr = TEST_NET_1_GW;
+        IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_mask = masks[i];
+        IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.direct = IDEMIP_TRUE;
+        Ip4Forward.decide(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action,
+                                      "an address was read as a directed broadcast under no prefix");
+    }
+
+    // An ordinary host address inside the prefix is neither form.
+    clear_ok(work_a);
+    const size_t host = build_plain(TEST_NET_2_HOST, TEST_NET_1_HOST, TTL_COMMON);
+    args_default(work_a, host);
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.next_hop = TEST_NET_1_HOST;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_addr = TEST_NET_1_GW;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_mask = MASK24;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.direct = IDEMIP_TRUE;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action,
+                                  "a host address inside the prefix was read as its broadcast");
+
+    // Under a prefix that does not contain it, it is not that prefix's broadcast either.
+    clear_ok(work_a);
+    const size_t len = build_plain(TEST_NET_2_HOST, TEST_NET_1_BCAST, TTL_COMMON);
+    args_default(work_a, len);
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_addr = TEST_NET_3_HOST;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_mask = MASK24;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.direct = IDEMIP_TRUE;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action,
+                                  "an address outside the prefix was read as its broadcast");
+
+    // "{ <Network-prefix>, 0 } is an obsolete form of a network-prefix-directed broadcast address",
+    // which the same section treats by the same rules as the all-ones form.
+    clear_ok(work_a);
+    IDEMIP_IP4_FORWARD_IO(work_a)->policy_args.set = 0u;
+    IDEMIP_IP4_FORWARD_IO(work_a)->policy_args.clear = IDEMIP_IP4_FORWARD_P_DIRECTED;
+    Ip4Forward.set_policy(work_a);
+    const size_t obsolete = build_plain(TEST_NET_2_HOST, IP4(192, 0, 2, 0), TTL_COMMON);
+    args_default(work_a, obsolete);
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.next_hop = IP4(192, 0, 2, 0);
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_addr = TEST_NET_1_GW;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_mask = MASK24;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.direct = IDEMIP_TRUE;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_FORWARD_R_DIRECTED, IDEMIP_IP4_FORWARD_IO(work_a)->reason,
+                                  "the obsolete form of a directed broadcast was not treated as one");
+}
+
+// The same classification on the receiving side, which sec 5.3.7 makes a source test: a source
+// address is invalid where it is that interface's broadcast, and where the interface has no prefix
+// to make it one it is a source like any other.
+void test_a_source_broadcast_needs_a_prefix_on_the_receiving_side_too(void)
+{
+    const uint32_t masks[3] = {0u, IP4(255, 255, 255, 255), IP4(255, 255, 255, 254)};
+    for (int i = 0; i < 3; i++)
+    {
+        clear_ok(work_a);
+        const size_t len = build_plain(TEST_NET_1_BCAST, TEST_NET_3_HOST, TTL_COMMON);
+        args_default(work_a, len);
+        IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_addr = TEST_NET_1_GW;
+        IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_mask = masks[i];
+        Ip4Forward.decide(work_a);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action,
+                                      "a source was read as a broadcast under no prefix");
+    }
+}
+
+// RFC 791 sec 3.1: type 1 "occupies only 1 octet" and has no length behind it, type 0 "indicates the
+// end of the option list", and every other option carries "the option length which includes the
+// option type code and the length octet". A walk over the area has to take each of those, and stop
+// where the area cannot carry what the option claims. What the walk found is read by RFC 1812 sec
+// 5.2.7.2's third condition, "The packet does not contain an IP source route option", so the
+// Redirect is where the finding shows.
+void test_the_option_walk_takes_each_form_the_area_can_carry(void)
+{
+    // The three sec 5.2.7.2 conditions, so a Redirect is owed unless an option is what stops it.
+    static const uint32_t SAME_NET_SRC = IP4(192, 0, 2, 20);
+
+    // A No Operation before a Loose Source Route: the walk steps one octet and finds the route.
+    static const uint8_t nop_then_lsrr[] = {1u, 131u, 7u, 4u, 192u, 0u, 2u, 1u};
+    clear_ok(work_a);
+    size_t len = build_with_option(SAME_NET_SRC, TEST_NET_3_HOST, TTL_COMMON, nop_then_lsrr, sizeof nop_then_lsrr);
+    args_default(work_a, len);
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_netif = 0u;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_mask = MASK24;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_addr = TEST_NET_1_GW;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP4_FORWARD_IO(work_a)->redirect,
+                              "a source route behind a No Operation was not seen");
+
+    // An option area whose last octet is a type with no length behind it: the walk stops there, and
+    // what stands before it is all there is.
+    clear_ok(work_a);
+    len = build(SAME_NET_SRC, TEST_NET_3_HOST, TTL_COMMON, 0u, (uint8_t)IDEMIP_IP4_PROTO_TCP,
+                (uint16_t)(IDEMIP_IPV4_HDR_LEN + 4u));
+    g_pkt[IDEMIP_IP4_OFF_OPTIONS] = 1u; // No Operation
+    g_pkt[IDEMIP_IP4_OFF_OPTIONS + 1u] = 1u;
+    g_pkt[IDEMIP_IP4_OFF_OPTIONS + 2u] = 1u;
+    g_pkt[IDEMIP_IP4_OFF_OPTIONS + 3u] = 131u; // a source route with nothing behind its type octet
+    idemip_ip4_set_ver_ihl(g_pkt, (uint8_t)((IDEMIP_IPV4_HDR_LEN + 4u) >> IDEMIP_IP4_IHL_SHIFT));
+    idemip_ip4_recksum(g_pkt);
+    args_default(work_a, len);
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_netif = 0u;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_mask = MASK24;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_addr = TEST_NET_1_GW;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP4_FORWARD_IO(work_a)->redirect,
+                             "a source route was read out of an option area that ends mid-option");
+
+    // An option whose length runs past the area it stands in.
+    static const uint8_t over_len[] = {131u, 20u, 0u, 0u};
+    clear_ok(work_a);
+    len = build_with_option(SAME_NET_SRC, TEST_NET_3_HOST, TTL_COMMON, over_len, sizeof over_len);
+    args_default(work_a, len);
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_netif = 0u;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_mask = MASK24;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_addr = TEST_NET_1_GW;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP4_FORWARD_IO(work_a)->redirect,
+                             "an option claiming more octets than the area holds was walked");
+
+    // An option length below the two octets an option is at minimum.
+    static const uint8_t short_len[] = {131u, 1u, 0u, 0u};
+    clear_ok(work_a);
+    len = build_with_option(SAME_NET_SRC, TEST_NET_3_HOST, TTL_COMMON, short_len, sizeof short_len);
+    args_default(work_a, len);
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_netif = 0u;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_mask = MASK24;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_addr = TEST_NET_1_GW;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP4_FORWARD_IO(work_a)->redirect,
+                             "an option shorter than its own two fixed octets was walked");
+}
+
+// RFC 1122 sec 3.2.2's five error types are what sec 4.3.2.7 keeps a router from answering with
+// another error. A datagram carrying one of them is that; one carrying a query, one that is not
+// ICMP at all, a later fragment of one, and one with no octet to read the Type from are not.
+void test_the_icmp_error_test_reads_the_type_the_datagram_carries(void)
+{
+    const uint8_t types[6] = {(uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE,  (uint8_t)IDEMIP_ICMP_SOURCE_QUENCH,
+                              (uint8_t)IDEMIP_ICMP_REDIRECT,          (uint8_t)IDEMIP_ICMP_TIME_EXCEEDED,
+                              (uint8_t)IDEMIP_ICMP_PARAMETER_PROBLEM, (uint8_t)IDEMIP_ICMP_ECHO};
+    for (int i = 0; i < 6; i++)
+    {
+        clear_ok(work_a);
+        const size_t len = build(TEST_NET_1_HOST, TEST_NET_3_HOST, 1u, 0u, (uint8_t)IDEMIP_IP4_PROTO_ICMP,
+                                 (uint16_t)(IDEMIP_IPV4_HDR_LEN + 8u));
+        g_pkt[IDEMIP_IPV4_HDR_LEN + IDEMIP_ICMP_OFF_TYPE] = types[i];
+        args_default(work_a, len);
+        Ip4Forward.decide(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_DISCARD, IDEMIP_IP4_FORWARD_IO(work_a)->action);
+        if (i == 5)
+        {
+            // sec 3.2.2 groups the queries apart from the errors, so an Echo is answerable.
+            TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP4_FORWARD_IO(work_a)->icmp,
+                                     "a datagram carrying a query was read as carrying an error");
+        }
+        else
+        {
+            TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP4_FORWARD_IO(work_a)->icmp,
+                                      "a router answered an ICMP error with another one");
+        }
+    }
+
+    // A later fragment of an ICMP datagram is refused an answer by sec 4.3.2.7's own clause about
+    // "Any fragment of a datagram other then the first fragment", before the Type is looked for.
+    clear_ok(work_a);
+    size_t len = build(TEST_NET_1_HOST, TEST_NET_3_HOST, 1u, 2u, (uint8_t)IDEMIP_IP4_PROTO_ICMP,
+                       (uint16_t)(IDEMIP_IPV4_HDR_LEN + 8u));
+    args_default(work_a, len);
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP4_FORWARD_IO(work_a)->icmp, "a later fragment was answered with an ICMP error");
+
+    // A datagram of exactly its header has no Type octet to read, and is not an error message.
+    clear_ok(work_a);
+    len =
+        build(TEST_NET_1_HOST, TEST_NET_3_HOST, 1u, 0u, (uint8_t)IDEMIP_IP4_PROTO_ICMP, (uint16_t)IDEMIP_IPV4_HDR_LEN);
+    args_default(work_a, len);
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_IP4_FORWARD_IO(work_a)->icmp, "a datagram with no payload was read for a Type");
+}
+
+// RFC 1812 sec 5.2.7.2's conditions for a Redirect are all three at once, and sec 4.3.2.7 keeps the
+// router from sending one about a datagram carrying an ICMP error. An interface with no prefix of
+// its own cannot say whether the source is "on the same Logical IP (sub)network as the next-hop IP
+// address", so there is nothing to redirect against.
+void test_a_redirect_needs_every_one_of_its_conditions(void)
+{
+    static const uint32_t SAME_NET_SRC = IP4(192, 0, 2, 20);
+
+    // Everything but a prefix on the receiving interface.
+    clear_ok(work_a);
+    size_t len = build_plain(SAME_NET_SRC, TEST_NET_3_HOST, TTL_COMMON);
+    args_default(work_a, len);
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_netif = 0u;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_mask = 0u;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_addr = TEST_NET_1_GW;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP4_FORWARD_IO(work_a)->redirect,
+                              "a Redirect went out over an interface with no prefix of its own");
+
+    // Everything but the datagram: this one carries an ICMP error, and sec 4.3.2.7 answers those
+    // with nothing at all.
+    clear_ok(work_a);
+    len = build(SAME_NET_SRC, TEST_NET_3_HOST, TTL_COMMON, 0u, (uint8_t)IDEMIP_IP4_PROTO_ICMP,
+                (uint16_t)(IDEMIP_IPV4_HDR_LEN + 8u));
+    g_pkt[IDEMIP_IPV4_HDR_LEN + IDEMIP_ICMP_OFF_TYPE] = (uint8_t)IDEMIP_ICMP_TIME_EXCEEDED;
+    args_default(work_a, len);
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_netif = 0u;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_mask = MASK24;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.in_addr = TEST_NET_1_GW;
+    Ip4Forward.decide(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action);
+    TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IP4_FORWARD_IO(work_a)->redirect,
+                              "a Redirect was sent about a datagram carrying an ICMP error");
+}

@@ -65,6 +65,12 @@ extern void test_an_interface_index_past_the_count_is_refused(void);
 extern void test_set_policy_refuses_a_reserved_bit(void);
 extern void test_set_policy_lowers_after_it_raises(void);
 extern void test_nothing_is_ever_busy(void);
+extern void test_a_destination_on_the_loopback_network_is_not_forwarded(void);
+extern void test_a_directed_broadcast_needs_a_prefix_to_be_directed_under(void);
+extern void test_a_source_broadcast_needs_a_prefix_on_the_receiving_side_too(void);
+extern void test_the_option_walk_takes_each_form_the_area_can_carry(void);
+extern void test_the_icmp_error_test_reads_the_type_the_datagram_carries(void);
+extern void test_a_redirect_needs_every_one_of_its_conditions(void);
 
 
 /*=======Mock Management=====*/
@@ -183,6 +189,12 @@ int main(void)
   run_test(test_set_policy_refuses_a_reserved_bit, "test_set_policy_refuses_a_reserved_bit", 1118);
   run_test(test_set_policy_lowers_after_it_raises, "test_set_policy_lowers_after_it_raises", 1129);
   run_test(test_nothing_is_ever_busy, "test_nothing_is_ever_busy", 1141);
+  run_test(test_a_destination_on_the_loopback_network_is_not_forwarded, "test_a_destination_on_the_loopback_network_is_not_forwarded", 1165);
+  run_test(test_a_directed_broadcast_needs_a_prefix_to_be_directed_under, "test_a_directed_broadcast_needs_a_prefix_to_be_directed_under", 1181);
+  run_test(test_a_source_broadcast_needs_a_prefix_on_the_receiving_side_too, "test_a_source_broadcast_needs_a_prefix_on_the_receiving_side_too", 1240);
+  run_test(test_the_option_walk_takes_each_form_the_area_can_carry, "test_the_option_walk_takes_each_form_the_area_can_carry", 1262);
+  run_test(test_the_icmp_error_test_reads_the_type_the_datagram_carries, "test_the_icmp_error_test_reads_the_type_the_datagram_carries", 1327);
+  run_test(test_a_redirect_needs_every_one_of_its_conditions, "test_a_redirect_needs_every_one_of_its_conditions", 1376);
 
   return UNITY_END();
 }
