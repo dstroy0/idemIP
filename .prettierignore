@@ -1,0 +1,14 @@
+# prettier formats the markup and data files: md, json, yml, yaml, css, html, js.
+# C and Python are not prettier's - .clang-format and black own those.
+
+# The MMgr submodule. Its content is tracked in dstroy0/MMgr, which formats it with a prettier of its
+# own and its own .prettierignore beside it. A reformat here would not be committed - this tree tracks
+# a commit of that repo, not its files - and would show up as a dirty submodule on every checkout.
+include/MMgr/
+
+# Build and coverage output. Machine-written, regenerated on every run, and compile_commands.json is
+# json a formatter will happily rewrite.
+build-cov/
+build-bench/
+coverage.xml
+Testing/

@@ -22,3 +22,8 @@ Testing/
 
 # The bench build directory, which test/bench/README.md names. Measurement output, not the tree.
 build-bench/
+
+# The MMgr submodule, whose content is tracked in dstroy0/MMgr. .gitmodules records the url and the
+# index records the commit, which is the whole of what this tree keeps: git does not apply an ignore
+# rule to a path it already tracks, so the gitlink stays and only loose files under it are ignored.
+include/MMgr/
