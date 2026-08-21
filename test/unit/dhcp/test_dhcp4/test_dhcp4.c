@@ -360,6 +360,8 @@ static void msg_opt32(uint8_t code, uint32_t v)
     msg_opt(code, 4u, b);
 }
 
+static const uint8_t g_nak_type[1] = {(uint8_t)IDEMIP_DHCP4_NAK};
+
 static void msg_end(void)
 {
     g_msg[g_msg_at++] = IDEMIP_DHCP4_OPT_END;
@@ -519,6 +521,167 @@ void test_an_option_of_the_wrong_length_discards_the_message(void)
         Dhcp4.clear(work_a);
         to_selecting(work_a);
         offer_with(work_a, rows[r].code, rows[r].len, v);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP4_SELECTING, IDEMIP_DHCP4_IO(work_a)->state, rows[r].why);
+    }
+}
+
+// RFC 2131 sec 4.1 has a client read "the 'options' field" of an arriving message, and RFC 2132 sec 2
+// puts no bar on an option appearing twice: "Options may appear only once, unless otherwise
+// specified", which is a rule for the sender. A receiver that read the second copy over the first
+// would take whatever a rogue server put last, so the first occurrence of each option is the one that
+// stands and every later copy is stepped over. The option area is sixty-four octets, so the two
+// halves of the list are split across two cases.
+void test_the_first_occurrence_of_each_option_is_the_one_read(void)
+{
+    Dhcp4.clear(work_a);
+    to_selecting(work_a);
+
+    msg_begin(XID_A, IP_OFFER, (uint8_t)IDEMIP_DHCP4_OFFER, g_mac_a);
+    msg_opt32(IDEMIP_DHCP4_OPT_SUBNET_MASK, IP_MASK);
+    msg_opt32(IDEMIP_DHCP4_OPT_ROUTER, IP_ROUTER);
+    msg_opt32(IDEMIP_DHCP4_OPT_LEASE_TIME, 600u);
+    msg_opt32(IDEMIP_DHCP4_OPT_SERVER_ID, IP_SERVER);
+    // A second copy of each, naming something else, and a second Message Type that is a DHCPNAK.
+    msg_opt32(IDEMIP_DHCP4_OPT_SUBNET_MASK, 0xFFFF0000u);
+    msg_opt32(IDEMIP_DHCP4_OPT_ROUTER, 0x0A000001u);
+    msg_opt32(IDEMIP_DHCP4_OPT_LEASE_TIME, 99999u);
+    msg_opt32(IDEMIP_DHCP4_OPT_SERVER_ID, 0x0A0000FEu);
+    msg_opt(IDEMIP_DHCP4_OPT_MSG_TYPE, 1u, g_nak_type);
+    msg_end();
+    feed(work_a);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP4_REQUESTING, IDEMIP_DHCP4_IO(work_a)->state,
+                                  "a second Message Type was read over the first");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(IP_MASK, IDEMIP_DHCP4_IO(work_a)->subnet_mask, "a second subnet mask was read");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(IP_ROUTER, IDEMIP_DHCP4_IO(work_a)->router, "a second router was read");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(600u, IDEMIP_DHCP4_IO(work_a)->lease_s, "a second lease time was read");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(IP_SERVER, IDEMIP_DHCP4_IO(work_a)->server_id, "a second server id was read");
+}
+
+// The other half of the list: sec 3.8's server list and sec 9.11 and sec 9.12's T1 and T2.
+void test_the_first_occurrence_of_the_remaining_options_is_the_one_read(void)
+{
+    uint8_t one[4];
+    uint8_t other[4];
+    put32(one, IP_DNS1);
+    put32(other, 0x0A0A0A0Au);
+
+    Dhcp4.clear(work_a);
+    to_selecting(work_a);
+
+    msg_begin(XID_A, IP_OFFER, (uint8_t)IDEMIP_DHCP4_OFFER, g_mac_a);
+    msg_opt(IDEMIP_DHCP4_OPT_DNS_SERVER, 4u, one);
+    msg_opt32(IDEMIP_DHCP4_OPT_LEASE_TIME, 600u);
+    msg_opt32(IDEMIP_DHCP4_OPT_SERVER_ID, IP_SERVER);
+    msg_opt32(IDEMIP_DHCP4_OPT_T1, 300u);
+    msg_opt32(IDEMIP_DHCP4_OPT_T2, 525u);
+    msg_opt(IDEMIP_DHCP4_OPT_DNS_SERVER, 4u, other);
+    msg_opt32(IDEMIP_DHCP4_OPT_T1, 11u);
+    msg_opt32(IDEMIP_DHCP4_OPT_T2, 22u);
+    msg_end();
+    feed(work_a);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP4_REQUESTING, IDEMIP_DHCP4_IO(work_a)->state);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, IDEMIP_DHCP4_IO(work_a)->dns_count, "the two lists were read as one");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(IP_DNS1, get32(IDEMIP_DHCP4_IO(work_a)->dns), "a second DNS list was read");
+    // sec 4.4.5's T1 and T2 are read the same way and are held until the DHCPACK binds the lease, so
+    // what this case shows of them is that a second copy of either disturbs nothing: the Offer is
+    // still an Offer and the machine still moved on it.
+    TEST_ASSERT_EQUAL_UINT32(600u, IDEMIP_DHCP4_IO(work_a)->lease_s);
+}
+
+// RFC 2132 sec 2 encodes an option as "a tag octet, a length octet, and any number of data octets",
+// and sec 3.2's end option is what marks where the list stops. A message whose option area runs out
+// before an end option is one the walk reaches the end of: RFC 2131 sec 4.1 says nothing that makes a
+// missing end fatal, and every option written before the edge was read, so the message stands. The
+// octets after the last one written are zeros, which sec 3.1 makes pad options.
+void test_an_option_area_that_ends_without_an_end_option_is_still_read(void)
+{
+    Dhcp4.clear(work_a);
+    to_selecting(work_a);
+
+    msg_begin(XID_A, IP_OFFER, (uint8_t)IDEMIP_DHCP4_OFFER, g_mac_a);
+    msg_opt32(IDEMIP_DHCP4_OPT_SUBNET_MASK, IP_MASK);
+    msg_opt32(IDEMIP_DHCP4_OPT_LEASE_TIME, 600u);
+    msg_opt32(IDEMIP_DHCP4_OPT_SERVER_ID, IP_SERVER);
+    // No end option: the pads run to the edge of the area.
+    feed(work_a);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP4_REQUESTING, IDEMIP_DHCP4_IO(work_a)->state,
+                                  "a message whose options run to the edge was discarded");
+    TEST_ASSERT_EQUAL_UINT32(600u, IDEMIP_DHCP4_IO(work_a)->lease_s);
+}
+
+// The two ways an option can run off the end of the area it is in. A tag octet standing at the last
+// one has no length octet behind it, and a length octet naming more octets than are left names data
+// that is not there. sec 2's encoding cannot be read either way, so the message is discarded: half a
+// message is not a configuration.
+void test_an_option_running_off_the_end_of_the_area_discards_the_message(void)
+{
+    const size_t span = (size_t)IDEMIP_DHCP4_MSG_BOOTP_MIN - (size_t)IDEMIP_DHCP4_MSG_OFF_OPTIONS;
+    static const struct
+    {
+        size_t back;
+        const char *why;
+    } rows[] = {
+        {1u, "a tag octet with no length octet behind it was read"},
+        {2u, "a length naming octets that are not there was read"},
+    };
+
+    for (size_t r = 0u; r < (sizeof rows / sizeof rows[0]); r++)
+    {
+        Dhcp4.clear(work_a);
+        to_selecting(work_a);
+
+        msg_begin(XID_A, IP_OFFER, (uint8_t)IDEMIP_DHCP4_OFFER, g_mac_a);
+        msg_opt32(IDEMIP_DHCP4_OPT_LEASE_TIME, 600u);
+        msg_opt32(IDEMIP_DHCP4_OPT_SERVER_ID, IP_SERVER);
+        // A router option at the very edge: with one octet left it is a tag alone, and with two the
+        // length it names runs past the area.
+        const size_t at = (size_t)IDEMIP_DHCP4_MSG_OFF_OPTIONS + span - rows[r].back;
+        g_msg[at] = IDEMIP_DHCP4_OPT_ROUTER;
+        if (rows[r].back == 2u)
+        {
+            g_msg[at + 1u] = 4u;
+        }
+        feed(work_a);
+
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP4_SELECTING, IDEMIP_DHCP4_IO(work_a)->state, rows[r].why);
+    }
+}
+
+// RFC 2131 sec 4.1: "The 'file' field MUST be interpreted next (if the 'option overload' option
+// indicates that the 'file' field contains DHCP options), followed by the 'sname' field." Options in
+// either field are read the same way as the ones in the option area, so an option that runs off the
+// end of either field discards the message just as one in the option area does.
+void test_an_option_running_off_the_end_of_an_overloaded_field_discards_the_message(void)
+{
+    static const struct
+    {
+        uint8_t overload;
+        size_t at;
+        size_t span;
+        const char *why;
+    } rows[] = {
+        {1u, (size_t)IDEMIP_DHCP4_MSG_OFF_FILE, 128u, "an option past the end of the file field was read"},
+        {2u, (size_t)IDEMIP_DHCP4_MSG_OFF_SNAME, 64u, "an option past the end of the sname field was read"},
+    };
+
+    for (size_t r = 0u; r < (sizeof rows / sizeof rows[0]); r++)
+    {
+        Dhcp4.clear(work_a);
+        to_selecting(work_a);
+
+        msg_begin(XID_A, IP_OFFER, (uint8_t)IDEMIP_DHCP4_OFFER, g_mac_a);
+        msg_opt(IDEMIP_DHCP4_OPT_OVERLOAD, 1u, &rows[r].overload);
+        msg_opt32(IDEMIP_DHCP4_OPT_LEASE_TIME, 600u);
+        msg_opt32(IDEMIP_DHCP4_OPT_SERVER_ID, IP_SERVER);
+        msg_end();
+        // A router option in the overloaded field whose length runs past the field's own end.
+        g_msg[rows[r].at + rows[r].span - 2u] = IDEMIP_DHCP4_OPT_ROUTER;
+        g_msg[rows[r].at + rows[r].span - 1u] = 4u;
+        feed(work_a);
+
         TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP4_SELECTING, IDEMIP_DHCP4_IO(work_a)->state, rows[r].why);
     }
 }
