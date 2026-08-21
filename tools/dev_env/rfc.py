@@ -79,6 +79,14 @@ RFC_REF = re.compile(r"\bRFC\s?(\d{3,5})\b")
 # quote of the next, which reports prose nobody claimed an RFC said.
 QUOTED = re.compile(r'"([^"]{16,})"')
 
+# A capture that opens on punctuation, or on a lowercase word after one, is the tell of a block whose
+# quote marks did not pair the way the writer meant: what got matched is the prose BETWEEN two
+# quotations, running from the close mark of one to the open mark of the next. That happens whenever a
+# block holds an odd number of marks - an apostrophe written as a double, a quotation opened in one
+# comment and closed in another - and after the first one every pairing in the block is off by one.
+# Reporting those as misquotes buries the real ones under prose nobody claimed an RFC said.
+NOT_A_QUOTATION = re.compile(r'^[,;:.)\]]|^\s')
+
 
 def read(path):
     with open(path, encoding="utf-8", errors="replace") as fh:
@@ -126,6 +134,53 @@ def normalize(quote):
     return re.sub(r"\s+", " ", quote).strip()
 
 
+# What a quotation is allowed to differ from the document in and still be the same quotation.
+# The tree lowercases a leading capital to set a sentence inside one of its own - RFC 1213's "The
+# number of subnetwork-unicast packets delivered" becomes "the number of ..." mid-comment - and it
+# writes the document's own inner double quotes as single ones, because the outer pair is already
+# taken: RFC 1112's "all-hosts" group is 'all-hosts' by the time it is quoted. Neither changes what
+# is being claimed. A dash is folded because the documents are transcribed with several of them.
+QUOTE_CHARS = "\u2018\u2019\u201c\u201d`'\""
+DASH_CHARS = "\u2010\u2011\u2012\u2013\u2014\u2212"
+
+
+def fold(text):
+    """The form a quotation and the document are compared in. Not for printing: the report prints
+    what the comment actually says, so a reader sees the words they wrote."""
+    out = []
+    for ch in text.lower():
+        if ch in QUOTE_CHARS:
+            out.append("'")
+        elif ch in DASH_CHARS:
+            out.append("-")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def squeeze(text):
+    """The form a quotation and a document are compared in, and where each surviving character came
+    from in the input.
+
+    Whitespace and hyphens both go, because a printed RFC breaks a line wherever the column runs out
+    and the break leaves neither behind reliably: RFC 1213 wraps "re-assembly" as "re-" and then
+    "assembly", which flattens to "re- assembly", and RFC 4291 wraps "address" as "addr-" and "ess",
+    which flattens to a hyphen that is not in the word at all. One of those needs the hyphen kept and
+    the other needs it dropped, and nothing in the text says which - so neither is compared. A run of
+    sixteen characters with the spaces and hyphens taken out does not match by accident.
+
+    fold() maps one character to one character, so an index into the folded text is an index into the
+    input, and the map returned here carries that through the squeeze.
+    """
+    out, idx = [], []
+    for i, ch in enumerate(fold(text)):
+        if ch.isspace() or ch == "-":
+            continue
+        out.append(ch)
+        idx.append(i)
+    return "".join(out), idx
+
+
 def contains(flat, quote):
     """Where @p flat says @p quote, or -1.
 
@@ -134,18 +189,21 @@ def contains(flat, quote):
     document holds the string with the dots in. So the parts are matched in order, and a part too
     short to be a claim is skipped rather than searched for: "..." next to a comma finds anything.
     """
-    parts = [normalize(x) for x in re.split(r"\.\.\.+|\u2026", quote)]
-    parts = [x.strip(" ,;:") for x in parts]
-    parts = [x for x in parts if len(x) >= 8]
+    parts = []
+    for raw in re.split(r"\.\.\.+|\u2026", quote):
+        part, _ = squeeze(normalize(raw).strip(" ,;:"))
+        if len(part) >= 8:
+            parts.append(part)
     if not parts:
         return -1
-    first = flat.find(parts[0])
+    hay, idx = squeeze(flat)
+    first = hay.find(parts[0])
     at = first
     for part in parts[1:]:
         if at < 0:
             return -1
-        at = flat.find(part, at)
-    return first if at >= 0 else -1
+        at = hay.find(part, at)
+    return idx[first] if (at >= 0 and first >= 0) else -1
 
 
 def line_of(text, flat_index):
@@ -264,45 +322,76 @@ def cmd_audit(paths):
                     files.append(os.path.join(dirpath, name))
 
     flats = {}
-    checked = skipped = 0
+    checked = skipped = unpaired = 0
     bad = []
     for path in sorted(files):
+        # The RFC a stretch of file is about is often named on a banner above it rather than in the
+        # comment doing the quoting: "// --- RFC 3828 sec 3.5, Jumbograms ---" and then a case whose
+        # comment quotes sec 3.5 without naming the document again, because a reader four lines below
+        # the banner does not need telling twice. So a block's candidates carry forward.
+        recent = []
         for start, block in comment_blocks(path):
             flat_block = normalize(block)
             marks = [(m.start(), m.group(1)) for m in RFC_REF.finditer(flat_block)]
-            if not marks:
+            for _, ref in marks:
+                if ref in recent:
+                    recent.remove(ref)
+                recent.insert(0, ref)
+            del recent[6:]
+            if not marks and not recent:
                 skipped += len([q for q in QUOTED.findall(flat_block) if " " in q])
+                continue
+            # An odd number of marks means every pairing after the first is wrong, so the block is
+            # reported as unpaired rather than as a page of misquotes.
+            if flat_block.count('"') % 2 == 1:
+                unpaired += len([q for q in QUOTED.findall(flat_block) if " " in q])
                 continue
             for m in QUOTED.finditer(flat_block):
                 q = m.group(1)
                 if " " not in q:
                     continue
-                # The RFC named nearest before the quote owns it. A block here routinely cites three
-                # or four documents and quotes each in turn - "RFC 1213 udpInErrors is ..." after a
-                # sentence about RFC 768 - so taking the block's one RFC would either skip the block
-                # or blame the wrong document for every quote in it.
-                number = None
+                if NOT_A_QUOTATION.search(q):
+                    unpaired += 1
+                    continue
+                # Every RFC the block names is a candidate, nearest-before first because that is
+                # usually the one, and the quote is a finding only when NONE of them holds it. A
+                # block here routinely cites three or four documents and quotes each in turn, and a
+                # sentence about one MIB is regularly quoted beside the RFC that defines the message
+                # it counts - RFC 2466's ipv6IfIcmpInMsgs described next to RFC 4443's Code 1. Which
+                # of the two a quote belongs to is not on the line, and guessing it wrong reports a
+                # misquote that is not one. What this can still catch is the thing worth catching: a
+                # sentence that is in none of the documents the comment appeals to.
+                near = None
                 for at, ref in marks:
                     if at < m.start():
-                        number = ref
+                        near = ref
                     else:
                         break
-                if number is None:
+                cands = ([near] if near else []) + [r for _, r in marks if r != near]
+                cands += [r for r in recent if r not in cands]
+                if not cands:
                     skipped += 1
                     continue
-                if number not in flats:
-                    flats[number] = flatten(fetch(number))
                 checked += 1
-                if contains(flats[number], normalize(q)) < 0:
-                    bad.append((path, start, number, normalize(q)))
+                found = False
+                for number in cands:
+                    if number not in flats:
+                        flats[number] = flatten(fetch(number))
+                    if contains(flats[number], normalize(q)) >= 0:
+                        found = True
+                        break
+                if not found:
+                    bad.append((path, start, cands[0], normalize(q)))
 
     for path, line, number, q in bad:
-        print("%s:%d: RFC %s does not contain" % (path.replace(os.sep, "/"), line, number))
+        print("%s:%d: no RFC this comment cites contains (nearest is RFC %s)" % (path.replace(os.sep, "/"), line, number))
         print('    "%s"' % q)
     print("")
     print("%d quotes checked against %d RFCs, %d not found" % (checked, len(flats), len(bad)))
     if skipped:
         print("%d quotes with no RFC named before them, not checked" % skipped)
+    if unpaired:
+        print("%d in a comment whose quote marks do not pair, not checked" % unpaired)
     return 1 if bad else 0
 
 
