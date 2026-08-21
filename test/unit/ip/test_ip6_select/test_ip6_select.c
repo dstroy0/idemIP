@@ -1289,6 +1289,597 @@ void test_dest_rule9_sorts_the_same_pair_either_way_round(void)
 
 // Rule 10: "If DA preceded DB in the original list, prefer DA." Two identical destinations tie every
 // earlier rule, so the given order survives.
+// Rule 2: "If Scope(DA) = Scope(Source(DA)) and Scope(DB) <> Scope(Source(DB)), then prefer DA."
+// One destination matches the scope of the source it resolved to and the other does not, and which of
+// them arrives first decides nothing.
+void test_dest_rule2_sorts_the_same_pair_either_way_round(void)
+{
+    const Cand ll = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u), 0u, 0, 0, 0, 0, 0};
+    // The link-local destination is reached from the link-local source, so the scopes match; the
+    // global one is reached from the same source and they do not.
+    const Dest matched = {A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u), 0u, 0, 0};
+    const Dest crossed = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 9u), 0u, 0, 0};
+    sorts_either_order(&ll, NULL, &matched, &crossed);
+}
+
+// Rule 5: "Prefer matching label", either way round. Two policy rows on one precedence, so Rule 6
+// cannot decide the pair and Rule 5 is what is left.
+void test_dest_rule5_sorts_the_same_pair_either_way_round(void)
+{
+    for (int swapped = 0; swapped < 2; swapped++)
+    {
+        Ip6Select.clear(work_a);
+        Ip6SelectPolicyArgs *p = &IDEMIP_IP6_SELECT_IO(work_a)->policy_args;
+        p->prefix = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 0);
+        p->zone = 0u;
+        p->prefix_len = 48u;
+        p->precedence = 40u;
+        p->label = 11u;
+        Ip6Select.policy_set(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+        p->prefix = A(0x2001u, 0x0DB8u, 2u, 0, 0, 0, 0, 0);
+        p->zone = 0u;
+        p->prefix_len = 48u;
+        p->precedence = 40u;
+        p->label = 12u;
+        Ip6Select.policy_set(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+
+        const uint8_t *s_lab11 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+        src(work_a, s_lab11);
+        const uint8_t *win = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 9u);
+        const uint8_t *lose = A(0x2001u, 0x0DB8u, 2u, 0, 0, 0, 0, 9u);
+        dst(work_a, swapped ? win : lose);
+        dst(work_a, swapped ? lose : win);
+
+        Ip6Select.dest_sort(work_a);
+        sorted_is(work_a, 0u, win, s_lab11);
+        sorted_is(work_a, 1u, lose, s_lab11);
+    }
+}
+
+// Rule 6: "If Precedence(DA) > Precedence(DB), then prefer DA", either way round. Two policy rows on
+// one label, so Rule 5 cannot decide the pair.
+void test_dest_rule6_sorts_the_same_pair_either_way_round(void)
+{
+    for (int swapped = 0; swapped < 2; swapped++)
+    {
+        Ip6Select.clear(work_a);
+        Ip6SelectPolicyArgs *p = &IDEMIP_IP6_SELECT_IO(work_a)->policy_args;
+        p->prefix = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 0);
+        p->zone = 0u;
+        p->prefix_len = 48u;
+        p->precedence = 50u;
+        p->label = 7u;
+        Ip6Select.policy_set(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+        p->prefix = A(0x2001u, 0x0DB8u, 2u, 0, 0, 0, 0, 0);
+        p->zone = 0u;
+        p->prefix_len = 48u;
+        p->precedence = 20u;
+        p->label = 7u;
+        Ip6Select.policy_set(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+
+        const uint8_t *s6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u);
+        src(work_a, s6);
+        const uint8_t *high = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 9u);
+        const uint8_t *low = A(0x2001u, 0x0DB8u, 2u, 0, 0, 0, 0, 9u);
+        dst(work_a, swapped ? high : low);
+        dst(work_a, swapped ? low : high);
+
+        Ip6Select.dest_sort(work_a);
+        sorted_is(work_a, 0u, high, NULL);
+        sorted_is(work_a, 1u, low, NULL);
+    }
+}
+
+// Rule 8: "If Scope(DA) < Scope(DB), then prefer DA", either way round. Both destinations resolve to
+// the same source, so the rules that read Source(D) tie and the smaller scope is what is left.
+void test_dest_rule8_sorts_the_same_pair_either_way_round(void)
+{
+    for (int swapped = 0; swapped < 2; swapped++)
+    {
+        Ip6Select.clear(work_a);
+        // A link-local source and a global one on the same interface, so each destination has a
+        // source of its own scope and Rule 2 ties.
+        src(work_a, A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u));
+        src(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u));
+        const uint8_t *smaller = A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u);
+        const uint8_t *larger = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 9u);
+        dst(work_a, swapped ? smaller : larger);
+        dst(work_a, swapped ? larger : smaller);
+
+        Ip6Select.dest_sort(work_a);
+        sorted_is(work_a, 0u, smaller, NULL);
+        sorted_is(work_a, 1u, larger, NULL);
+    }
+}
+
+// RFC 6724 sec 5 rule 4 and sec 6 rule 4 both compare a home address against a care-of address, and
+// both say nothing about a pair that is alike: two addresses that are each simultaneously a home
+// address and a care-of address are equal under the rule, and so are two that are neither. What
+// decides them is a later rule, which is what "If a rule determines a result, then the remaining
+// rules are not relevant" leaves for the cases the rule does not determine.
+void test_rule4_decides_nothing_between_two_alike_sources(void)
+{
+    // Both simultaneously home and care-of, so the first half of the rule ties; rule 8's longest
+    // common prefix with the destination is what settles them.
+    const Cand near_both = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), 0u, 0, 0, 1, 1, 0};
+    const Cand far_both = {A(0x2001u, 0x0DB8u, 9u, 0, 0, 0, 0, 1u), 0u, 0, 0, 1, 1, 0};
+    wins_either_order(&near_both, &far_both, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 5u), 8u);
+
+    // One a home address alone and one neither, which is the other arm of the same sentence: a home
+    // address is preferred over a care-of address and over nothing in particular it is not.
+    const Cand home_far = {A(0x2001u, 0x0DB8u, 9u, 0, 0, 0, 0, 1u), 0u, 0, 0, 1, 0, 0};
+    const Cand plain_near = {A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u), 0u, 0, 0, 0, 0, 0};
+    wins_either_order(&plain_near, &home_far, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 5u), 8u);
+}
+
+// The sec 6 twin of the sec 5 case above: two destinations whose sources are alike under rule 4
+// decide nothing there, and a later rule settles them. Both sources are simultaneously a home address
+// and a care-of address, which is the mobile node "at home" for that address.
+void test_dest_rule4_decides_nothing_between_two_alike_sources(void)
+{
+    Ip6Select.clear(work_a);
+    // sec 4 confines a link-local destination's candidates to its own link, so each destination has
+    // exactly one source and sec 5 cannot settle the pair before sec 6 sees it.
+    src_add(work_a, A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u), 0u, 0, 0, 1, 1, 0);
+    src_add(work_a, A(0xFE80u, 0, 0, 0, 0, 0, 0, 3u), 1u, 0, 0, 1, 1, 0);
+    const uint8_t *first = A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u);
+    const uint8_t *second = A(0xFE80u, 0, 0, 0, 0, 0, 0, 0xAu);
+    dst_add(work_a, first, 0u, 0, 0);
+    dst_add(work_a, second, 1u, 0, 0);
+
+    Ip6Select.dest_sort(work_a);
+    // Nothing above rule 10 tells them apart, so the order they arrived in stands.
+    sorted_is(work_a, 0u, first, NULL);
+    sorted_is(work_a, 1u, second, NULL);
+}
+
+// The other arm of sec 6 rule 4's sentence: a home address is preferred over a care-of address, and
+// over a source that is neither it is not. Both pairs are read, so the rule's two tests each have a
+// case that fails if it is removed.
+void test_dest_rule4_prefers_home_over_care_of_and_not_over_neither(void)
+{
+    Ip6Select.clear(work_a);
+    src_add(work_a, A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u), 0u, 0, 0, 1, 0, 0); // home alone
+    src_add(work_a, A(0xFE80u, 0, 0, 0, 0, 0, 0, 3u), 1u, 0, 0, 0, 0, 0); // neither
+    const uint8_t *by_home = A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u);
+    const uint8_t *by_plain = A(0xFE80u, 0, 0, 0, 0, 0, 0, 0xAu);
+    dst_add(work_a, by_plain, 1u, 0, 0);
+    dst_add(work_a, by_home, 0u, 0, 0);
+
+    Ip6Select.dest_sort(work_a);
+    // The rule says nothing about home against neither, so rule 10 leaves them as they arrived.
+    sorted_is(work_a, 0u, by_plain, NULL);
+    sorted_is(work_a, 1u, by_home, NULL);
+}
+
+// sec 6 rule 1: "If DB is known to be unreachable or if Source(DB) is undefined, then prefer DA."
+// The second half is a destination with no candidate on its link at all, which sec 4 leaves without a
+// source, and it is a different thing from one flagged unreachable.
+void test_dest_rule1_avoids_a_destination_with_no_source_at_all(void)
+{
+    Ip6Select.clear(work_a);
+    const uint8_t *only = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
+    src_add(work_a, only, 0u, 0, 0, 0, 0, 0);
+
+    // The second destination is on an interface no candidate is on, so sec 4 finds it none.
+    const uint8_t *sourced = A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u);
+    const uint8_t *unsourced = A(0xFE80u, 0, 0, 0, 0, 0, 0, 0xAu);
+    dst_add(work_a, unsourced, 3u, 0, 0);
+    dst_add(work_a, sourced, 0u, 0, 0);
+
+    Ip6Select.dest_sort(work_a);
+    sorted_is(work_a, 0u, sourced, only);
+    sorted_is(work_a, 1u, unsourced, NULL);
+}
+
+// Every entry takes the address it works on as a pointer, and a caller can have none to give: an
+// option read out of a message that stopped short, a socket call with no address behind it. RFC 6724
+// keys every table and every rule on an address, so an entry given none has nothing to work on and
+// refuses rather than reading the sixteen octets that are not there.
+void test_every_entry_that_takes_an_address_refuses_a_null_one(void)
+{
+    Ip6Select.clear(work_a);
+    Ip6SelectIo *io = IDEMIP_IP6_SELECT_IO(work_a);
+
+    io->policy_args.prefix = NULL;
+    io->policy_args.zone = 0u;
+    io->policy_args.prefix_len = 48u;
+    io->policy_args.precedence = 40u;
+    io->policy_args.label = 1u;
+    Ip6Select.policy_set(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "policy_set keyed a row on no prefix");
+
+    io->query_args.addr = NULL;
+    io->query_args.zone = 0u;
+    Ip6Select.policy_lookup(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "policy_lookup looked under no address");
+
+    io->query_args.addr = NULL;
+    Ip6Select.scope_of(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "scope_of read the scope of no address");
+
+    io->source_args.addr = NULL;
+    io->source_args.netif = 0u;
+    Ip6Select.source_add(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "source_add held no address");
+
+    io->dest_args.addr = NULL;
+    io->dest_args.netif = 0u;
+    Ip6Select.dest_add(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "dest_add held no address");
+
+    io->query_args.addr = NULL;
+    io->query_args.peer = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 5u);
+    Ip6Select.source_select(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "source_select selected for no destination");
+}
+
+// RFC 6724 sec 3.1: "IPv4 addresses MUST be represented as IPv4-mapped addresses", and sec 2.1's
+// table gives ::ffff:0:0/96 a scope of its own reading: RFC 3927's 169.254/16 is link-local and
+// 127/8 is the loopback, so the mapped form of each carries the scope its IPv4 form has.
+void test_a_mapped_ipv4_link_local_address_has_link_local_scope(void)
+{
+    Ip6Select.clear(work_a);
+    Ip6SelectIo *io = IDEMIP_IP6_SELECT_IO(work_a);
+
+    io->query_args.addr = V4(169u, 254u, 13u, 78u);
+    io->query_args.zone = 0u;
+    Ip6Select.scope_of(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP6_SCOPE_LINK_LOCAL, (int)io->scope,
+                                  "a mapped 169.254/16 address is not link-local");
+
+    // 169.253 is not in that prefix, and neither is 170.254: both octets are read.
+    io->query_args.addr = V4(169u, 253u, 13u, 78u);
+    Ip6Select.scope_of(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP6_SCOPE_GLOBAL, (int)io->scope, "169.253/16 was taken as link-local");
+    io->query_args.addr = V4(170u, 254u, 13u, 78u);
+    Ip6Select.scope_of(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP6_SCOPE_GLOBAL, (int)io->scope, "170.254/16 was taken as link-local");
+}
+
+// sec 2.2: "the length of the longest prefix (looking at the most significant, or leftmost, bits)
+// that the two addresses have in common, up to the length of S's prefix (i.e., the portion of the
+// address not including the interface ID)". Two addresses that are the same have every bit in
+// common, and the length reported is still the cap, because the interface ID is not part of it.
+void test_the_common_prefix_of_an_address_with_itself_is_the_whole_prefix(void)
+{
+    Ip6Select.clear(work_a);
+    Ip6SelectIo *io = IDEMIP_IP6_SELECT_IO(work_a);
+    io->query_args.addr = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    io->query_args.peer = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    Ip6Select.common_prefix(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE((uint8_t)IDEMIP_IP6_SELECT_COMMON_PREFIX_MAX, io->common,
+                                    "an address matching itself reported fewer bits than the prefix has");
+}
+
+// sec 5 rule 1: "Prefer same address. If SA = D, then prefer SA." RFC 4007 sec 6 makes a non-global
+// address the same address only in the same zone, and reserves index zero to "use the default zone",
+// which matches whatever zone the other names. A link-local candidate equal to the destination is the
+// same address; the same octets in another zone are not.
+void test_rule1_reads_the_zone_of_a_non_global_address(void)
+{
+    const uint8_t *same = A(0xFE80u, 0, 0, 0, 0, 0, 0, 1u);
+    const uint8_t *other = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
+
+    // Both in zone 2, so rule 1 takes the one that is the destination.
+    Ip6Select.clear(work_a);
+    Ip6SelectSourceArgs *sa = &IDEMIP_IP6_SELECT_IO(work_a)->source_args;
+    sa->addr = same;
+    sa->zone = 2u;
+    sa->netif = 0u;
+    sa->deprecated = IDEMIP_FALSE;
+    sa->temporary = IDEMIP_FALSE;
+    sa->home = IDEMIP_FALSE;
+    sa->care_of = IDEMIP_FALSE;
+    sa->next_hop = IDEMIP_FALSE;
+    Ip6Select.source_add(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+    sa->addr = other;
+    sa->zone = 2u;
+    sa->netif = 0u;
+    Ip6Select.source_add(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+
+    Ip6SelectIo *io = IDEMIP_IP6_SELECT_IO(work_a);
+    io->query_args.addr = same;
+    io->query_args.zone = 2u;
+    io->query_args.peer = NULL;
+    io->query_args.netif = 0u;
+    Ip6Select.source_select(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(same, io->source, IDEMIP_IP6_ADDR_LEN, "rule 1 did not take the same address");
+    TEST_ASSERT_EQUAL_UINT8(1u, io->rule);
+
+    // The same octets in another zone are another address, so rule 1 has nothing to take and a later
+    // rule decides.
+    io->query_args.zone = 3u;
+    Ip6Select.source_select(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_NOT_EQUAL_UINT8_MESSAGE(1u, io->rule, "an address in another zone was taken as the same address");
+}
+
+// sec 4: "For site-local unicast destination addresses, the set of candidate source addresses MUST
+// only include addresses assigned to interfaces belonging to the same site as the outgoing
+// interface." RFC 4007 sec 5 leaves a site zone to be "defined and configured by network
+// administrators", so the index the caller supplies is what says which site, and index zero is the
+// default the same section reserves - which admits either side.
+void test_a_site_local_destination_takes_a_candidate_of_its_own_site(void)
+{
+    static const uint8_t site_d[IDEMIP_IP6_ADDR_LEN] = {0xFEu, 0xC0u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x09u};
+    static const uint8_t site_s[IDEMIP_IP6_ADDR_LEN] = {0xFEu, 0xC0u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02u};
+
+    Ip6Select.clear(work_a);
+    Ip6SelectSourceArgs *sa = &IDEMIP_IP6_SELECT_IO(work_a)->source_args;
+    sa->addr = site_s;
+    sa->zone = 5u;
+    sa->netif = 0u;
+    sa->deprecated = IDEMIP_FALSE;
+    sa->temporary = IDEMIP_FALSE;
+    sa->home = IDEMIP_FALSE;
+    sa->care_of = IDEMIP_FALSE;
+    sa->next_hop = IDEMIP_FALSE;
+    Ip6Select.source_add(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+
+    Ip6SelectIo *io = IDEMIP_IP6_SELECT_IO(work_a);
+    io->query_args.addr = site_d;
+    io->query_args.peer = NULL;
+    io->query_args.netif = 0u;
+
+    io->query_args.zone = 5u;
+    Ip6Select.source_select(work_a);
+    TEST_ASSERT_TRUE_MESSAGE(io->found, "a candidate in the destination's own site was refused");
+
+    io->query_args.zone = 6u;
+    Ip6Select.source_select(work_a);
+    TEST_ASSERT_FALSE_MESSAGE(io->found, "a candidate in another site was admitted");
+}
+
+// RFC 4007 sec 6 reserves zone index zero to "use the default zone", so an address left at it names
+// whatever zone the other side names. Both halves of the pair are read for it: a candidate at the
+// default index is the destination's address whatever zone the destination is in, and a destination
+// at the default index is matched by a candidate in any zone.
+void test_the_default_zone_index_matches_whatever_zone_the_other_names(void)
+{
+    static const uint8_t ll[IDEMIP_IP6_ADDR_LEN] = {0xFEu, 0x80u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01u};
+    static const struct
+    {
+        uint32_t src_zone;
+        uint32_t dst_zone;
+        const char *why;
+    } rows[] = {
+        {0u, 3u, "a candidate at the default index was not the destination's address"},
+        {3u, 0u, "a destination at the default index was not matched by a candidate in a zone"},
+        {3u, 3u, "the same zone on both sides was not the same address"},
+    };
+
+    for (size_t r = 0u; r < (sizeof rows / sizeof rows[0]); r++)
+    {
+        Ip6Select.clear(work_a);
+        Ip6SelectSourceArgs *sa = &IDEMIP_IP6_SELECT_IO(work_a)->source_args;
+        sa->addr = ll;
+        sa->zone = rows[r].src_zone;
+        sa->netif = 0u;
+        sa->deprecated = IDEMIP_FALSE;
+        sa->temporary = IDEMIP_FALSE;
+        sa->home = IDEMIP_FALSE;
+        sa->care_of = IDEMIP_FALSE;
+        sa->next_hop = IDEMIP_FALSE;
+        Ip6Select.source_add(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+        sa->addr = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
+        sa->zone = rows[r].src_zone;
+        sa->netif = 0u;
+        Ip6Select.source_add(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+
+        Ip6SelectIo *io = IDEMIP_IP6_SELECT_IO(work_a);
+        io->query_args.addr = ll;
+        io->query_args.zone = rows[r].dst_zone;
+        io->query_args.peer = NULL;
+        io->query_args.netif = 0u;
+        Ip6Select.source_select(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+        TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, io->rule, rows[r].why);
+    }
+}
+
+// The same reserved index on sec 4's site test: a site-local destination admits a candidate whose
+// zone is the default one, and a candidate admits a destination left at it.
+void test_a_site_local_destination_admits_a_candidate_at_the_default_zone(void)
+{
+    static const uint8_t site_d[IDEMIP_IP6_ADDR_LEN] = {0xFEu, 0xC0u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x09u};
+    static const uint8_t site_s[IDEMIP_IP6_ADDR_LEN] = {0xFEu, 0xC0u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02u};
+    static const struct
+    {
+        uint32_t src_zone;
+        uint32_t dst_zone;
+    } rows[] = {{0u, 6u}, {6u, 0u}};
+
+    for (size_t r = 0u; r < (sizeof rows / sizeof rows[0]); r++)
+    {
+        Ip6Select.clear(work_a);
+        Ip6SelectSourceArgs *sa = &IDEMIP_IP6_SELECT_IO(work_a)->source_args;
+        sa->addr = site_s;
+        sa->zone = rows[r].src_zone;
+        sa->netif = 0u;
+        sa->deprecated = IDEMIP_FALSE;
+        sa->temporary = IDEMIP_FALSE;
+        sa->home = IDEMIP_FALSE;
+        sa->care_of = IDEMIP_FALSE;
+        sa->next_hop = IDEMIP_FALSE;
+        Ip6Select.source_add(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
+
+        Ip6SelectIo *io = IDEMIP_IP6_SELECT_IO(work_a);
+        io->query_args.addr = site_d;
+        io->query_args.zone = rows[r].dst_zone;
+        io->query_args.peer = NULL;
+        io->query_args.netif = 0u;
+        Ip6Select.source_select(work_a);
+        TEST_ASSERT_TRUE_MESSAGE(io->found, "the default zone index refused a candidate on one side");
+    }
+}
+
+// sec 6 rule 1 reads "Source(DB) is undefined" of each destination on its own, so a pair that both
+// have none is a tie there, and rules 2 through 5 and rule 9 - which all read Source(D) - are the
+// ones sec 6 makes inapplicable. Both destinations below are link-local on an interface no candidate
+// is on, which sec 4 leaves without a source, and everything above rule 10 ties: the same precedence
+// under sec 2.1's ::/0 row, neither encapsulated, the same scope. Rule 10 is what is left: "If DA
+// preceded DB in the original list, prefer DA."
+void test_two_destinations_with_no_source_fall_through_to_the_original_order(void)
+{
+    Ip6Select.clear(work_a);
+    // A candidate on interface 0 alone, so neither destination has one on its link.
+    src(work_a, A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u));
+
+    const uint8_t *first = A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u);
+    const uint8_t *second = A(0xFE80u, 0, 0, 0, 0, 0, 0, 0xAu);
+    dst_add(work_a, first, 3u, 0, 0);
+    dst_add(work_a, second, 3u, 0, 0);
+
+    Ip6Select.dest_sort(work_a);
+    sorted_is(work_a, 0u, first, NULL);
+    sorted_is(work_a, 1u, second, NULL);
+}
+
+// sec 6 rule 9 applies "When DA and DB belong to the same address family (both are IPv6 or both are
+// IPv4)", so a pair that is one of each is not compared on their common prefixes at all, and rule 10
+// leaves them where they were.
+void test_rule9_does_not_compare_a_v4_destination_against_a_v6_one(void)
+{
+    Ip6Select.clear(work_a);
+    src(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u));
+    src(work_a, V4(192u, 0u, 2u, 1u));
+
+    // Same precedence and label under sec 2.1 would settle them; these differ in family alone as far
+    // as rule 9 is concerned, so a rule above it decides and rule 9 is passed over.
+    const uint8_t *v6 = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 9u);
+    const uint8_t *v4 = V4(192u, 0u, 2u, 9u);
+    dst(work_a, v4);
+    dst(work_a, v6);
+
+    Ip6Select.dest_sort(work_a);
+    // sec 2.1 gives ::/0 precedence 40 and ::ffff:0:0/96 precedence 35, so rule 6 is what decides.
+    sorted_is(work_a, 0u, v6, NULL);
+    sorted_is(work_a, 1u, v4, NULL);
+}
+
+// The tables are the borrow's, and they are finite. sec 2.1 keys a row on a prefix of an IPv6
+// address, so a length past IDEMIP_IP6_ADDR_BITS names more bits than there are; a destination list
+// with no room takes nothing more, and only clear empties it.
+void test_the_entries_refuse_what_no_retry_fixes(void)
+{
+    Ip6Select.clear(work_a);
+    Ip6SelectIo *io = IDEMIP_IP6_SELECT_IO(work_a);
+
+    io->policy_args.prefix = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 0);
+    io->policy_args.zone = 0u;
+    io->policy_args.prefix_len = (uint8_t)(IDEMIP_IP6_ADDR_BITS + 1u);
+    io->policy_args.precedence = 40u;
+    io->policy_args.label = 1u;
+    Ip6Select.policy_set(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "a prefix longer than an address was taken");
+
+    // sec 2.2's CommonPrefixLen takes two addresses, and either of them can be the one the caller has
+    // none of.
+    io->query_args.addr = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    io->query_args.peer = NULL;
+    Ip6Select.common_prefix(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "a common prefix was measured against nothing");
+    io->query_args.addr = NULL;
+    io->query_args.peer = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 1u);
+    Ip6Select.common_prefix(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "a common prefix was measured for nothing");
+
+    for (unsigned int i = 0u; i < (unsigned int)IDEMIP_IP6_SELECT_DESTS; i++)
+    {
+        dst(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, (uint16_t)(0x20u + i)));
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    }
+    io->dest_args.addr = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 0x99u);
+    io->dest_args.netif = 0u;
+    io->dest_args.zone = 0u;
+    io->dest_args.unreachable = IDEMIP_FALSE;
+    io->dest_args.encapsulated = IDEMIP_FALSE;
+    Ip6Select.dest_add(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "a full destination list took another one");
+}
+
+// sec 6 rule 10, "If DA preceded DB in the original list, prefer DA", read from both sides. A pair
+// that ties everywhere above it is decided by the places they came in at, and the sort compares the
+// entry it is looking at against the best it has found so far - which, once something has moved, is
+// not always the later of the two. Three destinations: the third beats both of the others on rule 1,
+// which moves it to the front, and the two that are left tie all the way down to rule 10.
+void test_rule10_is_read_from_both_sides_of_a_pair(void)
+{
+    Ip6Select.clear(work_a);
+    src(work_a, A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 2u));
+
+    const uint8_t *first = A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u);
+    const uint8_t *second = A(0xFE80u, 0, 0, 0, 0, 0, 0, 0xAu);
+    const uint8_t *sourced = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 9u);
+    dst_add(work_a, first, 3u, 0, 0);   // link-local on an interface no candidate is on
+    dst_add(work_a, second, 3u, 0, 0);  // the same, so the two of them tie
+    dst_add(work_a, sourced, 0u, 0, 0); // rule 1 puts this one in front of both
+
+    Ip6Select.dest_sort(work_a);
+    sorted_is(work_a, 0u, sourced, NULL);
+    sorted_is(work_a, 1u, first, NULL);
+    sorted_is(work_a, 2u, second, NULL);
+}
+
+// sec 6 rule 4's second sentence is written twice over - "If Source(DA) is just a home address and
+// Source(DB) is just a care-of address, then prefer DA. Similarly, if Source(DA) is just a care-of
+// address and Source(DB) is just a home address, then prefer DB" - and the pair is read from
+// whichever side the sort reaches first. A source that is neither is not a care-of address, so the
+// rule says nothing about it either way round.
+void test_dest_rule4_reads_its_pair_from_both_sides(void)
+{
+    for (int swapped = 0; swapped < 2; swapped++)
+    {
+        Ip6Select.clear(work_a);
+        src_add(work_a, A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u), 0u, 0, 0, 1, 0, 0); // home alone
+        src_add(work_a, A(0xFE80u, 0, 0, 0, 0, 0, 0, 3u), 1u, 0, 0, 0, 1, 0); // care-of alone
+        src_add(work_a, A(0xFE80u, 0, 0, 0, 0, 0, 0, 4u), 2u, 0, 0, 0, 0, 0); // neither
+
+        const uint8_t *by_home = A(0xFE80u, 0, 0, 0, 0, 0, 0, 9u);
+        const uint8_t *by_care = A(0xFE80u, 0, 0, 0, 0, 0, 0, 0xAu);
+        const uint8_t *by_plain = A(0xFE80u, 0, 0, 0, 0, 0, 0, 0xBu);
+        // The home one is put where the sort meets it second in one pass and first in the other.
+        dst_add(work_a, swapped ? by_home : by_plain, swapped ? 0u : 2u, 0, 0);
+        dst_add(work_a, by_care, 1u, 0, 0);
+        dst_add(work_a, swapped ? by_plain : by_home, swapped ? 2u : 0u, 0, 0);
+
+        Ip6Select.dest_sort(work_a);
+        // The home address is preferred over the care-of one wherever each of them came in.
+        Ip6SelectIo *io = IDEMIP_IP6_SELECT_IO(work_a);
+        uint8_t home_at = 0xFFu;
+        uint8_t care_at = 0xFFu;
+        for (uint8_t place = 0u; place < 3u; place++)
+        {
+            io->query_args.index = place;
+            Ip6Select.dest_at(work_a);
+            TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+            if (idemip_bytes_eq(io->dest, by_home, IDEMIP_IP6_ADDR_LEN))
+            {
+                home_at = place;
+            }
+            if (idemip_bytes_eq(io->dest, by_care, IDEMIP_IP6_ADDR_LEN))
+            {
+                care_at = place;
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(home_at < care_at, "a care-of address was preferred over a home address");
+    }
+}
+
 void test_dest_rule10_leaves_the_order_unchanged(void)
 {
     Ip6Select.clear(work_a);

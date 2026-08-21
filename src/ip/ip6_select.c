@@ -252,10 +252,16 @@ static uint8_t ip6_select_policy_find(uint8_t *work, const uint8_t *addr, uint32
 }
 
 // Precedence(A) of sec 2.1, and zero where no row matches.
+//
+// The no-row half is not measured, here and at Label(A) below and at the policy_lookup entry: clear
+// installs the sec 2.1 table, whose last row is ::/0 with "a longest-matching-prefix lookup" that
+// matches every address, and no entry removes a row. It is written because the table is the
+// caller's - sec 2.1 says an implementation "SHOULD support" configuring it, and a table configured
+// down to nothing would leave every lookup here.
 static uint8_t ip6_select_precedence(uint8_t *work, const uint8_t *addr, uint32_t zone)
 {
     uint8_t row = ip6_select_policy_find(work, addr, zone);
-    return (row == IDEMIP_IP6_SELECT_NONE) ? 0u : IP6_SELECT_POLICY_AT(work, row)->precedence;
+    return (row == IDEMIP_IP6_SELECT_NONE) ? 0u : IP6_SELECT_POLICY_AT(work, row)->precedence; // GCOVR_EXCL_BR_LINE
 }
 
 // Label(A) of sec 2.1. A row that matches nothing carries a label no row's label equals, so the two
@@ -263,7 +269,9 @@ static uint8_t ip6_select_precedence(uint8_t *work, const uint8_t *addr, uint32_
 static uint8_t ip6_select_label(uint8_t *work, const uint8_t *addr, uint32_t zone)
 {
     uint8_t row = ip6_select_policy_find(work, addr, zone);
-    return (row == IDEMIP_IP6_SELECT_NONE) ? IDEMIP_IP6_SELECT_NONE : IP6_SELECT_POLICY_AT(work, row)->label;
+    // Not measured, for the reason written at Precedence(A) above.
+    return (row == IDEMIP_IP6_SELECT_NONE) ? IDEMIP_IP6_SELECT_NONE                  // GCOVR_EXCL_BR_LINE
+                                           : IP6_SELECT_POLICY_AT(work, row)->label; // GCOVR_EXCL_BR_LINE
 }
 
 // RFC 4007 sec 5 re-uses a non-global address in different zones, so two equal addresses name the
@@ -380,10 +388,14 @@ static int ip6_select_cmp_source(uint8_t *work, uint8_t ia, uint8_t ib, const ui
     }
     if (!a_both)
     {
-        idemip_bool a_home = (sa->home && !sa->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE;
-        idemip_bool b_home = (sb->home && !sb->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE;
-        idemip_bool a_care = (sa->care_of && !sa->home) ? IDEMIP_TRUE : IDEMIP_FALSE;
-        idemip_bool b_care = (sb->care_of && !sb->home) ? IDEMIP_TRUE : IDEMIP_FALSE;
+        // "just a home address" and "just a care-of address" are each written as the pair the words
+        // say, and the second half of each pair is not measured: this arm is reached only when
+        // neither side is both, so an address that is a home address here is not also a care-of one
+        // and the test cannot come out false. a_both and b_both are equal by the return above.
+        idemip_bool a_home = (sa->home && !sa->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
+        idemip_bool b_home = (sb->home && !sb->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
+        idemip_bool a_care = (sa->care_of && !sa->home) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
+        idemip_bool b_care = (sb->care_of && !sb->home) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
         if (a_home && b_care)
         {
             return 1;
@@ -510,8 +522,13 @@ static int ip6_select_cmp_dest(uint8_t *work, uint8_t ia, uint8_t ib, uint8_t *r
     // only when "there is no source address available for destination D". The unreachable flag is
     // Rule 1's operand alone, and a tie there is broken by Rule 2 next: "If a rule determines a
     // result, then the remaining rules are not relevant and MUST be ignored."
-    idemip_bool sourced =
-        (da->source != IDEMIP_IP6_SELECT_NONE && db->source != IDEMIP_IP6_SELECT_NONE) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    // Not measured on the second half: rule 1 above returns when one of the two has a source and the
+    // other does not, so by here they either both have one or neither does, and the first test
+    // decides it. Both are written because the pair is what sec 6 makes the rules inapplicable for.
+    idemip_bool sourced = (da->source != IDEMIP_IP6_SELECT_NONE && // GCOVR_EXCL_BR_LINE
+                           db->source != IDEMIP_IP6_SELECT_NONE)   // GCOVR_EXCL_BR_LINE
+                              ? IDEMIP_TRUE
+                              : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
     if (sourced)
     {
         const Ip6SelectSource *sa = IP6_SELECT_SOURCE_AT(work, da->source);
@@ -546,10 +563,14 @@ static int ip6_select_cmp_dest(uint8_t *work, uint8_t ia, uint8_t ib, uint8_t *r
         }
         if (!a_both)
         {
-            idemip_bool a_home = (sa->home && !sa->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE;
-            idemip_bool b_home = (sb->home && !sb->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE;
-            idemip_bool a_care = (sa->care_of && !sa->home) ? IDEMIP_TRUE : IDEMIP_FALSE;
-            idemip_bool b_care = (sb->care_of && !sb->home) ? IDEMIP_TRUE : IDEMIP_FALSE;
+            // "just a home address" and "just a care-of address" are each written as the pair the words
+            // say, and the second half of each pair is not measured: this arm is reached only when
+            // neither side is both, so an address that is a home address here is not also a care-of one
+            // and the test cannot come out false. a_both and b_both are equal by the return above.
+            idemip_bool a_home = (sa->home && !sa->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
+            idemip_bool b_home = (sb->home && !sb->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
+            idemip_bool a_care = (sa->care_of && !sa->home) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
+            idemip_bool b_care = (sb->care_of && !sb->home) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
             if (a_home && b_care)
             {
                 return 1;
@@ -606,7 +627,11 @@ static int ip6_select_cmp_dest(uint8_t *work, uint8_t ia, uint8_t ib, uint8_t *r
     // Rule 9: "When DA and DB belong to the same address family (both are IPv6 or both are IPv4):
     // If CommonPrefixLen(Source(DA), DA) > CommonPrefixLen(Source(DB), DB), then prefer DA."
     *rule = 9u;
-    if (sourced && ip6_select_is_v4(da->addr) == ip6_select_is_v4(db->addr))
+    // The sourced half is not measured on its false arm from here: sec 6 states rule 9 over
+    // CommonPrefixLen(Source(D), D), so it needs both, and a pair with neither has already fallen to
+    // rule 10 below without anything between them deciding. It is written because the rule reads
+    // Source(D) and the pair may not have one.
+    if (sourced && ip6_select_is_v4(da->addr) == ip6_select_is_v4(db->addr)) // GCOVR_EXCL_BR_LINE
     {
         uint8_t ac = ip6_select_common_prefix(IP6_SELECT_SOURCE_AT(work, da->source)->addr, da->addr);
         uint8_t bc = ip6_select_common_prefix(IP6_SELECT_SOURCE_AT(work, db->source)->addr, db->addr);
@@ -727,7 +752,9 @@ void idemip_ip6_select_policy_lookup(uint8_t *work)
         return;
     }
     uint8_t row = ip6_select_policy_find(work, addr, io->query_args.zone);
-    if (row != IDEMIP_IP6_SELECT_NONE)
+    // Not measured, for the reason written at Precedence(A): the sec 2.1 table clear installs ends in
+    // a ::/0 row, and there is no entry that takes a row out of it.
+    if (row != IDEMIP_IP6_SELECT_NONE) // GCOVR_EXCL_BR_LINE
     {
         const Ip6SelectPolicy *p = IP6_SELECT_POLICY_AT(work, row);
         io->found = IDEMIP_TRUE;
