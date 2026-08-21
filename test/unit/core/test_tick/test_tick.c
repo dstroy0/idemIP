@@ -44,6 +44,10 @@ static _Alignas(8) uint8_t igmp_mem[IDEMIP_IGMP_BORROW];
 static _Alignas(8) uint8_t ip6_reass_mem[IDEMIP_IP6_REASS_BORROW];
 static _Alignas(8) uint8_t mld6_mem[IDEMIP_MLD6_BORROW];
 static _Alignas(8) uint8_t nd6_mem[IDEMIP_ND6_BORROW];
+#if IDEMIP_ENABLE_TCP
+static _Alignas(8) uint8_t tcp_pcb_mem[IDEMIP_TCP_PCB_BORROW];
+static _Alignas(8) uint8_t tcp_in_mem[IDEMIP_TCP_IN_BORROW];
+#endif
 #endif
 static _Alignas(8) uint8_t dma_mem[IDEMIP_DMA_BORROW];
 static _Alignas(8) uint8_t dma1_mem[IDEMIP_DMA_BORROW]; // the second interface's ring
@@ -181,6 +185,10 @@ static void wire_units(void)
     Ip6Reass.clear(ip6_reass_mem);
     Mld6.clear(mld6_mem);
     Nd6.clear(nd6_mem);
+#if IDEMIP_ENABLE_TCP
+    TcpPcb.clear(tcp_pcb_mem);
+    TcpIn.clear(tcp_in_mem);
+#endif
 #endif
     Timeouts.clear(timeouts_mem);
 
@@ -217,6 +225,10 @@ static void wire_units(void)
     di->bind_args.ip4_addr = ip4_addr_mem;
     di->bind_args.ip4_reass = ip4_reass_mem;
     di->bind_args.igmp = igmp_mem;
+#if IDEMIP_ENABLE_TCP
+    di->bind_args.tcp_pcb = tcp_pcb_mem;
+    di->bind_args.tcp_in = tcp_in_mem;
+#endif
 #if IDEMIP_ENABLE_IPV6
     di->bind_args.ip6_reass = ip6_reass_mem;
 #endif
@@ -326,6 +338,41 @@ static uint16_t fill_ip4(unsigned slot, uint32_t dst, uint16_t flags_frag)
 {
     return fill_ip4_id(slot, dst, flags_frag, 0x4242u);
 }
+
+#if IDEMIP_ENABLE_TCP
+// One TCP segment in a receive buffer, its checksum over the RFC 9293 sec 3.1 pseudo-header.
+static uint16_t fill_tcp(unsigned slot, uint32_t seq, uint32_t ack, uint8_t flags, uint16_t data_len)
+{
+    uint8_t *f = rx_buf_at(slot);
+    memset(f, 0, IDEMIP_DMA_BUF_STRIDE);
+    idemip_eth_build(f, g_local_mac, g_remote_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    IdemIpIp4Fields fields;
+    memset(&fields, 0, sizeof fields);
+    fields.total_len = (uint16_t)(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + IDEMIP_TCP_HDR_LEN + data_len);
+    fields.id = 0x4243u;
+    fields.ttl = TICK_TEST_TTL;
+    fields.proto = IDEMIP_IP4_PROTO_TCP;
+    fields.src = REMOTE_IP4;
+    fields.dst = LOCAL_IP4;
+    uint8_t *ip = f + IDEMIP_ETH_OFF_PAYLOAD;
+    idemip_ip4_build(ip, &fields);
+
+    uint8_t *seg = ip + IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_SRC_PORT, 5000u);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_DST_PORT, 5001u);
+    idemip_wr32(seg + IDEMIP_TCP_OFF_SEQ, seq);
+    idemip_wr32(seg + IDEMIP_TCP_OFF_ACK, ack);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_OFFS_FLAGS,
+                (uint16_t)(((uint16_t)IDEMIP_TCP_DOFF_MIN << IDEMIP_TCP_DOFF_SHIFT) | flags));
+    idemip_wr16(seg + IDEMIP_TCP_OFF_WINDOW, (uint16_t)IDEMIP_TCP_WND);
+    memset(seg + IDEMIP_TCP_HDR_LEN, 0x5A, data_len);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM, 0u);
+    idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM,
+                idemip_tcp_cksum_compute(seg, (size_t)IDEMIP_TCP_HDR_LEN + data_len, REMOTE_IP4, LOCAL_IP4));
+    return (uint16_t)(IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + IDEMIP_TCP_HDR_LEN +
+                      data_len);
+}
+#endif
 
 void setUp(void)
 {
@@ -1197,6 +1244,160 @@ void test_a_resolved_hold_is_reported_and_unpinned_one_step_later(void)
     TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(dma_mem)->pinned,
                                      "the pin outlived the step after the one that reported it");
 }
+
+// RFC 4861 sec 7.2.2 has a sender "retain a small queue of packets waiting for address resolution to
+// complete", and sec 7.3.3 deletes the entry when the solicitations go unanswered - which is when the
+// frames waiting behind it come back. The service phase is where that happens, and a report carrying
+// a length is one of them: the descriptor it names is held one step so the caller can read the frame,
+// exactly as the ARP queue's is.
+void test_a_frame_waiting_on_neighbor_discovery_comes_back_from_the_service_phase(void)
+{
+    give_the_interface_an_ipv6_address();
+
+    // A frame in a descriptor, pinned the way the send path pins one it is holding.
+    uint16_t len = fill_ip4(2u, LOCAL_IP4, 0u);
+    engine_queue(2u, len);
+    Dma.rx_take(dma_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(dma_mem)->status);
+    const uint8_t desc = IDEMIP_DMA_IO(dma_mem)->index;
+    IDEMIP_DMA_IO(dma_mem)->desc_args.index = desc;
+    Dma.pin(dma_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(dma_mem)->status);
+
+    // A neighbor whose address is still being resolved, with that frame queued behind it.
+    static const uint8_t unresolved[IDEMIP_IP6_ADDR_LEN] = {0xFEu, 0x80u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x77u};
+    Nd6Io *nd = IDEMIP_ND6_IO(nd6_mem);
+    nd->tick_args.now_ms = 1000u;
+    nd->neighbor_args.addr = unresolved;
+    nd->neighbor_args.lladdr = NULL;
+    nd->neighbor_args.state = IDEMIP_ND6_INCOMPLETE;
+    nd->neighbor_args.is_router = IDEMIP_FALSE;
+    nd->neighbor_args.solicited = IDEMIP_FALSE;
+    nd->neighbor_args.override = IDEMIP_FALSE;
+    Nd6.neighbor_set(nd6_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, nd->status);
+    const uint8_t neighbor = nd->neighbor;
+
+    nd->pending_args.neighbor = neighbor;
+    nd->pending_args.desc = IDEMIP_DISPATCH_DESC_HANDLE(0u, desc);
+    nd->pending_args.len = len;
+    Nd6.pending_push(nd6_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, nd->status);
+
+    // Past every deadline the queued frame has, so the sweep hands it back.
+    open_tick(work_a, 0xFFFFFu);
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.drain));
+    idemip_bool seen = IDEMIP_FALSE;
+    for (int i = 0; i < 64; i++)
+    {
+        Tick.service(work_a);
+        if (IDEMIP_TICK_IO(work_a)->status != IDEMIP_OK)
+        {
+            break;
+        }
+        if ((IDEMIP_TICK_IO(work_a)->unit == IDEMIP_TICK_UNIT_ND6) && (IDEMIP_TICK_IO(work_a)->len == len))
+        {
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(IDEMIP_DISPATCH_DESC_HANDLE(0u, desc), IDEMIP_TICK_IO(work_a)->desc,
+                                             "the report named another descriptor");
+            seen = IDEMIP_TRUE;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(seen, "the frame waiting on resolution never came back");
+
+    // Still pinned, which is what lets the caller read it; the step after this one drops that pin.
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(1u, IDEMIP_DMA_IO(dma_mem)->pinned,
+                                     "the reported frame was unpinned before the caller could read it");
+}
+
+#if IDEMIP_ENABLE_TCP
+
+// RFC 9293 sec 3.10.7.4 (MUST-58): "the processing of received segments MUST be implemented to
+// aggregate ACK segments whenever possible", and (MUST-59) "if the TCP endpoint is processing a
+// series of queued segments, it MUST process them all before sending any ACK segments." The batch is
+// the tick: dispatch records what each segment owed while the drain phase runs, and the flush phase
+// is where the one acknowledgment per connection goes out.
+void test_the_flush_phase_sends_the_acknowledgment_the_batch_aggregated(void)
+{
+    // A listener, and the handshake that puts a connection behind it.
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    uint8_t local[IDEMIP_TCP_PCB_ADDR_BYTES];
+    memset(local, 0, sizeof local);
+    idemip_wr32(local, LOCAL_IP4);
+    tp->listen_args.ip = local;
+    tp->listen_args.port = 5001u;
+    tp->listen_args.zone = 0u;
+    tp->listen_args.netif = 0u;
+    tp->listen_args.backlog = 2u;
+    tp->listen_args.ip_version = 4u;
+    TcpPcb.listen(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+
+    uint16_t len = fill_tcp(0u, 100u, 0u, (uint8_t)IDEMIP_TCP_SYN, 0u);
+    engine_queue(0u, len);
+    open_tick(work_a, 1000u);
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.drain));
+
+    const uint16_t pcb = IDEMIP_DISPATCH_IO(dispatch_mem)->pcb;
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_TCP, IDEMIP_DISPATCH_IO(dispatch_mem)->pcb_kind,
+                                  "the SYN reached no listener");
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_TCP_STATE_SYN_RECEIVED, tp->state);
+    const uint32_t iss = tp->vars.iss;
+    tp->vars.rcv_wnd = IDEMIP_TCP_WND;
+    tp->pcb_args.index = pcb;
+    TcpPcb.store(tcp_pcb_mem);
+
+    // The handshake's acknowledgment, then four octets of text: the text is what earns the
+    // aggregated acknowledgment the flush phase takes.
+    len = fill_tcp(0u, 101u, iss + 1u, (uint8_t)IDEMIP_TCP_ACK, 0u);
+    engine_queue(0u, len);
+    len = fill_tcp(1u, 101u, iss + 1u, (uint8_t)IDEMIP_TCP_ACK, 4u);
+    engine_queue(1u, len);
+    open_tick(work_a, 1001u);
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.drain));
+
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_TCP_STATE_ESTABLISHED, tp->state, "the handshake did not complete");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(105u, tp->vars.rcv_nxt, "the four octets of text were not taken");
+
+    // The phases run in order, so the service phase has to be run through before the flush is open.
+    (void)run_phase(work_a, Tick.service);
+
+    idemip_bool seen = IDEMIP_FALSE;
+    for (int i = 0; i < 32; i++)
+    {
+        Tick.flush(work_a);
+        if (IDEMIP_TICK_IO(work_a)->status != IDEMIP_OK)
+        {
+            break;
+        }
+        if (IDEMIP_TICK_IO(work_a)->unit == IDEMIP_TICK_UNIT_TCP_ACK)
+        {
+            seen = IDEMIP_TRUE;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(seen, "the acknowledgment the batch aggregated never went out");
+
+    // One per connection per batch: the flush has nothing left to take for it.
+    for (int i = 0; i < 32; i++)
+    {
+        Tick.flush(work_a);
+        if (IDEMIP_TICK_IO(work_a)->status != IDEMIP_OK)
+        {
+            break;
+        }
+        TEST_ASSERT_NOT_EQUAL_INT_MESSAGE(IDEMIP_TICK_UNIT_TCP_ACK, IDEMIP_TICK_IO(work_a)->unit,
+                                          "a second acknowledgment went out for the same batch");
+    }
+}
+
+#endif // IDEMIP_ENABLE_TCP
 
 // The flush phase reports its units in the fixed order too. A tick with nothing deferred reports no
 // step at all, so the order can only be seen on one that has work: a partial IPv4 datagram and a

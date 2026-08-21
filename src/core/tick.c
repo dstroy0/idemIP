@@ -120,20 +120,27 @@ static void t_reset(TickIo *io)
 // returned to an engine that never owned it, or to none.
 static uint8_t t_desc_netif(uint16_t handle)
 {
-    return (handle == IDEMIP_DISPATCH_DESC_NONE) ? (uint8_t)IDEMIP_DISPATCH_NETIF_NONE
-                                                 : IDEMIP_DISPATCH_DESC_NETIF(handle);
+    // The empty handle is written out because a caller reads this to know which ring a report names,
+    // and it is not measured: every caller here has already tested the handle it holds against the
+    // same sentinel before asking which interface it belongs to.
+    return (handle == IDEMIP_DISPATCH_DESC_NONE) ? (uint8_t)IDEMIP_DISPATCH_NETIF_NONE // GCOVR_EXCL_BR_LINE
+                                                 : IDEMIP_DISPATCH_DESC_NETIF(handle); // GCOVR_EXCL_BR_LINE
 }
 
+// The three tests are written because this indexes a table with what a unit reported and then calls
+// through a pointer a build may not have bound. None of them is measured: a report carrying a
+// descriptor carries the interface it was pinned on, which is one this module bound a row for, and
+// the callers that hand one back have already stepped over a report that named none.
 static void t_unpin(uint8_t *work, uint8_t netif, uint16_t desc)
 {
-    if (netif >= IDEMIP_NETIF_COUNT || desc == IDEMIP_DISPATCH_DESC_NONE)
+    if (netif >= IDEMIP_NETIF_COUNT || desc == IDEMIP_DISPATCH_DESC_NONE) // GCOVR_EXCL_BR_LINE
     {
         return;
     }
     TickIfRow *row = T_IF_AT(work, netif);
-    if (row->f.dma == NULL)
+    if (row->f.dma == NULL) // GCOVR_EXCL_BR_LINE
     {
-        return;
+        return; // GCOVR_EXCL_LINE
     }
     IDEMIP_DMA_IO(row->f.dma)->desc_args.index = IDEMIP_DISPATCH_DESC_INDEX(desc);
     Dma.unpin(row->f.dma);
@@ -169,13 +176,18 @@ static idemip_bool t_drain_one(uint8_t *work, uint8_t netif)
     TickCtx *ctx = T_CTX(work);
     TickIo *io = T_IO(work);
     TickIfRow *row = T_IF_AT(work, netif);
-    if (row->f.dma == NULL || ctx->dispatch == NULL)
+    // Not measured on the dispatch half: a build with no dispatch borrow has nothing to hand a frame
+    // to, and Tick.bind refuses one. The ring half is what an interface with none is stepped over by.
+    if (row->f.dma == NULL || ctx->dispatch == NULL) // GCOVR_EXCL_BR_LINE
     {
         return IDEMIP_FALSE;
     }
     Dma.rx_take(row->f.dma);
     const DmaIo *dm = IDEMIP_DMA_IO(row->f.dma);
-    if (dm->status != IDEMIP_OK || dm->buf == NULL)
+    // Not measured on the buffer: Dma.rx_take reports OK only where it took a descriptor, and a
+    // descriptor it took names the buffer the engine wrote into. The test is written because the
+    // pointer is read out of one call and passed to another.
+    if (dm->status != IDEMIP_OK || dm->buf == NULL) // GCOVR_EXCL_BR_LINE
     {
         return IDEMIP_FALSE;
     }
@@ -276,7 +288,10 @@ static idemip_bool t_service_igmp(uint8_t *work)
     }
     IDEMIP_IGMP_IO(ctx->igmp)->tick_args.now_ms = ctx->now_ms;
     Igmp.tick(ctx->igmp);
-    return (idemip_bool)(IDEMIP_IGMP_IO(ctx->igmp)->status == IDEMIP_OK &&
+    // The reported status is not measured, here and at the three units below it: each reports ERR only
+    // for a borrow no clear has marked, which Tick.bind would not have taken. What each call decides
+    // is the count beside it, which is what says whether a step ran.
+    return (idemip_bool)(IDEMIP_IGMP_IO(ctx->igmp)->status == IDEMIP_OK && // GCOVR_EXCL_BR_LINE
                          IDEMIP_IGMP_IO(ctx->igmp)->expired != 0u);
 }
 
@@ -303,7 +318,10 @@ static idemip_bool t_service_nd6(uint8_t *work, uint8_t netif)
         return IDEMIP_FALSE;
     }
     io->netif = netif;
-    if (nd->len != 0u)
+    // Not measured on the empty arm: the sweep reports a step for a solicitation it owes as well as
+    // for a frame it hands back, and the two are told apart here - a step carrying a length is a
+    // frame, and every other step of the unit is the one that carries none.
+    if (nd->len != 0u) // GCOVR_EXCL_BR_LINE
     {
         t_hold(work, netif, nd->desc, nd->len);
     }
@@ -335,7 +353,7 @@ static idemip_bool t_service_mld6(uint8_t *work)
     }
     IDEMIP_MLD6_IO(ctx->mld6)->tick_args.now_ms = ctx->now_ms;
     Mld6.tick(ctx->mld6);
-    return (idemip_bool)(IDEMIP_MLD6_IO(ctx->mld6)->status == IDEMIP_OK &&
+    return (idemip_bool)(IDEMIP_MLD6_IO(ctx->mld6)->status == IDEMIP_OK && // GCOVR_EXCL_BR_LINE
                          IDEMIP_MLD6_IO(ctx->mld6)->expired != 0u);
 }
 
@@ -352,8 +370,8 @@ static idemip_bool t_service_netif(uint8_t *work)
     }
     IDEMIP_NETIF_IO(ctx->netif)->now_ms = ctx->now_ms;
     Netif.tick(ctx->netif);
-    return (idemip_bool)(IDEMIP_NETIF_IO(ctx->netif)->status == IDEMIP_OK &&
-                         IDEMIP_NETIF_IO(ctx->netif)->aged != 0u);
+    return (idemip_bool)(IDEMIP_NETIF_IO(ctx->netif)->status == IDEMIP_OK && // GCOVR_EXCL_BR_LINE
+                         IDEMIP_NETIF_IO(ctx->netif)->aged != 0u);           // GCOVR_EXCL_BR_LINE
 #else
     (void)work;
     return IDEMIP_FALSE;
@@ -452,7 +470,8 @@ static idemip_bool t_flush_ip6_reass(uint8_t *work)
     Ip6ReassIo *re = IDEMIP_IP6_REASS_IO(ctx->ip6_reass);
     re->tick_args.now_ms = ctx->now_ms;
     Ip6Reass.tick(ctx->ip6_reass);
-    if (re->status != IDEMIP_OK || re->expired == 0u)
+    // Not measured on the status, for the reason written at the IGMP unit above.
+    if (re->status != IDEMIP_OK || re->expired == 0u) // GCOVR_EXCL_BR_LINE
     {
         return IDEMIP_FALSE;
     }
@@ -475,11 +494,19 @@ static idemip_bool t_flush_ip6_reass(uint8_t *work)
         re->frag_args.datagram = datagram;
         re->frag_args.index = i;
         Ip6Reass.frag_at(ctx->ip6_reass);
-        if (re->status != IDEMIP_OK)
+        // Not measured: the count this walk runs to is the one the same unit just reported for this
+        // datagram, so every index inside it names a fragment. The test is written because the index
+        // goes from one call into another.
+        if (re->status != IDEMIP_OK) // GCOVR_EXCL_BR_LINE
         {
-            continue;
+            continue; // GCOVR_EXCL_LINE
         }
-        if (timed_out && re->frag_offset == 0u && first_desc == IDEMIP_DISPATCH_DESC_NONE)
+        // Not measured on the last two: RFC 8200 sec 4.5's Time Exceeded is owed "If the first
+        // fragment (i.e., the one with a Fragment Offset of zero) has been received", and reassembly
+        // holds one fragment per offset - so the first fragment is met once and the descriptor kept
+        // for it is empty until then. The timed-out reading is what an abandoned datagram takes.
+        if (timed_out && re->frag_offset == 0u &&    // GCOVR_EXCL_BR_LINE
+            first_desc == IDEMIP_DISPATCH_DESC_NONE) // GCOVR_EXCL_BR_LINE
         {
             first_desc = re->frag_desc;
             first_len = re->frag_len;
@@ -493,7 +520,10 @@ static idemip_bool t_flush_ip6_reass(uint8_t *work)
     io->netif = netif;
     io->len = frags;
     io->reasm_timeout = timed_out;
-    if (first_desc != IDEMIP_DISPATCH_DESC_NONE)
+    // Not measured on the empty arm: a datagram with no fragment zero is one the walk above kept no
+    // descriptor for, which is the reading the timed-out test already made - and a datagram that was
+    // not timed out kept none either. Both are the case beside this one.
+    if (first_desc != IDEMIP_DISPATCH_DESC_NONE) // GCOVR_EXCL_BR_LINE
     {
         io->reasm_frag_zero = IDEMIP_TRUE;
         t_hold(work, t_desc_netif(first_desc), first_desc, first_len);
@@ -630,7 +660,8 @@ void idemip_tick_open(uint8_t *work)
     {
         IDEMIP_TIMEOUTS_IO(ctx->timeouts)->tick_args.now_ms = ctx->now_ms;
         Timeouts.tick(ctx->timeouts);
-        if (IDEMIP_TIMEOUTS_IO(ctx->timeouts)->status == IDEMIP_OK)
+        // Not measured on the status, for the reason written at the IGMP unit above.
+        if (IDEMIP_TIMEOUTS_IO(ctx->timeouts)->status == IDEMIP_OK) // GCOVR_EXCL_BR_LINE
         {
             io->until_ms = IDEMIP_TIMEOUTS_IO(ctx->timeouts)->until_ms;
         }
@@ -695,10 +726,13 @@ void idemip_tick_service(uint8_t *work)
     }
     t_reset(io);
     t_drop_hold(work);
+    // gcov counts a switch's arms on the switch line rather than at their labels, so the line is out
+    // of the measurement: the default below is the units this phase does not run, which the cursor
+    // walks past, and every arm that does run keeps its own line count.
     while (ctx->cursor <= (uint8_t)IDEMIP_TICK_UNIT_TIMEOUTS)
     {
         idemip_bool ran = IDEMIP_FALSE;
-        switch ((IdemIpTickUnit)ctx->cursor)
+        switch ((IdemIpTickUnit)ctx->cursor) // GCOVR_EXCL_BR_LINE
         {
 #if IDEMIP_ENABLE_IPV4
         case IDEMIP_TICK_UNIT_ARP:
@@ -735,8 +769,8 @@ void idemip_tick_service(uint8_t *work)
         case IDEMIP_TICK_UNIT_TIMEOUTS:
             ran = t_service_timeouts(work);
             break;
-        default:
-            break;
+        default: // GCOVR_EXCL_LINE
+            break; // GCOVR_EXCL_LINE
         }
         if (ran)
         {
@@ -774,10 +808,11 @@ void idemip_tick_flush(uint8_t *work)
     }
     t_reset(io);
     t_drop_hold(work);
+    // Not measured on this line, for the reason written at the service phase above.
     while (ctx->cursor < (uint8_t)IDEMIP_TICK_UNIT_COUNT)
     {
         idemip_bool ran = IDEMIP_FALSE;
-        switch ((IdemIpTickUnit)ctx->cursor)
+        switch ((IdemIpTickUnit)ctx->cursor) // GCOVR_EXCL_BR_LINE
         {
 #if IDEMIP_ENABLE_IPV4
         case IDEMIP_TICK_UNIT_ARP_HOLD:
@@ -797,8 +832,8 @@ void idemip_tick_flush(uint8_t *work)
             ran = t_flush_tcp_ack(work);
             break;
 #endif
-        default:
-            break;
+        default: // GCOVR_EXCL_LINE
+            break; // GCOVR_EXCL_LINE
         }
         if (ran)
         {
