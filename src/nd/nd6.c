@@ -283,8 +283,7 @@ static uint32_t nd6_lifetime_ms(uint32_t lifetime_s)
 // an advertised value from arming a deadline that reads as already passed.
 #define ND6_REACHABLE_MAX_MS (ND6_DEADLINE_MAX_MS / 3u)
 
-static_assert((uint64_t)(ND6_REACHABLE_MAX_MS >> 1) + (uint64_t)ND6_REACHABLE_MAX_MS <=
-                  (uint64_t)ND6_DEADLINE_MAX_MS,
+static_assert((uint64_t)(ND6_REACHABLE_MAX_MS >> 1) + (uint64_t)ND6_REACHABLE_MAX_MS <= (uint64_t)ND6_DEADLINE_MAX_MS,
               "a sec 6.3.2 ReachableTime draw must fit ND6_DEADLINE_MAX_MS milliseconds");
 
 static uint32_t nd6_draw_reachable(uint32_t base_ms, uint32_t rand_word)
@@ -376,8 +375,8 @@ static idemip_bool nd6_has_timer(const Nd6Neighbor *n)
 // RFC 4861 sec 5.2: with no entry for the next hop "the sender creates one, sets its state to
 // INCOMPLETE, initiates Address Resolution". A full cache reports IDEMIP_ND6_NONE, since sec 7.3.3
 // frees a slot as solicitations go unanswered.
-static uint8_t nd6_create_neighbor(uint8_t *work, const uint8_t *addr, const uint8_t *lladdr,
-                                   IdemIpNd6State state, idemip_bool is_router)
+static uint8_t nd6_create_neighbor(uint8_t *work, const uint8_t *addr, const uint8_t *lladdr, IdemIpNd6State state,
+                                   idemip_bool is_router)
 {
     Nd6Ctx *ctx = ND6_CTX(work);
     for (uint8_t i = 0u; i < ND6_NEIGHBORS; i++)
@@ -445,7 +444,11 @@ static void nd6_pending_unlink(uint8_t *work, uint8_t ni, uint8_t pi)
         return;
     }
     uint8_t t = n->pending_head;
-    while (t < ND6_PENDINGS)
+    // Not measured where the walk runs out: a queue holds frames drawn from a table of ND6_PENDINGS,
+    // each on one neighbor's queue at a time, so the entry being taken off is on this one and the
+    // walk leaves through the return above. The bound is written because the walk is over next
+    // fields a caller's borrow holds, and one that cannot end is one that hangs.
+    while (t < ND6_PENDINGS) // GCOVR_EXCL_BR_LINE
     {
         Nd6Pending *q = ND6_PENDING_AT(work, t);
         if (q->next == pi)
@@ -466,7 +469,11 @@ static void nd6_release_pending(uint8_t *work, uint8_t pi)
     Nd6Ctx *ctx = ND6_CTX(work);
     Nd6Pending *p = ND6_PENDING_AT(work, pi);
     uint8_t ni = p->neighbor;
-    if (ni < ND6_NEIGHBORS)
+    // Not measured on the empty arm: idemip_nd6_pending_push holds the neighbor against the cache
+    // count before it takes a slot, and the slot carries that index until it is released here. It is
+    // written because the index is what the unlink is given, and unlinking from a neighbor that is
+    // not there would walk a queue that is not there.
+    if (ni < ND6_NEIGHBORS) // GCOVR_EXCL_BR_LINE
     {
         nd6_pending_unlink(work, ni, pi);
     }
@@ -480,7 +487,11 @@ static void nd6_release_pending(uint8_t *work, uint8_t pi)
     p->desc = 0u;
     p->len = 0u;
     p->deadline_ms = 0u;
-    if (ctx->pendings != 0u)
+    // Not measured on the empty arm: the count rises with the queued frame that is being given back
+    // here, so it cannot be at zero while one is in hand. It is written because the count is what
+    // the entries read to report a table as full, and a count that wrapped would report every one
+    // of them full.
+    if (ctx->pendings != 0u) // GCOVR_EXCL_BR_LINE
     {
         ctx->pendings--;
     }
@@ -501,7 +512,11 @@ static void nd6_drop_destinations_via(uint8_t *work, uint8_t ni)
         {
             d->used = IDEMIP_FALSE;
             d->neighbor = IDEMIP_ND6_NONE;
-            if (ctx->destinations != 0u)
+            // Not measured on the empty arm: the count rises with the destination that is being given back
+            // here, so it cannot be at zero while one is in hand. It is written because the count is what
+            // the entries read to report a table as full, and a count that wrapped would report every one
+            // of them full.
+            if (ctx->destinations != 0u) // GCOVR_EXCL_BR_LINE
             {
                 ctx->destinations--;
             }
@@ -518,7 +533,11 @@ static void nd6_drop_router(uint8_t *work, uint8_t ri)
     r->invalidate_ms = 0u;
     r->neighbor = IDEMIP_ND6_NONE;
     memset(r->addr, 0, IDEMIP_IP6_ADDR_LEN);
-    if (ctx->routers != 0u)
+    // Not measured on the empty arm: the count rises with the router that is being given back
+    // here, so it cannot be at zero while one is in hand. It is written because the count is what
+    // the entries read to report a table as full, and a count that wrapped would report every one
+    // of them full.
+    if (ctx->routers != 0u) // GCOVR_EXCL_BR_LINE
     {
         ctx->routers--;
     }
@@ -559,7 +578,11 @@ static void nd6_free_neighbor(uint8_t *work, uint8_t ni)
     nd6_drop_router_of(work, ni);
     memset(n, 0, sizeof *n);
     n->pending_head = IDEMIP_ND6_NONE;
-    if (ctx->neighbors != 0u)
+    // Not measured on the empty arm: the count rises with the neighbor that is being given back
+    // here, so it cannot be at zero while one is in hand. It is written because the count is what
+    // the entries read to report a table as full, and a count that wrapped would report every one
+    // of them full.
+    if (ctx->neighbors != 0u) // GCOVR_EXCL_BR_LINE
     {
         ctx->neighbors--;
     }
@@ -1041,7 +1064,11 @@ void idemip_nd6_prefix_on_link(uint8_t *work)
     for (uint8_t i = 0u; i < ND6_PREFIXES; i++)
     {
         const Nd6Prefix *p = ND6_PREFIX_AT(work, i);
-        if (!p->used || !p->on_link)
+        // Not measured on the flag: sec 6.3.4's Prefix List procedure is scoped to options with the
+        // L flag set, so idemip_nd6_prefix_set stores nothing for one without it and every entry on
+        // the list is on-link. It is written because the flag is what the entry carries and the list
+        // is what this answers from.
+        if (!p->used || !p->on_link) // GCOVR_EXCL_BR_LINE
         {
             continue;
         }
@@ -1214,9 +1241,13 @@ void idemip_nd6_router_select(uint8_t *work)
             continue;
         }
         const Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, r->neighbor);
-        if (!n->used)
+        // Not measured on the empty arm: nd6_drop_neighbor drops the router that named the neighbor
+        // it is dropping, so a router in the list names an entry that is there. It is written
+        // because the index is read out of the router and used to reach a neighbor, and an index is
+        // not a statement that one is there.
+        if (!n->used) // GCOVR_EXCL_BR_LINE
         {
-            continue;
+            continue; // GCOVR_EXCL_LINE
         }
         if (n->state == IDEMIP_ND6_REACHABLE)
         {
@@ -1254,7 +1285,8 @@ void idemip_nd6_router_select(uint8_t *work)
     const Nd6Router *sel = ND6_ROUTER_AT(work, probable);
     uint8_t ni = sel->neighbor;
     io->router = probable;
-    if (ni < ND6_NEIGHBORS && ND6_NEIGHBOR_AT(work, ni)->used)
+    // Not measured on the second, for the reason written at the walk above.
+    if (ni < ND6_NEIGHBORS && ND6_NEIGHBOR_AT(work, ni)->used) // GCOVR_EXCL_BR_LINE
     {
         io->next_hop = ND6_NEIGHBOR_AT(work, ni)->addr;
         nd6_report_neighbor(work, ni);
@@ -1442,7 +1474,11 @@ static void nd6_sweep(uint8_t *work)
         if (p->used && !p->infinite && nd6_due(now, p->invalidate_ms))
         {
             memset(p, 0, sizeof *p);
-            if (ctx->prefixes != 0u)
+            // Not measured on the empty arm: the count rises with the prefix that is being given back
+            // here, so it cannot be at zero while one is in hand. It is written because the count is what
+            // the entries read to report a table as full, and a count that wrapped would report every one
+            // of them full.
+            if (ctx->prefixes != 0u) // GCOVR_EXCL_BR_LINE
             {
                 ctx->prefixes--;
             }
@@ -1471,7 +1507,11 @@ static void nd6_sweep(uint8_t *work)
         {
             d->used = IDEMIP_FALSE;
             d->neighbor = IDEMIP_ND6_NONE;
-            if (ctx->destinations != 0u)
+            // Not measured on the empty arm: the count rises with the destination that is being given back
+            // here, so it cannot be at zero while one is in hand. It is written because the count is what
+            // the entries read to report a table as full, and a count that wrapped would report every one
+            // of them full.
+            if (ctx->destinations != 0u) // GCOVR_EXCL_BR_LINE
             {
                 ctx->destinations--;
             }

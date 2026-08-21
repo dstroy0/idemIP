@@ -137,7 +137,8 @@ void test_clear_on_one_borrow_leaves_the_other_untouched(void)
 void test_the_published_offsets_are_ordered_and_do_not_overlap(void)
 {
     TEST_ASSERT_EQUAL_size_t(0u, (size_t)IDEMIP_ND6_OFF_IO);
-    TEST_ASSERT_TRUE_MESSAGE((size_t)IDEMIP_ND6_OFF_CTX >= sizeof(Nd6Io), "the context starts inside the operand block");
+    TEST_ASSERT_TRUE_MESSAGE((size_t)IDEMIP_ND6_OFF_CTX >= sizeof(Nd6Io),
+                             "the context starts inside the operand block");
     TEST_ASSERT_TRUE_MESSAGE(TABLE_OFF >= (size_t)IDEMIP_ND6_OFF_CTX, "the neighbor cache starts before the context");
     TEST_ASSERT_EQUAL_size_t(TABLE_OFF + ((size_t)IDEMIP_ND6_NUM_NEIGHBORS << IDEMIP_ND6_NEIGHBOR_ENTRY_SHIFT),
                              (size_t)IDEMIP_ND6_OFF_DESTINATIONS);
@@ -150,9 +151,8 @@ void test_the_published_offsets_are_ordered_and_do_not_overlap(void)
     TEST_ASSERT_EQUAL_size_t((size_t)IDEMIP_ND6_OFF_ROUTERS +
                                  ((size_t)IDEMIP_ND6_NUM_ROUTERS << IDEMIP_ND6_ROUTER_ENTRY_SHIFT),
                              (size_t)IDEMIP_ND6_OFF_PENDING);
-    TEST_ASSERT_EQUAL_size_t((size_t)IDEMIP_ND6_OFF_PENDING +
-                                 ((size_t)IDEMIP_ND6_PENDING << IDEMIP_ND6_PENDING_ENTRY_SHIFT),
-                             STATE_END);
+    TEST_ASSERT_EQUAL_size_t(
+        (size_t)IDEMIP_ND6_OFF_PENDING + ((size_t)IDEMIP_ND6_PENDING << IDEMIP_ND6_PENDING_ENTRY_SHIFT), STATE_END);
     TEST_ASSERT_TRUE_MESSAGE(STATE_END <= (size_t)IDEMIP_ND6_BORROW, "the map runs past IDEMIP_ND6_BORROW");
 }
 
@@ -544,8 +544,7 @@ void test_an_l_clear_option_does_not_cancel_an_on_link_indication(void)
     // The same prefix with L clear, which sec 6.3.4 calls a normal configuration.
     pfx_set(work_a, g_pfx64, 64u, 1800u, F);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
-    TEST_ASSERT_TRUE_MESSAGE(on_link_of(work_a, g_in64),
-                             "an L=0 option cancelled a previous on-link indication");
+    TEST_ASSERT_TRUE_MESSAGE(on_link_of(work_a, g_in64), "an L=0 option cancelled a previous on-link indication");
 
     // The way that is cancelled: L set with the Lifetime zero, which sets the entry's invalidation
     // timer to now and the sec 6.3.5 sweep then discards it.
@@ -611,8 +610,7 @@ void test_dropping_a_default_router_leaves_is_router_alone(void)
     IDEMIP_ND6_IO(work_a)->neighbor_args.addr = g_addr_a;
     Nd6.neighbor_find(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
-    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_ND6_IO(work_a)->is_router,
-                             "leaving the Default Router List cleared IsRouter");
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_ND6_IO(work_a)->is_router, "leaving the Default Router List cleared IsRouter");
 }
 
 static void push(uint8_t *w, uint8_t neighbor, uint16_t desc, uint16_t len)
@@ -1147,8 +1145,7 @@ void test_a_created_entry_takes_the_state_the_caller_names(void)
 
     nb_set(work_a, g_addr_b, NULL, IDEMIP_ND6_INCOMPLETE, F, F, F);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ND6_INCOMPLETE, nb_state(work_a, g_addr_b));
-    TEST_ASSERT_NULL_MESSAGE(IDEMIP_ND6_IO(work_a)->lladdr,
-                             "sec 7.3.2 INCOMPLETE has no link-layer address to report");
+    TEST_ASSERT_NULL_MESSAGE(IDEMIP_ND6_IO(work_a)->lladdr, "sec 7.3.2 INCOMPLETE has no link-layer address to report");
 }
 
 // RFC 4861 sec 7.2.5 on an INCOMPLETE entry: "If the advertisement's Solicited flag is set, the state
@@ -2245,3 +2242,267 @@ void test_a_router_advertised_from_a_link_local_address_names_one(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
 }
 
+// --- the operands the tables cannot take ---------------------------------------
+
+// Every entry that names a row by index reads that index out of the operand block and uses it to
+// reach one, so each holds it against its own table's count first. RFC 4861 sec 7.3.2 gives a
+// neighbor one of five states and no more, and a frame of no octets is not a frame to queue.
+void test_the_entries_refuse_an_index_past_a_table_and_a_state_with_no_name(void)
+{
+    Nd6.clear(work_a);
+
+    IDEMIP_ND6_IO(work_a)->neighbor_args.addr = g_addr_a;
+    IDEMIP_ND6_IO(work_a)->neighbor_args.lladdr = g_lladdr;
+    IDEMIP_ND6_IO(work_a)->neighbor_args.state = (uint8_t)(IDEMIP_ND6_PROBE + 1u);
+    IDEMIP_ND6_IO(work_a)->neighbor_args.is_router = IDEMIP_FALSE;
+    Nd6.neighbor_set(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status,
+                                  "a neighbor took a state sec 7.3.2 does not name");
+
+    IDEMIP_ND6_IO(work_a)->neighbor_args.index = (uint8_t)IDEMIP_ND6_NUM_NEIGHBORS;
+    Nd6.neighbor_confirm(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status,
+                                  "neighbor_confirm took an index past the cache");
+    Nd6.neighbor_used(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status,
+                                  "neighbor_used took an index past the cache");
+    Nd6.neighbor_remove(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status,
+                                  "neighbor_remove took an index past the cache");
+
+    IDEMIP_ND6_IO(work_a)->pending_args.neighbor = (uint8_t)IDEMIP_ND6_NUM_NEIGHBORS;
+    IDEMIP_ND6_IO(work_a)->pending_args.desc = 7u;
+    IDEMIP_ND6_IO(work_a)->pending_args.len = 64u;
+    Nd6.pending_push(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status,
+                                  "a frame was queued on a neighbor past the cache");
+    Nd6.pending_pop(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status,
+                                  "a frame was taken off a neighbor past the cache");
+
+    // And a frame of no octets is not a frame: sec 7.2.2 queues "the packet" while resolution runs,
+    // and there is no packet here to send when it finishes.
+    const uint8_t ni = nb_set(work_a, g_addr_a, NULL, IDEMIP_ND6_INCOMPLETE, F, F, F);
+    TEST_ASSERT_NOT_EQUAL_UINT8(IDEMIP_ND6_NONE, ni);
+    IDEMIP_ND6_IO(work_a)->pending_args.neighbor = ni;
+    IDEMIP_ND6_IO(work_a)->pending_args.desc = 7u;
+    IDEMIP_ND6_IO(work_a)->pending_args.len = 0u;
+    Nd6.pending_push(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status, "a frame of no octets was queued");
+}
+
+// RFC 4861 sec 6.3.4: "The RetransTimer variable SHOULD be copied from the Retrans Timer field, if
+// the received value is non-zero", and ReachableTime is drawn from the Reachable Time the router
+// advertised where that is non-zero too. The default of sec 10 stands until a router names one.
+void test_a_router_advertised_reachable_time_replaces_the_default(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 1000u);
+
+    IDEMIP_ND6_IO(work_a)->params_args.reachable_time_ms = 200000u;
+    IDEMIP_ND6_IO(work_a)->params_args.retrans_timer_ms = 0u;
+    IDEMIP_ND6_IO(work_a)->params_args.link_mtu = 0u;
+    IDEMIP_ND6_IO(work_a)->params_args.cur_hop_limit = 0u;
+    IDEMIP_ND6_IO(work_a)->params_args.rand = 0u;
+    IDEMIP_ND6_IO(work_a)->params_args.managed = IDEMIP_FALSE;
+    IDEMIP_ND6_IO(work_a)->params_args.other = IDEMIP_FALSE;
+    Nd6.params_set(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    // The neighbor is stamped with the time in force when it became reachable.
+    const uint8_t ni = nb_set(work_a, g_addr_a, g_lladdr, IDEMIP_ND6_REACHABLE, F, T, T);
+    TEST_ASSERT_NOT_EQUAL_UINT8(IDEMIP_ND6_NONE, ni);
+
+    // sec 7.3.3: a REACHABLE neighbor goes STALE once ReachableTime has passed since the last
+    // confirmation. sec 6.3.2 draws that time as a factor of the base, "MIN_RANDOM_FACTOR" to
+    // "MAX_RANDOM_FACTOR", so half of the base is the soonest it can come - and half of this base is
+    // still well past the default the neighbor would otherwise have gone STALE at.
+    at(work_a, 1000u + (uint32_t)IDEMIP_ND6_REACHABLE_TIME_MS + 1u);
+    Nd6.tick(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ND6_REACHABLE, nb_state(work_a, g_addr_a),
+                                  "the advertised base did not replace the default");
+
+    // Past the base at its largest factor, it has gone.
+    at(work_a, 1000u + (3u * 200000u));
+    Nd6.tick(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ND6_STALE, nb_state(work_a, g_addr_a),
+                                  "the advertised base was not applied at all");
+}
+
+// RFC 4861 sec 4.6.2 on the L flag: "When not set the advertisement makes no statement about on-link
+// or off-link properties of the prefix." So a Prefix Information option without it neither puts an
+// address on-link nor takes it off, and the one with it is what the on-link test answers from.
+void test_a_prefix_advertised_without_the_on_link_flag_puts_nothing_on_link(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 1000u);
+
+    pfx_set(work_a, g_pfx64, 64u, 3600u, IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(on_link_of(work_a, g_in64),
+                              "a prefix advertised with the on-link flag clear put an address on-link");
+
+    // The same prefix advertised with the flag does.
+    pfx_set(work_a, g_pfx64, 64u, 3600u, IDEMIP_TRUE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_TRUE(on_link_of(work_a, g_in64));
+}
+
+// RFC 4861 sec 6.3.6 (1): "Routers that are reachable or probably reachable (i.e., in any state
+// other than INCOMPLETE) SHOULD be preferred over routers whose reachability is unknown or suspect",
+// and (2): where none of them is known to be either, "routers SHOULD be selected in a round-robin
+// fashion, so that subsequent requests for a default router do not return the same router until all
+// other routers have been selected". The walk keeps the first probable router it meets rather than
+// the last, and the round-robin starts where the last selection left off.
+void test_the_selection_keeps_the_first_probable_router_and_the_round_robin_wraps(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 1000u);
+
+    // Two routers, neither reachable and neither incomplete: both are probable, and the walk keeps
+    // the one it met first.
+    rtr_set_ll(work_a, g_addr_a, g_lladdr, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    rtr_set_ll(work_a, g_addr_b, g_lladdr2, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    Nd6.router_select(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    const uint8_t first = IDEMIP_ND6_IO(work_a)->router;
+    Nd6.router_select(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(first, IDEMIP_ND6_IO(work_a)->router,
+                                    "the walk did not keep the first probable router it met");
+
+    // With neither of them probable, the round-robin takes them in turn and comes back round to the
+    // start. sec 4.2 lets an advertisement leave the Source Link-Layer Address out, and a router
+    // with no Neighbor Cache entry behind it is a router nothing is known about.
+    Nd6.clear(work_a);
+    at(work_a, 1000u);
+    rtr_set(work_a, g_addr_a, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    rtr_set(work_a, g_addr_b, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    uint8_t seen[2] = {IDEMIP_ND6_NONE, IDEMIP_ND6_NONE};
+    for (unsigned k = 0; k < 2u; k++)
+    {
+        Nd6.router_select(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+        seen[k] = IDEMIP_ND6_IO(work_a)->router;
+    }
+    TEST_ASSERT_NOT_EQUAL_UINT8_MESSAGE(seen[0], seen[1], "the round-robin handed back the same router twice");
+
+    // A third turn is the first one again: the cursor wrapped rather than running off the list.
+    Nd6.router_select(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(seen[0], IDEMIP_ND6_IO(work_a)->router,
+                                    "the round-robin did not come back round to where it started");
+}
+
+// RFC 4861 sec 6.3.6 (2) has a request for a default router not "return the same router until all
+// other routers have been selected", so the cursor the last selection left off at comes back round
+// to the start once it reaches the end of the list rather than running past it.
+void test_the_round_robin_comes_back_round_from_the_last_router_in_the_list(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 1000u);
+
+    // As many routers as the list holds, none of them with a Neighbor Cache entry behind it.
+    uint8_t addr[IDEMIP_ND6_NUM_ROUTERS][IDEMIP_IP6_ADDR_LEN];
+    for (uint8_t k = 0u; k < (uint8_t)IDEMIP_ND6_NUM_ROUTERS; k++)
+    {
+        memcpy(addr[k], g_addr_a, IDEMIP_IP6_ADDR_LEN);
+        addr[k][IDEMIP_IP6_ADDR_LEN - 1u] = (uint8_t)(0x10u + k);
+        rtr_set(work_a, addr[k], 1800u);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    }
+
+    // One turn each, and the turn after the last is the first again.
+    uint8_t first = IDEMIP_ND6_NONE;
+    for (uint8_t k = 0u; k < (uint8_t)IDEMIP_ND6_NUM_ROUTERS; k++)
+    {
+        Nd6.router_select(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+        if (k == 0u)
+        {
+            first = IDEMIP_ND6_IO(work_a)->router;
+        }
+    }
+    Nd6.router_select(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(first, IDEMIP_ND6_IO(work_a)->router,
+                                    "the cursor did not come back round from the end of the list");
+}
+
+// RFC 4861 sec 6.3.6 (1) counts a router as probably reachable when its neighbor is "in any state
+// other than INCOMPLETE", so a router whose address resolution is still running is one whose
+// "reachability is unknown or suspect" - the round-robin is what reaches it.
+void test_a_router_whose_neighbor_is_incomplete_is_not_a_probable_one(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 1000u);
+
+    // The address resolution for this router is still running.
+    const uint8_t ni = nb_set(work_a, g_addr_b, NULL, IDEMIP_ND6_INCOMPLETE, T, F, F);
+    TEST_ASSERT_NOT_EQUAL_UINT8(IDEMIP_ND6_NONE, ni);
+    rtr_set(work_a, g_addr_b, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    // It is still selected - it is the only default router there is - but through the round-robin,
+    // not because anything is known about it.
+    Nd6.router_select(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_NOT_EQUAL_UINT8(IDEMIP_ND6_NONE, IDEMIP_ND6_IO(work_a)->router);
+}
+
+// RFC 4861 sec 5.1: a Destination Cache entry names "the next-hop neighbor", and sec 5.2 says the
+// next hop for an on-link destination is the destination itself - which nothing has resolved yet. An
+// entry with no neighbor behind it is left alone by the sweep that clears entries whose neighbor has
+// gone: there is none to have gone.
+void test_a_destination_with_no_neighbor_behind_it_survives_the_sweep(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 1000u);
+
+    Nd6Io *io = IDEMIP_ND6_IO(work_a);
+    io->dest_args.dst = g_in64;
+    io->dest_args.next_hop = g_in64;
+    io->dest_args.pmtu = 0u;
+    io->dest_args.neighbor = IDEMIP_ND6_NONE;
+    Nd6.dest_set(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+
+    at(work_a, 2000u);
+    Nd6.tick(work_a);
+
+    io->dest_args.dst = g_in64;
+    Nd6.dest_find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, io->status, "a destination with no neighbor behind it was swept away");
+}
+
+// A neighbor that goes takes the default router that named it, and only that one: RFC 4861 sec 7.3.3
+// deletes the cache entry, and sec 6.3.4's Default Router List entry is the one whose next hop it
+// was. The walk that finds it passes over the routers that named somebody else.
+void test_dropping_a_neighbor_takes_only_the_router_that_named_it(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 1000u);
+
+    rtr_set_ll(work_a, g_addr_a, g_lladdr, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    rtr_set_ll(work_a, g_addr_b, g_lladdr2, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    // The second neighbor goes. The walk over the router list meets the first router, which named
+    // the other neighbor, before it meets the one that named this one.
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, nb_find(work_a, g_addr_b));
+    nb_index(work_a, IDEMIP_ND6_IO(work_a)->neighbor);
+    Nd6.neighbor_remove(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    // The first router and its neighbor are still there.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, nb_find(work_a, g_addr_a), "the neighbor of another router went with it");
+    Nd6.router_select(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status,
+                                  "the default router list lost the router that named nobody");
+}
