@@ -43,6 +43,7 @@ static const uint8_t g_a[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0
 static const uint8_t g_b[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0B};
 static const uint8_t g_c[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0C};
 static const uint8_t g_d[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0D};
+static const uint8_t g_e[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0E};
 static const uint8_t g_multicast[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
 static const uint8_t g_unspecified[IDEMIP_IP6_ADDR_LEN] = {0};
 
@@ -700,4 +701,112 @@ void test_remove_refuses_an_address_that_is_not_held(void)
     IO(work_a)->addr_args.addr = g_a;
     Rdnss.remove(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+}
+
+// --- what the list rules out ----------------------------------------------------
+
+// A lookup and a removal each work over an address the caller holds, so a call naming none has
+// nothing to look for, and bytes clear has not run on are not a list to look in.
+void test_the_address_entries_refuse_what_names_no_address(void)
+{
+    Rdnss.clear(work_a);
+    const uint8_t *one[1] = {g_a};
+    feed(work_a, 100u, 1000u, one, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    IO(work_a)->addr_args.addr = NULL;
+    Rdnss.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a lookup for no address was answered");
+    Rdnss.remove(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a removal of no address was made");
+
+    memset(work_b, 0xFF, IDEMIP_RDNSS_BORROW);
+    IO(work_b)->addr_args.addr = g_a;
+    Rdnss.find(work_b);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "find read an uncleared borrow");
+    Rdnss.remove(work_b);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "remove read an uncleared borrow");
+}
+
+// RFC 8106 sec 5.1: "A value of all one bits (0xffffffff) represents infinity", and a server
+// advertised with it stays until an advertisement takes it away. sec 5.3.1 has a full list "delete from the DNS
+// Server List the entry with the shortest" lifetime, so an infinite one is the last to go - and one
+// whose lifetime is already behind it is the first, with nothing left on it at all.
+void test_the_eviction_takes_the_server_with_the_least_left_on_it(void)
+{
+    Rdnss.clear(work_a);
+
+    // Three servers, filling the list. Each advertisement puts its addresses at the front, so the
+    // list runs from the last one advertised to the first: an infinite one, a long one, a short one.
+    const uint8_t *third[1] = {g_c};
+    feed(work_a, 60u, 1000u, third, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    const uint8_t *second[1] = {g_b};
+    feed(work_a, 9000u, 1000u, second, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    const uint8_t *first[1] = {g_a};
+    feed(work_a, IDEMIP_RDNSS_LIFETIME_INFINITE, 1000u, first, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    // A fourth, past the last one's lifetime: the list is full, and what goes is the server with
+    // nothing left rather than the infinite one or the one with hours on it.
+    const uint8_t *fourth[1] = {g_d};
+    feed(work_a, 9000u, 1000u + (120u * 1000u), fourth, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    find_addr(work_a, g_c);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "the server with nothing left is still in the list");
+    find_addr(work_a, g_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "the infinite server was evicted");
+    find_addr(work_a, g_b);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "the server with hours left was evicted");
+    find_addr(work_a, g_d);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+}
+
+// sec 5.1 again: an advertisement for a server already in the list "updates" its lifetime, and the
+// infinite value is one of the lifetimes it may be updated to.
+void test_a_server_already_in_the_list_can_be_updated_to_infinity(void)
+{
+    Rdnss.clear(work_a);
+    const uint8_t *one[1] = {g_a};
+    feed(work_a, 100u, 1000u, one, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    feed(work_a, IDEMIP_RDNSS_LIFETIME_INFINITE, 2000u, one, 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, IO(work_a)->updated, "the advertisement was not read as an update");
+
+    // Far past the lifetime it started with, and still there.
+    tick_at(work_a, 1000u + (3600u * 1000u));
+    find_addr(work_a, g_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "an infinite lifetime ran out");
+}
+
+// RFC 8106 sec 5.1 puts "one or more IPv6 addresses of RDNSSes" in one option, and sec 5.3.1 keeps
+// the list in the order they arrived. The place the next address of that option goes walks along
+// with them, so where one of them evicts a server standing in front of that place, the place moves
+// back with it and the addresses behind it still land in order.
+void test_the_place_the_next_address_goes_follows_an_eviction_in_front_of_it(void)
+{
+    Rdnss.clear(work_a);
+
+    // Three servers from one advertisement, filling the list.
+    const uint8_t *three[3] = {g_a, g_b, g_c};
+    feed(work_a, 9000u, 1000u, three, 3u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(3u, IO(work_a)->added);
+
+    // Two more from one advertisement. The first evicts the server at the front and takes its place;
+    // the second evicts that one in turn, which stands in front of where it is about to go.
+    const uint8_t *two[2] = {g_d, g_e};
+    feed(work_a, 9000u, 1000u, two, 2u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(2u, IO(work_a)->evicted, "a full list took two more servers without evicting two");
+
+    // What is left is the last thing advertised and the servers the eviction did not reach.
+    find_addr(work_a, g_e);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "the newest server is not in the list");
+    find_addr(work_a, g_c);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "a server the eviction did not reach went anyway");
 }

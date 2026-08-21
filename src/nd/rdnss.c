@@ -30,8 +30,8 @@ typedef struct
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     idemip_bool infinite;
     idemip_bool used;
-    uint8_t pad[(1u << IDEMIP_RDNSS_ENTRY_SHIFT) -
-                (sizeof(IdemIpMs) + IDEMIP_IP6_ADDR_LEN + (2u * sizeof(idemip_bool)))];
+    uint8_t
+        pad[(1u << IDEMIP_RDNSS_ENTRY_SHIFT) - (sizeof(IdemIpMs) + IDEMIP_IP6_ADDR_LEN + (2u * sizeof(idemip_bool)))];
 } RdnssEntry;
 
 // The running context: the mark clear leaves, and the two readings that carry the caller's 32-bit
@@ -149,9 +149,13 @@ static uint8_t rdnss_find_addr(uint8_t *work, const uint8_t *addr)
 static void rdnss_delete_at(uint8_t *work, uint8_t index)
 {
     uint8_t count = rdnss_count(work);
-    if (index >= count)
+    // Not measured: both callers reach this with an index a walk over the list just reported - the
+    // server the option named, or the one sec 5.3.1 chose to evict - so it is one of the entries in
+    // use. It is written because the index is what the shift below starts at, and a shift from past
+    // the end would move entries that are not there.
+    if (index >= count) // GCOVR_EXCL_BR_LINE
     {
-        return;
+        return; // GCOVR_EXCL_LINE
     }
     for (uint8_t i = index; (uint8_t)(i + 1u) < count; i++)
     {
@@ -198,8 +202,7 @@ static uint8_t rdnss_soonest(uint8_t *work, IdemIpMs now)
 
 // One address into the list at @p index, the ones from there back shifting one slot along, which is
 // what sec 6.2 step (d) means by inserting "as the first one in the Resolver Repository".
-static void rdnss_insert_at(uint8_t *work, uint8_t index, const uint8_t *addr, uint32_t lifetime_s,
-                            IdemIpMs now)
+static void rdnss_insert_at(uint8_t *work, uint8_t index, const uint8_t *addr, uint32_t lifetime_s, IdemIpMs now)
 {
     uint8_t count = rdnss_count(work);
     for (uint8_t i = count; i > index; i--)
@@ -262,8 +265,7 @@ static void rdnss_publish(uint8_t *work, uint8_t index)
  * An address that is not in the list and carries a zero Lifetime is not registered: sec 5.1 states
  * "A value of zero means that the RDNSS addresses MUST no longer be used."
  */
-static void rdnss_apply(uint8_t *work, const uint8_t *addr, uint32_t lifetime_s, IdemIpMs now,
-                        uint8_t *cursor)
+static void rdnss_apply(uint8_t *work, const uint8_t *addr, uint32_t lifetime_s, IdemIpMs now, uint8_t *cursor)
 {
     RdnssIo *io = RDNSS_IO(work);
     uint8_t index = rdnss_find_addr(work, addr);
@@ -274,9 +276,13 @@ static void rdnss_apply(uint8_t *work, const uint8_t *addr, uint32_t lifetime_s,
         {
             rdnss_delete_at(work, index);
             io->deleted++;
-            if (*cursor > index)
+            // Not measured: the place the next address goes moves only where one is inserted, and
+            // an option that takes a server out is one whose Lifetime is zero - so no address of
+            // that option is inserted and the place is still at the front. It is written because the
+            // walk is over one option's addresses and any of them may name a server already held.
+            if (*cursor > index) // GCOVR_EXCL_BR_LINE
             {
-                (*cursor)--;
+                (*cursor)--; // GCOVR_EXCL_LINE
             }
             return;
         }
