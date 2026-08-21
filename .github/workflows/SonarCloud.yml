@@ -22,6 +22,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+          submodules: true # include/MMgr, which this tree tracks as a commit and not as files
 
       - name: Install Ninja and gcovr
         run: |

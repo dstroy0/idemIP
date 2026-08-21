@@ -140,6 +140,12 @@ static_assert((IDEMIP_ALIGN & (IDEMIP_ALIGN - 1u)) == 0u, "IDEMIP_ALIGN must be 
  * IDEMIP_*_BORROW and mapped for the largest one, so those octets are the caller's own memory. They
  * are read and then masked away, and never reach the answer.
  *
+ * An analyser that reads this function without that map reports the load as an out-of-bounds access:
+ * SonarCloud c:S3519, at blocker. The NOSONAR on the line answers it. Suppressing it is not a claim
+ * that the read does not happen - it does, and the paragraph above is the argument that the octets it
+ * reaches are the caller's own. A borrow that is ever sized for less than the largest span mapped in
+ * it would make the analyser right, which is what the IDEMIP_*_BORROW sizes exist to prevent.
+ *
  * The mask is where byte order enters, and it is the only place it does: the octets of the tail are
  * the low ones of the word on a little-endian part and the high ones on a big-endian part. Both arms
  * shift by less than the width at every @p r a tail can hold, which is zero through
@@ -150,7 +156,7 @@ static_assert((IDEMIP_ALIGN & (IDEMIP_ALIGN - 1u)) == 0u, "IDEMIP_ALIGN must be 
 IDEMIP_INLINE IdemIpWord idemip_span_tail(const uint8_t *p, size_t r)
 {
     IdemIpWord w;
-    memcpy(&w, p, sizeof w);
+    memcpy(&w, p, sizeof w); // NOSONAR c:S3519 - the read past the span is the design, and @brief is why
 #if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     const IdemIpWord mask =
         (IdemIpWord) ~(((((IdemIpWord)1u) << (8u * (sizeof(IdemIpWord) - r - 1u))) << 8u) - 1u);

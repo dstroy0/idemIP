@@ -44,6 +44,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: true # include/MMgr, which this tree tracks as a commit and not as files
 
       - name: Install Ninja
         run: |
@@ -74,6 +76,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: true # include/MMgr, which this tree tracks as a commit and not as files
 
       # The static form of the matrix above, and much faster: a member the struct declares under an
       # #if and the table sets without one is the exact shape of four of the six defects, and it is

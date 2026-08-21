@@ -53,6 +53,8 @@ jobs:
       # raises them.
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: true # include/MMgr, which this tree tracks as a commit and not as files
 
       # Before init, which is where CodeQL's own documentation puts a toolchain the manual build
       # needs. Only the C job builds anything.
