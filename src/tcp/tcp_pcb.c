@@ -739,7 +739,8 @@ static idemip_bool tcp_pcb_remote_invalid(uint8_t ip_version, const uint8_t *ip)
 #endif
 }
 
-// RFC 9293 sec 3.3.1's "remote IP address and port number" half of the four-tuple. sec 3.10.1: "if
+// The remote half of what RFC 9293 sec 3.3.1 lists in the TCB, "the local and remote IP addresses and
+// port numbers". sec 3.10.1: "if
 // active and the remote socket is unspecified, return 'error: remote socket unspecified'", so a
 // remote port of zero is ERR. The pair completed here is what sec 3.4.1 calls a connection, "defined
 // by a pair of sockets", so a pair another open TCB already holds is BUSY: closing that one frees it.

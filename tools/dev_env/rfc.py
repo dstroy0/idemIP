@@ -85,7 +85,11 @@ FOOTER = re.compile(r"^.*\[Page \d+\]\s*$", re.M)
 # The older documents number their pages with the number alone on a line. RFC 815 puts one between
 # "in the first octets" and "of the hole itself", and it reads as part of the sentence once the text
 # is flattened.
-PAGENO = re.compile(r"^[ \t]*\d{1,3}[ \t]*$", re.M)
+#
+# What tells it from a number that is part of a sentence is the line before it. A page number follows
+# the page break; RFC 3646 sec 3 wraps "must be a multiple of 16" so the 16 lands alone directly under
+# the line it continues, and a rule that does not look up eats the number the sentence is about.
+PAGENO = re.compile(r"[ \t]*\d{1,3}[ \t]*")
 # RFC 1122 and its contemporaries print the running header as "RFC1122 LINK LAYER October 1989",
 # with no space after RFC, and one left in the middle of a sentence breaks every quotation that
 # spans that page break.
@@ -99,7 +103,16 @@ HEADER = re.compile(r"^RFC\s?\d+\s+.*\d{4}\s*$", re.M)
 # The parenthesised form of the same thing, which RFC 1122 and RFC 8415 use everywhere: "Destination
 # Unreachable (see Section 3.2.2.1)", "the Status Code option (see Section 21.13) returned by the
 # server". A comment quoting the sentence has quoted the sentence.
-INLINE_REF = re.compile(r"\[[^\]\n]{1,20}\]|\((?:see|See)\s[^)\n]{1,40}\)")
+# And RFC 9293's requirement labels, which it sets inside the sentence they name: "An application MUST
+# (MUST-21) be able to set the value for R2". The label is how the document indexes the requirement in
+# its own summary table, not part of what it says.
+# Case-insensitive because squeeze() applies this to the folded text, which is already lowercase.
+INLINE_REF = re.compile(
+    r"\[[^\]\n]{1,20}\]"
+    r"|\(see\s[^)\n]{1,40}\)"
+    r"|\((?:MUST|SHOULD|SHLD|MAY|REC|RQMT)-\d+\)",
+    re.I,
+)
 
 # "RFC 8415", "RFC1122", and the sec 18.2.10.1 form this tree writes beside them.
 RFC_REF = re.compile(r"\bRFC\s?(\d{3,5})\b")
@@ -155,11 +168,21 @@ def fetch(number):
 def flatten(text):
     """One line, one space between words, no page furniture. What a quote is matched against."""
     text = FOOTER.sub("", text)
-    text = PAGENO.sub("", text)
-    text = PAGE.sub("\n", text)
     text = HEADER.sub("", text)
     text = BULLET.sub("", text)
-    return re.sub(r"\s+", " ", text).strip()
+    out = []
+    after_break = True
+    for line in text.split("\n"):
+        if "\f" in line:
+            line = line.replace("\f", "")
+            after_break = True
+            if not line.strip():
+                continue
+        if after_break and PAGENO.fullmatch(line):
+            continue
+        out.append(line)
+        after_break = not line.strip()
+    return re.sub(r"\s+", " ", "\n".join(out)).strip()
 
 
 def normalize(quote):
