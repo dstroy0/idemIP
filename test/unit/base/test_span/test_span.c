@@ -152,24 +152,30 @@ void test_an_empty_span_is_zero_and_equal(void)
 // sec 3.1 ones are four, and both are what a word loop plus its tail has to cover exactly.
 void test_the_address_widths_the_call_sites_use(void)
 {
-    uint8_t a6[16];
-    uint8_t b6[16];
+    // Each carries the slack the two fixtures above carry, and for the reason written there: the
+    // tail is read out to the end of its word, and in the library those octets are inside the
+    // caller's own borrow. A width is passed as the width itself, so the slack is never in a span.
+    uint8_t a6[16u + sizeof(IdemIpWord)];
+    uint8_t b6[16u + sizeof(IdemIpWord)];
     memset(a6, 0, sizeof a6);
     memset(b6, 0, sizeof b6);
-    TEST_ASSERT_TRUE(idemip_bytes_zero(a6, sizeof a6));
-    TEST_ASSERT_TRUE(idemip_bytes_eq(a6, b6, sizeof a6));
+    TEST_ASSERT_TRUE(idemip_bytes_zero(a6, 16u));
+    TEST_ASSERT_TRUE(idemip_bytes_eq(a6, b6, 16u));
 
     // RFC 4291 sec 2.5.3's ::1 is fifteen zero octets and a low octet of one, which loopif reads as
     // a zero test over the leading fifteen.
     a6[15] = 0x01u;
-    TEST_ASSERT_FALSE(idemip_bytes_zero(a6, sizeof a6));
-    TEST_ASSERT_TRUE_MESSAGE(idemip_bytes_zero(a6, sizeof a6 - 1u), "::1 is zero over its leading fifteen octets");
-    TEST_ASSERT_FALSE(idemip_bytes_eq(a6, b6, sizeof a6));
+    TEST_ASSERT_FALSE(idemip_bytes_zero(a6, 16u));
+    TEST_ASSERT_TRUE_MESSAGE(idemip_bytes_zero(a6, 15u), "::1 is zero over its leading fifteen octets");
+    TEST_ASSERT_FALSE(idemip_bytes_eq(a6, b6, 16u));
 
-    uint8_t a4[4] = {0u, 0u, 0u, 0u};
-    uint8_t b4[4] = {0u, 0u, 0u, 1u};
-    TEST_ASSERT_TRUE_MESSAGE(idemip_bytes_zero(a4, sizeof a4), "RFC 1122 sec 3.2.1.3 (a) is four zero octets");
-    TEST_ASSERT_FALSE(idemip_bytes_zero(b4, sizeof b4));
-    TEST_ASSERT_FALSE(idemip_bytes_eq(a4, b4, sizeof a4));
+    uint8_t a4[4u + sizeof(IdemIpWord)];
+    uint8_t b4[4u + sizeof(IdemIpWord)];
+    memset(a4, 0, sizeof a4);
+    memset(b4, 0, sizeof b4);
+    b4[3] = 1u;
+    TEST_ASSERT_TRUE_MESSAGE(idemip_bytes_zero(a4, 4u), "RFC 1122 sec 3.2.1.3 (a) is four zero octets");
+    TEST_ASSERT_FALSE(idemip_bytes_zero(b4, 4u));
+    TEST_ASSERT_FALSE(idemip_bytes_eq(a4, b4, 4u));
     TEST_ASSERT_TRUE(idemip_bytes_eq(a4, b4, 3u));
 }
