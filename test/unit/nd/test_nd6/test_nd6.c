@@ -34,6 +34,7 @@ static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_ND6_BORROW + 16];
 static const uint8_t g_addr_a[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
 static const uint8_t g_addr_b[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02};
 static const uint8_t g_lladdr[IDEMIP_MAC_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+static const uint8_t g_lladdr_2[IDEMIP_MAC_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x02};
 
 static void arm(uint8_t *w, size_t cap)
 {
@@ -627,6 +628,209 @@ static IdemIpStatus pop(uint8_t *w, uint8_t neighbor)
     IDEMIP_ND6_IO(w)->pending_args.neighbor = neighbor;
     Nd6.pending_pop(w);
     return IDEMIP_ND6_IO(w)->status;
+}
+
+// --- sec 4.6.2, a Prefix Length that is not a whole number of octets --------
+
+// RFC 4861 sec 4.6.2's Prefix Length is "The number of leading bits in the Prefix that are valid",
+// and it is a number of bits: any of 0 through 128, not just the multiples of eight. sec 5.2's
+// longest prefix match over one of them compares the whole octets exactly and the leftover bits under
+// a mask, and the two halves have to agree for the address to be on-link.
+void test_a_prefix_length_that_is_not_a_whole_number_of_octets_matches_on_its_bits(void)
+{
+    // 2001:DB8::3000:0:0:0:0/60. Sixty bits is seven whole octets and four bits, so the high nibble
+    // of octet seven is the last valid one and the seven octets before it compare exactly.
+    static const uint8_t pfx[IDEMIP_IP6_ADDR_LEN] = {0x20u, 0x01u, 0x0Du, 0xB8u, 0, 0, 0, 0x30u,
+                                                     0,     0,     0,     0,     0, 0, 0, 0};
+    static const uint8_t inside[IDEMIP_IP6_ADDR_LEN] = {0x20u, 0x01u, 0x0Du, 0xB8u, 0, 0, 0, 0x3Fu,
+                                                        0,     0,     0,     0,     0, 0, 0, 0x01u};
+    static const uint8_t outside[IDEMIP_IP6_ADDR_LEN] = {0x20u, 0x01u, 0x0Du, 0xB8u, 0, 0, 0, 0x40u,
+                                                         0,     0,     0,     0,     0, 0, 0, 0x01u};
+    // The same four bits, with an octet inside the whole part turned over.
+    static const uint8_t elsewhere[IDEMIP_IP6_ADDR_LEN] = {0x20u, 0x01u, 0x0Du, 0xB9u, 0, 0, 0, 0x30u,
+                                                           0,     0,     0,     0,     0, 0, 0, 0x01u};
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    pfx_set(work_a, pfx, 60u, 1800u, T);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    TEST_ASSERT_TRUE_MESSAGE(on_link_of(work_a, inside), "the bits inside the sixtieth were not compared");
+    TEST_ASSERT_FALSE_MESSAGE(on_link_of(work_a, outside), "a nibble past the prefix was taken as on-link");
+    TEST_ASSERT_FALSE_MESSAGE(on_link_of(work_a, elsewhere), "the whole octets were not compared");
+}
+
+// The other end of the same field: a Prefix Length of zero has no valid bits, so every address is
+// on-link under it. RFC 4861 sec 2.1 defines longest prefix match as "the process of determining
+// which prefix (if any) in a set of prefixes covers a target address ... When multiple prefixes cover
+// an address, the longest prefix is the one that matches." A shorter prefix listed after a longer one
+// that already matched does not displace it, and it is still there for what the longer does not cover.
+void test_a_shorter_prefix_matching_the_same_address_does_not_displace_the_longer(void)
+{
+    static const uint8_t any[IDEMIP_IP6_ADDR_LEN] = {0};
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    pfx_set(work_a, g_in64, 64u, 1800u, T);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    pfx_set(work_a, any, 0u, 1800u, T);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    TEST_ASSERT_TRUE_MESSAGE(on_link_of(work_a, g_in64), "the /64 that matched first was displaced");
+    TEST_ASSERT_TRUE_MESSAGE(on_link_of(work_a, g_addr_a), "a prefix of no valid bits covered nothing");
+}
+
+// --- sec 6.3.4, what a Router Advertisement does to the Neighbor Cache -------
+
+// RFC 4861 sec 6.3.4: "If the advertisement contains a Source Link-Layer Address option, the
+// link-layer address SHOULD be recorded in the Neighbor Cache entry for the router (creating an entry
+// if necessary) and the IsRouter flag in the Neighbor Cache entry MUST be set to TRUE." The same
+// paragraph ends "If a Neighbor Cache entry is created for the router, its reachability state MUST be
+// set to STALE". Creating one takes a Neighbor Cache slot, and with every slot taken there is none:
+// BUSY, because sec 7.3.3 deletes an entry whose solicitations go unanswered and the room arrives on
+// a later tick.
+void test_a_router_advertisement_with_no_neighbor_slot_left_is_busy(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    for (unsigned int i = 0u; i < (unsigned int)IDEMIP_ND6_NUM_NEIGHBORS; i++)
+    {
+        (void)nb_set(work_a, nth(i), nth_ll(i), IDEMIP_ND6_REACHABLE, F, T, T);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    }
+    // A router this cache has no entry for, advertising a link-layer address that would need one.
+    rtr_set_ll(work_a, g_addr_b, g_lladdr_2, 1800u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_ND6_IO(work_a)->status,
+                                  "a full Neighbor Cache is BUSY: sec 7.3.3 frees one on a later tick");
+}
+
+// The other half of sec 6.3.4, over an entry that already exists: "If a cache entry already exists
+// and is updated with a different link-layer address, the reachability state MUST also be set to
+// STALE." The router moved to another interface, and everything this host knew about reaching it is
+// no longer known.
+void test_a_router_advertising_a_new_link_layer_address_takes_the_entry_to_stale(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    rtr_set_ll(work_a, g_addr_a, g_lladdr, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    // Reachability confirmed, so the state is not STALE when the second advertisement arrives.
+    (void)nb_set(work_a, g_addr_a, g_lladdr, IDEMIP_ND6_REACHABLE, T, T, T);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ND6_REACHABLE, (int)nb_state(work_a, g_addr_a));
+
+    rtr_set_ll(work_a, g_addr_a, g_lladdr_2, 1800u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ND6_STALE, (int)nb_state(work_a, g_addr_a),
+                                  "a different link-layer address left the entry reachable");
+
+    // The same advertisement again names the address already recorded, so nothing is disturbed.
+    (void)nb_set(work_a, g_addr_a, g_lladdr_2, IDEMIP_ND6_REACHABLE, T, T, T);
+    rtr_set_ll(work_a, g_addr_a, g_lladdr_2, 1800u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ND6_REACHABLE, (int)nb_state(work_a, g_addr_a),
+                                  "the same link-layer address moved the entry anyway");
+}
+
+// --- sec 7.2.1, the queue in front of an unresolved neighbor ----------------
+
+// RFC 4861 sec 7.2.2: "While waiting for address resolution to complete, the sender MUST, for each
+// neighbor, retain a small queue of packets waiting for address resolution to complete. ... When a
+// queue overflows, the new arrival SHOULD replace the oldest entry." That is per neighbor, and the
+// entries come out of one table: with every entry held by other neighbors, this one's queue is empty
+// and there is no oldest of its own to replace. BUSY, because another neighbor's resolution
+// completing or timing out hands one back.
+void test_a_push_with_every_queue_entry_held_elsewhere_is_busy(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    const uint8_t holder = nb_set(work_a, g_addr_a, g_lladdr, IDEMIP_ND6_INCOMPLETE, F, F, F);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    const uint8_t empty = nb_set(work_a, g_addr_b, g_lladdr_2, IDEMIP_ND6_INCOMPLETE, F, F, F);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+
+    // One neighbor holding every entry the table has.
+    for (unsigned int i = 0u; i < (unsigned int)IDEMIP_ND6_PENDING; i++)
+    {
+        push(work_a, holder, (uint16_t)(10u + i), 100u);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    }
+
+    push(work_a, empty, 99u, 100u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_ND6_IO(work_a)->status,
+                                  "a neighbor with nothing queued took another neighbor's entry");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, pop(work_a, empty), "a frame was queued after the refusal");
+
+    // The holder's own queue still overflows onto its oldest, which is the sentence above.
+    push(work_a, holder, 77u, 100u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(10u, IDEMIP_ND6_IO(work_a)->desc,
+                                     "the oldest entry's descriptor did not come back to be unpinned");
+}
+
+// --- what the entries refuse -------------------------------------------------
+
+// Every entry that names an address takes it as a pointer, and the caller can have none to give: a
+// Neighbor Solicitation with no Target Address, a Router Advertisement read out of a message that
+// stopped short. RFC 4861 sec 5.1 keys every table on an address, so an entry given none has no key
+// to look under and refuses rather than reading the sixteen octets that are not there.
+void test_every_entry_that_takes_an_address_refuses_a_null_one(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    Nd6Io *io = IDEMIP_ND6_IO(work_a);
+
+    io->neighbor_args.addr = NULL;
+    Nd6.neighbor_find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "neighbor_find looked under no address");
+
+    (void)nb_set(work_a, NULL, g_lladdr, IDEMIP_ND6_REACHABLE, F, T, T);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "neighbor_set keyed an entry on no address");
+
+    io->dest_args.dst = NULL;
+    io->dest_args.next_hop = g_addr_a;
+    io->dest_args.pmtu = 0u;
+    io->dest_args.neighbor = IDEMIP_ND6_NONE;
+    Nd6.dest_set(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "dest_set keyed an entry on no destination");
+
+    io->dest_args.dst = NULL;
+    Nd6.dest_find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "dest_find looked under no destination");
+
+    pfx_set(work_a, NULL, 64u, 1800u, T);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "prefix_set keyed an entry on no prefix");
+
+    io->prefix_args.prefix = NULL;
+    Nd6.prefix_on_link(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "prefix_on_link matched against no address");
+
+    rtr_set(work_a, NULL, 1800u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "router_set keyed an entry on no address");
+}
+
+// The other half of the same contract: an index inside a table naming a row nobody opened. A caller
+// reaches one by holding an index across the deletion sec 7.3.3 makes, and every entry that reads a
+// row by index has to refuse it rather than read a free row's fields. A cleared borrow has no row in
+// use, so index zero is inside every table and open in none of them.
+void test_every_entry_that_names_a_row_refuses_one_that_is_not_in_use(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    Nd6Io *io = IDEMIP_ND6_IO(work_a);
+
+    nb_index(work_a, 0u);
+    Nd6.neighbor_confirm(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "neighbor_confirm took a row nobody opened");
+
+    nb_index(work_a, 0u);
+    Nd6.neighbor_used(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "neighbor_used took a row nobody opened");
+
+    nb_index(work_a, 0u);
+    Nd6.neighbor_remove(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "neighbor_remove took a row nobody opened");
+
+    push(work_a, 0u, 7u, 100u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "pending_push queued a frame on a row nobody opened");
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, pop(work_a, 0u), "pending_pop read a row nobody opened");
 }
 
 // --- sec 10, the protocol constants ------------------------------------------
