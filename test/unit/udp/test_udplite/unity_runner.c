@@ -42,6 +42,8 @@ extern void test_a_refused_build_leaves_the_datagram_alone(void);
 extern void test_an_ipv4_payload_past_the_total_length_field_is_refused(void);
 extern void test_a_jumbogram_is_covered_whole_only_through_the_zero_value(void);
 extern void test_the_borrow_map_is_compile_time(void);
+extern void test_the_entries_refuse_a_call_that_names_no_datagram_or_no_address(void);
+extern void test_a_packet_shorter_than_its_own_header_carries_no_coverage(void);
 
 
 /*=======Mock Management=====*/
@@ -137,6 +139,8 @@ int main(void)
   run_test(test_an_ipv4_payload_past_the_total_length_field_is_refused, "test_an_ipv4_payload_past_the_total_length_field_is_refused", 745);
   run_test(test_a_jumbogram_is_covered_whole_only_through_the_zero_value, "test_a_jumbogram_is_covered_whole_only_through_the_zero_value", 761);
   run_test(test_the_borrow_map_is_compile_time, "test_the_borrow_map_is_compile_time", 800);
+  run_test(test_the_entries_refuse_a_call_that_names_no_datagram_or_no_address, "test_the_entries_refuse_a_call_that_names_no_datagram_or_no_address", 811);
+  run_test(test_a_packet_shorter_than_its_own_header_carries_no_coverage, "test_a_packet_shorter_than_its_own_header_carries_no_coverage", 842);
 
   return UNITY_END();
 }

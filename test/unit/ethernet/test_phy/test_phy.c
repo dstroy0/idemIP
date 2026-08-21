@@ -61,6 +61,8 @@ static const uint8_t *fake_mac(void)
 {
     return g_mac;
 }
+static int g_claim_no_addr; // when set, rx_claim reports a length and no address at all
+
 static size_t fake_rx_claim(const uint8_t **frame)
 {
     ev(EV_RX_CLAIM);
@@ -68,7 +70,7 @@ static size_t fake_rx_claim(const uint8_t **frame)
     {
         return 0;
     }
-    *frame = g_frame;
+    *frame = g_claim_no_addr ? NULL : g_frame;
     return g_frame_len;
 }
 static void fake_rx_release(void)
@@ -424,8 +426,7 @@ void test_tx_claim_admits_a_full_length_frame(void)
     bind_ok(work_a);
     IDEMIP_PHY_IO(work_a)->tx_args.len = (size_t)IDEMIP_ETH_FRAME_MAX;
     Phy.tx_claim(work_a);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_PHY_IO(work_a)->status,
-                                  "a full-length RFC 894 frame was refused");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_PHY_IO(work_a)->status, "a full-length RFC 894 frame was refused");
     TEST_ASSERT_NOT_NULL(IDEMIP_PHY_IO(work_a)->tx);
 }
 
@@ -513,4 +514,56 @@ void test_mdio_write_then_read(void)
     Phy.mdio_read(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PHY_IO(work_a)->status);
     TEST_ASSERT_EQUAL_HEX16(IDEMIP_BMCR_ANEG_ENABLE | IDEMIP_BMCR_FULL_DUPLEX, IDEMIP_PHY_IO(work_a)->reg);
+}
+
+// A link with no driver behind it has nothing to claim from, nothing to release to and no management
+// interface, so every entry that reaches through the driver refuses the call.
+void test_an_unbound_link_is_refused(void)
+{
+    memset(work_a, 0, IDEMIP_PHY_BORROW);
+
+    Phy.rx_release(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PHY_IO(work_a)->status, "a release ran with no driver");
+
+    IDEMIP_PHY_IO(work_a)->tx_args.len = 64u;
+    Phy.tx_claim(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PHY_IO(work_a)->status, "a claim ran with no driver");
+
+    IDEMIP_PHY_IO(work_a)->tx = g_frame;
+    IDEMIP_PHY_IO(work_a)->tx_args.len = 64u;
+    Phy.tx_commit(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PHY_IO(work_a)->status, "a commit ran with no driver");
+
+    IDEMIP_PHY_IO(work_a)->reg_args.reg = 0u;
+    Phy.mdio_read(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PHY_IO(work_a)->status, "a register read ran with no driver");
+    IDEMIP_PHY_IO(work_a)->reg_args.val = 0u;
+    Phy.mdio_write(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PHY_IO(work_a)->status, "a register write ran with no driver");
+}
+
+// A frame of no octets is not a frame: there is nothing to claim a buffer for and nothing to hand to
+// the engine. And a claim that reports a length with no address behind it is no frame either - it is
+// BUSY, the same as no frame at all, since the next claim may bring one.
+void test_a_frame_of_no_octets_and_a_claim_with_no_address(void)
+{
+    bind_ok(work_a);
+
+    IDEMIP_PHY_IO(work_a)->tx_args.len = 0u;
+    Phy.tx_claim(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PHY_IO(work_a)->status, "a buffer was claimed for no octets");
+
+    IDEMIP_PHY_IO(work_a)->tx_args.len = 64u;
+    Phy.tx_claim(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PHY_IO(work_a)->status);
+    IDEMIP_PHY_IO(work_a)->tx_args.len = 0u;
+    Phy.tx_commit(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PHY_IO(work_a)->status, "a frame of no octets was committed");
+
+    g_frame_len = 100u;
+    g_claim_no_addr = 1;
+    Phy.rx_claim(work_a);
+    g_claim_no_addr = 0;
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_PHY_IO(work_a)->status,
+                                  "a claim with no address behind it was taken as a frame");
 }

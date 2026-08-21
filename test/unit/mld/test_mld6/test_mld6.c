@@ -34,8 +34,7 @@ static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_MLD6_BORROW + 16];
 // RFC 4291 sec 2.7.1: the link-local scope all-nodes address, which RFC 2710 sec 4 excludes from the
 // delay timers a General Query sets, and one solicited-node address a node does listen to.
 static const uint8_t g_all_nodes[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
-static const uint8_t g_group[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0,    0,    0,   0,
-                                                     0,    0,    0, 1, 0xFF, 0x00, 0x00, 0x01};
+static const uint8_t g_group[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0xFF, 0x00, 0x00, 0x01};
 
 static void arm(uint8_t *w, size_t cap)
 {
@@ -297,10 +296,8 @@ void test_the_delays_are_milliseconds(void)
 
 // RFC 4291 sec 2.7.1 Solicited-Node Address FF02:0:0:0:0:1:FFXX:XXXX, two of them, and the All Routers
 // Address FF02:0:0:0:0:0:0:2 that RFC 2710 sec 4 sends a Done to.
-static const uint8_t g_group2[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0,    0,    0,    0,
-                                                      0,    0,    0, 1, 0xFF, 0x00, 0x00, 0x02};
-static const uint8_t g_group3[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0,    0,    0,    0,
-                                                      0,    0,    0, 1, 0xFF, 0x0A, 0x0B, 0x0C};
+static const uint8_t g_group2[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0xFF, 0x00, 0x00, 0x02};
+static const uint8_t g_group3[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0xFF, 0x0A, 0x0B, 0x0C};
 static const uint8_t g_all_routers[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02};
 
 // RFC 4291 sec 2.7: the low nibble of octet 1 is the 4-bit scop field. 0 is reserved and 1 is
@@ -751,10 +748,8 @@ void test_a_general_query_excludes_all_nodes_and_scope_zero_and_one(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_general_query(work_a, 0u, QUERY_RESPONSE_INTERVAL_MS, 5000u, 0xABCDEFu));
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_MLD6_IDLE_LISTENER, state_of(work_a, g_all_nodes, 0u),
                                   "sec 4 excludes the link-scope all-nodes address");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_MLD6_IDLE_LISTENER, state_of(work_a, g_scope0, 0u),
-                                  "sec 4 excludes scope 0");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_MLD6_IDLE_LISTENER, state_of(work_a, g_scope1, 0u),
-                                  "sec 4 excludes scope 1");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_MLD6_IDLE_LISTENER, state_of(work_a, g_scope0, 0u), "sec 4 excludes scope 0");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_MLD6_IDLE_LISTENER, state_of(work_a, g_scope1, 0u), "sec 4 excludes scope 1");
     TEST_ASSERT_EQUAL_INT(0, drain(work_a, 20000u));
 }
 
@@ -789,7 +784,8 @@ void test_the_per_group_draws_do_not_share_a_value(void)
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join(work_a, g_group3, 0u));
         TEST_ASSERT_EQUAL_INT(3, drain(work_a, 5000u));
 
-        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_general_query(work_a, 0u, QUERY_RESPONSE_INTERVAL_MS, 5000u, r * 2654435761u));
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK,
+                              do_general_query(work_a, 0u, QUERY_RESPONSE_INTERVAL_MS, 5000u, r * 2654435761u));
         uint32_t d1 = deadline_of(work_a, g_group, 0u);
         uint32_t d2 = deadline_of(work_a, g_group2, 0u);
         uint32_t d3 = deadline_of(work_a, g_group3, 0u);
@@ -935,15 +931,13 @@ void test_a_specific_query_arms_only_the_queried_group(void)
 void test_a_specific_query_for_a_group_not_listened_to_is_refused(void)
 {
     Mld6.clear(work_a);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR,
-                          do_specific_query(work_a, g_group, 0u, QUERY_RESPONSE_INTERVAL_MS, 5000u, 0x11u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, do_specific_query(work_a, g_group, 0u, QUERY_RESPONSE_INTERVAL_MS, 5000u, 0x11u));
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_MLD6_NONE, IDEMIP_MLD6_IO(work_a)->index);
 
     // Listened to on interface 0, queried on interface 1: sec 4 keys the timer to the interface the Query
     // arrived on, so interface 1 is Non-Listener for it.
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join(work_a, g_group, 0u));
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR,
-                          do_specific_query(work_a, g_group, 1u, QUERY_RESPONSE_INTERVAL_MS, 5000u, 0x11u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, do_specific_query(work_a, g_group, 1u, QUERY_RESPONSE_INTERVAL_MS, 5000u, 0x11u));
 }
 
 // A General Query is valid on an interface with nothing listened to: sec 5 ignores it per address, which
@@ -962,8 +956,8 @@ void test_query_in_refuses_a_bad_argument(void)
 {
     Mld6.clear(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, do_specific_query(work_a, NULL, 0u, QUERY_RESPONSE_INTERVAL_MS, 5000u, 0x1u));
-    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, do_general_query(work_a, (uint8_t)IDEMIP_NETIF_COUNT,
-                                                       QUERY_RESPONSE_INTERVAL_MS, 5000u, 0x1u));
+    TEST_ASSERT_EQUAL_INT(
+        IDEMIP_ERR, do_general_query(work_a, (uint8_t)IDEMIP_NETIF_COUNT, QUERY_RESPONSE_INTERVAL_MS, 5000u, 0x1u));
 }
 
 // sec 5's FF02::1 special case holds against a Query naming it directly, not only against a General Query.
@@ -1134,8 +1128,7 @@ void test_the_state_diagram_walks_end_to_end(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_MLD6_IDLE_LISTENER, state_of(work_a, g_group, 0u));
 
     // query received (start timer) back into Delaying Listener
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK,
-                          do_general_query(work_a, 0u, QUERY_RESPONSE_INTERVAL_MS, 2000u, 0xFACEu));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_general_query(work_a, 0u, QUERY_RESPONSE_INTERVAL_MS, 2000u, 0xFACEu));
     TEST_ASSERT_EQUAL_INT(IDEMIP_MLD6_DELAYING_LISTENER, state_of(work_a, g_group, 0u));
 
     // report received (stop timer, clear flag) into Idle Listener
@@ -1181,4 +1174,69 @@ void test_the_same_query_on_two_identical_borrows_draws_the_same_delay(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_general_query(work_a, 0u, QUERY_RESPONSE_INTERVAL_MS, 5000u, 0xBEEFu));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_general_query(work_b, 0u, QUERY_RESPONSE_INTERVAL_MS, 5000u, 0xBEEFu));
     TEST_ASSERT_EQUAL_UINT32(deadline_of(work_a, g_group, 0u), deadline_of(work_b, g_group, 0u));
+}
+
+// Each entry that names a group works over an address the caller holds and an interface it reads out
+// of the operand block, so a call naming neither has nothing to work over.
+void test_the_group_entries_refuse_a_call_that_names_no_group(void)
+{
+    Mld6.clear(work_a);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, do_leave(work_a, NULL, 0u), "a leave of no group was made");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, do_find(work_a, NULL, 0u), "a lookup for no group was answered");
+
+    IDEMIP_MLD6_IO(work_a)->group_args.group = NULL;
+    IDEMIP_MLD6_IO(work_a)->group_args.netif = 0u;
+    Mld6.report_in(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_MLD6_IO(work_a)->status, "a report about no group was taken");
+
+    // The interface is read against the table the same way.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, do_leave(work_a, g_all_nodes, (uint8_t)IDEMIP_NETIF_COUNT),
+                                  "a leave took an interface past the table");
+}
+
+// A join works over an address the caller holds, so one naming none has nothing to join.
+void test_a_join_that_names_no_group_is_refused(void)
+{
+    Mld6.clear(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, do_join(work_a, NULL, 0u), "a join of no group was made");
+}
+
+// RFC 2710 sec 4: "If a timer for the address is already running, it is reset to the new random
+// value only if the requested Maximum Response Delay is less than the remaining value of the running
+// timer." A query asking for a longer delay leaves the timer that is already running.
+void test_a_query_asking_for_longer_than_the_running_timer_leaves_it(void)
+{
+    Mld6.clear(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join_at(work_a, g_group, 0u, 1000u, 0u));
+
+    // A query with a short delay, which arms the report.
+    IDEMIP_MLD6_IO(work_a)->query_args.group = g_group;
+    IDEMIP_MLD6_IO(work_a)->query_args.netif = 0u;
+    IDEMIP_MLD6_IO(work_a)->query_args.max_resp_ms = 1000u;
+    IDEMIP_MLD6_IO(work_a)->query_args.now_ms = 1000u;
+    IDEMIP_MLD6_IO(work_a)->query_args.rand = 0xFFFFFFFFu;
+    Mld6.query_in(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_MLD6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_find(work_a, g_group, 0u));
+    const uint32_t armed = IDEMIP_MLD6_IO(work_a)->deadline_ms;
+
+    // A second query asking for far longer: the timer that is running is the sooner one.
+    IDEMIP_MLD6_IO(work_a)->query_args.group = g_group;
+    IDEMIP_MLD6_IO(work_a)->query_args.netif = 0u;
+    IDEMIP_MLD6_IO(work_a)->query_args.max_resp_ms = 100000u;
+    IDEMIP_MLD6_IO(work_a)->query_args.now_ms = 1000u;
+    IDEMIP_MLD6_IO(work_a)->query_args.rand = 0xFFFFFFFFu;
+    Mld6.query_in(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_MLD6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_find(work_a, g_group, 0u));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(armed, IDEMIP_MLD6_IO(work_a)->deadline_ms,
+                                     "a query asking for longer than the running timer reset it");
+
+    // sec 4's General Query is over every group the interface listens to, and the same rule holds
+    // for each of them: one asking for longer than the timer already running leaves it.
+    (void)do_general_query(work_a, 0u, 100000u, 1000u, 0xFFFFFFFFu);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_find(work_a, g_group, 0u));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(armed, IDEMIP_MLD6_IO(work_a)->deadline_ms,
+                                     "a General Query asking for longer than the running timer reset it");
 }

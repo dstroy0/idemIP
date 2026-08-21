@@ -174,7 +174,6 @@ static void run_timer_out(uint8_t *w, uint32_t now_ms)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(w)->status);
 }
 
-
 // Nothing to report into, so nothing is written and nothing faults.
 void test_every_entry_survives_a_null_borrow(void)
 {
@@ -254,7 +253,6 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
                                      "a tick on another borrow moved this one's timer");
     TEST_ASSERT_EQUAL_INT(state, IDEMIP_IGMP_IO(work_a)->state);
 }
-
 
 // RFC 2236 sec 6 binds "send leave" to the "leave group" event, which "may occur only in the Delaying
 // Member and Idle Member states", and sec 3 makes the Leave Group message the report of an actual
@@ -578,8 +576,8 @@ void test_the_host_timers_are_the_ones_rfc_2236_prints(void)
 static_assert(IDEMIP_NETIF_COUNT >= 2u, "test_igmp's per-interface cases need IDEMIP_NETIF_COUNT >= 2");
 
 // The RFC 2236 sec 2.2 field values the RFC prints, in milliseconds.
-#define MAXRESP_10S (100u * IDEMIP_IGMP_MAX_RESP_UNIT_MS) // sec 8.3 Query Response Interval
-#define MAXRESP_1S (10u * IDEMIP_IGMP_MAX_RESP_UNIT_MS)   // sec 8.8 Last Member Query Interval
+#define MAXRESP_10S (100u * IDEMIP_IGMP_MAX_RESP_UNIT_MS)    // sec 8.3 Query Response Interval
+#define MAXRESP_1S (10u * IDEMIP_IGMP_MAX_RESP_UNIT_MS)      // sec 8.8 Last Member Query Interval
 #define MAXRESP_WIDEST (255u * IDEMIP_IGMP_MAX_RESP_UNIT_MS) // the widest an 8-bit field carries
 
 // Four more class D groups, so the table can be filled.
@@ -711,8 +709,7 @@ void test_the_delay_draw_never_yields_zero(void)
 {
     Igmp.clear(work_a);
     join_ok(work_a, GROUP_A, 0u, 0u, 0u);
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, IDEMIP_IGMP_IO(work_a)->deadline_ms,
-                                     "zero is outside (0, Max Response Time]");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, IDEMIP_IGMP_IO(work_a)->deadline_ms, "zero is outside (0, Max Response Time]");
 }
 
 // Every draw lands inside (0, [Unsolicited Report Interval] ], and both ends of the closed-open
@@ -1260,7 +1257,68 @@ void test_two_borrows_run_independent_state_machines(void)
     tick_at(work_b, 1u);
     TEST_ASSERT_EQUAL_UINT8(1u, IDEMIP_IGMP_IO(work_b)->expired);
     tick_at(work_a, 1u);
-    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, IDEMIP_IGMP_IO(work_a)->expired, "a tick on one borrow fired the other's timer");
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, IDEMIP_IGMP_IO(work_a)->expired,
+                                    "a tick on one borrow fired the other's timer");
     TEST_ASSERT_EQUAL_INT(IDEMIP_IGMP_DELAYING_MEMBER, state_of(work_a, GROUP_A, 0u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_IGMP_IDLE_MEMBER, state_of(work_b, GROUP_A, 0u));
+}
+
+// Each entry that names a group reads the interface out of the operand block and uses it to reach
+// one, so each holds it against IDEMIP_NETIF_COUNT first - and RFC 1112 sec 4 gives a group "a class
+// D IP address", so an address outside that is not one to join, leave, look up or report on.
+void test_the_group_entries_refuse_an_interface_past_the_table(void)
+{
+    Igmp.clear(work_a);
+
+    arm_group(work_a, GROUP_A, (uint8_t)IDEMIP_NETIF_COUNT);
+    Igmp.leave(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IGMP_IO(work_a)->status,
+                                  "a leave took an interface past the table");
+    Igmp.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IGMP_IO(work_a)->status,
+                                  "a lookup took an interface past the table");
+
+    IDEMIP_IGMP_IO(work_a)->report_args.group = GROUP_A;
+    IDEMIP_IGMP_IO(work_a)->report_args.netif = (uint8_t)IDEMIP_NETIF_COUNT;
+    Igmp.report_in(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IGMP_IO(work_a)->status,
+                                  "a report took an interface past the table");
+
+    // And a group address that is not one: the leave and the lookup read it too.
+    arm_group(work_a, 0xC0000201u, 0u);
+    Igmp.leave(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IGMP_IO(work_a)->status,
+                                  "a leave took an address that is no group");
+    Igmp.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IGMP_IO(work_a)->status,
+                                  "a lookup took an address that is no group");
+}
+
+// RFC 1112 sec 7.2 has a host join a group once "for each interface" whatever asks for it, so the
+// count of what asked is a count the application can raise. It holds at the top of its own width,
+// and a join past that is BUSY: a leave gives one back.
+void test_the_count_of_what_joined_a_group_holds_at_the_top_of_its_width(void)
+{
+    Igmp.clear(work_a);
+
+    for (uint32_t k = 0; k < 255u; k++)
+    {
+        join_at(work_a, GROUP_A, 0u, 1000u, 0x1234u);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status, "a join of a held group was refused");
+    }
+
+    join_at(work_a, GROUP_A, 0u, 1000u, 0x1234u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_IGMP_IO(work_a)->status, "the count of what joined turned over");
+}
+
+// RFC 2236 sec 3: a Membership Report is about a group, so a report naming an address that is not
+// one is not a report this host suppresses anything for.
+void test_a_report_about_an_address_that_is_no_group_is_refused(void)
+{
+    Igmp.clear(work_a);
+    IDEMIP_IGMP_IO(work_a)->report_args.group = 0xC0000201u;
+    IDEMIP_IGMP_IO(work_a)->report_args.netif = 0u;
+    Igmp.report_in(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_IGMP_IO(work_a)->status,
+                                  "a report about an address that is no group was taken");
 }

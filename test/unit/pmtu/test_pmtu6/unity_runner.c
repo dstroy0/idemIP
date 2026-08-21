@@ -33,6 +33,8 @@ extern void test_a_second_decrease_reuses_the_same_stamp(void);
 extern void test_a_full_table_takes_the_longest_running_clock(void);
 extern void test_the_interval_survives_a_clock_wrap(void);
 extern void test_the_same_message_repeats(void);
+extern void test_the_entries_refuse_a_call_that_names_nothing(void);
+extern void test_a_quoted_packet_too_short_for_the_header_it_claims_keys_on_the_fixed_destination(void);
 
 
 /*=======Mock Management=====*/
@@ -119,6 +121,8 @@ int main(void)
   run_test(test_a_full_table_takes_the_longest_running_clock, "test_a_full_table_takes_the_longest_running_clock", 499);
   run_test(test_the_interval_survives_a_clock_wrap, "test_the_interval_survives_a_clock_wrap", 530);
   run_test(test_the_same_message_repeats, "test_the_same_message_repeats", 545);
+  run_test(test_the_entries_refuse_a_call_that_names_nothing, "test_the_entries_refuse_a_call_that_names_nothing", 560);
+  run_test(test_a_quoted_packet_too_short_for_the_header_it_claims_keys_on_the_fixed_destination, "test_a_quoted_packet_too_short_for_the_header_it_claims_keys_on_the_fixed_destination", 579);
 
   return UNITY_END();
 }

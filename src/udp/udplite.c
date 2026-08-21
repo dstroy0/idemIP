@@ -56,9 +56,13 @@ static_assert(IDEMIP_UDPLITE_OFF_CTX + sizeof(UdpLiteCtx) <= IDEMIP_UDPLITE_BORR
 // is covered whole only through the zero value.
 static IdemIpUdpLiteReason udplite_cov_span(uint16_t cov, uint32_t ip_payload_len, uint32_t *span)
 {
-    if (ip_payload_len < (uint32_t)IDEMIP_UDPLITE_COV_MIN)
+    // Not measured: every caller answers sec 3.1's "MUST be either 0 or at least 8" for itself
+    // before it asks for the span, so a packet shorter than its own header never reaches
+    // this. It is written because the span is what the checksum runs over, and a span measured from
+    // a length that cannot hold the header would run past the packet.
+    if (ip_payload_len < (uint32_t)IDEMIP_UDPLITE_COV_MIN) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_UDPLITE_REASON_SHORT;
+        return IDEMIP_UDPLITE_REASON_SHORT; // GCOVR_EXCL_LINE
     }
     if (cov == (uint16_t)IDEMIP_UDPLITE_COV_ALL)
     {

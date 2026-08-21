@@ -805,3 +805,47 @@ void test_the_borrow_map_is_compile_time(void)
                              "the operand block filled the whole borrow, leaving no context");
     TEST_ASSERT_EQUAL_PTR(work_a, (uint8_t *)IDEMIP_UDPLITE_IO(work_a));
 }
+
+// Each entry works over a datagram the caller holds and the two addresses RFC 3828 sec 3.1's
+// checksum is taken over, so a call missing any of the three has nothing to sum.
+void test_the_entries_refuse_a_call_that_names_no_datagram_or_no_address(void)
+{
+    ready(work_a);
+
+    set_check4(work_a, buf, V_IPL);
+    IDEMIP_UDPLITE_IO(work_a)->check_args.src = NULL;
+    UdpLite.check(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_UDPLITE_IO(work_a)->status,
+                                  "a checksum was taken with no source address");
+
+    set_check4(work_a, buf, V_IPL);
+    IDEMIP_UDPLITE_IO(work_a)->check_args.dst = NULL;
+    UdpLite.check(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_UDPLITE_IO(work_a)->status,
+                                  "a checksum was taken with no destination address");
+
+    set_build(work_a, buf, V_IPL, 8u, 4u);
+    IDEMIP_UDPLITE_IO(work_a)->build_args.src = NULL;
+    UdpLite.build(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_UDPLITE_IO(work_a)->status,
+                                  "a datagram was built with no source address");
+
+    set_build(work_a, buf, V_IPL, 8u, 4u);
+    IDEMIP_UDPLITE_IO(work_a)->build_args.dst = NULL;
+    UdpLite.build(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_UDPLITE_IO(work_a)->status,
+                                  "a datagram was built with no destination address");
+}
+
+// RFC 3828 sec 3.1: "the value of the Checksum Coverage field MUST be either 0 or at least 8", so a
+// packet shorter than the eight octets of its own header carries no coverage this rule can read.
+void test_a_packet_shorter_than_its_own_header_carries_no_coverage(void)
+{
+    ready(work_a);
+    set_check4(work_a, buf, V_IPL);
+    IDEMIP_UDPLITE_IO(work_a)->check_args.ip_payload_len = (uint32_t)IDEMIP_UDPLITE_COV_MIN - 1u;
+    UdpLite.check(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_UDPLITE_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_UDPLITE_REASON_SHORT, IDEMIP_UDPLITE_IO(work_a)->reason,
+                                  "a packet shorter than its own header was answered as something else");
+}

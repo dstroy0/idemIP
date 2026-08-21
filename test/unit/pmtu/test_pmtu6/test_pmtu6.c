@@ -553,3 +553,57 @@ void test_the_same_message_repeats(void)
     TEST_ASSERT_EQUAL_UINT8(index, IDEMIP_PMTU6_IO(work_a)->index);
     TEST_ASSERT_EQUAL_UINT16(1350u, first);
 }
+
+// A message and a path are each read out of the operand block, so a call naming neither has nothing
+// to read: RFC 8201 sec 4 takes the estimate from "the Packet Too Big message" and sec 5.2 keys the
+// entry on the destination it names.
+void test_the_entries_refuse_a_call_that_names_nothing(void)
+{
+    ready(work_a);
+
+    IDEMIP_PMTU6_IO(work_a)->too_big_args.msg = NULL;
+    IDEMIP_PMTU6_IO(work_a)->too_big_args.len = 64u;
+    Pmtu6.too_big(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PMTU6_IO(work_a)->status, "a call with no message was taken");
+
+    IDEMIP_PMTU6_IO(work_a)->path_args.dst = NULL;
+    Pmtu6.forget(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PMTU6_IO(work_a)->status,
+                                  "a lookup for no destination was answered");
+}
+
+// RFC 8200 sec 4 gives every extension header at least eight octets, and sec 4.4's Routing header
+// carries its addresses behind that. A quoted packet with fewer octets left than a header needs, or
+// a Routing header too short to hold an address, names no destination past the one in the fixed
+// header - so the estimate is keyed on that one.
+void test_a_quoted_packet_too_short_for_the_header_it_claims_keys_on_the_fixed_destination(void)
+{
+    ready(work_a);
+
+    // A Routing header claimed by the fixed header, with four octets behind it: fewer than one is.
+    size_t len = build(2u, 0u, 1280u, (uint8_t)IDEMIP_IP6_NH_ROUTING, dst_one);
+    IDEMIP_PMTU6_IO(work_a)->too_big_args.msg = g_msg;
+    IDEMIP_PMTU6_IO(work_a)->too_big_args.len = len + 4u;
+    IDEMIP_PMTU6_IO(work_a)->too_big_args.held = 0u;
+    IDEMIP_PMTU6_IO(work_a)->too_big_args.link_mtu = 1500u;
+    Pmtu6.too_big(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(dst_one, IDEMIP_PMTU6_IO(work_a)->dst, IDEMIP_IP6_ADDR_LEN,
+                                         "a header the packet could not hold moved the destination");
+
+    // A Routing header that is there and too short to carry an address: Segments Left is nonzero,
+    // and there is no address behind it to be the final destination.
+    len = build(2u, 0u, 1280u, (uint8_t)IDEMIP_IP6_NH_ROUTING, dst_one);
+    g_msg[len + 0] = 59u; // no next header
+    g_msg[len + 1] = 0u;  // Hdr Ext Len zero: eight octets in all, with no room for an address
+    g_msg[len + 2] = 4u;  // Routing Type, unread here
+    g_msg[len + 3] = 1u;  // Segments Left
+    IDEMIP_PMTU6_IO(work_a)->too_big_args.msg = g_msg;
+    IDEMIP_PMTU6_IO(work_a)->too_big_args.len = len + 8u;
+    IDEMIP_PMTU6_IO(work_a)->too_big_args.held = 0u;
+    IDEMIP_PMTU6_IO(work_a)->too_big_args.link_mtu = 1500u;
+    Pmtu6.too_big(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PMTU6_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(dst_one, IDEMIP_PMTU6_IO(work_a)->dst, IDEMIP_IP6_ADDR_LEN,
+                                         "a Routing header with no address in it was read for one");
+}
