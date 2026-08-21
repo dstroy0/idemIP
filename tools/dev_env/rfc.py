@@ -19,6 +19,11 @@ RFC the library actually cites, and CI can run the audit offline.
     python tools/dev_env/rfc.py 8415 --section 18.2.10.1     one section, by its number
     python tools/dev_env/rfc.py 1122 --grep "Timestamp"      every line that matches, with context
     python tools/dev_env/rfc.py 1122 --quote "A host MAY implement Timestamp and Timestamp Reply"
+    python tools/dev_env/rfc.py --find "each octet is a valid DHCP option code"
+
+--find is the other half of a finding: --audit says a comment's RFC does not hold its quote, and this
+says which one does. A sentence attributed to RFC 1542 that RFC 2132 actually carries is a citation to
+correct, not a quotation to rewrite.
 
 --quote is the one to reach for while writing a case: it answers whether the sentence is in the
 document, in those words, and prints where. Line breaks, page breaks and the running headers between
@@ -191,7 +196,7 @@ def contains(flat, quote):
     """
     parts = []
     for raw in re.split(r"\.\.\.+|\u2026", quote):
-        part, _ = squeeze(normalize(raw).strip(" ,;:"))
+        part, _ = squeeze(normalize(raw).strip(" ,;:."))
         if len(part) >= 8:
             parts.append(part)
     if not parts:
@@ -307,6 +312,35 @@ def comment_blocks(path):
     return blocks
 
 
+def cmd_find(quote):
+    """Which vendored RFC says it. The answer to what --audit and --quote only ever ask half of.
+
+    A quote the audit reports is one of two things: wording that drifted, or a sentence attributed to
+    the wrong document. Only the second has a right answer somewhere else in the corpus, and this is
+    how to get it - the same folded comparison, run over every RFC on the path instead of one.
+    """
+    seen = set()
+    hits = []
+    for d in law():
+        for name in sorted(os.listdir(d)):
+            m = re.match(r"^rfc0*(\d+)\.txt$", name)
+            if not m or m.group(1) in seen:
+                continue
+            seen.add(m.group(1))
+            text = read(os.path.join(d, name))
+            at = contains(flatten(text), quote)
+            if at >= 0:
+                hits.append((int(m.group(1)), name, flatten(text), at))
+    if not hits:
+        print("no RFC on the path says it, in these words")
+        print("  %d documents searched" % len(seen))
+        return 1
+    for number, _, flat, at in sorted(hits):
+        print("RFC %d:" % number)
+        print("  ...%s..." % flat[max(0, at - 50) : at + len(normalize(quote)) + 50].strip())
+    return 0
+
+
 def cmd_audit(paths):
     """Every comment block that names exactly one RFC, with its quotes checked against it."""
     roots = paths or ["src", "test"]
@@ -402,11 +436,14 @@ def main():
     ap.add_argument("--grep", help="print every line matching this regex")
     ap.add_argument("--context", type=int, default=2, help="lines either side of a --grep hit")
     ap.add_argument("--quote", help="check the document says this, in these words")
+    ap.add_argument("--find", help="which RFC on the path says this, whoever the comment blamed")
     ap.add_argument("--audit", nargs="*", help="check every quote in the tree, or under these paths")
     args = ap.parse_args()
 
     if args.audit is not None:
         return cmd_audit(args.audit)
+    if args.find:
+        return cmd_find(args.find)
     if not args.number:
         ap.error("an RFC number, or --audit")
 
