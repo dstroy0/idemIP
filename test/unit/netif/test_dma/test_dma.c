@@ -116,7 +116,20 @@ static size_t fake_rx_claim(const uint8_t **frame)
     }
     unsigned k = g_eng_tail & (ENGINE_Q - 1u);
     g_eng_tail++;
-    *frame = g_eng_no_addr ? NULL : ((g_eng_addr != NULL) ? g_eng_addr : rx_buf_at(g_eng_idx[k]));
+    // The three frames a case can ask this fake for: none at all, one the case placed itself, and
+    // the ring buffer the descriptor names, which is what the driver does.
+    if (g_eng_no_addr)
+    {
+        *frame = NULL;
+    }
+    else if (g_eng_addr != NULL)
+    {
+        *frame = g_eng_addr;
+    }
+    else
+    {
+        *frame = rx_buf_at(g_eng_idx[k]);
+    }
     return g_eng_len[k];
 }
 static void fake_rx_release(void)

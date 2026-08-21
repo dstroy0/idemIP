@@ -966,7 +966,7 @@ void test_a_fragment_with_no_octet_after_its_header_is_not_matched_against_the_t
 {
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     const size_t fh = off + IDEMIP_IPV6_HDR_LEN;
-    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_FRAGMENT, g_remote_ip6, g_local_ip6, IDEMIP_IP6_FRAG_HDR_LEN);
+    (void)build_ip6(g_frame, off, IDEMIP_IP6_NH_FRAGMENT, g_remote_ip6, g_local_ip6, IDEMIP_IP6_FRAG_HDR_LEN);
     idemip_ip6_frag_build(g_frame + fh, IDEMIP_IP6_NH_ICMPV6, 0u, IDEMIP_TRUE, 0x12345678u);
 
     input(work_a, fh + IDEMIP_IP6_FRAG_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
@@ -2218,8 +2218,8 @@ void test_a_second_hop_by_hop_header_is_a_header_error(void)
 {
     const size_t hop1 = IDEMIP_ETH_HDR_LEN + IDEMIP_IPV6_HDR_LEN;
     const size_t hop2 = hop1 + IDEMIP_IP6_EXT_UNIT;
-    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
-    off = build_ip6(g_frame, off, IDEMIP_IP6_NH_HOPOPT, g_remote_ip6, g_local_ip6, IDEMIP_IP6_EXT_UNIT * 2u);
+    const size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    (void)build_ip6(g_frame, off, IDEMIP_IP6_NH_HOPOPT, g_remote_ip6, g_local_ip6, IDEMIP_IP6_EXT_UNIT * 2u);
 
     // Two Hop-by-Hop headers of one unit each, the first naming the second, the second naming UDP.
     memset(g_frame + hop1, 0, IDEMIP_IP6_EXT_UNIT * 2u);

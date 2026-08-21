@@ -1081,7 +1081,7 @@ void test_every_entry_that_names_a_row_refuses_one_that_is_not_in_use(void)
 {
     Nd6.clear(work_a);
     at(work_a, 0u);
-    Nd6Io *io = IDEMIP_ND6_IO(work_a);
+    const Nd6Io *io = IDEMIP_ND6_IO(work_a);
 
     nb_index(work_a, 0u);
     Nd6.neighbor_confirm(work_a);
