@@ -461,6 +461,88 @@ static void offer_in(uint8_t *w, uint32_t lease_s)
     feed(w);
 }
 
+// --- RFC 2132 sec 2, the option encoding -------------------------------------
+
+// A DHCPOFFER carrying everything sec 3.1 asks for, and one more option the caller chose.
+static void offer_with(uint8_t *w, uint8_t code, uint8_t len, const uint8_t *v)
+{
+    uint8_t dns[8];
+    put32(dns, IP_DNS1);
+    put32(dns + 4, IP_DNS2);
+    msg_begin(XID_A, IP_OFFER, (uint8_t)IDEMIP_DHCP4_OFFER, g_mac_a);
+    msg_opt(code, len, v);
+    msg_opt32(IDEMIP_DHCP4_OPT_SUBNET_MASK, IP_MASK);
+    msg_opt32(IDEMIP_DHCP4_OPT_ROUTER, IP_ROUTER);
+    msg_opt(IDEMIP_DHCP4_OPT_DNS_SERVER, 8u, dns);
+    msg_opt32(IDEMIP_DHCP4_OPT_LEASE_TIME, 600u);
+    msg_opt32(IDEMIP_DHCP4_OPT_SERVER_ID, IP_SERVER);
+    msg_end();
+    feed(w);
+}
+
+// RFC 2132 gives each option this client reads a length it must have: sec 3.3's mask is "4 octets",
+// sec 3.5's router list and sec 3.8's server list are each "a multiple of 4" and hold at least one
+// address, sec 9.2's lease time, sec 9.7's server identifier and sec 9.11 and sec 9.12's T1 and T2 are
+// four octets, sec 9.3's overload and sec 9.6's message type are one. An option of any other length is
+// not one this client can read, and dhcp4_walk refuses the message rather than the option: half a
+// message is not a configuration.
+void test_an_option_of_the_wrong_length_discards_the_message(void)
+{
+    static const struct
+    {
+        uint8_t code;
+        uint8_t len;
+        const char *why;
+    } rows[] = {
+        {IDEMIP_DHCP4_OPT_SUBNET_MASK, 3u, "sec 3.3 makes the subnet mask four octets"},
+        {IDEMIP_DHCP4_OPT_ROUTER, 6u, "sec 3.5 makes the router list a multiple of four"},
+        {IDEMIP_DHCP4_OPT_ROUTER, 0u, "sec 3.5 lists at least one router"},
+        {IDEMIP_DHCP4_OPT_DNS_SERVER, 6u, "sec 3.8 makes the server list a multiple of four"},
+        {IDEMIP_DHCP4_OPT_DNS_SERVER, 0u, "sec 3.8 lists at least one server"},
+        {IDEMIP_DHCP4_OPT_LEASE_TIME, 3u, "sec 9.2 makes the lease time four octets"},
+        {IDEMIP_DHCP4_OPT_OVERLOAD, 2u, "sec 9.3 makes the overload one octet"},
+        {IDEMIP_DHCP4_OPT_OVERLOAD, 1u, "sec 9.3 leaves 0 out of the legal values"},
+        {IDEMIP_DHCP4_OPT_MSG_TYPE, 2u, "sec 9.6 makes the message type one octet"},
+        {IDEMIP_DHCP4_OPT_SERVER_ID, 3u, "sec 9.7 makes the server identifier four octets"},
+        {IDEMIP_DHCP4_OPT_T1, 3u, "sec 9.11 makes T1 four octets"},
+        {IDEMIP_DHCP4_OPT_T2, 3u, "sec 9.12 makes T2 four octets"},
+    };
+
+    for (size_t r = 0; r < sizeof rows / sizeof rows[0]; r++)
+    {
+        uint8_t v[8];
+        memset(v, 0, sizeof v);
+        if (rows[r].code == IDEMIP_DHCP4_OPT_OVERLOAD && rows[r].len == 1u)
+        {
+            v[0] = 0u; // sec 9.3's legal values are 1, 2 and 3
+        }
+        Dhcp4.clear(work_a);
+        to_selecting(work_a);
+        offer_with(work_a, rows[r].code, rows[r].len, v);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP4_SELECTING, IDEMIP_DHCP4_IO(work_a)->state, rows[r].why);
+    }
+}
+
+// sec 3.1: "The pad option can be used to cause subsequent fields to align on word boundaries", and it
+// "is not followed by length and value fields". sec 2 skips an option this client does not read by its
+// own length octet. Both leave the message readable, so the Offer is taken.
+void test_a_pad_and_an_unread_option_are_stepped_over(void)
+{
+    const uint8_t junk[3] = {0xAAu, 0xBBu, 0xCCu};
+
+    Dhcp4.clear(work_a);
+    to_selecting(work_a);
+    offer_with(work_a, IDEMIP_DHCP4_OPT_PAD, 0u, junk); // len 0 writes no value: a bare pad tag
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP4_REQUESTING, IDEMIP_DHCP4_IO(work_a)->state,
+                                  "a pad octet stopped the walk");
+
+    Dhcp4.clear(work_a);
+    to_selecting(work_a);
+    offer_with(work_a, 250u, 3u, junk); // 250 is site-specific, and nothing here reads it
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP4_REQUESTING, IDEMIP_DHCP4_IO(work_a)->state,
+                                  "an option this client does not read stopped the walk");
+}
+
 // bind through BOUND on a lease of @p lease_s seconds, the DHCPREQUEST going out at 1000 ms so every
 // sec 4.4.5 deadline below is measured from there.
 static void to_bound(uint8_t *w, uint32_t lease_s)
