@@ -84,11 +84,15 @@ static uint32_t icmp_in_classful_mask(uint32_t addr)
     {
         return 0xFFFF0000u;
     }
-    if ((addr & 0x20000000u) == 0u)
+    // Not measured on the last: the caller tests for multicast and for class E before it asks for a
+    // network mask, and an address with 111 in its leading bits is one of those two. It is written
+    // because the walk down the leading bits has to answer for every address it is handed, and an
+    // address that names no network has no host part for the broadcast forms to read.
+    if ((addr & 0x20000000u) == 0u) // GCOVR_EXCL_BR_LINE
     {
         return 0xFFFFFF00u;
     }
-    return ICMP_IN_ALL_ONES;
+    return ICMP_IN_ALL_ONES; // GCOVR_EXCL_LINE
 }
 
 // The four broadcast forms of RFC 1122 sec 3.2.1.3: (c) "{ -1, -1 } Limited broadcast", (d)
@@ -254,8 +258,7 @@ static void icmp_in_query_arrived(IcmpInIo *io, const uint8_t *msg, size_t msg_l
     }
     // RFC 1122 sec 3.2.2.6: "An ICMP Echo Request destined to an IP broadcast or IP multicast address
     // MAY be silently discarded." IDEMIP_ICMP_ECHO_BROADCAST picks which of the two this build does.
-    if (!IDEMIP_ICMP_ECHO_BROADCAST &&
-        (icmp_in_is_multicast(dst) || icmp_in_is_broadcast(dst, io->recv_args.if_mask)))
+    if (!IDEMIP_ICMP_ECHO_BROADCAST && (icmp_in_is_multicast(dst) || icmp_in_is_broadcast(dst, io->recv_args.if_mask)))
     {
         io->act |= IDEMIP_ICMP_IN_ACT_DISCARD;
         return;

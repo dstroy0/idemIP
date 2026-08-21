@@ -45,12 +45,12 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 // --- the wire ----------------------------------------------------------------
 
-#define HOST_IP 0xC0A80105u    // 192.168.1.5
-#define PEER_IP 0xC0A80101u    // 192.168.1.1
-#define HOST_MASK 0xFFFFFF00u  // /24
+#define HOST_IP 0xC0A80105u   // 192.168.1.5
+#define PEER_IP 0xC0A80101u   // 192.168.1.1
+#define HOST_MASK 0xFFFFFF00u // /24
 #define SUBNET_BCAST 0xC0A801FFu
 #define LIMITED_BCAST 0xFFFFFFFFu
-#define MCAST_IP 0xE0000001u   // 224.0.0.1
+#define MCAST_IP 0xE0000001u // 224.0.0.1
 #define CLASS_E_IP 0xF0000001u
 #define LOOPBACK_IP 0x7F000001u
 
@@ -623,8 +623,7 @@ void test_an_error_quotes_the_header_and_eight_data_octets(void)
     TEST_ASSERT_EQUAL_size_t(IDEMIP_ICMP_ERR_HDR_LEN + IDEMIP_IPV4_HDR_LEN + IDEMIP_ICMP_ERR_QUOTE_DATA,
                              IDEMIP_ICMP_IN_IO(work_a)->out_len);
     TEST_ASSERT_EQUAL_size_t(idemip_icmp_err_len(dgram), IDEMIP_ICMP_IN_IO(work_a)->out_len);
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(dgram, out + IDEMIP_ICMP_OFF_QUOTE,
-                                  IDEMIP_IPV4_HDR_LEN + IDEMIP_ICMP_ERR_QUOTE_DATA);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(dgram, out + IDEMIP_ICMP_OFF_QUOTE, IDEMIP_IPV4_HDR_LEN + IDEMIP_ICMP_ERR_QUOTE_DATA);
 }
 
 // RFC 792 recomputes the checksum over the whole message, quote included.
@@ -989,4 +988,190 @@ void test_a_built_error_repeats(void)
     IcmpIn.error(work_a);
     TEST_ASSERT_EQUAL_size_t(first, IDEMIP_ICMP_IN_IO(work_a)->out_len);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(copy, out, first);
+}
+
+// --- the classful forms behind the four broadcasts ------------------------------
+
+// RFC 1122 sec 3.2.1.3 (d) and (f) are broadcasts under the network's own mask rather than the
+// interface's, and RFC 791 sec 3.2 gives that mask by the leading bits: eight under a leading 0,
+// sixteen under 10, twenty-four under 110. An interface that has not been given a mask yet leaves
+// those the only forms there are, and a Redirect naming one of them names no single host.
+void test_a_redirect_naming_a_classful_broadcast_is_discarded(void)
+{
+    // One address per class, each with its network part intact and its host part all ones.
+    const uint32_t gateway[3] = {0x0AFFFFFFu, 0x8001FFFFu, 0xC0A801FFu};
+    for (int i = 0; i < 3; i++)
+    {
+        memset(dgram, 0, sizeof dgram);
+        const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, gateway[i]);
+        put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
+        load_recv(work_a);
+        IDEMIP_ICMP_IN_IO(work_a)->recv_args.if_addr = 0u;
+        IDEMIP_ICMP_IN_IO(work_a)->recv_args.if_mask = 0u;
+        IcmpIn.recv(work_a);
+        TEST_ASSERT_EQUAL_UINT8_MESSAGE(IDEMIP_ICMP_IN_SUPPRESS_REDIRECT, IDEMIP_ICMP_IN_IO(work_a)->suppress,
+                                        "a Redirect to a directed broadcast of the network was taken");
+    }
+
+    // A host address in each of those networks is a first hop, so the walk over the forms is what
+    // separates them and not the leading bits alone.
+    const uint32_t host[3] = {0x0A000002u, 0x80010002u, 0xC0A80102u};
+    for (int i = 0; i < 3; i++)
+    {
+        memset(dgram, 0, sizeof dgram);
+        const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, host[i]);
+        put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
+        load_recv(work_a);
+        IDEMIP_ICMP_IN_IO(work_a)->recv_args.if_addr = 0u;
+        IDEMIP_ICMP_IN_IO(work_a)->recv_args.if_mask = 0u;
+        IcmpIn.recv(work_a);
+        TEST_ASSERT_BITS_HIGH_MESSAGE(IDEMIP_ICMP_IN_ACT_ROUTE, IDEMIP_ICMP_IN_IO(work_a)->act,
+                                      "a Redirect to a host address was discarded as a broadcast");
+    }
+
+    // RFC 1112 sec 4's class D and the class E above it name no network, so neither carries a host
+    // part that could be all ones: the broadcast forms pass them by, and what is left is sec
+    // 3.2.2.2's own test of the gateway. A multicast address is not a first hop; an address in the
+    // class E block is one this test does not reach, and it is left as the section leaves it.
+    const uint32_t not_hosts[2] = {0xE0000001u, 0xF0000001u};
+    const uint8_t expect[2] = {(uint8_t)IDEMIP_ICMP_IN_SUPPRESS_REDIRECT, 0u};
+    for (int i = 0; i < 2; i++)
+    {
+        memset(dgram, 0, sizeof dgram);
+        const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, not_hosts[i]);
+        put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
+        load_recv(work_a);
+        IDEMIP_ICMP_IN_IO(work_a)->recv_args.if_addr = not_hosts[i] + 1u;
+        IDEMIP_ICMP_IN_IO(work_a)->recv_args.if_mask = 0xFF000000u;
+        IcmpIn.recv(work_a);
+        TEST_ASSERT_EQUAL_UINT8_MESSAGE(expect[i], IDEMIP_ICMP_IN_IO(work_a)->suppress,
+                                        "a Redirect naming an address in a reserved block was not answered as it is");
+    }
+}
+
+// An interface whose mask is all ones has no host part of its own, so RFC 1122 sec 3.2.1.3 (e) names
+// nothing there and the classful forms are the only ones left to test.
+void test_a_single_host_interface_has_no_subnet_broadcast(void)
+{
+    memset(dgram, 0, sizeof dgram);
+    const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, 0xC0A801FFu);
+    put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
+    load_recv(work_a);
+    IDEMIP_ICMP_IN_IO(work_a)->recv_args.if_mask = 0xFFFFFFFFu;
+    IcmpIn.recv(work_a);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(IDEMIP_ICMP_IN_SUPPRESS_REDIRECT, IDEMIP_ICMP_IN_IO(work_a)->suppress,
+                                    "a gateway off a single-host interface was taken as on it");
+}
+
+// RFC 792's Redirect carries a gateway address and the datagram that provoked it. A message too
+// short for the gateway field is not one, and one whose quote is not an IPv4 header names no
+// destination for sec 3.2.2.2's "first-hop gateway for the specified destination" to be tested on.
+void test_a_redirect_with_no_gateway_field_or_no_readable_quote(void)
+{
+    memset(dgram, 0, sizeof dgram);
+    uint8_t *m = dgram + IDEMIP_IPV4_HDR_LEN;
+    m[0] = (uint8_t)IDEMIP_ICMP_REDIRECT;
+    m[1] = IDEMIP_ICMP_RD_HOST;
+    m[IDEMIP_ICMP_OFF_CKSUM] = 0u;
+    m[IDEMIP_ICMP_OFF_CKSUM + 1u] = 0u;
+    idemip_wr16(m + IDEMIP_ICMP_OFF_CKSUM, idemip_cksum(m, 4u));
+    put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, 4u);
+    load_recv(work_a);
+    IcmpIn.recv(work_a);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_ICMP_IN_IO(work_a)->bad_len, "a Redirect with no gateway field was read");
+
+    // The gateway is on this subnet and the quote behind it is not an IPv4 header at all.
+    memset(dgram, 0, sizeof dgram);
+    const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, PEER_IP);
+    uint8_t *msg = dgram + IDEMIP_IPV4_HDR_LEN;
+    msg[IDEMIP_ICMP_OFF_QUOTE] = 0x00u; // version zero: not IPv4
+    idemip_wr16(msg + IDEMIP_ICMP_OFF_CKSUM, 0u);
+    idemip_wr16(msg + IDEMIP_ICMP_OFF_CKSUM, idemip_cksum(msg, len));
+    put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
+    load_recv(work_a);
+    IcmpIn.recv(work_a);
+    TEST_ASSERT_BITS_HIGH_MESSAGE(IDEMIP_ICMP_IN_ACT_ROUTE, IDEMIP_ICMP_IN_IO(work_a)->act,
+                                  "a Redirect with an unreadable quote was discarded rather than taken");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, IDEMIP_ICMP_IN_IO(work_a)->quoted_dst,
+                                     "a destination was read out of a quote that is not a header");
+}
+
+// RFC 1122 sec 3.2.2 keeps an ICMP error from being sent about "an ICMP error message" and about "a
+// non-initial fragment" of any datagram, which are its clauses (1) and (4). The
+// message it would be about is read out of the datagram, so a datagram that is not carrying one -
+// because it is a later fragment, or because it is too short to hold the header - is not one of
+// those, and the error goes.
+void test_the_icmp_error_suppression_reads_the_message_the_datagram_carries(void)
+{
+    // A later fragment of an ICMP datagram. sec 3.2.2 (4) refuses it for being a non-initial
+    // fragment, and the ICMP-error rule above passes it by for the same reason: the message head is
+    // in fragment zero, which this is not.
+    memset(dgram, 0, sizeof dgram);
+    memset(dgram + IDEMIP_IPV4_HDR_LEN, 0x33, 16u);
+    put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 2u, 16u);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(IDEMIP_ICMP_IN_SUPPRESS_FRAGMENT, suppress_of(work_a),
+                                    "a later fragment was answered as something other than one");
+
+    // An ICMP datagram with no room for a Type and Code at all.
+    memset(dgram, 0, sizeof dgram);
+    put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, 2u);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, suppress_of(work_a),
+                                    "a datagram too short to carry a message was read for one");
+}
+
+// RFC 792: an error message carries "the internet header plus the first 64 bits of the original
+// datagram's data", and a datagram with fewer than 64 bits behind its header carries what there is.
+void test_an_error_about_a_datagram_shorter_than_the_quote_carries_what_there_is(void)
+{
+    memset(dgram, 0, sizeof dgram);
+    put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_UDP, 0u, 0u); // header only, no data at all
+    load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
+    IcmpIn.error(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ICMP_IN_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_size_t_MESSAGE((size_t)IDEMIP_ICMP_ERR_HDR_LEN + IDEMIP_IPV4_HDR_LEN,
+                                     IDEMIP_ICMP_IN_IO(work_a)->out_len,
+                                     "the quote ran past the datagram it was taken from");
+    TEST_ASSERT_TRUE(idemip_cksum_valid(out, IDEMIP_ICMP_IN_IO(work_a)->out_len));
+}
+
+// RFC 1812 sec 4.3.2.8's rate limit is a token bucket, and a bucket that is already full takes no
+// more: the refill stops at the top whatever time has passed, so a gap long enough for two tokens
+// with one to give back leaves the bucket full and not over.
+void test_the_token_bucket_refill_stops_at_the_top(void)
+{
+    memset(dgram, 0, sizeof dgram);
+    put_victim();
+
+    // One token spent.
+    load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
+    IDEMIP_ICMP_IN_IO(work_a)->err_args.now_ms = 0u;
+    IcmpIn.error(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ICMP_IN_IO(work_a)->status);
+
+    // A gap long enough for two tokens, but shorter than the one that refills the whole bucket. The
+    // one that was spent comes back and the second has nowhere to go.
+    load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
+    IDEMIP_ICMP_IN_IO(work_a)->err_args.now_ms = 2u * (uint32_t)IDEMIP_ICMP4_ERR_TOKEN_MS;
+    IcmpIn.error(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ICMP_IN_IO(work_a)->status,
+                                  "the token that was spent did not come back");
+}
+
+// RFC 791 sec 3.1 fixes the Internet Header Length at "the minimum value for a correct header is 5",
+// so a quote claiming fewer than five words is not a header this stack can read a Protocol out of -
+// the version alone is not enough to say it is one.
+void test_a_quote_whose_header_length_is_below_the_minimum_names_no_protocol(void)
+{
+    memset(dgram, 0, sizeof dgram);
+    const size_t len = put_error((uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT, 0u);
+    uint8_t *msg = dgram + IDEMIP_IPV4_HDR_LEN;
+    msg[IDEMIP_ICMP_OFF_QUOTE] = 0x44u; // version 4, IHL 4: one word short of a header
+    idemip_wr16(msg + IDEMIP_ICMP_OFF_CKSUM, 0u);
+    idemip_wr16(msg + IDEMIP_ICMP_OFF_CKSUM, idemip_cksum(msg, len));
+    put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
+    load_recv(work_a);
+    IcmpIn.recv(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ICMP_IN_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, IDEMIP_ICMP_IN_IO(work_a)->proto,
+                                    "a Protocol was read out of a quote shorter than a header");
 }
