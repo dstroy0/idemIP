@@ -513,7 +513,7 @@ void test_the_same_prefix_updates_rather_than_adding(void)
 // what a 32-bit millisecond deadline could hold, and both must be kept whole.
 void test_a_lifetime_past_a_32_bit_millisecond_deadline_is_kept_whole(void)
 {
-    const uint32_t valid_s = 2592000u;   // sec 6.2.1 AdvValidLifetime, 30 days
+    const uint32_t valid_s = 2592000u;    // sec 6.2.1 AdvValidLifetime, 30 days
     const uint32_t preferred_s = 604800u; // sec 6.2.1 AdvPreferredLifetime, 7 days
 
     Slaac.clear(work_a);
@@ -658,7 +658,7 @@ void test_a_short_lifetime_against_an_infinite_one_resets_to_two_hours(void)
 {
     Slaac.clear(work_a);
     feed_prefix(work_a, g_prefix, 64u, IDEMIP_SLAAC_LIFETIME_INFINITE, IDEMIP_SLAAC_LIFETIME_INFINITE, 0u, IDEMIP_TRUE,
-              IDEMIP_FALSE);
+                IDEMIP_FALSE);
     TEST_ASSERT_TRUE(IO(work_a)->valid_infinite);
     feed_prefix(work_a, g_prefix, 64u, 300u, 300u, 1000u, IDEMIP_TRUE, IDEMIP_FALSE);
     TEST_ASSERT_FALSE(IO(work_a)->valid_infinite);
@@ -838,4 +838,252 @@ void test_two_interfaces_form_their_own_addresses(void)
     TEST_ASSERT_EQUAL_UINT8_ARRAY(g_iid2, IO(work_b)->addr + 8, 8);
     find_addr(work_b, g_formed);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "one interface holds the other's address");
+}
+
+// --- the fields an option arrives with -----------------------------------------
+
+// RFC 4861 sec 4.6.2 puts Prefix Length "from 0 to 128", so a longer one is not that field at all,
+// and an option with no prefix in it is not a Prefix Information option. Neither can become one on a
+// later advertisement, so both are ERR rather than sec 5.5.3's silent ignore.
+void test_a_prefix_option_outside_its_own_fields_is_refused(void)
+{
+    Slaac.clear(work_a);
+
+    feed_prefix(.w = work_a, .prefix = g_prefix, .prefix_len = 129u, .valid_s = 100u, .preferred_s = 100u,
+                .now_ms = 1000u, .autonomous = IDEMIP_TRUE, .authenticated = IDEMIP_TRUE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a Prefix Length past 128 was taken");
+
+    feed_prefix(.w = work_a, .prefix = NULL, .prefix_len = 64u, .valid_s = 100u, .preferred_s = 100u, .now_ms = 1000u,
+                .autonomous = IDEMIP_TRUE, .authenticated = IDEMIP_TRUE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "an option with no prefix was taken");
+}
+
+// RFC 4291 sec 2.5.6: the link-local prefix is "1111111010" followed by 54 zero bits, so the ten bits
+// are the test and not the first octet alone. FEC0::/10 carries the same first octet and is not it.
+void test_the_link_local_prefix_is_the_first_ten_bits_and_not_the_first_octet(void)
+{
+    Slaac.clear(work_a);
+
+    static const uint8_t site_local[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0xC0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    feed_prefix(.w = work_a, .prefix = site_local, .prefix_len = 64u, .valid_s = 100u, .preferred_s = 100u,
+                .now_ms = 1000u, .autonomous = IDEMIP_TRUE, .authenticated = IDEMIP_TRUE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->ignored,
+                              "a prefix sharing the link-local first octet was read as link-local");
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, IO(work_a)->addresses, "no address was formed on the prefix");
+}
+
+// RFC 4862 sec 5.3: "If the sum of the link-local prefix length and N is larger than 128,
+// autoconfiguration fails and manual configuration is required." An identifier this unit can lay
+// into an address arrives as whole octets and is not nothing, so a prefix that leaves room for one
+// but names none, or names one measured in bits that are not octets, forms no address.
+void test_an_identifier_this_unit_cannot_lay_into_an_address_forms_none(void)
+{
+    Slaac.clear(work_a);
+
+    // The sum is right and there is no identifier.
+    IO(work_a)->prefix_args.prefix = g_prefix;
+    IO(work_a)->prefix_args.prefix_len = 64u;
+    IO(work_a)->prefix_args.iid = NULL;
+    IO(work_a)->prefix_args.iid_bits = 64u;
+    IO(work_a)->prefix_args.valid_s = 100u;
+    IO(work_a)->prefix_args.preferred_s = 100u;
+    IO(work_a)->prefix_args.now_ms = 1000u;
+    IO(work_a)->prefix_args.autonomous = IDEMIP_TRUE;
+    IO(work_a)->prefix_args.authenticated = IDEMIP_TRUE;
+    Slaac.prefix_in(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "an address was formed with no identifier");
+
+    // The sum is right and the identifier is measured in bits that are not whole octets.
+    IO(work_a)->prefix_args.prefix_len = 63u;
+    IO(work_a)->prefix_args.iid = g_iid;
+    IO(work_a)->prefix_args.iid_bits = 65u;
+    Slaac.prefix_in(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status,
+                                  "an identifier that is not whole octets was laid into an address");
+}
+
+// RFC 4862 sec 5.5.3 (d): "If an address is formed successfully and the address is not yet in the
+// list, the host adds it to the list." One that is already there is the address it already is, so it
+// is reported rather than added twice - and two options can form it, since the prefix length and the
+// identifier length only have to sum to 128.
+void test_an_address_already_in_the_list_is_reported_rather_than_added_twice(void)
+{
+    Slaac.clear(work_a);
+
+    feed_prefix(.w = work_a, .prefix = g_prefix, .prefix_len = 64u, .valid_s = 100u, .preferred_s = 100u,
+                .now_ms = 1000u, .autonomous = IDEMIP_TRUE, .authenticated = IDEMIP_TRUE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(1u, IO(work_a)->addresses);
+    uint8_t formed[IDEMIP_IP6_ADDR_LEN];
+    memcpy(formed, IO(work_a)->addr, IDEMIP_IP6_ADDR_LEN);
+
+    // The same address, out of a shorter prefix and a longer identifier: the option is a new one to
+    // the list, and the address it forms is not.
+    uint8_t wide_iid[IDEMIP_IP6_ADDR_LEN];
+    memcpy(wide_iid, &formed[IDEMIP_IP6_ADDR_LEN - 9u], 9u);
+    IO(work_a)->prefix_args.prefix = g_prefix;
+    IO(work_a)->prefix_args.prefix_len = 56u;
+    IO(work_a)->prefix_args.iid = wide_iid;
+    IO(work_a)->prefix_args.iid_bits = 72u;
+    IO(work_a)->prefix_args.valid_s = 100u;
+    IO(work_a)->prefix_args.preferred_s = 100u;
+    IO(work_a)->prefix_args.now_ms = 1000u;
+    IO(work_a)->prefix_args.autonomous = IDEMIP_TRUE;
+    IO(work_a)->prefix_args.authenticated = IDEMIP_TRUE;
+    Slaac.prefix_in(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(formed, IO(work_a)->addr, IDEMIP_IP6_ADDR_LEN,
+                                         "the second option formed a different address");
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, IO(work_a)->addresses, "an address already in the list was added twice");
+}
+
+// The list is finite, and RFC 4862 sec 5.5.3 (e) frees a slot when a valid lifetime runs out, so a
+// full list is BUSY rather than ERR: the room the caller asked for arrives on a later tick.
+void test_a_full_list_is_busy_for_a_link_local_address(void)
+{
+    Slaac.clear(work_a);
+
+    uint8_t iid[8];
+    memcpy(iid, g_iid, sizeof iid);
+    for (uint8_t k = 0u; k < (uint8_t)IDEMIP_IP6_ADDRESSES; k++)
+    {
+        iid[7] = (uint8_t)(0x10u + k);
+        link_local(work_a, iid, 64u);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status, "a link-local address was refused a free slot");
+    }
+
+    iid[7] = 0xEEu;
+    link_local(work_a, iid, 64u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IO(work_a)->status, "a full list was ERR rather than BUSY");
+}
+
+// RFC 4862 sec 5.5.3 (d) looks for the prefix "in the list", and the list holds the link-local
+// prefix of RFC 4291 sec 2.5.6 too - which is ten bits, so the comparison is over one whole octet
+// and two bits of the next. A prefix that shares the octet and differs inside those two bits is not
+// the same prefix.
+void test_a_prefix_is_compared_over_the_bits_its_length_names(void)
+{
+    Slaac.clear(work_a);
+    link_local(work_a, g_iid, 64u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    // Same first octet as the link-local prefix, different second: the two bits are what separate
+    // them, and this is not link-local, so it is not silently ignored on the way in either.
+    static const uint8_t near_ll[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    feed_prefix(.w = work_a, .prefix = near_ll, .prefix_len = 10u, .valid_s = 100u, .preferred_s = 100u,
+                .now_ms = 1000u, .autonomous = IDEMIP_TRUE, .authenticated = IDEMIP_TRUE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->ignored, "a prefix of ten bits and an identifier of 118 formed an address");
+
+    // A prefix of no bits at all is compared over no octets, and 128 bits of identifier is the whole
+    // address: sec 5.3's sum is met, so this one does form.
+    static const uint8_t any[IDEMIP_IP6_ADDR_LEN] = {0};
+    static const uint8_t whole_iid[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0x02,
+                                                           0,    0,    0,    0,    0, 0, 0, 0x01};
+    IO(work_a)->prefix_args.prefix = any;
+    IO(work_a)->prefix_args.prefix_len = 0u;
+    IO(work_a)->prefix_args.iid = whole_iid;
+    IO(work_a)->prefix_args.iid_bits = 128u;
+    IO(work_a)->prefix_args.valid_s = 100u;
+    IO(work_a)->prefix_args.preferred_s = 100u;
+    IO(work_a)->prefix_args.now_ms = 1000u;
+    IO(work_a)->prefix_args.autonomous = IDEMIP_TRUE;
+    IO(work_a)->prefix_args.authenticated = IDEMIP_TRUE;
+    Slaac.prefix_in(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(whole_iid, IO(work_a)->addr, IDEMIP_IP6_ADDR_LEN,
+                                         "128 bits of identifier did not form the whole address");
+
+    // The same option again finds that prefix in the list, over no octets and no bits.
+    Slaac.prefix_in(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(2u, IO(work_a)->addresses, "the prefix of no bits was added twice");
+}
+
+// RFC 4862 sec 5.3 needs an identifier to form an address with, and one of no bits is none.
+void test_an_identifier_of_no_bits_forms_no_address(void)
+{
+    Slaac.clear(work_a);
+
+    IO(work_a)->prefix_args.prefix = g_prefix;
+    IO(work_a)->prefix_args.prefix_len = 128u;
+    IO(work_a)->prefix_args.iid = g_iid;
+    IO(work_a)->prefix_args.iid_bits = 0u;
+    IO(work_a)->prefix_args.valid_s = 100u;
+    IO(work_a)->prefix_args.preferred_s = 100u;
+    IO(work_a)->prefix_args.now_ms = 1000u;
+    IO(work_a)->prefix_args.autonomous = IDEMIP_TRUE;
+    IO(work_a)->prefix_args.authenticated = IDEMIP_TRUE;
+    Slaac.prefix_in(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "an identifier of no bits formed an address");
+}
+
+// An address is looked up by the address, a slot by its index, and a removal by the address again:
+// each entry reads what it was given, so a call that names nothing is refused rather than answered
+// from whatever slot was there.
+void test_the_address_entries_refuse_what_names_no_address(void)
+{
+    Slaac.clear(work_a);
+    link_local(work_a, g_iid, 64u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+
+    IO(work_a)->addr_args.addr = NULL;
+    Slaac.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a lookup for no address was answered");
+    Slaac.remove(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a removal of no address was made");
+
+    IO(work_a)->addr_args.index = (uint8_t)IDEMIP_IP6_ADDRESSES;
+    Slaac.get(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a slot past the list was read");
+
+    // A slot inside the list that nobody has taken is not an address either.
+    IO(work_a)->addr_args.index = (uint8_t)(IDEMIP_IP6_ADDRESSES - 1u);
+    Slaac.get(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a slot nobody took was read as an address");
+
+    // The one that was taken reads back, with the lifetime it has left rather than none.
+    IO(work_a)->addr_args.index = 0u;
+    Slaac.get(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+}
+
+// Bytes clear has not run on are not a list, so every entry refuses them rather than reading an
+// address out of whatever was there.
+void test_the_address_entries_refuse_an_uncleared_borrow(void)
+{
+    memset(work_a, 0xFF, IDEMIP_SLAAC_BORROW);
+    IO(work_a)->addr_args.addr = g_prefix;
+    IO(work_a)->addr_args.index = 0u;
+    Slaac.find(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "find read an uncleared borrow");
+    Slaac.get(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "get read an uncleared borrow");
+    Slaac.remove(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "remove read an uncleared borrow");
+}
+
+// RFC 4862 sec 5.5.3 (e) compares the received Valid Lifetime against "the remaining time to the
+// valid lifetime expiration of the previously autoconfigured address", which it calls
+// "RemainingLifetime". An address whose lifetime is already behind it has none remaining. The sweep that removes such an
+// address runs on a tick, so an advertisement arriving before that tick meets it still in the list
+// with nothing left - which is at or under two hours, so rule 3 is what the option takes.
+void test_an_advertisement_meeting_an_address_with_nothing_left_takes_the_two_hour_rule(void)
+{
+    Slaac.clear(work_a);
+
+    feed_prefix(.w = work_a, .prefix = g_prefix, .prefix_len = 64u, .valid_s = 100u, .preferred_s = 100u,
+                .now_ms = 1000u, .autonomous = IDEMIP_TRUE, .authenticated = IDEMIP_TRUE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    const IdemIpMs first_at = IO(work_a)->valid_at;
+
+    // The same prefix again, past the lifetime the first one set, carrying a lifetime under two
+    // hours and no authentication: rule 3 puts the address at two hours rather than at that value.
+    feed_prefix(.w = work_a, .prefix = g_prefix, .prefix_len = 64u, .valid_s = 100u, .preferred_s = 100u,
+                .now_ms = 1000u + (200u * 1000u), .autonomous = IDEMIP_TRUE, .authenticated = IDEMIP_FALSE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->valid_at > first_at,
+                             "an advertisement meeting an address with nothing left did not move its lifetime");
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, IO(work_a)->addresses, "the address was formed a second time");
 }

@@ -61,6 +61,16 @@ extern void test_get_refuses_a_slot_that_holds_nothing(void);
 extern void test_remove_refuses_an_address_that_is_not_in_the_list(void);
 extern void test_remove_frees_the_slot(void);
 extern void test_two_interfaces_form_their_own_addresses(void);
+extern void test_a_prefix_option_outside_its_own_fields_is_refused(void);
+extern void test_the_link_local_prefix_is_the_first_ten_bits_and_not_the_first_octet(void);
+extern void test_an_identifier_this_unit_cannot_lay_into_an_address_forms_none(void);
+extern void test_an_address_already_in_the_list_is_reported_rather_than_added_twice(void);
+extern void test_a_full_list_is_busy_for_a_link_local_address(void);
+extern void test_a_prefix_is_compared_over_the_bits_its_length_names(void);
+extern void test_an_identifier_of_no_bits_forms_no_address(void);
+extern void test_the_address_entries_refuse_what_names_no_address(void);
+extern void test_the_address_entries_refuse_an_uncleared_borrow(void);
+extern void test_an_advertisement_meeting_an_address_with_nothing_left_takes_the_two_hour_rule(void);
 
 
 /*=======Mock Management=====*/
@@ -175,6 +185,16 @@ int main(void)
   run_test(test_remove_refuses_an_address_that_is_not_in_the_list, "test_remove_refuses_an_address_that_is_not_in_the_list", 796);
   run_test(test_remove_frees_the_slot, "test_remove_frees_the_slot", 805);
   run_test(test_two_interfaces_form_their_own_addresses, "test_two_interfaces_form_their_own_addresses", 820);
+  run_test(test_a_prefix_option_outside_its_own_fields_is_refused, "test_a_prefix_option_outside_its_own_fields_is_refused", 848);
+  run_test(test_the_link_local_prefix_is_the_first_ten_bits_and_not_the_first_octet, "test_the_link_local_prefix_is_the_first_ten_bits_and_not_the_first_octet", 863);
+  run_test(test_an_identifier_this_unit_cannot_lay_into_an_address_forms_none, "test_an_identifier_this_unit_cannot_lay_into_an_address_forms_none", 880);
+  run_test(test_an_address_already_in_the_list_is_reported_rather_than_added_twice, "test_an_address_already_in_the_list_is_reported_rather_than_added_twice", 910);
+  run_test(test_a_full_list_is_busy_for_a_link_local_address, "test_a_full_list_is_busy_for_a_link_local_address", 943);
+  run_test(test_a_prefix_is_compared_over_the_bits_its_length_names, "test_a_prefix_is_compared_over_the_bits_its_length_names", 965);
+  run_test(test_an_identifier_of_no_bits_forms_no_address, "test_an_identifier_of_no_bits_forms_no_address", 1005);
+  run_test(test_the_address_entries_refuse_what_names_no_address, "test_the_address_entries_refuse_what_names_no_address", 1025);
+  run_test(test_the_address_entries_refuse_an_uncleared_borrow, "test_the_address_entries_refuse_an_uncleared_borrow", 1054);
+  run_test(test_an_advertisement_meeting_an_address_with_nothing_left_takes_the_two_hour_rule, "test_an_advertisement_meeting_an_address_with_nothing_left_takes_the_two_hour_rule", 1072);
 
   return UNITY_END();
 }

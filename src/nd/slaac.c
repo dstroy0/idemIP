@@ -116,7 +116,11 @@ static idemip_bool slaac_prefix_eq(const uint8_t *a, const uint8_t *b, uint8_t l
     if (bits != 0u)
     {
         uint8_t mask = (uint8_t)(0xFFu << (8u - bits));
-        if ((uint8_t)((a[whole] ^ b[whole]) & mask) != 0u)
+        // Not measured on the equal arm: the only length in the list that is not whole octets is the
+        // link-local prefix's ten bits, and a prefix equal to that one over those bits is the
+        // link-local prefix - which sec 5.5.3 (b) has already silently ignored before the list is
+        // walked. It is written because the walk compares whatever length it is handed.
+        if ((uint8_t)((a[whole] ^ b[whole]) & mask) != 0u) // GCOVR_EXCL_BR_LINE
         {
             return IDEMIP_FALSE;
         }
@@ -165,9 +169,14 @@ static void slaac_form_global(uint8_t *out, const uint8_t *prefix, uint8_t prefi
 // N at 64 for Ethernet, and this stack's link layer is Ethernet II.
 static idemip_bool slaac_iid_ok(const uint8_t *iid, uint8_t iid_bits, uint8_t prefix_len)
 {
+    // Not measured on the last: the caller reaches this only once the two lengths sum to 128 and the
+    // identifier is whole octets, so the octets the prefix occupies and the octets the identifier
+    // occupies come to sixteen exactly and the test is met. It is written because it is what keeps
+    // the store inside the address, and the two lengths arrive from an option on the wire.
     return (idemip_bool)(iid != NULL && iid_bits != 0u && (uint8_t)(iid_bits & 7u) == 0u &&
                          (uint32_t)prefix_len + (uint32_t)iid_bits <= SLAAC_ADDR_BITS &&
-                         (uint8_t)(prefix_len >> 3) <= (uint8_t)(IDEMIP_IP6_ADDR_LEN - (iid_bits >> 3)));
+                         (uint8_t)(prefix_len >> 3) <=
+                             (uint8_t)(IDEMIP_IP6_ADDR_LEN - (iid_bits >> 3))); // GCOVR_EXCL_BR_LINE
 }
 
 // --- the clock -------------------------------------------------------------
@@ -314,8 +323,7 @@ static void slaac_set_valid(SlaacEntry *e, IdemIpMs now, uint32_t valid_s)
  * RemainingLifetime is neither less than the received lifetime nor at or under 2 hours, so it takes
  * rule 1 or rule 3.
  */
-static void slaac_two_hour_rule(uint8_t *work, SlaacEntry *e, IdemIpMs now, uint32_t valid_s,
-                                idemip_bool authenticated)
+static void slaac_two_hour_rule(uint8_t *work, SlaacEntry *e, IdemIpMs now, uint32_t valid_s, idemip_bool authenticated)
 {
     SlaacIo *io = SLAAC_IO(work);
     idemip_bool received_infinite = (idemip_bool)(valid_s == IDEMIP_SLAAC_LIFETIME_INFINITE);
@@ -372,7 +380,8 @@ void idemip_slaac_link_local(uint8_t *work)
     SlaacIo *io = SLAAC_IO(work);
     io->status = IDEMIP_ERR;
     slaac_clear_results(io);
-    if (!slaac_ready(work) || !slaac_iid_ok(io->link_local_args.iid, io->link_local_args.iid_bits, SLAAC_LINK_LOCAL_LEN))
+    if (!slaac_ready(work) ||
+        !slaac_iid_ok(io->link_local_args.iid, io->link_local_args.iid_bits, SLAAC_LINK_LOCAL_LEN))
     {
         return;
     }
