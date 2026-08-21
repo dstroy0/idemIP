@@ -1364,6 +1364,109 @@ void test_a_name_running_past_the_message_is_refused(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status);
 }
 
+// --- RFC 1035 sec 4.1.4, the encodings that are not names --------------------
+
+// A response whose question this client did not ask is not its answer, so a name the walk cannot read
+// in the question only costs that slot its match. The encodings below are put on the ANSWER's owner
+// instead, where the walk has already agreed the question is the right one: the record is the thing
+// refused, and nothing is cached for the name that was asked.
+static void owner_is_unreadable_after_deliver(uint8_t *w, const char *why)
+{
+    look(w, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(w)->status, why);
+}
+
+static void owner_is_unreadable(uint8_t *w, const char *why)
+{
+    deliver_ok(w, (size_t)OFF_AN + 2u + (size_t)IDEMIP_DNS_RR_FIXED_LEN + 4u);
+    look(w, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(w)->status, why);
+}
+
+// sec 4.1.4 gives the length octet two forms: "the first two bits are zero" for a label of up to 63
+// octets, and "11" for a pointer. "The 10 and 01 combinations are reserved for future use." A length
+// octet carrying one is not something this walk can step over, so the record it owns is not an answer.
+void test_a_reserved_label_length_form_is_refused(void)
+{
+    static const uint8_t reserved[2] = {0x40u, 0x80u}; // the 01 and the 10 forms
+    for (int i = 0; i < 2; i++)
+    {
+        Dns.clear(work_a);
+        uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+        put_on_the_wire(work_a, slot);
+        (void)good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+        g_msg[OFF_AN] = reserved[i];
+        owner_is_unreadable(work_a, "sec 4.1.4 reserves the 01 and 10 length forms");
+    }
+}
+
+// sec 4.1.4's pointer exists so "an entire domain name or a list of labels at the end of a domain name
+// is replaced with a pointer to a prior occurance of the same name". Prior is the whole of it: a
+// pointer at its own offset or at anything after it is a loop, and the offset falling on every hop is
+// what makes that decidable in one pass.
+void test_a_pointer_that_does_not_go_backwards_is_refused(void)
+{
+    static const uint16_t targets[2] = {(uint16_t)OFF_AN, (uint16_t)(OFF_AN + 4u)};
+    for (int i = 0; i < 2; i++)
+    {
+        Dns.clear(work_a);
+        uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+        put_on_the_wire(work_a, slot);
+        (void)good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+        (void)wptr(g_msg, OFF_AN, targets[i]); // pointed at itself, and past itself
+        owner_is_unreadable(work_a, "a pointer that does not go backwards is a loop");
+    }
+}
+
+// sec 3.1 bounds a name at 255 octets counting "label octets and label length octets", and the root's
+// own length octet is one of them. A chain of 63-octet labels passes that bound before it ends, and an
+// owner that long is not one this walk will read to the end of.
+void test_an_owner_longer_than_the_wire_bound_is_refused(void)
+{
+    uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+    (void)good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+
+    size_t at = OFF_AN;
+    for (int label = 0; label < 5; label++) // 5 * 64 = 320 octets, past sec 3.1's 255
+    {
+        g_msg[at++] = (uint8_t)IDEMIP_DNS_LABEL_MAX;
+        memset(g_msg + at, (int)'a', (size_t)IDEMIP_DNS_LABEL_MAX);
+        at += (size_t)IDEMIP_DNS_LABEL_MAX;
+    }
+    g_msg[at++] = 0u;
+    at = wrr(g_msg, at, IDEMIP_DNS_TYPE_A, IDEMIP_DNS_CLASS_IN, 300u, g_ans4, 4u);
+
+    deliver_ok(work_a, at);
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status,
+                                  "sec 3.1 bounds a name at 255 octets on the wire");
+}
+
+// An owner whose labels run past the message is not a name either, and the walk must not read past the
+// length the caller gave.
+void test_an_owner_running_past_the_message_is_refused(void)
+{
+    uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+    (void)good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+    g_msg[OFF_AN] = (uint8_t)IDEMIP_DNS_LABEL_MAX; // claims sixty three octets the message has not got
+    owner_is_unreadable(work_a, "an owner running past the message was read anyway");
+}
+
+// A pointer is two octets, and one whose second octet is not in the message is not a pointer. The
+// question still reads, so the response is taken; the record whose owner is half a pointer is not.
+void test_an_owner_that_is_half_a_pointer_is_refused(void)
+{
+    uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+    (void)good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+    g_msg[OFF_AN] = IDEMIP_DNS_LABEL_PTR;
+
+    deliver_ok(work_a, (size_t)OFF_AN + 1u); // the message ends on the pointer's first octet
+    owner_is_unreadable_after_deliver(work_a, "half a pointer was read as a whole one");
+}
+
 // --- RFC 5452 sec 6, in-domain records ---------------------------------------
 
 // "One very simple way to achieve this is to only accept data if it is part of the domain for which the
