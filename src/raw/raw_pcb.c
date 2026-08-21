@@ -14,6 +14,8 @@
 
 #include "src/raw/raw_pcb.h"
 
+#include "src/common.h" // idemip_bytes_zero and idemip_bytes_eq, which every binding is matched with
+
 #if IDEMIP_ENABLE_IPV6
 #include "src/ip/ipv6.h" // IDEMIP_IP6_NH_ICMPV6, the Next Header value RFC 3542 sec 3.1 excludes
 #endif

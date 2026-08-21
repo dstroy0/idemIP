@@ -978,7 +978,7 @@ typedef enum
     D_DEST_DROP,      // an address this node makes nothing of
 } DispatchDest;
 
-#if IDEMIP_ENABLE_IPV4
+#if IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6
 
 // RFC 1122 sec 3.2.1.3 case (g), "{ 127, <any> } Internal host loopback address. Addresses of this
 // form MUST NOT appear outside a host", and RFC 4291 sec 2.5.3 of ::1: "The loopback address must not
@@ -987,6 +987,10 @@ typedef enum
 // destination address of loopback must never be sent outside of a single node and must never be
 // forwarded by an IPv6 router." RFC 6890 Table 4 records 127.0.0.0/8 with Destination False. So a
 // loopback address names this host only on the interface no wire reaches.
+//
+// The two citations are the reason it stands outside either family's guard, as the enum above does:
+// each family asks this of the same interface record, and behind IPV4 the IPv6 half of the question
+// was asked of a function an IPv6-only build does not contain.
 static idemip_bool d_on_loopback(uint8_t *work)
 {
     DispatchCtx *ctx = D_CTX(work);
@@ -997,6 +1001,10 @@ static idemip_bool d_on_loopback(uint8_t *work)
     }
     return (idemip_bool)((IDEMIP_NETIF_IO(ctx->netif)->flags & (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK) != 0u);
 }
+
+#endif // IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6
+
+#if IDEMIP_ENABLE_IPV4
 
 // RFC 1122 sec 3.1 (2), over the forms sec 3.2.1.3 lists: case (c) "{ -1, -1 }" limited broadcast, a
 // class D group this node joined (RFC 1112 sec 4), case (g) "{ 127, <any> }" loopback, any
