@@ -621,8 +621,8 @@ static idemip_bool dhcp4_take(uint8_t *work)
     case (uint8_t)IDEMIP_DHCP4_NAK:
         return dhcp4_nak(work);
     default:
-        // sec 4.4: "A client can receive the following messages from a server: DHCPOFFER, DHCPACK,
-        // DHCPNAK." Every other type is a client's own and is discarded here.
+        // sec 4.4: "A client can receive the following messages from a server:" DHCPOFFER, DHCPACK and
+        // DHCPNAK. Every other type is a client's own and is discarded here.
         return IDEMIP_FALSE;
     }
 }
@@ -686,8 +686,9 @@ static void dhcp4_write(uint8_t *work)
     switch (type)
     {
     case (uint8_t)IDEMIP_DHCP4_DISCOVER:
-        // Table 5: server identifier MUST NOT, requested address MAY, lease time MAY, and the
-        // BROADCAST flag is set "if client requires broadcast reply".
+        // Table 5: server identifier MUST NOT, requested address MAY, lease time MAY. The BROADCAST
+        // bit goes with it for the sec 4.1 reason the Request case below quotes: a client that has no
+        // address yet cannot receive a unicast reply.
         want_lease = IDEMIP_TRUE;
         want_hints = IDEMIP_TRUE;
         want_flag = IDEMIP_TRUE;

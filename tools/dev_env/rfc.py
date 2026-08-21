@@ -170,6 +170,12 @@ def squeeze(text):
     """The form a quotation and a document are compared in, and where each surviving character came
     from in the input.
 
+    Commas go with them. A document that sets a list down the page - RFC 9293's "SND.WND <- SEG.WND"
+    and "SND.WL1 <- SEG.SEQ" on their own lines, RFC 2131's three message types as bullets - is quoted
+    in a comment that has one line to work with, and a comma is how a line break gets written there.
+    That is a faithful transcription of a list, not a bent sentence, and the audit is looking for bent
+    sentences.
+
     Whitespace and hyphens both go, because a printed RFC breaks a line wherever the column runs out
     and the break leaves neither behind reliably: RFC 1213 wraps "re-assembly" as "re-" and then
     "assembly", which flattens to "re- assembly", and RFC 4291 wraps "address" as "addr-" and "ess",
@@ -182,7 +188,7 @@ def squeeze(text):
     """
     out, idx = [], []
     for i, ch in enumerate(fold(text)):
-        if ch.isspace() or ch == "-":
+        if ch.isspace() or ch in "-,":
             continue
         out.append(ch)
         idx.append(i)
