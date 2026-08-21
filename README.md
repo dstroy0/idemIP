@@ -20,6 +20,13 @@ publishes the size of, so the memory map is a compile-time fact rather than a ru
 belongs to whoever calls into it: keep it to one task or put your own lock around it, since the
 library takes none of its own and holds nothing outside the array it was handed.
 
+Both of those together bound the behaviour. An entry is one call over one borrow and one operand
+block, so what it can do is a function of fields that are published and bytes that are counted -
+there is no allocator to model, no global to reach around it and no callback to re-enter it. The
+branch space is therefore enumerable rather than merely testable: a tool can walk an entry's operand
+block, drive every branch out of it, and fuzz the wire paths against the same borrows. That is not a
+safety case, but it is the part of one that a design usually has to be rewritten to produce.
+
 ```c
 #include "src/idemip.h"
 
