@@ -173,6 +173,8 @@ extern void test_a_multicast_destination_with_no_igmp_borrow_is_not_ours(void);
 extern void test_an_arp_packet_with_no_netif_borrow_is_refused(void);
 extern void test_a_loopback_destination_off_a_wire_is_dropped(void);
 extern void test_a_multicast_destination_with_no_ip6_addr_borrow_is_not_ours(void);
+extern void test_a_source_that_would_be_a_directed_broadcast_needs_a_mask_to_be_one(void);
+extern void test_an_echo_request_at_a_build_with_no_netif_borrow_is_still_answered(void);
 extern void test_a_frame_with_no_vlan_borrow_is_refused(void);
 extern void test_an_ipv4_frame_with_an_unbound_unit_is_refused(void);
 extern void test_an_ipv6_frame_with_an_unbound_unit_is_refused(void);
@@ -397,11 +399,13 @@ int main(void)
   run_test(test_an_arp_packet_with_no_netif_borrow_is_refused, "test_an_arp_packet_with_no_netif_borrow_is_refused", 4526);
   run_test(test_a_loopback_destination_off_a_wire_is_dropped, "test_a_loopback_destination_off_a_wire_is_dropped", 4544);
   run_test(test_a_multicast_destination_with_no_ip6_addr_borrow_is_not_ours, "test_a_multicast_destination_with_no_ip6_addr_borrow_is_not_ours", 4565);
-  run_test(test_a_frame_with_no_vlan_borrow_is_refused, "test_a_frame_with_no_vlan_borrow_is_refused", 4587);
-  run_test(test_an_ipv4_frame_with_an_unbound_unit_is_refused, "test_an_ipv4_frame_with_an_unbound_unit_is_refused", 4598);
-  run_test(test_an_ipv6_frame_with_an_unbound_unit_is_refused, "test_an_ipv6_frame_with_an_unbound_unit_is_refused", 4642);
-  run_test(test_a_udp_datagram_with_an_unbound_unit_is_refused, "test_a_udp_datagram_with_an_unbound_unit_is_refused", 4668);
-  run_test(test_a_tcp_segment_with_an_unbound_unit_is_refused, "test_a_tcp_segment_with_an_unbound_unit_is_refused", 4699);
+  run_test(test_a_source_that_would_be_a_directed_broadcast_needs_a_mask_to_be_one, "test_a_source_that_would_be_a_directed_broadcast_needs_a_mask_to_be_one", 4592);
+  run_test(test_an_echo_request_at_a_build_with_no_netif_borrow_is_still_answered, "test_an_echo_request_at_a_build_with_no_netif_borrow_is_still_answered", 4628);
+  run_test(test_a_frame_with_no_vlan_borrow_is_refused, "test_a_frame_with_no_vlan_borrow_is_refused", 4642);
+  run_test(test_an_ipv4_frame_with_an_unbound_unit_is_refused, "test_an_ipv4_frame_with_an_unbound_unit_is_refused", 4653);
+  run_test(test_an_ipv6_frame_with_an_unbound_unit_is_refused, "test_an_ipv6_frame_with_an_unbound_unit_is_refused", 4697);
+  run_test(test_a_udp_datagram_with_an_unbound_unit_is_refused, "test_a_udp_datagram_with_an_unbound_unit_is_refused", 4723);
+  run_test(test_a_tcp_segment_with_an_unbound_unit_is_refused, "test_a_tcp_segment_with_an_unbound_unit_is_refused", 4754);
 
   return UNITY_END();
 }

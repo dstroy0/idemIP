@@ -4583,6 +4583,61 @@ void test_a_multicast_destination_with_no_ip6_addr_borrow_is_not_ours(void)
 
 #endif // IDEMIP_ENABLE_IPV6
 
+// RFC 1122 sec 3.2.1.3 (c) makes {-1, -1} and (b) makes {<Network-number>, -1} broadcast addresses,
+// and sec 3.2.1.3 bars either as a source: "A datagram whose source address does not define a single
+// host ... MUST be silently discarded." Which addresses the second of the two names is the interface's
+// netmask, and an interface configured with none names no directed broadcast at all - the same
+// section reads {0, 0} as "this host on this network", which is not a network number. So a source
+// that would be the directed broadcast under a mask is an ordinary source without one.
+void test_a_source_that_would_be_a_directed_broadcast_needs_a_mask_to_be_one(void)
+{
+    uint16_t pcb = bind_udp4(4001u);
+
+    // The directed broadcast of 192.0.2.0/24, which the interface's own mask makes one.
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, 0xC00002FFu, LOCAL_IP4, IDEMIP_UDP_HDR_LEN, 0u);
+    size_t end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp4(g_frame, off, 0xC00002FFu, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_SOURCE, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                  "a directed broadcast source was taken");
+
+    // The same datagram at an interface with no mask configured, which names no network to be the
+    // broadcast of.
+    NetifIo *ni = IDEMIP_NETIF_IO(netif_mem);
+    ni->addr4_args.index = 0u;
+    ni->addr4_args.addr = LOCAL_IP4;
+    ni->addr4_args.mask = 0u;
+    ni->addr4_args.gw = 0u;
+    Netif.set_addr4(netif_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, ni->status);
+
+    off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, 0xC00002FFu, LOCAL_IP4, IDEMIP_UDP_HDR_LEN, 0u);
+    end = build_udp(g_frame, off, 4000u, 4001u, 0u);
+    seal_udp4(g_frame, off, 0xC00002FFu, LOCAL_IP4);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_UDP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "an ordinary source was refused for a broadcast it is not");
+    TEST_ASSERT_EQUAL_UINT16(pcb, IDEMIP_DISPATCH_IO(work_a)->pcb);
+}
+
+// RFC 792 answers an Echo Request from "the specific-destination address", which RFC 1122 sec 3.2.1.3
+// works out from the interface's own address and netmask. A build with no netif borrow has neither,
+// and the reply is formed from what is left rather than from a table that is not there.
+void test_an_echo_request_at_a_build_with_no_netif_borrow_is_still_answered(void)
+{
+    BIND_WITHOUT(work_a, netif);
+    if_untagged(work_a, 0u);
+
+    size_t off = build_eth(g_frame, g_bcast_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    // A broadcast destination, which sec 3.2.1.3 makes this host's without asking the interface.
+    size_t end = build_ip4_echo(g_frame, off, REMOTE_IP4, 0xFFFFFFFFu);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_PCB_ICMP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind,
+                                  "the message did not reach icmp_in");
+}
+
 // The tag is read before anything else, so an unbound vlan stops every frame there.
 void test_a_frame_with_no_vlan_borrow_is_refused(void)
 {

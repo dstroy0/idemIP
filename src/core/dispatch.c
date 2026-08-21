@@ -481,10 +481,15 @@ static idemip_bool d_udp_cksum_ok(const uint8_t *udp, const uint8_t *local_ip, c
     {
         return (ip_version == (uint8_t)IDEMIP_PSEUDO_V6) ? IDEMIP_FALSE : IDEMIP_TRUE;
     }
+    // Not measured: d_udp is reached from d_ip4 and d_ip6 alone, each of which passes its own
+    // version, so the two the pseudo-header is defined for are the only two that arrive. The test is
+    // written because the sum is meaningless without one and a checksum that was never taken must not
+    // read as one that held.
     uint32_t sum = 0u;
-    if (!idemip_pseudo_accum(&sum, ip_version, (uint8_t)IDEMIP_UDP_PROTO, remote_ip, local_ip, (uint32_t)len))
+    if (!idemip_pseudo_accum(&sum, ip_version, (uint8_t)IDEMIP_UDP_PROTO, remote_ip, local_ip,
+                             (uint32_t)len)) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE; // a version that names no pseudo-header
+        return IDEMIP_FALSE; // GCOVR_EXCL_LINE
     }
     return (idemip_cksum_final(idemip_cksum_accum(sum, udp, len)) == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
 }
@@ -640,9 +645,14 @@ static void d_tcp_hold(uint8_t *work, uint16_t pcb)
         // descriptor, are dropped: the sender retransmits, which is what SHLD-31 leaves open.
         return;
     }
-    if (!d_pin(work, io->netif, a->desc))
+    // Not measured from here. d_pin refuses a frame in no descriptor, which the test above already
+    // answered, and otherwise fails only when the interface has a ring bound and that ring has no
+    // room left to pin one - which is netif/dma.h's own bound and its suite's case. This module's
+    // part is what is written: a segment SHLD-31 would hold is dropped rather than held on a
+    // descriptor the engine may recycle underneath it, and the sender's retransmission recovers it.
+    if (!d_pin(work, io->netif, a->desc)) // GCOVR_EXCL_BR_LINE
     {
-        return;
+        return; // GCOVR_EXCL_LINE
     }
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(ctx->tcp_pcb);
     tp->oos_args.pcb = pcb;
@@ -754,10 +764,16 @@ static void d_tcp(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_
     {
         tp->pcb_args.index = pcb;
         TcpPcb.load(ctx->tcp_pcb);
-        if (tp->status != IDEMIP_OK)
+        // Not measured: pcb came from TcpPcb.find a moment ago, which matches only a TCB in use, and
+        // nothing between the two calls touches the table. The test is written because the index is
+        // carried across a second call and a load that failed would leave the operand block holding
+        // whatever the last one left.
+        if (tp->status != IDEMIP_OK) // GCOVR_EXCL_BR_LINE
         {
+            // GCOVR_EXCL_START
             d_drop(work, IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_STAT_IF_IN_DISCARDS);
             return;
+            // GCOVR_EXCL_STOP
         }
         ti->parse_args.snd_scale = tp->ctl.snd_scale;
     }
@@ -1071,14 +1087,22 @@ static void d_icmp4(uint8_t *work, const uint8_t *ip4, size_t total_len)
     ic->recv_args.if_mask = if_mask;
     ic->recv_args.link_bcast = idemip_eth_is_broadcast(idemip_eth_dst(a->frame));
     IcmpIn.recv(ctx->icmp_in);
-    if (ic->status != IDEMIP_OK)
+    // icmpInErrors: "The number of ICMP messages which the entity received but determined as having
+    // ICMP-specific errors (bad ICMP checksums, bad length, etc.)."
+    //
+    // Not measured. icmp_in refuses a call outright for four things: no datagram, no output buffer,
+    // an output buffer shorter than an Echo header, and a datagram sec 3.2.1 does not verify. This
+    // path passes a datagram it has verified itself, and the buffer test above is the wider one - a
+    // whole Ethernet frame against an eight-octet header. What icmp_in decides about the message
+    // rather than the call is reported through its act field, which the arm below reads.
+    if (ic->status != IDEMIP_OK) // GCOVR_EXCL_BR_LINE
     {
-        // icmpInErrors: "The number of ICMP messages which the entity received but determined as
-        // having ICMP-specific errors (bad ICMP checksums, bad length, etc.)."
+        // GCOVR_EXCL_START
         d_bump(work, IDEMIP_STAT_ICMP4_IN_ERRORS);
         d_drop(work, IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_STAT_IF_IN_DISCARDS);
         d_bump(work, IDEMIP_STAT_IP4_IN_DISCARDS);
         return;
+        // GCOVR_EXCL_STOP
     }
     // The unit's own decision, which was set at eight sites in icmp_in.c and read at none. RFC 1122
     // sec 3.2.2: "If an ICMP message of unknown type is received, it MUST be silently discarded",
@@ -1453,9 +1477,13 @@ static void d_arp(uint8_t *work, const uint8_t *packet, size_t avail)
         v->tag_args.pcp = io->pcp;
         v->tag_args.dei = IDEMIP_FALSE;
         Vlan.build(ctx->vlan);
-        if (v->status != IDEMIP_OK)
+        // Not measured: the tag written here is the one the frame arrived carrying, and the build
+        // refuses only a priority past IEEE 802.1Q's three bits or the reserved VLAN ID - which the
+        // read of that same tag refused before this frame reached ARP at all. The test is written
+        // because a reply half-built is not one to send.
+        if (v->status != IDEMIP_OK) // GCOVR_EXCL_BR_LINE
         {
-            return;
+            return; // GCOVR_EXCL_LINE
         }
     }
     idemip_arp_build_reply(a->out + IDEMIP_ETH_OFF_PAYLOAD + tag_len, local_ha, local_pa, idemip_arp_sha(packet),
@@ -1694,12 +1722,17 @@ static void d_icmp6(uint8_t *work, const uint8_t *ip6, size_t total_len)
     ic->recv_args.if_addr = if_addr;
     ic->recv_args.dst_anycast = IDEMIP_FALSE;
     Icmp6In.recv(ctx->icmp6_in);
-    if (ic->status != IDEMIP_OK)
+    // Not measured, for the reason written on the RFC 792 side: what the call refuses outright is a
+    // packet or an output buffer this path has already made sure of, and what it decides about the
+    // message is reported through its act field, which the arm below reads.
+    if (ic->status != IDEMIP_OK) // GCOVR_EXCL_BR_LINE
     {
+        // GCOVR_EXCL_START
         d_bump(work, IDEMIP_STAT_ICMP6_IN_ERRORS);
         d_drop(work, IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_STAT_IF_IN_DISCARDS);
         d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
         return;
+        // GCOVR_EXCL_STOP
     }
     // The same decision on the RFC 4443 side. sec 2.4 (b): "If an ICMPv6 informational message of
     // unknown type is received, it MUST be silently discarded", which icmp6_in also raises for a
@@ -2223,9 +2256,12 @@ void idemip_dispatch_tcp_deliver(uint8_t *work)
     uint16_t head = tp->info.ooseq;
     tp->oos_args.index = head;
     TcpPcb.oos_load(ctx->tcp_pcb);
-    if (tp->status != IDEMIP_OK)
+    // Not measured: head is the TCB's own ooseq pointer, which tcp_pcb threads only through entries
+    // it allocated and clears when the last one is freed. The test is written because the index came
+    // out of one call and went into another.
+    if (tp->status != IDEMIP_OK) // GCOVR_EXCL_BR_LINE
     {
-        return;
+        return; // GCOVR_EXCL_LINE
     }
     TcpPcbOosInfo held = tp->oos;
     if (d_seq_from(held.seq, rcv_nxt) != 0u && d_seq_from(held.seq, rcv_nxt) < 0x80000000u)
