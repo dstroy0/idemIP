@@ -1155,7 +1155,7 @@ void test_tx_post_refuses_a_length_that_is_not_a_frame_or_a_descriptor_it_does_n
     bind_ok(work_a);
     Dma.tx_take(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
-    const uint16_t held = IDEMIP_DMA_IO(work_a)->index;
+    const uint8_t held = IDEMIP_DMA_IO(work_a)->index;
 
     IDEMIP_DMA_IO(work_a)->desc_args.index = held;
     IDEMIP_DMA_IO(work_a)->desc_args.len = 0u;
@@ -1170,7 +1170,7 @@ void test_tx_post_refuses_a_length_that_is_not_a_frame_or_a_descriptor_it_does_n
 
     // A descriptor of the ring that nobody took: the caller does not hold it, so it is not theirs to
     // fill in and hand back.
-    IDEMIP_DMA_IO(work_a)->desc_args.index = (uint16_t)(held == 0u ? 1u : 0u);
+    IDEMIP_DMA_IO(work_a)->desc_args.index = (uint8_t)(held == 0u ? 1u : 0u);
     IDEMIP_DMA_IO(work_a)->desc_args.len = 64u;
     Dma.tx_post(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status,
@@ -1214,7 +1214,7 @@ void test_a_descriptor_no_longer_held_can_still_be_one_a_pin_refers_to(void)
     engine_fill(0u, 100u, 0x11u);
     Dma.rx_take(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
-    const uint16_t desc = IDEMIP_DMA_IO(work_a)->index;
+    const uint8_t desc = IDEMIP_DMA_IO(work_a)->index;
 
     IDEMIP_DMA_IO(work_a)->desc_args.index = desc;
     Dma.pin(work_a);

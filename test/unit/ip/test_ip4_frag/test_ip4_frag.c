@@ -744,21 +744,21 @@ void test_the_option_walk_stops_where_the_header_does_and_a_bad_fragment_is_refu
     (void)make_dgram(64u, ends_mid_option, sizeof ends_mid_option, 0u);
     begin_ok(work_a, 68u);
     drain(work_a);
-    TEST_ASSERT_TRUE_MESSAGE(g_frags > 1u, "an option area that ends mid-option stopped the fragmentation");
+    TEST_ASSERT_TRUE_MESSAGE(g_frags > 1, "an option area that ends mid-option stopped the fragmentation");
 
     // An option claiming more octets than the header holds.
     static const uint8_t claims_too_much[4] = {0x83u, 40u, 0u, 0u};
     (void)make_dgram(64u, claims_too_much, sizeof claims_too_much, 0u);
     begin_ok(work_a, 68u);
     drain(work_a);
-    TEST_ASSERT_TRUE_MESSAGE(g_frags > 1u, "an option claiming more than the header holds stopped the split");
+    TEST_ASSERT_TRUE_MESSAGE(g_frags > 1, "an option claiming more than the header holds stopped the split");
 
     // An option whose length octet is below the two an option is at minimum.
     static const uint8_t too_short[4] = {0x83u, 1u, 0u, 0u};
     (void)make_dgram(64u, too_short, sizeof too_short, 0u);
     begin_ok(work_a, 68u);
     drain(work_a);
-    TEST_ASSERT_TRUE_MESSAGE(g_frags > 1u, "an option shorter than its own two octets stopped the split");
+    TEST_ASSERT_TRUE_MESSAGE(g_frags > 1, "an option shorter than its own two octets stopped the split");
 
     // A datagram already carrying More Fragments and no data at all.
     (void)make_dgram(0u, NULL, 0u, (uint16_t)IDEMIP_IP4_FLAG_MF);

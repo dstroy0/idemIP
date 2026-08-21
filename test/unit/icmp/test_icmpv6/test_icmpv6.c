@@ -607,11 +607,11 @@ void test_a_type_outside_the_five_has_no_neighbor_discovery_header(void)
 void test_an_error_about_a_packet_of_no_octets_carries_no_quote(void)
 {
     uint8_t out[IDEMIP_ICMP6_ERR_HDR_LEN + 8u];
-    static const uint8_t invoking[8] = {0};
+    static const uint8_t no_octets[8] = {0};
     memset(out, 0xEE, sizeof out);
 
     const size_t len = idemip_icmp6_err_build(out, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH,
-                                              0u, invoking, 0u);
+                                              0u, no_octets, 0u);
     TEST_ASSERT_EQUAL_size_t_MESSAGE((size_t)IDEMIP_ICMP6_ERR_HDR_LEN, len,
                                      "an error about no octets carried a quote of some");
 }
