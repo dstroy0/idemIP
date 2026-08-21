@@ -2048,6 +2048,218 @@ void test_the_retry_interval_backs_off(void)
     put_on_the_wire(work_a, slot);
 }
 
+// RFC 1035 sec 2.3.4: "names 255 octets or less" is the bound on the wire form, and sec 3.1 counts
+// the root's zero octet in it. A name that fits is written; one octet more of it and there is no
+// message to build, because the question would not be a legal one.
+void test_a_question_name_at_the_wire_bound_is_built_and_one_past_it_is_not(void)
+{
+    // Four labels of 63 and a fifth of one: 4*(1+63) + (1+1) + 1 root = 259 over the bound, so the
+    // fifth label is what the two cases differ in. The longest legal is 253 text octets.
+    static char fits[IDEMIP_DNS_NAME_TEXT_MAX + 8];
+    static char over[IDEMIP_DNS_NAME_TEXT_MAX + 8];
+    size_t at = 0u;
+    for (int lab = 0; lab < 3; lab++)
+    {
+        for (int i = 0; i < 63; i++)
+        {
+            fits[at++] = (char)('a' + (i % 26));
+        }
+        fits[at++] = '.';
+    }
+    for (int i = 0; i < 61; i++) // 3*64 + 1 + 61 + 1 root = 255
+    {
+        fits[at++] = (char)('a' + (i % 26));
+    }
+    fits[at] = '\0';
+    memcpy(over, fits, at + 1u);
+    over[at] = 'a'; // one octet more, and the wire form is 256
+    over[at + 1u] = '\0';
+
+    uint8_t slot = ask(work_a, fits, IDEMIP_DNS_TYPE_A);
+    memset(g_out, 0, sizeof g_out);
+    IDEMIP_DNS_IO(work_a)->build_args.query = slot;
+    IDEMIP_DNS_IO(work_a)->build_args.out = g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.cap = sizeof g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.src = NULL;
+    IDEMIP_DNS_IO(work_a)->now_ms = g_now_ms;
+    Dns.build(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status, "a name at the bound was refused");
+    TEST_ASSERT_EQUAL_size_t((size_t)IDEMIP_DNS_HDR_LEN + (size_t)IDEMIP_DNS_NAME_WIRE_MAX +
+                                 (size_t)IDEMIP_DNS_QFIXED_LEN,
+                             IDEMIP_DNS_IO(work_a)->len);
+
+    // One octet more and there is no question to register: the name is measured where it is taken in,
+    // so nothing past the bound ever reaches a slot to be built from.
+    Dns.clear(work_a);
+    bind_ok(work_a, &g_cfg);
+    server_at(work_a, 0u, g_v4);
+    IDEMIP_DNS_IO(work_a)->query_args.name = over;
+    IDEMIP_DNS_IO(work_a)->query_args.type = IDEMIP_DNS_TYPE_A;
+    IDEMIP_DNS_IO(work_a)->query_args.xid = (uint16_t)XID;
+    IDEMIP_DNS_IO(work_a)->query_args.src_port = (uint16_t)SPORT;
+    Dns.query(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status, "a name past the bound was registered");
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_DNS_QUERIES, IDEMIP_DNS_IO(work_a)->query);
+}
+
+// The caller's buffer is the caller's, and a build that will not fit in it writes nothing rather than
+// writing what does fit: sec 4.1.2's QNAME and the QTYPE and QCLASS behind it are one question.
+void test_a_build_with_no_room_for_the_question_writes_nothing(void)
+{
+    uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    memset(g_out, 0xEE, sizeof g_out);
+    IDEMIP_DNS_IO(work_a)->build_args.query = slot;
+    IDEMIP_DNS_IO(work_a)->build_args.out = g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.cap = (size_t)IDEMIP_DNS_HDR_LEN;
+    IDEMIP_DNS_IO(work_a)->build_args.src = NULL;
+    IDEMIP_DNS_IO(work_a)->now_ms = g_now_ms;
+    Dns.build(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status, "a question was written past the cap");
+    TEST_ASSERT_EQUAL_HEX8_MESSAGE(0xEEu, g_out[0], "the buffer was written before the room was checked");
+}
+
+// RFC 1035 sec 3.1: "The domain name terminates with the zero length octet for the null label of the
+// root." Written out, that root is the separator a fully qualified name ends in, and the octet after
+// it is the terminator: a trailing dot names the same domain as the name without one, and both are
+// written to the wire as the same octets.
+void test_a_name_written_with_its_root_separator_builds_the_same_question(void)
+{
+    uint8_t slot = ask(work_a, NAME ".", IDEMIP_DNS_TYPE_A);
+    memset(g_out, 0, sizeof g_out);
+    IDEMIP_DNS_IO(work_a)->build_args.query = slot;
+    IDEMIP_DNS_IO(work_a)->build_args.out = g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.cap = sizeof g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.src = NULL;
+    IDEMIP_DNS_IO(work_a)->now_ms = g_now_ms;
+    Dns.build(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+
+    static uint8_t expect[64];
+    const size_t end = wname(expect, 0u, NAME);
+    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(expect, g_out + IDEMIP_DNS_HDR_LEN, end,
+                                     "the trailing separator was written as a label of its own");
+    TEST_ASSERT_EQUAL_size_t((size_t)IDEMIP_DNS_HDR_LEN + end + (size_t)IDEMIP_DNS_QFIXED_LEN,
+                             IDEMIP_DNS_IO(work_a)->len);
+
+    // The response's question, written without the separator, still answers it: sec 3.1's root is the
+    // zero octet either way, so the two dotted forms encode the same name. The answer is cached under
+    // the text the caller registered, which is where a lookup for it finds it.
+    (void)good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+    deliver_ok(work_a, OFF_AN + 2u + (size_t)IDEMIP_DNS_RR_FIXED_LEN + 4u);
+    look(work_a, NAME ".", IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status,
+                                  "the response's question did not match the name it was asked under");
+    TEST_ASSERT_EQUAL_MEMORY(g_ans4, IDEMIP_DNS_IO(work_a)->addr, 4u);
+}
+
+// RFC 5452 sec 9.1 lists what a response is matched on, and the source port of the datagram is one of
+// them: "Source address ... Source port". A datagram from the right server address on some other port
+// is not the answer to this question, whatever it says inside.
+void test_a_response_from_the_right_server_on_another_port_answers_nothing(void)
+{
+    (void)ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, 0u);
+    (void)good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+    const size_t len = OFF_AN + 2u + (size_t)IDEMIP_DNS_RR_FIXED_LEN + 4u;
+
+    deliver(work_a, len, g_v4, (uint16_t)(IDEMIP_DNS_PORT + 1u), SPORT);
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status,
+                                  "a datagram from another port was taken as the answer");
+
+    // The same bytes from the port the question went to are.
+    deliver_ok(work_a, len);
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+}
+
+// RFC 1035 sec 4.1.2 has the response echo the question, and sec 4.1.4's encoding is a run of labels
+// each behind its own length octet. A question whose last label runs past the message, and one
+// carrying a label the name asked about does not have, are both names this question was not asked
+// under - so the record behind them is not this question's answer and nothing is cached.
+void test_a_question_whose_name_does_not_encode_the_name_asked_about_answers_nothing(void)
+{
+    static const struct
+    {
+        int trim;
+        uint8_t at;
+        uint8_t to;
+        const char *why;
+    } rows[] = {
+        {1, 0u, 0u, "a question whose last label runs past the message answered it"},
+        {0, OFF_QNAME, 8u, "a question with a longer first label answered it"},
+        {0, OFF_COM, 4u, "a question with a longer last label answered it"},
+    };
+
+    for (size_t r = 0u; r < (sizeof rows / sizeof rows[0]); r++)
+    {
+        Dns.clear(work_a);
+        (void)ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+        put_on_the_wire(work_a, 0u);
+        size_t len = good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+        if (rows[r].trim != 0)
+        {
+            // The message ends inside the last label of the question.
+            len = OFF_COM + 2u;
+        }
+        else
+        {
+            g_msg[rows[r].at] = rows[r].to;
+        }
+        deliver_ok(work_a, len);
+        look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status, rows[r].why);
+    }
+}
+
+// RFC 1035 sec 3.2.1 of the TTL: "the time interval (in seconds) that the resource record may be
+// cached before it should be discarded", and sec 2.1 "Cached data is eventually discarded by a
+// timeout mechanism." A cache with every slot holding an answer still inside its own interval has to
+// give one up early for a name it has no slot for, and the one it gives up is the one closest to the
+// discard the TTL already promises.
+void test_a_full_cache_gives_up_the_answer_closest_to_expiry(void)
+{
+    static char names[IDEMIP_DNS_ENTRIES + 1u][16];
+    bind_ok(work_a, &g_cfg);
+    server_at(work_a, 0u, g_v4);
+
+    // One answer per slot, each with less time left than the one before it, so the entry closest to
+    // expiry is the last one written rather than the first.
+    for (unsigned int i = 0u; i <= (unsigned int)IDEMIP_DNS_ENTRIES; i++)
+    {
+        names[i][0] = (char)('a' + (int)i);
+        memcpy(names[i] + 1, ".test", 6);
+
+        IDEMIP_DNS_IO(work_a)->query_args.name = names[i];
+        IDEMIP_DNS_IO(work_a)->query_args.type = IDEMIP_DNS_TYPE_A;
+        IDEMIP_DNS_IO(work_a)->query_args.xid = (uint16_t)XID;
+        IDEMIP_DNS_IO(work_a)->query_args.src_port = (uint16_t)SPORT;
+        Dns.query(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+        const uint8_t slot = IDEMIP_DNS_IO(work_a)->query;
+        put_on_the_wire(work_a, slot);
+
+        const size_t len = good_response(names[i], IDEMIP_DNS_TYPE_A, 900u - (uint32_t)(i * 60u), g_ans4, 4u);
+        deliver_ok(work_a, len);
+        look(work_a, names[i], IDEMIP_DNS_TYPE_A);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status, "the answer was not cached");
+
+        // The question is done with; its slot goes back so the next name has one.
+        IDEMIP_DNS_IO(work_a)->cancel_args.query = slot;
+        Dns.cancel(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    }
+
+    // The eighth name's answer had the least time left, so it is the one the ninth took the slot of;
+    // the first, with the most, is still there.
+    look(work_a, names[IDEMIP_DNS_ENTRIES - 1u], IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status,
+                                  "the answer closest to expiry was kept over one with longer to live");
+    look(work_a, names[0], IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status,
+                                  "an answer with longer to live was given up instead");
+}
+
 // RFC 1123 sec 6.1.3.3 (2): "After a query has been retransmitted several times without a response,
 // an implementation MUST give up and return a soft error to the application." A question that gave
 // up is not the same result as one still in flight, and its slot goes back.

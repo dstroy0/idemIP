@@ -864,13 +864,18 @@ static void dns_build_query(uint8_t *work)
     }
     q->server = si;
 
+    // The measure is made again here because the two lengths it reports are what the question is
+    // written from, and it is not measured: dns_query_register makes the same call on the caller's
+    // name and refuses a slot to anything it turns down, so a stored name has already passed it.
     const char *name = DNS_NAME_AT(work, a->query);
     size_t wire = 0;
     size_t text = 0;
-    if (!dns_text_wire_len(name, &wire, &text))
+    if (!dns_text_wire_len(name, &wire, &text)) // GCOVR_EXCL_BR_LINE
     {
+        // GCOVR_EXCL_START
         io->status = IDEMIP_ERR;
         return;
+        // GCOVR_EXCL_STOP
     }
     size_t need = (size_t)IDEMIP_DNS_HDR_LEN + wire + (size_t)IDEMIP_DNS_QFIXED_LEN;
     if ((a->cap < need) || (need > IDEMIP_DNS_MSG_MAX))
