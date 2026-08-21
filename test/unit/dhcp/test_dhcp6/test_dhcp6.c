@@ -1350,6 +1350,167 @@ void test_a_no_addrs_avail_status_inside_the_ia_na_stops_the_lease(void)
 
 // sec 21.4 carries the lease in the IA_NA, so a Reply with none assigns nothing and leaves the Request
 // exchange where it was, still asking.
+// RFC 8415 sec 21.1 Figure 12 puts an option-len in front of every option's data, and sec 21 gives
+// each option a length that data must have. An option carrying some other length is not that option:
+// it is stepped over and the message is read as though it were not there, which for each of these is
+// the same as a message that never carried it. A server that sends one gets no benefit from it.
+void test_an_option_of_the_wrong_length_is_read_as_though_it_were_absent(void)
+{
+    static const struct
+    {
+        uint16_t code;
+        uint16_t len;
+        const char *why;
+    } rows[] = {
+        {IDEMIP_DHCP6_OPT_SOL_MAX_RT, 3u, "sec 21.24 makes SOL_MAX_RT four octets"},
+        {IDEMIP_DHCP6_OPT_PREFERENCE, 0u, "sec 21.8 makes the preference one octet"},
+        {IDEMIP_DHCP6_OPT_DNS_SERVERS, 20u, "RFC 3646 sec 3 makes the list a multiple of sixteen"},
+        {IDEMIP_DHCP6_OPT_DNS_SERVERS, 0u, "RFC 3646 sec 3 lists at least one server"},
+        {IDEMIP_DHCP6_OPT_INFO_REFRESH, 3u, "sec 21.23 makes the refresh time four octets"},
+        {IDEMIP_DHCP6_OPT_STATUS_CODE, 1u, "sec 21.13 puts a two-octet code in front of the message"},
+        {IDEMIP_DHCP6_OPT_IA_NA, 8u, "sec 21.4 puts an IAID and two times in front of the options"},
+    };
+
+    for (size_t r = 0u; r < (sizeof rows / sizeof rows[0]); r++)
+    {
+        Dhcp6.clear(work_a);
+        arm_start(work_a, &g_cfg_a, 0x00ABCDEFu);
+        build(work_a);
+
+        msg_begin((uint8_t)IDEMIP_DHCP6_ADVERTISE, 0x00ABCDEFu);
+        msg_clientid(&g_cfg_a);
+        msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+        msg_ia_na(g_cfg_a.iaid, 0u, 0u, g_lease, 100u, 200u, 0, 0u);
+        (void)msg_opt(rows[r].code, rows[r].len);
+        if (rows[r].code != IDEMIP_DHCP6_OPT_PREFERENCE)
+        {
+            // sec 18.2.1 takes the first advertisement outright at preference 255, so the exchange
+            // does not have to wait out the collection window to show what the option did.
+            msg_pref(IDEMIP_DHCP6_PREF_IMMEDIATE);
+        }
+        feed(work_a);
+
+        // An ill-formed preference is no preference, so that one row waits where sec 18.2.1 leaves a
+        // client with nothing to prefer; every other row still moves on the address it was offered.
+        const int want = (rows[r].code == IDEMIP_DHCP6_OPT_PREFERENCE) ? IDEMIP_DHCP6_SOLICITING
+                                                                       : IDEMIP_DHCP6_REQUESTING;
+        TEST_ASSERT_EQUAL_INT_MESSAGE(want, IDEMIP_DHCP6_IO(work_a)->state, rows[r].why);
+    }
+}
+
+// The same reading of a server identifier, which sec 11.1 bounds: a DUID is "at least 1 octet and at
+// most 128 octets" of type-specific data behind its two-octet type code. sec 16 discards a message
+// whose Server Identifier is not one - there is no server to address the next message to.
+void test_a_server_identifier_outside_its_bounds_is_not_one(void)
+{
+    static const uint16_t lens[] = {2u, (uint16_t)(IDEMIP_DHCP6_DUID_MAX + 1u)};
+
+    for (size_t r = 0u; r < (sizeof lens / sizeof lens[0]); r++)
+    {
+        Dhcp6.clear(work_a);
+        arm_start(work_a, &g_cfg_a, 0x00ABCDEFu);
+        build(work_a);
+
+        msg_begin((uint8_t)IDEMIP_DHCP6_ADVERTISE, 0x00ABCDEFu);
+        msg_clientid(&g_cfg_a);
+        memset(msg_opt(IDEMIP_DHCP6_OPT_SERVERID, lens[r]), 0xAB, lens[r]);
+        msg_ia_na(g_cfg_a.iaid, 0u, 0u, g_lease, 100u, 200u, 0, 0u);
+        feed(work_a);
+
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_SOLICITING, IDEMIP_DHCP6_IO(work_a)->state,
+                                      "a DUID outside sec 11.1's bounds was taken as a server");
+    }
+}
+
+// RFC 8415 sec 21.4: "If a client receives an IA_NA with T1 greater than T2 and both T1 and T2 are
+// greater than 0, the client discards the IA_NA option and processes the remainder of the message as
+// though the server had not included the invalid IA_NA option." The two times name when the lease is
+// renewed and when it is rebound, and one that comes after the other names neither.
+void test_an_ia_na_whose_t1_is_after_its_t2_is_not_an_ia_na(void)
+{
+    Dhcp6.clear(work_a);
+    arm_start(work_a, &g_cfg_a, 0x00ABCDEFu);
+    build(work_a);
+
+    msg_begin((uint8_t)IDEMIP_DHCP6_ADVERTISE, 0x00ABCDEFu);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+    msg_pref(IDEMIP_DHCP6_PREF_IMMEDIATE);
+    msg_ia_na(g_cfg_a.iaid, 200u, 100u, g_lease, 300u, 400u, 0, 0u);
+    feed(work_a);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_SOLICITING, IDEMIP_DHCP6_IO(work_a)->state,
+                                  "an IA_NA whose T1 is after its T2 offered an address");
+}
+
+// sec 21.4: T1 or T2 of zero leaves the time to the client, and the same section recommends what to
+// pick: "Recommended values for T1 and T2 are 0.5 and 0.8 times the shortest preferred lifetime of
+// the addresses in the IA that the server is willing to extend, respectively. If the 'shortest'
+// preferred lifetime is 0xffffffff ('infinity'), the recommended T1 and T2 values are also
+// 0xffffffff." Each of the two is derived on its own, so a server may name one and leave the other.
+void test_the_client_derives_whichever_of_t1_and_t2_the_server_left_at_zero(void)
+{
+    static const struct
+    {
+        uint32_t t1;
+        uint32_t t2;
+        uint32_t preferred;
+        const char *why;
+    } rows[] = {
+        {0u, 0u, 1000u, "neither time was derived from the preferred lifetime"},
+        {100u, 0u, 1000u, "T2 was not derived beside a T1 the server named"},
+        {0u, 900u, 1000u, "T1 was not derived beside a T2 the server named"},
+        {0u, 0u, IDEMIP_DHCP6_INFINITY, "an infinite preferred lifetime did not make both infinite"},
+        {100u, 0u, IDEMIP_DHCP6_INFINITY, "T2 beside a named T1 did not become infinite"},
+        {0u, 900u, IDEMIP_DHCP6_INFINITY, "T1 beside a named T2 did not become infinite"},
+    };
+
+    for (size_t r = 0u; r < (sizeof rows / sizeof rows[0]); r++)
+    {
+        Dhcp6.clear(work_a);
+        arm_start(work_a, &g_cfg_a, 0x00ABCDEFu);
+        build(work_a);
+
+        msg_begin((uint8_t)IDEMIP_DHCP6_ADVERTISE, 0x00ABCDEFu);
+        msg_clientid(&g_cfg_a);
+        msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+        msg_pref(IDEMIP_DHCP6_PREF_IMMEDIATE);
+        msg_ia_na(g_cfg_a.iaid, rows[r].t1, rows[r].t2, g_lease, rows[r].preferred, IDEMIP_DHCP6_INFINITY, 0, 0u);
+        feed(work_a);
+
+        TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_REQUESTING, IDEMIP_DHCP6_IO(work_a)->state, rows[r].why);
+    }
+}
+
+// sec 21.4's IA_NA carries the address in an IA Address option inside it, so an IA_NA with none - or
+// with one too short to hold sec 21.6 Figure 17's address and two lifetimes - offers nothing.
+void test_an_ia_na_with_no_usable_address_option_offers_nothing(void)
+{
+    Dhcp6.clear(work_a);
+    arm_start(work_a, &g_cfg_a, 0x00ABCDEFu);
+    build(work_a);
+
+    msg_begin((uint8_t)IDEMIP_DHCP6_ADVERTISE, 0x00ABCDEFu);
+    msg_clientid(&g_cfg_a);
+    msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
+    msg_pref(IDEMIP_DHCP6_PREF_IMMEDIATE);
+    // An IA_NA whose only sub-option is an IA Address four octets short of Figure 17.
+    const uint16_t body = (uint16_t)(IDEMIP_DHCP6_IA_NA_FIXED_LEN + IDEMIP_DHCP6_OPT_HDR_LEN +
+                                     IDEMIP_DHCP6_IAADDR_FIXED_LEN - 4u);
+    uint8_t *ia = msg_opt(IDEMIP_DHCP6_OPT_IA_NA, body);
+    put32(ia, g_cfg_a.iaid);
+    put32(ia + 4u, 0u);
+    put32(ia + 8u, 0u);
+    uint8_t *sub = ia + IDEMIP_DHCP6_IA_NA_FIXED_LEN;
+    put16(sub, IDEMIP_DHCP6_OPT_IAADDR);
+    put16(sub + 2u, (uint16_t)(IDEMIP_DHCP6_IAADDR_FIXED_LEN - 4u));
+    memcpy(sub + IDEMIP_DHCP6_OPT_HDR_LEN, g_lease, IDEMIP_IP6_ADDR_LEN);
+    feed(work_a);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_SOLICITING, IDEMIP_DHCP6_IO(work_a)->state,
+                                  "an IA Address too short to read was read");
+}
+
 void test_a_reply_with_no_ia_na_assigns_nothing(void)
 {
     arm_start(work_a, &g_cfg_a, 0x00ABCDEFu);
