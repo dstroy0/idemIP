@@ -301,7 +301,7 @@ static void open_tick(uint8_t *w, uint32_t now_ms)
 // The fixed bound the sweep runs on, in milliseconds.
 #define TICK_REASS_MS ((uint32_t)IDEMIP_IP_REASS_MAXAGE_S * 1000u)
 
-static uint16_t fill_ip4(unsigned slot, uint32_t dst, uint16_t flags_frag)
+static uint16_t fill_ip4_id(unsigned slot, uint32_t dst, uint16_t flags_frag, uint16_t id)
 {
     uint8_t *f = rx_buf_at(slot);
     memset(f, 0, IDEMIP_DMA_BUF_STRIDE);
@@ -309,7 +309,7 @@ static uint16_t fill_ip4(unsigned slot, uint32_t dst, uint16_t flags_frag)
     IdemIpIp4Fields fields;
     memset(&fields, 0, sizeof fields);
     fields.total_len = (uint16_t)(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + TICK_TEST_DATA);
-    fields.id = 0x4242u;
+    fields.id = id;
     fields.flags_frag = flags_frag;
     fields.ttl = TICK_TEST_TTL;
     fields.proto = TICK_TEST_PROTO;
@@ -318,6 +318,13 @@ static uint16_t fill_ip4(unsigned slot, uint32_t dst, uint16_t flags_frag)
     idemip_ip4_build(f + IDEMIP_ETH_OFF_PAYLOAD, &fields);
     memset(f + IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN), 0x5A, TICK_TEST_DATA);
     return (uint16_t)(IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + TICK_TEST_DATA);
+}
+
+// RFC 791 sec 3.2 keys a datagram on "the source, destination, protocol, and identification fields",
+// so one identification is one row.
+static uint16_t fill_ip4(unsigned slot, uint32_t dst, uint16_t flags_frag)
+{
+    return fill_ip4_id(slot, dst, flags_frag, 0x4242u);
 }
 
 void setUp(void)
@@ -715,6 +722,40 @@ void test_an_expired_datagram_returns_every_descriptor_it_pinned(void)
     Ip4Reass.tick(ip4_reass_mem);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_IP4_REASS_IO(ip4_reass_mem)->status,
                                   "the timed-out row was never freed");
+}
+
+// The table holds IDEMIP_IP4_REASS_DATAGRAMS datagrams at once, and RFC 1213 ipReasmFails is "the
+// number of failures detected by the IP re-assembly algorithm (for whatever reason: timed out, errors,
+// etc)", which a refusal for want of a row is. The fragment that meets a full table has to give its
+// descriptor back: a pin held for a row that does not exist is a buffer the ring never sees again, and
+// the interface goes deaf one descriptor at a time.
+void test_a_fragment_the_reassembly_table_cannot_hold_gives_its_descriptor_back(void)
+{
+    for (unsigned i = 0; i < (unsigned)IDEMIP_IP4_REASS_DATAGRAMS; i++)
+    {
+        uint16_t len = fill_ip4_id(i, LOCAL_IP4, IDEMIP_IP4_FLAG_MF, (uint16_t)(0x100u + i));
+        engine_queue(i, len);
+    }
+    open_tick(work_a, 1000u);
+    TEST_ASSERT_TRUE(run_phase(work_a, Tick.drain));
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE((uint16_t)IDEMIP_IP4_REASS_DATAGRAMS, IDEMIP_DMA_IO(dma_mem)->pinned,
+                                     "the table did not take one row per identification");
+
+    const int released = g_released;
+    unsigned over = (unsigned)IDEMIP_IP4_REASS_DATAGRAMS;
+    uint16_t len = fill_ip4_id(over, LOCAL_IP4, IDEMIP_IP4_FLAG_MF, 0x200u);
+    engine_queue(over, len);
+    open_tick(work_a, 1000u);
+    Tick.drain(work_a);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_REASS, IDEMIP_DISPATCH_IO(dispatch_mem)->drop,
+                                  "a fragment with no row to go in was taken anyway");
+    Dma.pinned(dma_mem);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE((uint16_t)IDEMIP_IP4_REASS_DATAGRAMS, IDEMIP_DMA_IO(dma_mem)->pinned,
+                                     "the refused fragment kept a descriptor pinned");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(released + 1, g_released,
+                                  "the refused fragment's descriptor never went back to the ring");
 }
 
 // What a descriptor that never comes back costs, said in the only terms that matter: the interface
