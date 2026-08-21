@@ -238,8 +238,11 @@ static uint8_t dhcp6_msg_for(uint8_t state)
         return (uint8_t)IDEMIP_DHCP6_RELEASE;
     case IDEMIP_DHCP6_DECLINING:
         return (uint8_t)IDEMIP_DHCP6_DECLINE;
-    default:
-        return 0u;
+    // Every state that transmits is above, and the callers are dhcp6_arm_first, dhcp6_arm_again and
+    // the sec 18.2.10 UseMulticast resend, all three of which run inside a running exchange. IDLE and
+    // BOUND are answered before the tick arms anything, so this arm is unreachable and not measured.
+    default:       // GCOVR_EXCL_LINE
+        return 0u; // GCOVR_EXCL_LINE
     }
 }
 
@@ -264,8 +267,9 @@ static uint32_t dhcp6_irt_ms(uint8_t state)
         return IDEMIP_DHCP6_REL_TIMEOUT_MS;
     case IDEMIP_DHCP6_DECLINING:
         return IDEMIP_DHCP6_DEC_TIMEOUT_MS;
-    default:
-        return 0u;
+    // As above: dhcp6_arm_first is the only caller and it arms an exchange that is already running.
+    default:       // GCOVR_EXCL_LINE
+        return 0u; // GCOVR_EXCL_LINE
     }
 }
 
@@ -449,9 +453,12 @@ static size_t dhcp6_write(uint8_t *work, uint8_t type, uint8_t *out, size_t cap)
                                (type == (uint8_t)IDEMIP_DHCP6_RELEASE) || (type == (uint8_t)IDEMIP_DHCP6_DECLINE);
     if (wants_server)
     {
+        // sec 18.2.2 and sec 18.2.4 reach REQUESTING and RENEWING only through an Advertise or a Reply
+        // whose Server Identifier was recorded, and sec 18.2.7 and sec 18.2.8 refuse a Release or a
+        // Decline without one, so this holds a case the state machine does not produce.
         if (ctx->server_duid_len == 0u)
         {
-            return 0u;
+            return 0u; // GCOVR_EXCL_LINE
         }
         at = dhcp6_put(out, cap, at, IDEMIP_DHCP6_OPT_SERVERID, DHCP6_SERVER_DUID(work), ctx->server_duid_len);
     }
@@ -1182,8 +1189,10 @@ void idemip_dhcp6_input(uint8_t *work)
         ctx->rt_ms = 0u;
         break;
 
-    default:
-        return;
+    // sec 16.3 and sec 16.10 turn IDLE and BOUND away above, so the eight exchanges are every state
+    // that reaches this switch.
+    default:    // GCOVR_EXCL_LINE
+        return; // GCOVR_EXCL_LINE
     }
     io->status = IDEMIP_OK;
     dhcp6_publish(work);
