@@ -27,3 +27,8 @@ build-bench/
 # index records the commit, which is the whole of what this tree keeps: git does not apply an ignore
 # rule to a path it already tracks, so the gitlink stays and only loose files under it are ignored.
 include/MMgr/
+
+# The RFC text cache. docs/learn/RFC is the vendored law and is tracked; this is only what
+# tools/dev_env/rfc.py had to fetch because no path carried it, and the RFC Editor is where it
+# came from.
+.rfc-cache/
