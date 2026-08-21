@@ -153,7 +153,8 @@ static uint8_t dns_fold(uint8_t c)
  */
 static idemip_bool dns_deref(const uint8_t *msg, size_t len, size_t *off, size_t *hops)
 {
-    while (*off < len)
+    // The exit arm is not measured, for the reason written at the return below it.
+    while (*off < len) // GCOVR_EXCL_BR_LINE
     {
         uint8_t n = msg[*off];
         if ((n & IDEMIP_DNS_LABEL_PTR) != IDEMIP_DNS_LABEL_PTR)
@@ -257,7 +258,12 @@ static idemip_bool dns_name_eq_text(const uint8_t *msg, size_t len, size_t off, 
         if (n == 0u)
         {
             // The dotted form ends either at its terminator or at the separator standing for the root.
-            return (idemip_bool)((*t == '\0') || ((*t == '.') && (t[1] == '\0')));
+            // Not measured: the label walk below steps over the separator it stops on, so a caller's
+            // trailing dot has been consumed by the time the wire's terminator is reached and only a
+            // name carrying an empty label would stand on one here - which dns_text_wire_len refuses
+            // where the name is taken in. The second reading is written because sec 3.1's root is
+            // written as that separator and a caller may hand one over.
+            return (idemip_bool)((*t == '\0') || ((*t == '.') && (t[1] == '\0'))); // GCOVR_EXCL_BR_LINE
         }
         if ((off + 1u + (size_t)n) > len)
         {
@@ -412,7 +418,9 @@ static idemip_bool dns_text_wire_len(const char *text, size_t *out_wire, size_t 
     {
         *out_wire = wire;
     }
-    if (out_text != NULL)
+    // Not measured on the empty arm: both callers want the text length, and it is the wire length
+    // one of them has no use for. Each is written as its own request so a caller takes what it needs.
+    if (out_text != NULL) // GCOVR_EXCL_BR_LINE
     {
         *out_text = at;
     }
@@ -435,7 +443,11 @@ static void dns_name_store(uint8_t *work, size_t idx, const char *text, size_t t
 static idemip_bool dns_held_eq(const char *held, const char *text)
 {
     size_t k = 0;
-    while ((k < DNS_NAME_BYTES) && (dns_fold((uint8_t)held[k]) == dns_fold((uint8_t)text[k])))
+    // Not measured on the bound: a held name was measured before it was stored, so it spans at most
+    // IDEMIP_DNS_NAME_TEXT_MAX octets and its terminator stands inside the region. The bound is
+    // written because the region is fixed and the caller's string handed in against it is not.
+    while ((k < DNS_NAME_BYTES) && // GCOVR_EXCL_BR_LINE
+           (dns_fold((uint8_t)held[k]) == dns_fold((uint8_t)text[k])))
     {
         if (text[k] == '\0')
         {
@@ -529,7 +541,8 @@ static void dns_cache_negative(uint8_t *work, uint8_t query, uint16_t type, uint
     uint8_t j = dns_cache_slot(work, name, type, now_ms);
     DnsEntry *e = DNS_ENTRY_AT(work, j);
     size_t text = 0;
-    while ((text < (DNS_NAME_BYTES - 1u)) && (name[text] != '\0'))
+    // Not measured on the bound, for the reason written at dns_held_eq.
+    while ((text < (DNS_NAME_BYTES - 1u)) && (name[text] != '\0')) // GCOVR_EXCL_BR_LINE
     {
         text++;
     }
@@ -591,7 +604,12 @@ static void dns_advance(uint8_t *work, DnsQuery *q)
 {
     const DnsCtx *ctx = DNS_CTX(work);
     uint8_t next = dns_server_used_from(work, (uint8_t)((q->server + 1u) & (uint8_t)(IDEMIP_DNS_SERVERS - 1u)));
-    if ((next >= IDEMIP_DNS_SERVERS) || (next <= q->server))
+    // The empty-table readings here and at the move below are not measured: a question only reaches
+    // this walk after a send, a send refuses an empty table, and idemip_dns_set_server is the only
+    // writer of the table and only ever marks an entry used. The clear that unmarks one takes the
+    // questions with it. They are written because the walk reports IDEMIP_DNS_SERVERS for an empty
+    // table and a count that is used as an index must be tested before it is one.
+    if ((next >= IDEMIP_DNS_SERVERS) || (next <= q->server)) // GCOVR_EXCL_BR_LINE
     {
         q->retries++;
     }
@@ -604,7 +622,7 @@ static void dns_advance(uint8_t *work, DnsQuery *q)
         q->gave_up = IDEMIP_TRUE;
         return;
     }
-    if (next < IDEMIP_DNS_SERVERS)
+    if (next < IDEMIP_DNS_SERVERS) // GCOVR_EXCL_BR_LINE
     {
         q->server = next;
     }
@@ -904,7 +922,10 @@ static void dns_build_query(uint8_t *work)
         // GCOVR_EXCL_STOP
     }
     size_t need = (size_t)IDEMIP_DNS_HDR_LEN + wire + (size_t)IDEMIP_DNS_QFIXED_LEN;
-    if ((a->cap < need) || (need > IDEMIP_DNS_MSG_MAX))
+    // Not measured on the second: sec 3.1 bounds a name at IDEMIP_DNS_NAME_WIRE_MAX octets, so the
+    // largest question this can need is 271 and sec 4.2.1's 512 is not reachable from here. It is
+    // written because the question is what the datagram carries and sec 4.2.1's bound is on that.
+    if ((a->cap < need) || (need > IDEMIP_DNS_MSG_MAX)) // GCOVR_EXCL_BR_LINE
     {
         io->status = IDEMIP_ERR;
         return;
@@ -942,7 +963,10 @@ static void dns_build_query(uint8_t *work)
         memcpy(out + at + 1u, name + k, label);
         at += 1u + label;
         k += label;
-        if ((k < text) && (name[k] == '.'))
+        // Not measured on the second: the label above ran to the separator or to the end of the
+        // dotted form, so a walk that has not finished stands on a separator. It is written because
+        // the step over one must not run off the end of a form that finished on a label.
+        if ((k < text) && (name[k] == '.')) // GCOVR_EXCL_BR_LINE
         {
             k++;
         }
@@ -1043,7 +1067,10 @@ static uint8_t dns_match(uint8_t *work, const uint8_t *msg, size_t len)
             continue; // GCOVR_EXCL_LINE
         }
         const DnsServer *s = DNS_SERVER_AT(work, q->server);
-        if (!s->used || s->ipv6 != a->ipv6 || s->port != a->src_port)
+        // Not measured on the first: the question was sent to this entry, and the table only ever
+        // gains entries, for the reason written at dns_advance. It is written because a question
+        // carries the index rather than the entry, and an index is not a statement that it is there.
+        if (!s->used || s->ipv6 != a->ipv6 || s->port != a->src_port) // GCOVR_EXCL_BR_LINE
         {
             continue;
         }
@@ -1064,7 +1091,11 @@ static uint8_t dns_match(uint8_t *work, const uint8_t *msg, size_t len)
         {
             continue;
         }
-        if (!dns_name_end(msg, len, IDEMIP_DNS_HDR_LEN, &qend) || ((qend + IDEMIP_DNS_QFIXED_LEN) > len))
+        // Not measured on the first: the comparison above walked this same name to its end and
+        // moved to the next question when it could not, so the walk here is over octets already read.
+        // It is written because the offset it reports is where the fixed fields are taken from.
+        if (!dns_name_end(msg, len, IDEMIP_DNS_HDR_LEN, &qend) || // GCOVR_EXCL_BR_LINE
+            ((qend + IDEMIP_DNS_QFIXED_LEN) > len))
         {
             continue;
         }
@@ -1266,7 +1297,8 @@ static void dns_take(uint8_t *work)
         uint8_t j = dns_cache_slot(work, name, q->type, io->now_ms);
         DnsEntry *e = DNS_ENTRY_AT(work, j);
         size_t text = 0;
-        while ((text < (DNS_NAME_BYTES - 1u)) && (name[text] != '\0'))
+        // Not measured on the bound, for the reason written at dns_held_eq.
+        while ((text < (DNS_NAME_BYTES - 1u)) && (name[text] != '\0')) // GCOVR_EXCL_BR_LINE
         {
             text++;
         }

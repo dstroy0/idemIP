@@ -2322,6 +2322,441 @@ void test_a_record_whose_owner_differs_in_one_character_is_not_an_answer(void)
     }
 }
 
+// RFC 5452 sec 5: an attacker gains if it can force "multiple equivalent (identical QNAME, QTYPE, and
+// QCLASS) outstanding queries at any one time to the same authoritative server", so a second ask for
+// a question already on the wire is handed the slot that question occupies, with the ID and port that
+// went out on it - not a second question and not a second ID.
+void test_a_second_ask_for_a_question_already_on_the_wire_is_the_same_question(void)
+{
+    const uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+
+    IDEMIP_DNS_IO(work_a)->query_args.name = NAME;
+    IDEMIP_DNS_IO(work_a)->query_args.type = IDEMIP_DNS_TYPE_A;
+    IDEMIP_DNS_IO(work_a)->query_args.xid = 0x4242u;
+    IDEMIP_DNS_IO(work_a)->query_args.src_port = 0xC123u;
+    Dns.query(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(slot, IDEMIP_DNS_IO(work_a)->query);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE((uint16_t)XID, IDEMIP_DNS_IO(work_a)->xid,
+                                     "a second ask drew a second ID for a question already outstanding");
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)SPORT, IDEMIP_DNS_IO(work_a)->src_port);
+}
+
+// RFC 5452 sec 9.1 lists what a response is matched on. A datagram carrying no message at all is
+// none of it, one that arrived over the other address family did not come from the server the
+// question went to, and a datagram with no destination address named leaves sec 9.1's "Destination
+// address against query source address" with nothing to compare - which is not a mismatch.
+void test_a_response_is_matched_on_the_family_it_arrived_by(void)
+{
+    const uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire_from(work_a, slot, g_local_a);
+    const size_t len = good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+
+    IDEMIP_DNS_IO(work_a)->input_args.msg = NULL;
+    IDEMIP_DNS_IO(work_a)->input_args.len = len;
+    IDEMIP_DNS_IO(work_a)->input_args.src = g_v4;
+    IDEMIP_DNS_IO(work_a)->input_args.dst = g_local_a;
+    IDEMIP_DNS_IO(work_a)->input_args.src_port = IDEMIP_DNS_PORT;
+    IDEMIP_DNS_IO(work_a)->input_args.dst_port = (uint16_t)SPORT;
+    IDEMIP_DNS_IO(work_a)->input_args.ipv6 = IDEMIP_FALSE;
+    IDEMIP_DNS_IO(work_a)->now_ms = g_now_ms;
+    Dns.input(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status, "a call with no message was taken");
+
+    // The server was set over IPv4, so a datagram announced as IPv6 is from somewhere else.
+    IDEMIP_DNS_IO(work_a)->input_args.msg = g_msg;
+    IDEMIP_DNS_IO(work_a)->input_args.ipv6 = IDEMIP_TRUE;
+    IDEMIP_DNS_IO(work_a)->now_ms = g_now_ms;
+    Dns.input(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status,
+                                  "a datagram of the other address family was matched to the question");
+
+    // The same datagram over IPv4 with no destination named is taken: the question recorded the
+    // address it went out from, and this caller did not say what the datagram arrived on.
+    deliver(work_a, len, g_v4, IDEMIP_DNS_PORT, (uint16_t)SPORT);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_MEMORY(g_ans4, IDEMIP_DNS_IO(work_a)->addr, 4u);
+}
+
+// RFC 1035 sec 3.3.1's CNAME RDATA is "A <domain-name>", so a record carrying none names nothing and
+// the name of interest does not move. Once the address the restarted query of RFC 1034 sec 4.3.2 was
+// looking for has been read, a further alias has nothing left to redirect: the answer is the one
+// already found.
+void test_an_alias_with_no_name_and_an_alias_behind_the_address_move_nothing(void)
+{
+    const uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+
+    uint8_t alias[32];
+    const size_t alias_len = wname(alias, 0, "canonical.example.com");
+    mhdr((uint16_t)XID, (uint16_t)(IDEMIP_DNS_FLAG_QR | IDEMIP_DNS_FLAG_RD | IDEMIP_DNS_FLAG_RA), 1u, 3u);
+    size_t at = wname(g_msg, IDEMIP_DNS_HDR_LEN, NAME);
+    at = w16(g_msg, at, IDEMIP_DNS_TYPE_A);
+    at = w16(g_msg, at, IDEMIP_DNS_CLASS_IN);
+    at = wptr(g_msg, at, (uint16_t)IDEMIP_DNS_HDR_LEN);
+    at = wrr(g_msg, at, IDEMIP_DNS_TYPE_CNAME, IDEMIP_DNS_CLASS_IN, 600u, alias, 0u);
+    at = wptr(g_msg, at, (uint16_t)IDEMIP_DNS_HDR_LEN);
+    at = wrr(g_msg, at, IDEMIP_DNS_TYPE_A, IDEMIP_DNS_CLASS_IN, 300u, g_ans4, 4u);
+    at = wptr(g_msg, at, (uint16_t)IDEMIP_DNS_HDR_LEN);
+    at = wrr(g_msg, at, IDEMIP_DNS_TYPE_CNAME, IDEMIP_DNS_CLASS_IN, 600u, alias, alias_len);
+
+    deliver_ok(work_a, at);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(g_ans4, IDEMIP_DNS_IO(work_a)->addr, 4u,
+                                     "the address standing between the two aliases was not the answer");
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+}
+
+// RFC 1035 sec 4.1.4 allows a name to end in "a pointer to a prior occurance of the same name", so a
+// pointer that does not point backwards is not a name. A CNAME whose RDATA is one leaves the name of
+// interest unreadable, and RFC 5452 sec 6's "only accept data if it is part of the domain for which
+// the query was intended" then holds every record behind it out: the exchange ends with no address.
+void test_a_record_behind_an_alias_that_names_nothing_readable_is_refused(void)
+{
+    const uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+
+    mhdr((uint16_t)XID, (uint16_t)(IDEMIP_DNS_FLAG_QR | IDEMIP_DNS_FLAG_RD | IDEMIP_DNS_FLAG_RA), 1u, 2u);
+    size_t at = wname(g_msg, IDEMIP_DNS_HDR_LEN, NAME);
+    at = w16(g_msg, at, IDEMIP_DNS_TYPE_A);
+    at = w16(g_msg, at, IDEMIP_DNS_CLASS_IN);
+
+    // The alias RDATA is a pointer at the far end of the message, which is not a prior occurrence of
+    // anything and is where the walk over it stops.
+    uint8_t forward[2];
+    forward[0] = (uint8_t)(IDEMIP_DNS_LABEL_PTR | 0x00u);
+    forward[1] = 0xFFu;
+    at = wptr(g_msg, at, (uint16_t)IDEMIP_DNS_HDR_LEN);
+    at = wrr(g_msg, at, IDEMIP_DNS_TYPE_CNAME, IDEMIP_DNS_CLASS_IN, 600u, forward, sizeof forward);
+    at = wptr(g_msg, at, (uint16_t)IDEMIP_DNS_HDR_LEN);
+    at = wrr(g_msg, at, IDEMIP_DNS_TYPE_A, IDEMIP_DNS_CLASS_IN, 300u, g_ans4, 4u);
+
+    deliver_ok(work_a, at);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status,
+                                  "an address behind an unreadable alias was cached");
+}
+
+// RFC 1035 sec 4.1.2's echoed QNAME is matched against the name the question was asked about, and the
+// two run out together or they do not match at all. sec 3.1's "domain name terminates with the zero
+// length octet for the null label of the root" is the wire's end; in the dotted form that is the
+// terminator, or the separator standing for the root where a caller wrote one.
+void test_an_echoed_name_that_stops_short_of_the_question_matches_nothing(void)
+{
+    // Two questions at once, so one short echo is held against both endings: a name whose next octet
+    // is a label character, and a name whose next octet is the separator with more behind it.
+    bind_ok(work_a, &g_cfg);
+    server_at(work_a, 0u, g_v4);
+    for (unsigned k = 0; k < 2u; k++)
+    {
+        IDEMIP_DNS_IO(work_a)->query_args.name = (k == 0u) ? "examples.com" : "example.com";
+        IDEMIP_DNS_IO(work_a)->query_args.type = IDEMIP_DNS_TYPE_A;
+        IDEMIP_DNS_IO(work_a)->query_args.xid = (uint16_t)XID;
+        IDEMIP_DNS_IO(work_a)->query_args.src_port = (uint16_t)SPORT;
+        Dns.query(work_a);
+        TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+        put_on_the_wire(work_a, IDEMIP_DNS_IO(work_a)->query);
+    }
+
+    const size_t len = good_response("example", IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+    deliver_ok(work_a, len);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status,
+                                  "an echo of a shorter name answered the question");
+
+    // A question written with the root separator is the same question: the echo without it matches.
+    bind_ok(work_b, &g_cfg_b);
+    server_at(work_b, 0u, g_v4);
+    IDEMIP_DNS_IO(work_b)->query_args.name = "example.com.";
+    IDEMIP_DNS_IO(work_b)->query_args.type = IDEMIP_DNS_TYPE_A;
+    IDEMIP_DNS_IO(work_b)->query_args.xid = (uint16_t)XID;
+    IDEMIP_DNS_IO(work_b)->query_args.src_port = (uint16_t)SPORT;
+    Dns.query(work_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_b)->status);
+    put_on_the_wire(work_b, IDEMIP_DNS_IO(work_b)->query);
+
+    deliver_ok(work_b, good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u));
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DNS_IO(work_b)->status,
+                                  "the root separator made the question a different one");
+}
+
+// RFC 1035 sec 4.1.3: the TTL is "the time interval that the resource record may be cached before the
+// source of the information should again be consulted". A lookup past that interval is not answered
+// from the entry, and the slot the spent entry holds is the one the next answer takes: sec 4.3.4's
+// cache "should be discarded" once the interval is over, and nothing else is turned out for it.
+void test_a_spent_entry_answers_nothing_and_is_the_slot_the_next_answer_takes(void)
+{
+    const uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+    deliver_ok(work_a, good_response(NAME, IDEMIP_DNS_TYPE_A, 1u, g_ans4, 4u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+
+    // One second on, the interval is over. The clock is moved without a sweep, so the entry is still
+    // in its slot and it is the lookup that refuses it.
+    g_now_ms += 1000u;
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status,
+                                  "an answer past its TTL was handed back");
+
+    // A second name, answered now. It takes the spent slot rather than one holding a live answer.
+    IDEMIP_DNS_IO(work_a)->query_args.name = "other.example.com";
+    IDEMIP_DNS_IO(work_a)->query_args.type = IDEMIP_DNS_TYPE_A;
+    IDEMIP_DNS_IO(work_a)->query_args.xid = (uint16_t)XID;
+    IDEMIP_DNS_IO(work_a)->query_args.src_port = (uint16_t)SPORT;
+    Dns.query(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    put_on_the_wire(work_a, IDEMIP_DNS_IO(work_a)->query);
+    deliver_ok(work_a, good_response("other.example.com", IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+
+    look(work_a, "other.example.com", IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_MEMORY(g_ans4, IDEMIP_DNS_IO(work_a)->addr, 4u);
+}
+
+// RFC 5452 sec 5 keeps one question on the wire at a time so an attacker cannot force "multiple
+// equivalent (identical QNAME, QTYPE, and QCLASS) outstanding queries", but a question whose exchange
+// is over is not outstanding: sec 9.2's unpredictable ID and port are the ones the new ask names.
+void test_a_question_asked_again_after_its_answer_came_back_is_a_new_question(void)
+{
+    const uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+    deliver_ok(work_a, good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u));
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+
+    IDEMIP_DNS_IO(work_a)->query_args.name = NAME;
+    IDEMIP_DNS_IO(work_a)->query_args.type = IDEMIP_DNS_TYPE_A;
+    IDEMIP_DNS_IO(work_a)->query_args.xid = 0x7A7Au;
+    IDEMIP_DNS_IO(work_a)->query_args.src_port = 0xD00Du;
+    Dns.query(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT8(slot, IDEMIP_DNS_IO(work_a)->query);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0x7A7Au, IDEMIP_DNS_IO(work_a)->xid,
+                                     "the finished slot was handed back with the ID of the exchange that ended");
+    TEST_ASSERT_EQUAL_UINT16(0xD00Du, IDEMIP_DNS_IO(work_a)->src_port);
+}
+
+// RFC 1123 sec 6.1.3.3 (5): "the retry interval SHOULD be constrained by an exponential backoff
+// algorithm, and SHOULD also have upper and lower bounds." A question given more tries than the
+// doubling has room for waits the upper bound from then on rather than running away past it.
+void test_the_retry_interval_stops_doubling_at_its_upper_bound(void)
+{
+    static const IdemIpDnsCfg cfg_many = {.netif = 0u, .retries = 8u};
+    bind_ok(work_a, &cfg_many);
+    server_at(work_a, 0u, g_v4);
+    IDEMIP_DNS_IO(work_a)->query_args.name = NAME;
+    IDEMIP_DNS_IO(work_a)->query_args.type = IDEMIP_DNS_TYPE_A;
+    IDEMIP_DNS_IO(work_a)->query_args.xid = (uint16_t)XID;
+    IDEMIP_DNS_IO(work_a)->query_args.src_port = (uint16_t)SPORT;
+    Dns.query(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    const uint8_t slot = IDEMIP_DNS_IO(work_a)->query;
+
+    // Five tries at the doubling: 2s, 4s, 8s, 16s, 32s. The fifth lands on the bound exactly.
+    uint32_t now = 0;
+    uint32_t wait = (uint32_t)IDEMIP_DNS_RETRY_MS;
+    for (unsigned k = 0; k < 5u; k++)
+    {
+        put_on_the_wire(work_a, slot);
+        now += wait;
+        run_tick(work_a, now);
+        wait <<= 1;
+    }
+
+    // The sixth would be 64 seconds if the doubling ran on. It is armed at the bound: a build one
+    // millisecond short of it is refused, and one at it goes out.
+    put_on_the_wire(work_a, slot);
+    run_tick(work_a, now + (uint32_t)IDEMIP_DNS_RETRY_MAX_MS - 1u);
+    IDEMIP_DNS_IO(work_a)->build_args.query = slot;
+    IDEMIP_DNS_IO(work_a)->build_args.out = g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.cap = sizeof g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.src = NULL;
+    Dns.build(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status, "a re-send went out early");
+
+    run_tick(work_a, now + (uint32_t)IDEMIP_DNS_RETRY_MAX_MS);
+    put_on_the_wire(work_a, slot);
+}
+
+// RFC 5452 sec 9.1 matches a response on "Source address" together with the port it came from, so a
+// datagram from the right server on a port the question was not sent to answers nothing. A question
+// built with no source address of this host's recorded has nothing to hold sec 9.1's "Destination
+// address against query source address" against, and is matched on the other tests alone.
+void test_the_source_port_is_matched_and_a_query_with_no_local_address_takes_any_destination(void)
+{
+    const uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+    const size_t len = good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+
+    deliver(work_a, len, g_v4, 5555u, (uint16_t)SPORT);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status,
+                                  "a datagram from a port the server was not asked on was taken");
+
+    // The same datagram from the port the question went to, addressed to an address the question
+    // never recorded, is taken: the send above named no source.
+    deliver_to(work_a, len, g_v4, IDEMIP_DNS_PORT, (uint16_t)SPORT, g_local_b);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+}
+
+// RFC 1035 sec 4.1.2 puts QTYPE and QCLASS behind the QNAME, and sec 4.1.3 puts a record's fixed
+// fields behind its NAME. A message that ends before either of them is not the question it echoes
+// and not the record it claims. The first is RFC 5452 sec 9.1's "A mismatch and the response MUST be
+// considered invalid", which leaves the question outstanding; the second is a record the section
+// refuses, which ends the exchange with nothing cached.
+void test_a_message_ending_inside_its_own_fixed_fields_answers_nothing(void)
+{
+    const uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+    (void)good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+
+    // One octet short of the echoed question's QTYPE and QCLASS.
+    deliver_ok(work_a, (size_t)OFF_AN - 1u);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status,
+                                  "a message ending inside the echoed question was matched to it");
+
+    // The answer's owner is a two-octet pointer, and the ten fixed octets behind it do not fit.
+    deliver_ok(work_a, (size_t)OFF_AN + 2u + (size_t)IDEMIP_DNS_RR_FIXED_LEN - 1u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, IDEMIP_DNS_IO(work_a)->ttl_s,
+                                     "a record whose fixed fields ran off the end was read");
+    // Nothing was cached from it, so the name has no answer to give: BUSY, not the soft error a
+    // question that gave up reports.
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, IDEMIP_DNS_IO(work_a)->status, "a truncated record was cached");
+}
+
+// RFC 1035 sec 3.3.1 makes a CNAME's RDATA "A <domain-name> which specifies the canonical or primary
+// name for the owner", and RFC 1034 sec 4.3.2 has the server that meets one include "the CNAME
+// record in the response" and restart "the query at the domain name specified in the data field of
+// the CNAME record". The address is read from the record the alias names, and RFC 5452 sec 6's
+// "only accept data if it is part of the domain for which the query was intended" still holds: the
+// second record is taken because its owner is the name the first one gave.
+void test_an_alias_moves_the_name_the_address_is_read_from(void)
+{
+    const uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, slot);
+
+    mhdr((uint16_t)XID, (uint16_t)(IDEMIP_DNS_FLAG_QR | IDEMIP_DNS_FLAG_RD | IDEMIP_DNS_FLAG_RA), 1u, 2u);
+    size_t at = wname(g_msg, IDEMIP_DNS_HDR_LEN, NAME);
+    at = w16(g_msg, at, IDEMIP_DNS_TYPE_A);
+    at = w16(g_msg, at, IDEMIP_DNS_CLASS_IN);
+
+    uint8_t alias[32];
+    const size_t alias_len = wname(alias, 0, "canonical.example.com");
+    at = wptr(g_msg, at, (uint16_t)IDEMIP_DNS_HDR_LEN);
+    const size_t alias_at = at + (size_t)IDEMIP_DNS_RR_FIXED_LEN;
+    at = wrr(g_msg, at, IDEMIP_DNS_TYPE_CNAME, IDEMIP_DNS_CLASS_IN, 600u, alias, alias_len);
+    at = wptr(g_msg, at, (uint16_t)alias_at);
+    at = wrr(g_msg, at, IDEMIP_DNS_TYPE_A, IDEMIP_DNS_CLASS_IN, 300u, g_ans4, 4u);
+
+    deliver_ok(work_a, at);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(g_ans4, IDEMIP_DNS_IO(work_a)->addr, 4u,
+                                     "the address behind the alias was not read");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(300u, IDEMIP_DNS_IO(work_a)->ttl_s,
+                                     "the TTL came from the alias rather than from the address record");
+
+    // It is cached under the name that was asked about, which is the name a later lookup has.
+    look(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_EQUAL_MEMORY(g_ans4, IDEMIP_DNS_IO(work_a)->addr, 4u);
+}
+
+// RFC 1035 sec 4.2.1 puts a query on "port 53 (decimal)" by default, and a resolver may be pointed at
+// a server listening elsewhere. RFC 3596 sec 1 adds that a resolver reaches a server over IPv6 as
+// readily as over IPv4, and RFC 5452 sec 9.1 matches a response on the address family it arrived by
+// as well as on the address itself.
+void test_a_query_reaches_an_ipv6_server_on_the_port_it_was_given(void)
+{
+    bind_ok(work_a, &g_cfg);
+    IDEMIP_DNS_IO(work_a)->server_args.index = 0u;
+    IDEMIP_DNS_IO(work_a)->server_args.addr = g_v6;
+    IDEMIP_DNS_IO(work_a)->server_args.ipv6 = IDEMIP_TRUE;
+    IDEMIP_DNS_IO(work_a)->server_args.port = 5353u;
+    IDEMIP_DNS_IO(work_a)->server_args.zone = 0u;
+    Dns.set_server(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+
+    IDEMIP_DNS_IO(work_a)->query_args.name = NAME;
+    IDEMIP_DNS_IO(work_a)->query_args.type = IDEMIP_DNS_TYPE_AAAA;
+    IDEMIP_DNS_IO(work_a)->query_args.xid = (uint16_t)XID;
+    IDEMIP_DNS_IO(work_a)->query_args.src_port = (uint16_t)SPORT;
+    Dns.query(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    const uint8_t slot = IDEMIP_DNS_IO(work_a)->query;
+
+    // The datagram goes out over IPv6, to the port the caller named, from an address of this host's.
+    memset(g_out, 0, sizeof g_out);
+    IDEMIP_DNS_IO(work_a)->build_args.query = slot;
+    IDEMIP_DNS_IO(work_a)->build_args.out = g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.cap = sizeof g_out;
+    IDEMIP_DNS_IO(work_a)->build_args.src = g_ans6;
+    IDEMIP_DNS_IO(work_a)->now_ms = g_now_ms;
+    Dns.build(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_DNS_IO(work_a)->ipv6, "the query did not go out over IPv6");
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(5353u, IDEMIP_DNS_IO(work_a)->dst_port, "the port the caller named was not used");
+    TEST_ASSERT_EQUAL_MEMORY(g_v6, IDEMIP_DNS_IO(work_a)->dst, IDEMIP_DNS_ADDR_LEN);
+
+    // The answer comes back the same way, and sec 9.1 matches it on all of that.
+    (void)good_response(NAME, IDEMIP_DNS_TYPE_AAAA, 300u, g_ans6, 16u);
+    IDEMIP_DNS_IO(work_a)->input_args.msg = g_msg;
+    IDEMIP_DNS_IO(work_a)->input_args.len = OFF_AN + 2u + (size_t)IDEMIP_DNS_RR_FIXED_LEN + 16u;
+    IDEMIP_DNS_IO(work_a)->input_args.src = g_v6;
+    IDEMIP_DNS_IO(work_a)->input_args.dst = g_ans6;
+    IDEMIP_DNS_IO(work_a)->input_args.src_port = 5353u;
+    IDEMIP_DNS_IO(work_a)->input_args.dst_port = (uint16_t)SPORT;
+    IDEMIP_DNS_IO(work_a)->input_args.ipv6 = IDEMIP_TRUE;
+    IDEMIP_DNS_IO(work_a)->now_ms = g_now_ms;
+    Dns.input(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
+
+    look(work_a, NAME, IDEMIP_DNS_TYPE_AAAA);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status, "the answer over IPv6 was not cached");
+    TEST_ASSERT_EQUAL_MEMORY(g_ans6, IDEMIP_DNS_IO(work_a)->addr, 16u);
+}
+
+// A call with nothing to work on has nothing to work on later either, so it is ERR: a lookup for the
+// empty name, a query for it, and an input with no source address to match a response against - which
+// RFC 5452 sec 9.1 makes one of the things a response is checked on.
+void test_the_entries_refuse_what_no_later_call_supplies(void)
+{
+    bind_ok(work_a, &g_cfg);
+    server_at(work_a, 0u, g_v4);
+
+    look(work_a, "", IDEMIP_DNS_TYPE_A);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status, "a lookup for the empty name was made");
+
+    IDEMIP_DNS_IO(work_a)->query_args.name = "";
+    IDEMIP_DNS_IO(work_a)->query_args.type = IDEMIP_DNS_TYPE_A;
+    IDEMIP_DNS_IO(work_a)->query_args.xid = (uint16_t)XID;
+    IDEMIP_DNS_IO(work_a)->query_args.src_port = (uint16_t)SPORT;
+    Dns.query(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status, "a question about nothing was registered");
+
+    (void)ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
+    put_on_the_wire(work_a, 0u);
+    (void)good_response(NAME, IDEMIP_DNS_TYPE_A, 300u, g_ans4, 4u);
+    IDEMIP_DNS_IO(work_a)->input_args.msg = g_msg;
+    IDEMIP_DNS_IO(work_a)->input_args.len = OFF_AN + 2u + (size_t)IDEMIP_DNS_RR_FIXED_LEN + 4u;
+    IDEMIP_DNS_IO(work_a)->input_args.src = NULL;
+    IDEMIP_DNS_IO(work_a)->input_args.dst = NULL;
+    IDEMIP_DNS_IO(work_a)->input_args.src_port = IDEMIP_DNS_PORT;
+    IDEMIP_DNS_IO(work_a)->input_args.dst_port = (uint16_t)SPORT;
+    IDEMIP_DNS_IO(work_a)->input_args.ipv6 = IDEMIP_FALSE;
+    IDEMIP_DNS_IO(work_a)->now_ms = g_now_ms;
+    Dns.input(work_a);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status,
+                                  "a datagram with no source was matched against a question");
+}
+
 // RFC 1123 sec 6.1.3.3 (2): "After a query has been retransmitted several times without a response,
 // an implementation MUST give up and return a soft error to the application." A question that gave
 // up is not the same result as one still in flight, and its slot goes back.
