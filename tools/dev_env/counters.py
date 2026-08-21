@@ -47,10 +47,18 @@ GAUGES = """
 IF_SPEED IF_OUT_QLEN TCP_CURR_ESTAB
 """
 
-# RFC 1122 sec 3.2.2.9 leaves the Address Mask pair optional and this library does not carry it, so
-# neither direction has a message, let alone a count. The only ids here that are not a send path.
+# Two pairs RFC 1122 leaves optional and this library does not carry: the Address Mask pair at
+# sec 3.2.2.9, and the Timestamp pair at sec 3.2.2.8, whose "A host MAY implement Timestamp and
+# Timestamp Reply" this build declines. Neither direction has a message, let alone a count, so an
+# arriving one is discarded on its Type by icmp_in and no entry exists to build a departing one. The
+# only ids here that are not a send path.
+#
+# The Timestamp OUT pair sat under SEND_PATH until the IN pair joined this list, which read as though
+# a caller could bump icmpOutTimestamps for a message the library gives it no way to build. It cannot,
+# any more than it can for an Address Mask, and the two pairs belong under the same sentence.
 NO_MESSAGE = """
 ICMP4_IN_ADDR_MASKS ICMP4_IN_ADDR_MASK_REPS ICMP4_OUT_ADDR_MASKS ICMP4_OUT_ADDR_MASK_REPS
+ICMP4_IN_TIMESTAMPS ICMP4_IN_TIMESTAMP_REPS ICMP4_OUT_TIMESTAMPS ICMP4_OUT_TIMESTAMP_REPS
 """
 
 # The send path, which dispatch does not own. Dispatch holds the stats borrow and walks one frame
@@ -66,7 +74,6 @@ IP4_FRAG_OKS IP4_FRAG_FAILS IP4_FRAG_CREATES IP4_ROUTING_DISCARDS
 
 ICMP4_OUT_ERRORS ICMP4_OUT_DEST_UNREACHS ICMP4_OUT_TIME_EXCDS ICMP4_OUT_PARM_PROBS
 ICMP4_OUT_SRC_QUENCHS ICMP4_OUT_REDIRECTS ICMP4_OUT_ECHOS
-ICMP4_OUT_TIMESTAMPS ICMP4_OUT_TIMESTAMP_REPS
 
 IP6_IN_TOO_BIG_ERRORS IP6_IN_NO_ROUTES IP6_OUT_FORW_DATAGRAMS IP6_OUT_REQUESTS IP6_OUT_DISCARDS
 IP6_OUT_FRAG_OKS IP6_OUT_FRAG_FAILS IP6_OUT_FRAG_CREATES IP6_OUT_MCAST_PKTS
