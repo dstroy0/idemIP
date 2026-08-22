@@ -17,6 +17,7 @@
 #define IDEMIP_PHY_H
 
 #include "src/ethernet/mii.h"
+#include "src/ethernet/ethernet_defines.h"
 
 #if IDEMIP_ENABLE_ETHERNET
 

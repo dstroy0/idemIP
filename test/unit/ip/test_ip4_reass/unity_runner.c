@@ -3,6 +3,8 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/ip/ip4_reass.h"
+#include "src/common_defines.h"
+#include "src/ip/ipv4_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -128,65 +130,65 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/ip/test_ip4_reass/test_ip4_reass.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 74);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 86);
-  run_test(test_clear_on_one_borrow_leaves_the_other_alone, "test_clear_on_one_borrow_leaves_the_other_alone", 114);
-  run_test(test_clear_reports_ok, "test_clear_reports_ok", 128);
-  run_test(test_clear_zeroes_the_tables, "test_clear_zeroes_the_tables", 135);
-  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 142);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 155);
-  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 176);
-  run_test(test_the_borrow_covers_the_published_map, "test_the_borrow_covers_the_published_map", 190);
-  run_test(test_a_row_index_fits_the_published_terminator, "test_a_row_index_fits_the_published_terminator", 196);
-  run_test(test_every_region_starts_aligned, "test_every_region_starts_aligned", 203);
-  run_test(test_the_hole_table_matches_rfc_815, "test_the_hole_table_matches_rfc_815", 212);
-  run_test(test_a_refused_hold_reports_no_row, "test_a_refused_hold_reports_no_row", 342);
-  run_test(test_a_576_octet_datagram_reassembles_from_its_smallest_fragments, "test_a_576_octet_datagram_reassembles_from_its_smallest_fragments", 358);
-  run_test(test_two_fragments_in_order_complete_the_datagram, "test_two_fragments_in_order_complete_the_datagram", 396);
-  run_test(test_fragments_out_of_order_complete_the_datagram, "test_fragments_out_of_order_complete_the_datagram", 415);
-  run_test(test_the_last_fragment_alone_leaves_the_leading_hole, "test_the_last_fragment_alone_leaves_the_leading_hole", 430);
-  run_test(test_a_fragment_in_the_middle_of_a_hole_leaves_a_hole_at_each_end, "test_a_fragment_in_the_middle_of_a_hole_leaves_a_hole_at_each_end", 449);
-  run_test(test_step_six_makes_no_hole_past_the_last_fragment, "test_step_six_makes_no_hole_past_the_last_fragment", 467);
-  run_test(test_a_duplicate_fragment_is_refused_and_pins_nothing, "test_a_duplicate_fragment_is_refused_and_pins_nothing", 480);
-  run_test(test_a_partially_overlapping_fragment_abandons_the_datagram, "test_a_partially_overlapping_fragment_abandons_the_datagram", 505);
-  run_test(test_an_overlap_reaching_back_over_held_octets_abandons_the_datagram, "test_an_overlap_reaching_back_over_held_octets_abandons_the_datagram", 535);
-  run_test(test_an_abandoned_row_times_out_without_an_icmp_answer, "test_an_abandoned_row_times_out_without_an_icmp_answer", 549);
-  run_test(test_an_exactly_repeated_fragment_is_not_an_overlap, "test_an_exactly_repeated_fragment_is_not_an_overlap", 570);
-  run_test(test_each_field_of_the_buffer_identifier_selects_the_row, "test_each_field_of_the_buffer_identifier_selects_the_row", 586);
-  run_test(test_a_whole_datagram_flushes_its_buffer_identifier, "test_a_whole_datagram_flushes_its_buffer_identifier", 623);
-  run_test(test_a_whole_datagram_with_no_row_names_none, "test_a_whole_datagram_with_no_row_names_none", 642);
-  run_test(test_every_row_of_one_buffer_identifier_is_flushed_not_just_the_first, "test_every_row_of_one_buffer_identifier_is_flushed_not_just_the_first", 654);
-  run_test(test_a_flush_passes_over_a_row_differing_in_any_one_field_of_the_identifier, "test_a_flush_passes_over_a_row_differing_in_any_one_field_of_the_identifier", 686);
-  run_test(test_a_fragment_filling_the_later_of_two_holes_steps_over_the_earlier, "test_a_fragment_filling_the_later_of_two_holes_steps_over_the_earlier", 709);
-  run_test(test_a_last_fragment_arriving_twice_is_a_duplicate_and_not_a_contradiction, "test_a_last_fragment_arriving_twice_is_a_duplicate_and_not_a_contradiction", 731);
-  run_test(test_total_len_is_the_rfc_791_total_data_length, "test_total_len_is_the_rfc_791_total_data_length", 754);
-  run_test(test_next_reports_every_fragment_in_ascending_offset, "test_next_reports_every_fragment_in_ascending_offset", 768);
-  run_test(test_next_reports_the_header_length_of_each_fragment, "test_next_reports_the_header_length_of_each_fragment", 802);
-  run_test(test_next_on_a_gathering_row_is_busy_and_past_the_table_is_refused, "test_next_on_a_gathering_row_is_busy_and_past_the_table_is_refused", 821);
-  run_test(test_release_then_reclaim_hands_every_descriptor_back, "test_release_then_reclaim_hands_every_descriptor_back", 838);
-  run_test(test_release_of_a_free_or_already_released_row_is_refused, "test_release_of_a_free_or_already_released_row_is_refused", 868);
-  run_test(test_a_gathering_row_can_be_released, "test_a_gathering_row_can_be_released", 881);
-  run_test(test_reclaim_with_nothing_waiting_is_busy, "test_reclaim_with_nothing_waiting_is_busy", 893);
-  run_test(test_a_partial_datagram_times_out_at_the_lower_bound, "test_a_partial_datagram_times_out_at_the_lower_bound", 904);
-  run_test(test_the_deadline_does_not_come_from_the_time_to_live, "test_the_deadline_does_not_come_from_the_time_to_live", 926);
-  run_test(test_a_later_fragment_does_not_move_the_deadline, "test_a_later_fragment_does_not_move_the_deadline", 947);
-  run_test(test_a_timeout_reports_the_source_and_whether_fragment_zero_arrived, "test_a_timeout_reports_the_source_and_whether_fragment_zero_arrived", 965);
-  run_test(test_a_completed_row_the_caller_left_also_times_out, "test_a_completed_row_the_caller_left_also_times_out", 989);
-  run_test(test_the_sweep_names_every_reached_row_one_at_a_time, "test_the_sweep_names_every_reached_row_one_at_a_time", 1005);
-  run_test(test_the_deadline_survives_the_clock_wrapping, "test_the_deadline_survives_the_clock_wrapping", 1033);
-  run_test(test_a_full_datagram_table_is_busy_and_the_retry_succeeds, "test_a_full_datagram_table_is_busy_and_the_retry_succeeds", 1047);
-  run_test(test_a_full_fragment_table_is_busy_and_the_retry_succeeds, "test_a_full_fragment_table_is_busy_and_the_retry_succeeds", 1072);
-  run_test(test_a_fragment_with_no_data_is_refused, "test_a_fragment_with_no_data_is_refused", 1092);
-  run_test(test_a_non_final_fragment_off_the_eight_octet_boundary_is_refused, "test_a_non_final_fragment_off_the_eight_octet_boundary_is_refused", 1101);
-  run_test(test_a_fragment_past_the_total_length_field_is_refused, "test_a_fragment_past_the_total_length_field_is_refused", 1112);
-  run_test(test_a_fragment_past_the_total_data_length_is_refused, "test_a_fragment_past_the_total_data_length_is_refused", 1122);
-  run_test(test_a_second_last_fragment_of_a_different_length_is_refused, "test_a_second_last_fragment_of_a_different_length_is_refused", 1133);
-  run_test(test_a_last_fragment_below_what_is_held_is_refused, "test_a_last_fragment_below_what_is_held_is_refused", 1145);
-  run_test(test_a_malformed_header_is_refused, "test_a_malformed_header_is_refused", 1156);
-  run_test(test_a_refused_fragment_consumes_nothing, "test_a_refused_fragment_consumes_nothing", 1179);
-  run_test(test_two_borrows_reassemble_independently, "test_two_borrows_reassemble_independently", 1196);
-  run_test(test_a_hold_is_a_function_of_its_borrow_alone, "test_a_hold_is_a_function_of_its_borrow_alone", 1216);
-  run_test(test_clear_drops_a_reassembly_in_progress, "test_clear_drops_a_reassembly_in_progress", 1237);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 76);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 88);
+  run_test(test_clear_on_one_borrow_leaves_the_other_alone, "test_clear_on_one_borrow_leaves_the_other_alone", 116);
+  run_test(test_clear_reports_ok, "test_clear_reports_ok", 130);
+  run_test(test_clear_zeroes_the_tables, "test_clear_zeroes_the_tables", 137);
+  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 144);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 157);
+  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 178);
+  run_test(test_the_borrow_covers_the_published_map, "test_the_borrow_covers_the_published_map", 192);
+  run_test(test_a_row_index_fits_the_published_terminator, "test_a_row_index_fits_the_published_terminator", 198);
+  run_test(test_every_region_starts_aligned, "test_every_region_starts_aligned", 205);
+  run_test(test_the_hole_table_matches_rfc_815, "test_the_hole_table_matches_rfc_815", 214);
+  run_test(test_a_refused_hold_reports_no_row, "test_a_refused_hold_reports_no_row", 344);
+  run_test(test_a_576_octet_datagram_reassembles_from_its_smallest_fragments, "test_a_576_octet_datagram_reassembles_from_its_smallest_fragments", 360);
+  run_test(test_two_fragments_in_order_complete_the_datagram, "test_two_fragments_in_order_complete_the_datagram", 398);
+  run_test(test_fragments_out_of_order_complete_the_datagram, "test_fragments_out_of_order_complete_the_datagram", 417);
+  run_test(test_the_last_fragment_alone_leaves_the_leading_hole, "test_the_last_fragment_alone_leaves_the_leading_hole", 432);
+  run_test(test_a_fragment_in_the_middle_of_a_hole_leaves_a_hole_at_each_end, "test_a_fragment_in_the_middle_of_a_hole_leaves_a_hole_at_each_end", 451);
+  run_test(test_step_six_makes_no_hole_past_the_last_fragment, "test_step_six_makes_no_hole_past_the_last_fragment", 469);
+  run_test(test_a_duplicate_fragment_is_refused_and_pins_nothing, "test_a_duplicate_fragment_is_refused_and_pins_nothing", 482);
+  run_test(test_a_partially_overlapping_fragment_abandons_the_datagram, "test_a_partially_overlapping_fragment_abandons_the_datagram", 507);
+  run_test(test_an_overlap_reaching_back_over_held_octets_abandons_the_datagram, "test_an_overlap_reaching_back_over_held_octets_abandons_the_datagram", 537);
+  run_test(test_an_abandoned_row_times_out_without_an_icmp_answer, "test_an_abandoned_row_times_out_without_an_icmp_answer", 551);
+  run_test(test_an_exactly_repeated_fragment_is_not_an_overlap, "test_an_exactly_repeated_fragment_is_not_an_overlap", 572);
+  run_test(test_each_field_of_the_buffer_identifier_selects_the_row, "test_each_field_of_the_buffer_identifier_selects_the_row", 588);
+  run_test(test_a_whole_datagram_flushes_its_buffer_identifier, "test_a_whole_datagram_flushes_its_buffer_identifier", 625);
+  run_test(test_a_whole_datagram_with_no_row_names_none, "test_a_whole_datagram_with_no_row_names_none", 644);
+  run_test(test_every_row_of_one_buffer_identifier_is_flushed_not_just_the_first, "test_every_row_of_one_buffer_identifier_is_flushed_not_just_the_first", 656);
+  run_test(test_a_flush_passes_over_a_row_differing_in_any_one_field_of_the_identifier, "test_a_flush_passes_over_a_row_differing_in_any_one_field_of_the_identifier", 688);
+  run_test(test_a_fragment_filling_the_later_of_two_holes_steps_over_the_earlier, "test_a_fragment_filling_the_later_of_two_holes_steps_over_the_earlier", 711);
+  run_test(test_a_last_fragment_arriving_twice_is_a_duplicate_and_not_a_contradiction, "test_a_last_fragment_arriving_twice_is_a_duplicate_and_not_a_contradiction", 733);
+  run_test(test_total_len_is_the_rfc_791_total_data_length, "test_total_len_is_the_rfc_791_total_data_length", 756);
+  run_test(test_next_reports_every_fragment_in_ascending_offset, "test_next_reports_every_fragment_in_ascending_offset", 770);
+  run_test(test_next_reports_the_header_length_of_each_fragment, "test_next_reports_the_header_length_of_each_fragment", 804);
+  run_test(test_next_on_a_gathering_row_is_busy_and_past_the_table_is_refused, "test_next_on_a_gathering_row_is_busy_and_past_the_table_is_refused", 823);
+  run_test(test_release_then_reclaim_hands_every_descriptor_back, "test_release_then_reclaim_hands_every_descriptor_back", 840);
+  run_test(test_release_of_a_free_or_already_released_row_is_refused, "test_release_of_a_free_or_already_released_row_is_refused", 870);
+  run_test(test_a_gathering_row_can_be_released, "test_a_gathering_row_can_be_released", 883);
+  run_test(test_reclaim_with_nothing_waiting_is_busy, "test_reclaim_with_nothing_waiting_is_busy", 895);
+  run_test(test_a_partial_datagram_times_out_at_the_lower_bound, "test_a_partial_datagram_times_out_at_the_lower_bound", 906);
+  run_test(test_the_deadline_does_not_come_from_the_time_to_live, "test_the_deadline_does_not_come_from_the_time_to_live", 928);
+  run_test(test_a_later_fragment_does_not_move_the_deadline, "test_a_later_fragment_does_not_move_the_deadline", 949);
+  run_test(test_a_timeout_reports_the_source_and_whether_fragment_zero_arrived, "test_a_timeout_reports_the_source_and_whether_fragment_zero_arrived", 967);
+  run_test(test_a_completed_row_the_caller_left_also_times_out, "test_a_completed_row_the_caller_left_also_times_out", 991);
+  run_test(test_the_sweep_names_every_reached_row_one_at_a_time, "test_the_sweep_names_every_reached_row_one_at_a_time", 1007);
+  run_test(test_the_deadline_survives_the_clock_wrapping, "test_the_deadline_survives_the_clock_wrapping", 1035);
+  run_test(test_a_full_datagram_table_is_busy_and_the_retry_succeeds, "test_a_full_datagram_table_is_busy_and_the_retry_succeeds", 1049);
+  run_test(test_a_full_fragment_table_is_busy_and_the_retry_succeeds, "test_a_full_fragment_table_is_busy_and_the_retry_succeeds", 1074);
+  run_test(test_a_fragment_with_no_data_is_refused, "test_a_fragment_with_no_data_is_refused", 1094);
+  run_test(test_a_non_final_fragment_off_the_eight_octet_boundary_is_refused, "test_a_non_final_fragment_off_the_eight_octet_boundary_is_refused", 1103);
+  run_test(test_a_fragment_past_the_total_length_field_is_refused, "test_a_fragment_past_the_total_length_field_is_refused", 1114);
+  run_test(test_a_fragment_past_the_total_data_length_is_refused, "test_a_fragment_past_the_total_data_length_is_refused", 1124);
+  run_test(test_a_second_last_fragment_of_a_different_length_is_refused, "test_a_second_last_fragment_of_a_different_length_is_refused", 1135);
+  run_test(test_a_last_fragment_below_what_is_held_is_refused, "test_a_last_fragment_below_what_is_held_is_refused", 1147);
+  run_test(test_a_malformed_header_is_refused, "test_a_malformed_header_is_refused", 1158);
+  run_test(test_a_refused_fragment_consumes_nothing, "test_a_refused_fragment_consumes_nothing", 1181);
+  run_test(test_two_borrows_reassemble_independently, "test_two_borrows_reassemble_independently", 1198);
+  run_test(test_a_hold_is_a_function_of_its_borrow_alone, "test_a_hold_is_a_function_of_its_borrow_alone", 1218);
+  run_test(test_clear_drops_a_reassembly_in_progress, "test_clear_drops_a_reassembly_in_progress", 1239);
 
   return UNITY_END();
 }

@@ -3,6 +3,7 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/ethernet/ethernet.h"
+#include "src/ethernet/ethernet_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -85,22 +86,22 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/ethernet/test_ethernet/test_ethernet.c");
-  run_test(test_rfc894_ipv4_type_code_is_0800, "test_rfc894_ipv4_type_code_is_0800", 50);
-  run_test(test_rfc1042_assigned_type_codes_in_decimal, "test_rfc1042_assigned_type_codes_in_decimal", 62);
-  run_test(test_rfc2464_ipv6_type_code_bit_figure, "test_rfc2464_ipv6_type_code_bit_figure", 75);
-  run_test(test_header_is_two_addresses_then_a_type_code, "test_header_is_two_addresses_then_a_type_code", 96);
-  run_test(test_addresses_are_read_in_place, "test_addresses_are_read_in_place", 108);
-  run_test(test_type_code_reads_the_same_at_any_frame_address, "test_type_code_reads_the_same_at_any_frame_address", 121);
-  run_test(test_build_writes_exactly_the_header, "test_build_writes_exactly_the_header", 134);
-  run_test(test_build_then_parse_round_trips, "test_build_then_parse_round_trips", 143);
-  run_test(test_broadcast_address_is_all_ones, "test_broadcast_address_is_all_ones", 155);
-  run_test(test_a_broadcast_destination_is_recognized_in_a_frame, "test_a_broadcast_destination_is_recognized_in_a_frame", 174);
-  run_test(test_min_payload_is_46_octets, "test_min_payload_is_46_octets", 184);
-  run_test(test_max_payload_is_1500_octets, "test_max_payload_is_1500_octets", 198);
-  run_test(test_pad_zeroes_the_shortfall, "test_pad_zeroes_the_shortfall", 207);
-  run_test(test_a_full_length_payload_is_not_padded, "test_a_full_length_payload_is_not_padded", 228);
-  run_test(test_payload_follows_the_header, "test_payload_follows_the_header", 245);
-  run_test(test_the_snap_header_is_read_octet_by_octet, "test_the_snap_header_is_read_octet_by_octet", 256);
+  run_test(test_rfc894_ipv4_type_code_is_0800, "test_rfc894_ipv4_type_code_is_0800", 51);
+  run_test(test_rfc1042_assigned_type_codes_in_decimal, "test_rfc1042_assigned_type_codes_in_decimal", 63);
+  run_test(test_rfc2464_ipv6_type_code_bit_figure, "test_rfc2464_ipv6_type_code_bit_figure", 76);
+  run_test(test_header_is_two_addresses_then_a_type_code, "test_header_is_two_addresses_then_a_type_code", 97);
+  run_test(test_addresses_are_read_in_place, "test_addresses_are_read_in_place", 109);
+  run_test(test_type_code_reads_the_same_at_any_frame_address, "test_type_code_reads_the_same_at_any_frame_address", 122);
+  run_test(test_build_writes_exactly_the_header, "test_build_writes_exactly_the_header", 135);
+  run_test(test_build_then_parse_round_trips, "test_build_then_parse_round_trips", 144);
+  run_test(test_broadcast_address_is_all_ones, "test_broadcast_address_is_all_ones", 156);
+  run_test(test_a_broadcast_destination_is_recognized_in_a_frame, "test_a_broadcast_destination_is_recognized_in_a_frame", 175);
+  run_test(test_min_payload_is_46_octets, "test_min_payload_is_46_octets", 185);
+  run_test(test_max_payload_is_1500_octets, "test_max_payload_is_1500_octets", 199);
+  run_test(test_pad_zeroes_the_shortfall, "test_pad_zeroes_the_shortfall", 208);
+  run_test(test_a_full_length_payload_is_not_padded, "test_a_full_length_payload_is_not_padded", 229);
+  run_test(test_payload_follows_the_header, "test_payload_follows_the_header", 246);
+  run_test(test_the_snap_header_is_read_octet_by_octet, "test_the_snap_header_is_read_octet_by_octet", 257);
 
   return UNITY_END();
 }

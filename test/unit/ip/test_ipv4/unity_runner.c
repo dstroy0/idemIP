@@ -4,6 +4,8 @@
 #include "unity.h"
 #include "src/checksum.h"
 #include "src/ip/ipv4.h"
+#include "src/common_defines.h"
+#include "src/ip/ipv4_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -110,46 +112,46 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/ip/test_ipv4/test_ipv4.c");
-  run_test(test_rfc791_figure4_offsets, "test_rfc791_figure4_offsets", 124);
-  run_test(test_each_accessor_reads_only_its_own_field, "test_each_accessor_reads_only_its_own_field", 142);
-  run_test(test_version_and_ihl_share_the_first_octet, "test_version_and_ihl_share_the_first_octet", 198);
-  run_test(test_ihl_bounds_are_five_through_fifteen, "test_ihl_bounds_are_five_through_fifteen", 222);
-  run_test(test_ihl_word_count_scales_by_a_shift_of_two, "test_ihl_word_count_scales_by_a_shift_of_two", 247);
-  run_test(test_flag_bit_positions, "test_flag_bit_positions", 262);
-  run_test(test_each_flag_predicate_reads_its_own_bit, "test_each_flag_predicate_reads_its_own_bit", 275);
-  run_test(test_fragment_offset_is_units_of_eight_octets, "test_fragment_offset_is_units_of_eight_octets", 308);
-  run_test(test_unfragmented_has_all_zero_fragmentation_information, "test_unfragmented_has_all_zero_fragmentation_information", 335);
-  run_test(test_rfc791_figure5_minimal_datagram, "test_rfc791_figure5_minimal_datagram", 360);
-  run_test(test_rfc791_figure6_moderate_datagram, "test_rfc791_figure6_moderate_datagram", 396);
-  run_test(test_rfc791_figure7_first_fragment, "test_rfc791_figure7_first_fragment", 419);
-  run_test(test_rfc791_figure8_second_fragment, "test_rfc791_figure8_second_fragment", 446);
-  run_test(test_rfc791_appendix_a_fragments_cover_the_original, "test_rfc791_appendix_a_fragments_cover_the_original", 468);
-  run_test(test_rfc791_example_fragmentation_procedure, "test_rfc791_example_fragmentation_procedure", 495);
-  run_test(test_rfc791_figure9_options_datagram, "test_rfc791_figure9_options_datagram", 524);
-  run_test(test_five_word_header_has_no_options, "test_five_word_header_has_no_options", 564);
-  run_test(test_recksum_computes_with_the_field_zero, "test_recksum_computes_with_the_field_zero", 578);
-  run_test(test_a_built_header_checks_out_over_itself, "test_a_built_header_checks_out_over_itself", 592);
-  run_test(test_verify_rejects_every_single_bit_flip, "test_verify_rejects_every_single_bit_flip", 603);
-  run_test(test_recksum_after_a_field_edit, "test_recksum_after_a_field_edit", 625);
-  run_test(test_verify_rejects_a_version_other_than_four, "test_verify_rejects_a_version_other_than_four", 641);
-  run_test(test_verify_rejects_an_ihl_below_five, "test_verify_rejects_an_ihl_below_five", 666);
-  run_test(test_verify_rejects_a_buffer_shorter_than_the_fixed_header, "test_verify_rejects_a_buffer_shorter_than_the_fixed_header", 681);
-  run_test(test_verify_rejects_a_header_longer_than_the_buffer, "test_verify_rejects_a_header_longer_than_the_buffer", 693);
-  run_test(test_verify_rejects_total_length_below_the_header, "test_verify_rejects_total_length_below_the_header", 709);
-  run_test(test_verify_rejects_total_length_past_the_buffer, "test_verify_rejects_total_length_past_the_buffer", 725);
-  run_test(test_verify_accepts_a_buffer_longer_than_total_length, "test_verify_accepts_a_buffer_longer_than_total_length", 738);
-  run_test(test_reserved_flag_is_readable_and_does_not_fail_verify, "test_reserved_flag_is_readable_and_does_not_fail_verify", 752);
-  run_test(test_build_is_a_function_of_its_fields_alone, "test_build_is_a_function_of_its_fields_alone", 767);
-  run_test(test_build_round_trips_every_field, "test_build_round_trips_every_field", 785);
-  run_test(test_length_constants, "test_length_constants", 825);
-  run_test(test_minimum_forwardable_datagram_is_sixty_eight_octets, "test_minimum_forwardable_datagram_is_sixty_eight_octets", 835);
-  run_test(test_five_hundred_seventy_six_is_the_required_reassembly_size, "test_five_hundred_seventy_six_is_the_required_reassembly_size", 843);
-  run_test(test_mask_ones_counts_every_prefix_length, "test_mask_ones_counts_every_prefix_length", 856);
-  run_test(test_mask_ones_counts_a_mask_with_holes, "test_mask_ones_counts_a_mask_with_holes", 868);
-  run_test(test_every_leading_run_of_ones_is_contiguous, "test_every_leading_run_of_ones_is_contiguous", 879);
-  run_test(test_a_mask_with_a_hole_is_not_contiguous, "test_a_mask_with_a_hole_is_not_contiguous", 889);
-  run_test(test_a_contiguous_mask_is_rebuilt_from_its_own_count, "test_a_contiguous_mask_is_rebuilt_from_its_own_count", 900);
-  run_test(test_a_header_length_below_the_minimum_is_not_a_header, "test_a_header_length_below_the_minimum_is_not_a_header", 914);
+  run_test(test_rfc791_figure4_offsets, "test_rfc791_figure4_offsets", 126);
+  run_test(test_each_accessor_reads_only_its_own_field, "test_each_accessor_reads_only_its_own_field", 144);
+  run_test(test_version_and_ihl_share_the_first_octet, "test_version_and_ihl_share_the_first_octet", 200);
+  run_test(test_ihl_bounds_are_five_through_fifteen, "test_ihl_bounds_are_five_through_fifteen", 224);
+  run_test(test_ihl_word_count_scales_by_a_shift_of_two, "test_ihl_word_count_scales_by_a_shift_of_two", 249);
+  run_test(test_flag_bit_positions, "test_flag_bit_positions", 264);
+  run_test(test_each_flag_predicate_reads_its_own_bit, "test_each_flag_predicate_reads_its_own_bit", 277);
+  run_test(test_fragment_offset_is_units_of_eight_octets, "test_fragment_offset_is_units_of_eight_octets", 310);
+  run_test(test_unfragmented_has_all_zero_fragmentation_information, "test_unfragmented_has_all_zero_fragmentation_information", 337);
+  run_test(test_rfc791_figure5_minimal_datagram, "test_rfc791_figure5_minimal_datagram", 362);
+  run_test(test_rfc791_figure6_moderate_datagram, "test_rfc791_figure6_moderate_datagram", 398);
+  run_test(test_rfc791_figure7_first_fragment, "test_rfc791_figure7_first_fragment", 421);
+  run_test(test_rfc791_figure8_second_fragment, "test_rfc791_figure8_second_fragment", 448);
+  run_test(test_rfc791_appendix_a_fragments_cover_the_original, "test_rfc791_appendix_a_fragments_cover_the_original", 470);
+  run_test(test_rfc791_example_fragmentation_procedure, "test_rfc791_example_fragmentation_procedure", 497);
+  run_test(test_rfc791_figure9_options_datagram, "test_rfc791_figure9_options_datagram", 526);
+  run_test(test_five_word_header_has_no_options, "test_five_word_header_has_no_options", 566);
+  run_test(test_recksum_computes_with_the_field_zero, "test_recksum_computes_with_the_field_zero", 580);
+  run_test(test_a_built_header_checks_out_over_itself, "test_a_built_header_checks_out_over_itself", 594);
+  run_test(test_verify_rejects_every_single_bit_flip, "test_verify_rejects_every_single_bit_flip", 605);
+  run_test(test_recksum_after_a_field_edit, "test_recksum_after_a_field_edit", 627);
+  run_test(test_verify_rejects_a_version_other_than_four, "test_verify_rejects_a_version_other_than_four", 643);
+  run_test(test_verify_rejects_an_ihl_below_five, "test_verify_rejects_an_ihl_below_five", 668);
+  run_test(test_verify_rejects_a_buffer_shorter_than_the_fixed_header, "test_verify_rejects_a_buffer_shorter_than_the_fixed_header", 683);
+  run_test(test_verify_rejects_a_header_longer_than_the_buffer, "test_verify_rejects_a_header_longer_than_the_buffer", 695);
+  run_test(test_verify_rejects_total_length_below_the_header, "test_verify_rejects_total_length_below_the_header", 711);
+  run_test(test_verify_rejects_total_length_past_the_buffer, "test_verify_rejects_total_length_past_the_buffer", 727);
+  run_test(test_verify_accepts_a_buffer_longer_than_total_length, "test_verify_accepts_a_buffer_longer_than_total_length", 740);
+  run_test(test_reserved_flag_is_readable_and_does_not_fail_verify, "test_reserved_flag_is_readable_and_does_not_fail_verify", 754);
+  run_test(test_build_is_a_function_of_its_fields_alone, "test_build_is_a_function_of_its_fields_alone", 769);
+  run_test(test_build_round_trips_every_field, "test_build_round_trips_every_field", 787);
+  run_test(test_length_constants, "test_length_constants", 827);
+  run_test(test_minimum_forwardable_datagram_is_sixty_eight_octets, "test_minimum_forwardable_datagram_is_sixty_eight_octets", 837);
+  run_test(test_five_hundred_seventy_six_is_the_required_reassembly_size, "test_five_hundred_seventy_six_is_the_required_reassembly_size", 845);
+  run_test(test_mask_ones_counts_every_prefix_length, "test_mask_ones_counts_every_prefix_length", 858);
+  run_test(test_mask_ones_counts_a_mask_with_holes, "test_mask_ones_counts_a_mask_with_holes", 870);
+  run_test(test_every_leading_run_of_ones_is_contiguous, "test_every_leading_run_of_ones_is_contiguous", 881);
+  run_test(test_a_mask_with_a_hole_is_not_contiguous, "test_a_mask_with_a_hole_is_not_contiguous", 891);
+  run_test(test_a_contiguous_mask_is_rebuilt_from_its_own_count, "test_a_contiguous_mask_is_rebuilt_from_its_own_count", 902);
+  run_test(test_a_header_length_below_the_minimum_is_not_a_header, "test_a_header_length_below_the_minimum_is_not_a_header", 916);
 
   return UNITY_END();
 }

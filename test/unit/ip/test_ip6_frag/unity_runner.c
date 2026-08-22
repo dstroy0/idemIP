@@ -3,6 +3,8 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/ip/ip6_frag.h"
+#include "src/common_defines.h"
+#include "src/ip/ipv6_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -106,43 +108,43 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/ip/test_ip6_frag/test_ip6_frag.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 189);
-  run_test(test_an_uncleared_borrow_refuses_work, "test_an_uncleared_borrow_refuses_work", 197);
-  run_test(test_clear_reports_ok, "test_clear_reports_ok", 211);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 217);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 231);
-  run_test(test_clear_drops_an_open_split, "test_clear_drops_an_open_split", 254);
-  run_test(test_an_mtu_below_the_minimum_link_mtu_is_refused, "test_an_mtu_below_the_minimum_link_mtu_is_refused", 268);
-  run_test(test_a_malformed_packet_is_refused, "test_a_malformed_packet_is_refused", 274);
-  run_test(test_a_packet_already_fragmented_is_refused, "test_a_packet_already_fragmented_is_refused", 303);
-  run_test(test_a_hop_by_hop_header_out_of_place_is_refused, "test_a_hop_by_hop_header_out_of_place_is_refused", 312);
-  run_test(test_an_extension_header_past_the_packet_is_refused, "test_an_extension_header_past_the_packet_is_refused", 322);
-  run_test(test_per_fragment_headers_that_leave_no_room_are_refused, "test_per_fragment_headers_that_leave_no_room_are_refused", 333);
-  run_test(test_extension_headers_wider_than_a_fragment_are_refused, "test_extension_headers_wider_than_a_fragment_are_refused", 343);
-  run_test(test_extension_headers_that_fill_the_fragment_exactly_are_refused, "test_extension_headers_that_fill_the_fragment_exactly_are_refused", 354);
-  run_test(test_the_first_fragment_must_reach_into_the_upper_layer_header, "test_the_first_fragment_must_reach_into_the_upper_layer_header", 364);
-  run_test(test_a_chain_with_no_extension_headers_has_a_forty_octet_per_fragment_part, "test_a_chain_with_no_extension_headers_has_a_forty_octet_per_fragment_part", 390);
-  run_test(test_the_per_fragment_headers_reach_through_a_routing_header, "test_the_per_fragment_headers_reach_through_a_routing_header", 399);
-  run_test(test_a_destination_options_header_before_the_routing_header_is_per_fragment, "test_a_destination_options_header_before_the_routing_header_is_per_fragment", 411);
-  run_test(test_the_per_fragment_headers_reach_through_a_hop_by_hop_header, "test_the_per_fragment_headers_reach_through_a_hop_by_hop_header", 423);
-  run_test(test_a_routing_header_behind_a_hop_by_hop_header_wins, "test_a_routing_header_behind_a_hop_by_hop_header_wins", 435);
-  run_test(test_a_destination_options_header_alone_is_not_per_fragment, "test_a_destination_options_header_alone_is_not_per_fragment", 447);
-  run_test(test_a_packet_at_or_under_the_mtu_is_written_unchanged, "test_a_packet_at_or_under_the_mtu_is_written_unchanged", 460);
-  run_test(test_the_mtu_boundary_is_where_the_division_starts, "test_the_mtu_boundary_is_where_the_division_starts", 472);
-  run_test(test_every_fragment_but_the_last_is_a_multiple_of_eight_with_m_set, "test_every_fragment_but_the_last_is_a_multiple_of_eight_with_m_set", 487);
-  run_test(test_offsets_are_contiguous_from_zero, "test_offsets_are_contiguous_from_zero", 514);
-  run_test(test_the_next_header_chain_is_rewritten_around_the_fragment_header, "test_the_next_header_chain_is_rewritten_around_the_fragment_header", 532);
-  run_test(test_the_fixed_header_alone_names_the_fragment_header, "test_the_fixed_header_alone_names_the_fragment_header", 551);
-  run_test(test_each_fragment_carries_its_own_payload_length, "test_each_fragment_carries_its_own_payload_length", 565);
-  run_test(test_every_fragment_carries_the_identification, "test_every_fragment_carries_the_identification", 579);
-  run_test(test_the_per_fragment_headers_are_repeated_on_every_fragment, "test_the_per_fragment_headers_are_repeated_on_every_fragment", 592);
-  run_test(test_the_fragments_carry_the_whole_fragmentable_part, "test_the_fragments_carry_the_whole_fragmentable_part", 612);
-  run_test(test_the_reassembly_formula_recovers_the_original_payload_length, "test_the_reassembly_formula_recovers_the_original_payload_length", 638);
-  run_test(test_next_before_begin_is_refused, "test_next_before_begin_is_refused", 659);
-  run_test(test_next_past_the_last_fragment_is_refused, "test_next_past_the_last_fragment_is_refused", 670);
-  run_test(test_a_short_buffer_is_refused_and_consumes_nothing, "test_a_short_buffer_is_refused_and_consumes_nothing", 682);
-  run_test(test_begin_restarts_an_open_split, "test_begin_restarts_an_open_split", 704);
-  run_test(test_the_report_agrees_with_the_fragment, "test_the_report_agrees_with_the_fragment", 719);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 191);
+  run_test(test_an_uncleared_borrow_refuses_work, "test_an_uncleared_borrow_refuses_work", 199);
+  run_test(test_clear_reports_ok, "test_clear_reports_ok", 213);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 219);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 233);
+  run_test(test_clear_drops_an_open_split, "test_clear_drops_an_open_split", 256);
+  run_test(test_an_mtu_below_the_minimum_link_mtu_is_refused, "test_an_mtu_below_the_minimum_link_mtu_is_refused", 270);
+  run_test(test_a_malformed_packet_is_refused, "test_a_malformed_packet_is_refused", 276);
+  run_test(test_a_packet_already_fragmented_is_refused, "test_a_packet_already_fragmented_is_refused", 305);
+  run_test(test_a_hop_by_hop_header_out_of_place_is_refused, "test_a_hop_by_hop_header_out_of_place_is_refused", 314);
+  run_test(test_an_extension_header_past_the_packet_is_refused, "test_an_extension_header_past_the_packet_is_refused", 324);
+  run_test(test_per_fragment_headers_that_leave_no_room_are_refused, "test_per_fragment_headers_that_leave_no_room_are_refused", 335);
+  run_test(test_extension_headers_wider_than_a_fragment_are_refused, "test_extension_headers_wider_than_a_fragment_are_refused", 345);
+  run_test(test_extension_headers_that_fill_the_fragment_exactly_are_refused, "test_extension_headers_that_fill_the_fragment_exactly_are_refused", 356);
+  run_test(test_the_first_fragment_must_reach_into_the_upper_layer_header, "test_the_first_fragment_must_reach_into_the_upper_layer_header", 366);
+  run_test(test_a_chain_with_no_extension_headers_has_a_forty_octet_per_fragment_part, "test_a_chain_with_no_extension_headers_has_a_forty_octet_per_fragment_part", 392);
+  run_test(test_the_per_fragment_headers_reach_through_a_routing_header, "test_the_per_fragment_headers_reach_through_a_routing_header", 401);
+  run_test(test_a_destination_options_header_before_the_routing_header_is_per_fragment, "test_a_destination_options_header_before_the_routing_header_is_per_fragment", 413);
+  run_test(test_the_per_fragment_headers_reach_through_a_hop_by_hop_header, "test_the_per_fragment_headers_reach_through_a_hop_by_hop_header", 425);
+  run_test(test_a_routing_header_behind_a_hop_by_hop_header_wins, "test_a_routing_header_behind_a_hop_by_hop_header_wins", 437);
+  run_test(test_a_destination_options_header_alone_is_not_per_fragment, "test_a_destination_options_header_alone_is_not_per_fragment", 449);
+  run_test(test_a_packet_at_or_under_the_mtu_is_written_unchanged, "test_a_packet_at_or_under_the_mtu_is_written_unchanged", 462);
+  run_test(test_the_mtu_boundary_is_where_the_division_starts, "test_the_mtu_boundary_is_where_the_division_starts", 474);
+  run_test(test_every_fragment_but_the_last_is_a_multiple_of_eight_with_m_set, "test_every_fragment_but_the_last_is_a_multiple_of_eight_with_m_set", 489);
+  run_test(test_offsets_are_contiguous_from_zero, "test_offsets_are_contiguous_from_zero", 516);
+  run_test(test_the_next_header_chain_is_rewritten_around_the_fragment_header, "test_the_next_header_chain_is_rewritten_around_the_fragment_header", 534);
+  run_test(test_the_fixed_header_alone_names_the_fragment_header, "test_the_fixed_header_alone_names_the_fragment_header", 553);
+  run_test(test_each_fragment_carries_its_own_payload_length, "test_each_fragment_carries_its_own_payload_length", 567);
+  run_test(test_every_fragment_carries_the_identification, "test_every_fragment_carries_the_identification", 581);
+  run_test(test_the_per_fragment_headers_are_repeated_on_every_fragment, "test_the_per_fragment_headers_are_repeated_on_every_fragment", 594);
+  run_test(test_the_fragments_carry_the_whole_fragmentable_part, "test_the_fragments_carry_the_whole_fragmentable_part", 614);
+  run_test(test_the_reassembly_formula_recovers_the_original_payload_length, "test_the_reassembly_formula_recovers_the_original_payload_length", 640);
+  run_test(test_next_before_begin_is_refused, "test_next_before_begin_is_refused", 661);
+  run_test(test_next_past_the_last_fragment_is_refused, "test_next_past_the_last_fragment_is_refused", 672);
+  run_test(test_a_short_buffer_is_refused_and_consumes_nothing, "test_a_short_buffer_is_refused_and_consumes_nothing", 684);
+  run_test(test_begin_restarts_an_open_split, "test_begin_restarts_an_open_split", 706);
+  run_test(test_the_report_agrees_with_the_fragment, "test_the_report_agrees_with_the_fragment", 721);
 
   return UNITY_END();
 }

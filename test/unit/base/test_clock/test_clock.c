@@ -20,6 +20,8 @@
 // build system for a value the build system owns.
 
 #include "src/common.h"
+#include "src/time_determinism.h"
+#include "src/time_determinism_defines.h" // the pad word's layout, composed by hand below
 
 #include <string.h>
 #include <unity.h>

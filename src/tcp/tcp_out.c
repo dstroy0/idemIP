@@ -15,6 +15,8 @@
 
 #include "src/ip/pseudo.h"
 #include "src/tcp/tcp_out.h"
+#include "src/common_defines.h"
+#include "src/tcp/tcp_defines.h"
 
 IDEMIP_BEGIN_DECLS
 

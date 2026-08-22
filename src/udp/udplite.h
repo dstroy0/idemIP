@@ -19,6 +19,8 @@
 #define IDEMIP_UDPLITE_H
 
 #include "src/udp/udp.h"
+#include "src/ip/ipv4_defines.h"
+#include "src/udp/udp_defines.h"
 
 #if IDEMIP_ENABLE_UDP
 

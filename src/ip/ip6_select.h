@@ -20,6 +20,7 @@
 #define IDEMIP_IP6_SELECT_H
 
 #include "src/ip/ip6_addr.h"
+#include "src/ip/ipv6_defines.h"
 
 #if IDEMIP_ENABLE_IPV6
 

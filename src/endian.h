@@ -14,6 +14,8 @@
  * natural alignment, and a silent penalty on the ones that only prefer it. Byte reads are always
  * aligned, so this is the only form that is correct everywhere and it is what every accessor here
  * compiles to.
+ *
+ * The table is the whole surface. There are no free functions to call.
  */
 
 #ifndef IDEMIP_ENDIAN_H
@@ -23,33 +25,39 @@
 
 IDEMIP_BEGIN_DECLS
 
-/** @brief Read a big-endian 16-bit field at @p p. */
-IDEMIP_INLINE uint16_t idemip_rd16(const uint8_t *p)
+/** @brief Dispatch table. Addressed by offset, so the layout is asserted below. */
+typedef struct
 {
-    return (uint16_t)(((uint16_t)p[0] << 8) | (uint16_t)p[1]);
-}
+    uint16_t (*rd16)(const uint8_t *p);
+    uint32_t (*rd32)(const uint8_t *p);
+    void (*wr16)(uint8_t *p, uint16_t v);
+    void (*wr32)(uint8_t *p, uint32_t v);
+} EndianNs;
+IDEMIP_NS_LAYOUT(EndianNs, rd16, rd32, wr16, wr32);
 
-/** @brief Read a big-endian 32-bit field at @p p. */
-IDEMIP_INLINE uint32_t idemip_rd32(const uint8_t *p)
-{
-    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
-}
+/** @name The entries the table points at.
+ *  @brief Nameable so a static const table can name them, and for no other reason. The table is
+ *         still the whole surface: call through it.
+ *  @{ */
+uint16_t idemip_rd16(const uint8_t *p);
+uint32_t idemip_rd32(const uint8_t *p);
+void idemip_wr16(uint8_t *p, uint16_t v);
+void idemip_wr32(uint8_t *p, uint32_t v);
+/** @} */
 
-/** @brief Write @p v as a big-endian 16-bit field at @p p. */
-IDEMIP_INLINE void idemip_wr16(uint8_t *p, uint16_t v)
-{
-    p[0] = (uint8_t)(v >> 8);
-    p[1] = (uint8_t)(v & 0xFFu);
-}
-
-/** @brief Write @p v as a big-endian 32-bit field at @p p. */
-IDEMIP_INLINE void idemip_wr32(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)(v >> 24);
-    p[1] = (uint8_t)((v >> 16) & 0xFFu);
-    p[2] = (uint8_t)((v >> 8) & 0xFFu);
-    p[3] = (uint8_t)(v & 0xFFu);
-}
+/**
+ * @brief Module namespace.
+ *
+ * static const, like every other module's. gcc devirtualizes a call through one down to the
+ * inlined body and cannot do that through an extern one, where the table is in another
+ * translation unit and every call is a load and an indirect jump.
+ */
+IDEMIP_NS EndianNs endian IDEMIP_UNUSED = {
+    .rd16 = idemip_rd16,
+    .rd32 = idemip_rd32,
+    .wr16 = idemip_wr16,
+    .wr32 = idemip_wr32,
+};
 
 IDEMIP_END_DECLS
 

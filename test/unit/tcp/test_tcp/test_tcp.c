@@ -16,6 +16,8 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/common_defines.h"
+#include "src/tcp/tcp_defines.h"
 
 // --- the caller's bytes ------------------------------------------------------
 

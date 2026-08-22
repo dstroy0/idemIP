@@ -25,6 +25,9 @@
 #define IDEMIP_ICMP6_IN_H
 
 #include "src/icmp/icmpv6.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "src/ip/ipv6_defines.h"
+#include "src/icmp/icmpv6_defines.h"
 
 #if IDEMIP_ENABLE_IPV6
 

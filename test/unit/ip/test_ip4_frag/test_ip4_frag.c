@@ -25,6 +25,8 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/common_defines.h"
+#include "src/ip/ipv4_defines.h"
 
 // --- the borrow, the caller's ------------------------------------------------
 

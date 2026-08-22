@@ -3,6 +3,8 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/common.h"
+#include "src/time_determinism.h"
+#include "src/time_determinism_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -96,33 +98,33 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/base/test_clock/test_clock.c");
-  run_test(test_a_refresh_reports_the_reading_it_was_handed, "test_a_refresh_reports_the_reading_it_was_handed", 41);
-  run_test(test_the_epoch_climbs_through_a_reading_that_wraps, "test_the_epoch_climbs_through_a_reading_that_wraps", 49);
-  run_test(test_now_and_the_epoch_disagree_once_the_reading_has_wrapped, "test_now_and_the_epoch_disagree_once_the_reading_has_wrapped", 64);
-  run_test(test_many_wraps_each_raise_the_epoch_by_one_period, "test_many_wraps_each_raise_the_epoch_by_one_period", 72);
-  run_test(test_a_refresh_leaves_the_stamp_where_it_was, "test_a_refresh_leaves_the_stamp_where_it_was", 89);
-  run_test(test_opening_a_pass_takes_the_reading_standing_now, "test_opening_a_pass_takes_the_reading_standing_now", 100);
-  run_test(test_elapsed_survives_a_wrap_between_the_stamp_and_the_reading, "test_elapsed_survives_a_wrap_between_the_stamp_and_the_reading", 112);
-  run_test(test_a_lifetime_in_seconds_scales_exactly, "test_a_lifetime_in_seconds_scales_exactly", 122);
-  run_test(test_the_widest_lifetime_still_lands_ahead_of_a_stamp, "test_the_widest_lifetime_still_lands_ahead_of_a_stamp", 133);
-  run_test(test_a_split_epoch_rejoins_to_itself, "test_a_split_epoch_rejoins_to_itself", 143);
-  run_test(test_the_loose_word_extension_matches_a_refresh, "test_the_loose_word_extension_matches_a_refresh", 157);
-  run_test(test_the_pad_is_the_stamp_plus_the_pad_ticks, "test_the_pad_is_the_stamp_plus_the_pad_ticks", 183);
-  run_test(test_the_state_in_the_word_does_not_reach_the_pad, "test_the_state_in_the_word_does_not_reach_the_pad", 192);
-  run_test(test_the_pad_reading_and_the_epoch_are_separate, "test_the_pad_reading_and_the_epoch_are_separate", 203);
-  run_test(test_the_pad_reading_survives_its_own_wrap, "test_the_pad_reading_survives_its_own_wrap", 229);
-  run_test(test_the_four_states_are_told_apart, "test_the_four_states_are_told_apart", 237);
-  run_test(test_the_state_in_the_word_does_not_reach_the_state_test, "test_the_state_in_the_word_does_not_reach_the_state_test", 252);
-  run_test(test_a_single_state_moves_the_pad_not_at_all, "test_a_single_state_moves_the_pad_not_at_all", 262);
-  run_test(test_the_same_state_twice_steps_the_pad, "test_the_same_state_twice_steps_the_pad", 272);
-  run_test(test_the_tune_always_records_the_state_it_saw, "test_the_tune_always_records_the_state_it_saw", 292);
-  run_test(test_one_disturbed_pass_does_not_disturb_the_pad, "test_one_disturbed_pass_does_not_disturb_the_pad", 302);
-  run_test(test_a_met_pad_never_moves, "test_a_met_pad_never_moves", 316);
-  run_test(test_the_pad_never_steps_outside_its_range, "test_the_pad_never_steps_outside_its_range", 326);
-  run_test(test_an_unset_pad_stays_unset, "test_an_unset_pad_stays_unset", 342);
-  run_test(test_the_pad_converges_and_stays, "test_the_pad_converges_and_stays", 353);
-  run_test(test_the_widest_pad_does_not_reach_the_state_bits, "test_the_widest_pad_does_not_reach_the_state_bits", 379);
-  run_test(test_the_configured_window_is_a_window, "test_the_configured_window_is_a_window", 388);
+  run_test(test_a_refresh_reports_the_reading_it_was_handed, "test_a_refresh_reports_the_reading_it_was_handed", 43);
+  run_test(test_the_epoch_climbs_through_a_reading_that_wraps, "test_the_epoch_climbs_through_a_reading_that_wraps", 51);
+  run_test(test_now_and_the_epoch_disagree_once_the_reading_has_wrapped, "test_now_and_the_epoch_disagree_once_the_reading_has_wrapped", 66);
+  run_test(test_many_wraps_each_raise_the_epoch_by_one_period, "test_many_wraps_each_raise_the_epoch_by_one_period", 74);
+  run_test(test_a_refresh_leaves_the_stamp_where_it_was, "test_a_refresh_leaves_the_stamp_where_it_was", 91);
+  run_test(test_opening_a_pass_takes_the_reading_standing_now, "test_opening_a_pass_takes_the_reading_standing_now", 102);
+  run_test(test_elapsed_survives_a_wrap_between_the_stamp_and_the_reading, "test_elapsed_survives_a_wrap_between_the_stamp_and_the_reading", 114);
+  run_test(test_a_lifetime_in_seconds_scales_exactly, "test_a_lifetime_in_seconds_scales_exactly", 124);
+  run_test(test_the_widest_lifetime_still_lands_ahead_of_a_stamp, "test_the_widest_lifetime_still_lands_ahead_of_a_stamp", 135);
+  run_test(test_a_split_epoch_rejoins_to_itself, "test_a_split_epoch_rejoins_to_itself", 145);
+  run_test(test_the_loose_word_extension_matches_a_refresh, "test_the_loose_word_extension_matches_a_refresh", 159);
+  run_test(test_the_pad_is_the_stamp_plus_the_pad_ticks, "test_the_pad_is_the_stamp_plus_the_pad_ticks", 185);
+  run_test(test_the_state_in_the_word_does_not_reach_the_pad, "test_the_state_in_the_word_does_not_reach_the_pad", 194);
+  run_test(test_the_pad_reading_and_the_epoch_are_separate, "test_the_pad_reading_and_the_epoch_are_separate", 205);
+  run_test(test_the_pad_reading_survives_its_own_wrap, "test_the_pad_reading_survives_its_own_wrap", 231);
+  run_test(test_the_four_states_are_told_apart, "test_the_four_states_are_told_apart", 239);
+  run_test(test_the_state_in_the_word_does_not_reach_the_state_test, "test_the_state_in_the_word_does_not_reach_the_state_test", 254);
+  run_test(test_a_single_state_moves_the_pad_not_at_all, "test_a_single_state_moves_the_pad_not_at_all", 264);
+  run_test(test_the_same_state_twice_steps_the_pad, "test_the_same_state_twice_steps_the_pad", 274);
+  run_test(test_the_tune_always_records_the_state_it_saw, "test_the_tune_always_records_the_state_it_saw", 294);
+  run_test(test_one_disturbed_pass_does_not_disturb_the_pad, "test_one_disturbed_pass_does_not_disturb_the_pad", 304);
+  run_test(test_a_met_pad_never_moves, "test_a_met_pad_never_moves", 318);
+  run_test(test_the_pad_never_steps_outside_its_range, "test_the_pad_never_steps_outside_its_range", 328);
+  run_test(test_an_unset_pad_stays_unset, "test_an_unset_pad_stays_unset", 344);
+  run_test(test_the_pad_converges_and_stays, "test_the_pad_converges_and_stays", 355);
+  run_test(test_the_widest_pad_does_not_reach_the_state_bits, "test_the_widest_pad_does_not_reach_the_state_bits", 381);
+  run_test(test_the_configured_window_is_a_window, "test_the_configured_window_is_a_window", 390);
 
   return UNITY_END();
 }

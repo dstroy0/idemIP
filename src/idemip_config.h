@@ -30,6 +30,108 @@
 #endif
 
 // ---------------------------------------------------------------------------
+// Dispatch tables
+// ---------------------------------------------------------------------------
+
+// The dispatch table a module's header exports, and the asserts that pin its layout. A
+// `<Mod>Ns` is a run of function pointers this tree addresses by offset, so the run is
+// stated once here and every module's table is checked against it.
+
+/** @brief Paste two tokens after expanding both. */
+#define IDEMIP_CAT_(a, b) a##b
+#define IDEMIP_CAT(a, b) IDEMIP_CAT_(a, b)
+
+/** @brief Count variadic arguments, up to 24. */
+#define IDEMIP_NARG(...)                                                                                               \
+    IDEMIP_NARG_(__VA_ARGS__, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
+#define IDEMIP_NARG_(...) IDEMIP_ARG_N(__VA_ARGS__)
+#define IDEMIP_ARG_N(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, N, ...)\
+    N
+
+/**
+ * @brief Size of a function pointer. Not void *, which is the wrong ruler where code and data
+ *        pointers differ in width.
+ */
+#define IDEMIP_FP_SIZE (sizeof(void (*)(void)))
+
+/** @brief Assert one member sits at one dispatch loculus. */
+#define IDEMIP_NS_LOCULUS(T, member, loculus)                                                                          \
+    static_assert(offsetof(T, member) == (size_t)(loculus) * IDEMIP_FP_SIZE,                                           \
+                  #T "." #member " is not at dispatch loculus " #loculus)
+
+/*
+ * Unrolled rather than recursive, because a failed assert should name the member and the loculus and
+ * nothing else. One line per arity.
+ */
+#define IDEMIP_NS_L1(T, a) IDEMIP_NS_LOCULUS(T, a, 0);
+#define IDEMIP_NS_L2(T, a, b) IDEMIP_NS_L1(T, a) IDEMIP_NS_LOCULUS(T, b, 1);
+#define IDEMIP_NS_L3(T, a, b, c) IDEMIP_NS_L2(T, a, b) IDEMIP_NS_LOCULUS(T, c, 2);
+#define IDEMIP_NS_L4(T, a, b, c, d) IDEMIP_NS_L3(T, a, b, c) IDEMIP_NS_LOCULUS(T, d, 3);
+#define IDEMIP_NS_L5(T, a, b, c, d, e) IDEMIP_NS_L4(T, a, b, c, d) IDEMIP_NS_LOCULUS(T, e, 4);
+#define IDEMIP_NS_L6(T, a, b, c, d, e, f) IDEMIP_NS_L5(T, a, b, c, d, e) IDEMIP_NS_LOCULUS(T, f, 5);
+#define IDEMIP_NS_L7(T, a, b, c, d, e, f, g) IDEMIP_NS_L6(T, a, b, c, d, e, f) IDEMIP_NS_LOCULUS(T, g, 6);
+#define IDEMIP_NS_L8(T, a, b, c, d, e, f, g, h) IDEMIP_NS_L7(T, a, b, c, d, e, f, g) IDEMIP_NS_LOCULUS(T, h, 7);
+#define IDEMIP_NS_L9(T, a, b, c, d, e, f, g, h, i) IDEMIP_NS_L8(T, a, b, c, d, e, f, g, h) IDEMIP_NS_LOCULUS(T, i, 8);
+#define IDEMIP_NS_L10(T, a, b, c, d, e, f, g, h, i, j)                                                                 \
+    IDEMIP_NS_L9(T, a, b, c, d, e, f, g, h, i) IDEMIP_NS_LOCULUS(T, j, 9);
+#define IDEMIP_NS_L11(T, a, b, c, d, e, f, g, h, i, j, k)                                                              \
+    IDEMIP_NS_L10(T, a, b, c, d, e, f, g, h, i, j) IDEMIP_NS_LOCULUS(T, k, 10);
+#define IDEMIP_NS_L12(T, a, b, c, d, e, f, g, h, i, j, k, l)                                                           \
+    IDEMIP_NS_L11(T, a, b, c, d, e, f, g, h, i, j, k) IDEMIP_NS_LOCULUS(T, l, 11);
+#define IDEMIP_NS_L13(T, a, b, c, d, e, f, g, h, i, j, k, l, m)                                                        \
+    IDEMIP_NS_L12(T, a, b, c, d, e, f, g, h, i, j, k, l) IDEMIP_NS_LOCULUS(T, m, 12);
+#define IDEMIP_NS_L14(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n)                                                     \
+    IDEMIP_NS_L13(T, a, b, c, d, e, f, g, h, i, j, k, l, m) IDEMIP_NS_LOCULUS(T, n, 13);
+#define IDEMIP_NS_L15(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o)                                                  \
+    IDEMIP_NS_L14(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n) IDEMIP_NS_LOCULUS(T, o, 14);
+#define IDEMIP_NS_L16(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)                                               \
+    IDEMIP_NS_L15(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) IDEMIP_NS_LOCULUS(T, p, 15);
+#define IDEMIP_NS_L17(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q)                                            \
+    IDEMIP_NS_L16(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p) IDEMIP_NS_LOCULUS(T, q, 16);
+#define IDEMIP_NS_L18(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r)                                         \
+    IDEMIP_NS_L17(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q) IDEMIP_NS_LOCULUS(T, r, 17);
+#define IDEMIP_NS_L19(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s)                                      \
+    IDEMIP_NS_L18(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r) IDEMIP_NS_LOCULUS(T, s, 18);
+#define IDEMIP_NS_L20(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t)                                   \
+    IDEMIP_NS_L19(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s) IDEMIP_NS_LOCULUS(T, t, 19);
+#define IDEMIP_NS_L21(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u)                                \
+    IDEMIP_NS_L20(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t) IDEMIP_NS_LOCULUS(T, u, 20);
+#define IDEMIP_NS_L22(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v)                             \
+    IDEMIP_NS_L21(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u) IDEMIP_NS_LOCULUS(T, v, 21);
+#define IDEMIP_NS_L23(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w)                          \
+    IDEMIP_NS_L22(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v) IDEMIP_NS_LOCULUS(T, w, 22);
+#define IDEMIP_NS_L24(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x)                       \
+    IDEMIP_NS_L23(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w) IDEMIP_NS_LOCULUS(T, x, 23);
+
+/**
+ * @brief Pin every dispatch loculus of a table that is nothing but function pointers.
+ *
+ *     IDEMIP_NS_LAYOUT(PseudoNs, accum, accum4, accum6);
+ *
+ * A `<Mod>Ns` is a run of function pointers this tree addresses by offset, and a positional
+ * initializer mis-wires silently when a member is inserted, removed or moved. This asserts each
+ * named member is at its own loculus, in the order given, and that sizeof is exactly that many
+ * pointers - so a member added and not listed, a member reordered, or padding appearing between
+ * them all fail the build at the declaration rather than at a wrong call.
+ *
+ * Costs nothing at run time.
+ */
+#define IDEMIP_NS_LAYOUT(T, ...)                                                                                       \
+    IDEMIP_CAT(IDEMIP_NS_L, IDEMIP_NARG(__VA_ARGS__))(T, __VA_ARGS__)                                                  \
+        static_assert(sizeof(T) == (size_t)IDEMIP_NARG(__VA_ARGS__) * IDEMIP_FP_SIZE,                                  \
+                      #T " has a member that is not in its dispatch list, or is padded")
+
+/**
+ * @brief Storage for a dispatch table. The const is load bearing.
+ *
+ * Measured: gcc devirtualizes a call through a static const `<Mod>Ns` down to the inlined body,
+ * identical instructions to calling the entry directly, and does not devirtualize the same call
+ * through a non-const one - that becomes a real call with an 88 byte frame. clang devirtualizes
+ * both, so const is what makes the two agree.
+ */
+#define IDEMIP_NS static const
+
+// ---------------------------------------------------------------------------
 // Version
 // ---------------------------------------------------------------------------
 

@@ -25,6 +25,7 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/ip/ipv6_defines.h"
 
 // The borrow, the caller's. Two of them, because RFC 8106 sec 6.1 refreshes an entry when the option
 // arrives "on the same interface". A canary follows each so a write past the map is visible.

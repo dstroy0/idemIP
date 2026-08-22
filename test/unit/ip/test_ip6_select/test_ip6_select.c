@@ -26,6 +26,7 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/ip/ipv6_defines.h"
 
 // A pool of addresses, so each vector reads as the RFC prints it and nothing is reused by accident.
 #define POOL 16

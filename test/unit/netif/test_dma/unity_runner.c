@@ -3,6 +3,7 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/netif/dma.h"
+#include "src/ethernet/ethernet_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -123,60 +124,60 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/netif/test_dma/test_dma.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 279);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 287);
-  run_test(test_the_two_operand_blocks_are_different_bytes, "test_the_two_operand_blocks_are_different_bytes", 315);
-  run_test(test_no_entry_writes_past_the_borrow, "test_no_entry_writes_past_the_borrow", 324);
-  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 338);
-  run_test(test_both_rings_start_aligned, "test_both_rings_start_aligned", 351);
-  run_test(test_the_ring_counts_hold_the_pin_bound, "test_the_ring_counts_hold_the_pin_bound", 359);
-  run_test(test_the_buffer_stride_spans_whole_cache_lines, "test_the_buffer_stride_spans_whole_cache_lines", 367);
-  run_test(test_clear_reports_ok, "test_clear_reports_ok", 375);
-  run_test(test_clear_zeroes_both_rings, "test_clear_zeroes_both_rings", 384);
-  run_test(test_clear_leaves_the_operands_alone, "test_clear_leaves_the_operands_alone", 395);
-  run_test(test_clear_reaches_one_borrow_only, "test_clear_reaches_one_borrow_only", 405);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 419);
-  run_test(test_an_unbound_ring_is_refused, "test_an_unbound_ring_is_refused", 469);
-  run_test(test_bind_refuses_a_driver_without_the_cache_hooks, "test_bind_refuses_a_driver_without_the_cache_hooks", 484);
-  run_test(test_bind_refuses_a_missing_driver_or_buffer_array, "test_bind_refuses_a_missing_driver_or_buffer_array", 504);
-  run_test(test_a_descriptor_index_past_its_ring_is_refused, "test_a_descriptor_index_past_its_ring_is_refused", 525);
-  run_test(test_tx_post_refuses_a_length_no_frame_can_carry, "test_tx_post_refuses_a_length_no_frame_can_carry", 545);
-  run_test(test_a_take_that_found_nothing_reports_no_buffer, "test_a_take_that_found_nothing_reports_no_buffer", 559);
-  run_test(test_every_entry_is_present, "test_every_entry_is_present", 574);
-  run_test(test_the_flag_mask_covers_the_enum, "test_the_flag_mask_covers_the_enum", 589);
-  run_test(test_bind_refuses_a_driver_without_the_frame_path, "test_bind_refuses_a_driver_without_the_frame_path", 624);
-  run_test(test_bind_refuses_a_buffer_array_off_the_cache_line, "test_bind_refuses_a_buffer_array_off_the_cache_line", 655);
-  run_test(test_rx_take_invalidates_before_the_frame_is_readable, "test_rx_take_invalidates_before_the_frame_is_readable", 671);
-  run_test(test_rx_take_reports_the_descriptor_the_engine_filled, "test_rx_take_reports_the_descriptor_the_engine_filled", 685);
-  run_test(test_an_empty_engine_is_busy, "test_an_empty_engine_is_busy", 699);
-  run_test(test_rx_take_and_post_round_trip, "test_rx_take_and_post_round_trip", 710);
-  run_test(test_a_second_rx_post_is_refused, "test_a_second_rx_post_is_refused", 730);
-  run_test(test_rx_post_without_a_take_is_refused, "test_rx_post_without_a_take_is_refused", 743);
-  run_test(test_rx_take_refuses_a_frame_outside_the_bound_buffers, "test_rx_take_refuses_a_frame_outside_the_bound_buffers", 753);
-  run_test(test_rx_take_refuses_a_frame_longer_than_one_buffer, "test_rx_take_refuses_a_frame_longer_than_one_buffer", 767);
-  run_test(test_rx_take_refuses_a_refill_of_a_descriptor_this_side_holds, "test_rx_take_refuses_a_refill_of_a_descriptor_this_side_holds", 778);
-  run_test(test_a_pin_holds_the_descriptor_past_the_post, "test_a_pin_holds_the_descriptor_past_the_post", 793);
-  run_test(test_the_last_unpin_returns_the_descriptor_once, "test_the_last_unpin_returns_the_descriptor_once", 823);
-  run_test(test_a_pin_on_a_descriptor_the_engine_owns_is_refused, "test_a_pin_on_a_descriptor_the_engine_owns_is_refused", 846);
-  run_test(test_an_unpin_without_a_pin_is_refused, "test_an_unpin_without_a_pin_is_refused", 856);
-  run_test(test_pin_exhaustion_is_busy_and_an_unpin_frees_it, "test_pin_exhaustion_is_busy_and_an_unpin_frees_it", 869);
-  run_test(test_a_pinned_frame_survives_the_ring_wrapping_past_it, "test_a_pinned_frame_survives_the_ring_wrapping_past_it", 901);
-  run_test(test_pins_on_two_borrows_are_independent, "test_pins_on_two_borrows_are_independent", 949);
-  run_test(test_tx_take_reports_the_claimed_buffer_and_its_descriptor, "test_tx_take_reports_the_claimed_buffer_and_its_descriptor", 973);
-  run_test(test_tx_post_cleans_before_it_commits, "test_tx_post_cleans_before_it_commits", 989);
-  run_test(test_tx_post_without_a_take_is_refused, "test_tx_post_without_a_take_is_refused", 1007);
-  run_test(test_a_second_tx_post_is_refused, "test_a_second_tx_post_is_refused", 1018);
-  run_test(test_a_commit_that_could_not_queue_is_busy_and_the_retry_succeeds, "test_a_commit_that_could_not_queue_is_busy_and_the_retry_succeeds", 1033);
-  run_test(test_a_full_transmit_ring_is_busy, "test_a_full_transmit_ring_is_busy", 1052);
-  run_test(test_tx_reap_frees_a_committed_descriptor, "test_tx_reap_frees_a_committed_descriptor", 1066);
-  run_test(test_tx_take_refuses_a_buffer_outside_the_bound_array, "test_tx_take_refuses_a_buffer_outside_the_bound_array", 1091);
-  run_test(test_tx_take_refuses_a_buffer_already_handed_out, "test_tx_take_refuses_a_buffer_already_handed_out", 1102);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 1115);
-  run_test(test_the_entries_refuse_an_index_past_their_own_ring, "test_the_entries_refuse_an_index_past_their_own_ring", 1143);
-  run_test(test_tx_post_refuses_a_length_that_is_not_a_frame_or_a_descriptor_it_does_not_hold, "test_tx_post_refuses_a_length_that_is_not_a_frame_or_a_descriptor_it_does_not_hold", 1166);
-  run_test(test_a_descriptor_that_is_neither_held_nor_pinned_is_not_given_back, "test_a_descriptor_that_is_neither_held_nor_pinned_is_not_given_back", 1195);
-  run_test(test_a_claim_with_a_length_and_no_address_is_no_frame, "test_a_claim_with_a_length_and_no_address_is_no_frame", 1210);
-  run_test(test_a_descriptor_no_longer_held_can_still_be_one_a_pin_refers_to, "test_a_descriptor_no_longer_held_can_still_be_one_a_pin_refers_to", 1224);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 280);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 288);
+  run_test(test_the_two_operand_blocks_are_different_bytes, "test_the_two_operand_blocks_are_different_bytes", 316);
+  run_test(test_no_entry_writes_past_the_borrow, "test_no_entry_writes_past_the_borrow", 325);
+  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 339);
+  run_test(test_both_rings_start_aligned, "test_both_rings_start_aligned", 352);
+  run_test(test_the_ring_counts_hold_the_pin_bound, "test_the_ring_counts_hold_the_pin_bound", 360);
+  run_test(test_the_buffer_stride_spans_whole_cache_lines, "test_the_buffer_stride_spans_whole_cache_lines", 368);
+  run_test(test_clear_reports_ok, "test_clear_reports_ok", 376);
+  run_test(test_clear_zeroes_both_rings, "test_clear_zeroes_both_rings", 385);
+  run_test(test_clear_leaves_the_operands_alone, "test_clear_leaves_the_operands_alone", 396);
+  run_test(test_clear_reaches_one_borrow_only, "test_clear_reaches_one_borrow_only", 406);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 420);
+  run_test(test_an_unbound_ring_is_refused, "test_an_unbound_ring_is_refused", 470);
+  run_test(test_bind_refuses_a_driver_without_the_cache_hooks, "test_bind_refuses_a_driver_without_the_cache_hooks", 485);
+  run_test(test_bind_refuses_a_missing_driver_or_buffer_array, "test_bind_refuses_a_missing_driver_or_buffer_array", 505);
+  run_test(test_a_descriptor_index_past_its_ring_is_refused, "test_a_descriptor_index_past_its_ring_is_refused", 526);
+  run_test(test_tx_post_refuses_a_length_no_frame_can_carry, "test_tx_post_refuses_a_length_no_frame_can_carry", 546);
+  run_test(test_a_take_that_found_nothing_reports_no_buffer, "test_a_take_that_found_nothing_reports_no_buffer", 560);
+  run_test(test_every_entry_is_present, "test_every_entry_is_present", 575);
+  run_test(test_the_flag_mask_covers_the_enum, "test_the_flag_mask_covers_the_enum", 590);
+  run_test(test_bind_refuses_a_driver_without_the_frame_path, "test_bind_refuses_a_driver_without_the_frame_path", 625);
+  run_test(test_bind_refuses_a_buffer_array_off_the_cache_line, "test_bind_refuses_a_buffer_array_off_the_cache_line", 656);
+  run_test(test_rx_take_invalidates_before_the_frame_is_readable, "test_rx_take_invalidates_before_the_frame_is_readable", 672);
+  run_test(test_rx_take_reports_the_descriptor_the_engine_filled, "test_rx_take_reports_the_descriptor_the_engine_filled", 686);
+  run_test(test_an_empty_engine_is_busy, "test_an_empty_engine_is_busy", 700);
+  run_test(test_rx_take_and_post_round_trip, "test_rx_take_and_post_round_trip", 711);
+  run_test(test_a_second_rx_post_is_refused, "test_a_second_rx_post_is_refused", 731);
+  run_test(test_rx_post_without_a_take_is_refused, "test_rx_post_without_a_take_is_refused", 744);
+  run_test(test_rx_take_refuses_a_frame_outside_the_bound_buffers, "test_rx_take_refuses_a_frame_outside_the_bound_buffers", 754);
+  run_test(test_rx_take_refuses_a_frame_longer_than_one_buffer, "test_rx_take_refuses_a_frame_longer_than_one_buffer", 768);
+  run_test(test_rx_take_refuses_a_refill_of_a_descriptor_this_side_holds, "test_rx_take_refuses_a_refill_of_a_descriptor_this_side_holds", 779);
+  run_test(test_a_pin_holds_the_descriptor_past_the_post, "test_a_pin_holds_the_descriptor_past_the_post", 794);
+  run_test(test_the_last_unpin_returns_the_descriptor_once, "test_the_last_unpin_returns_the_descriptor_once", 824);
+  run_test(test_a_pin_on_a_descriptor_the_engine_owns_is_refused, "test_a_pin_on_a_descriptor_the_engine_owns_is_refused", 847);
+  run_test(test_an_unpin_without_a_pin_is_refused, "test_an_unpin_without_a_pin_is_refused", 857);
+  run_test(test_pin_exhaustion_is_busy_and_an_unpin_frees_it, "test_pin_exhaustion_is_busy_and_an_unpin_frees_it", 870);
+  run_test(test_a_pinned_frame_survives_the_ring_wrapping_past_it, "test_a_pinned_frame_survives_the_ring_wrapping_past_it", 902);
+  run_test(test_pins_on_two_borrows_are_independent, "test_pins_on_two_borrows_are_independent", 950);
+  run_test(test_tx_take_reports_the_claimed_buffer_and_its_descriptor, "test_tx_take_reports_the_claimed_buffer_and_its_descriptor", 974);
+  run_test(test_tx_post_cleans_before_it_commits, "test_tx_post_cleans_before_it_commits", 990);
+  run_test(test_tx_post_without_a_take_is_refused, "test_tx_post_without_a_take_is_refused", 1008);
+  run_test(test_a_second_tx_post_is_refused, "test_a_second_tx_post_is_refused", 1019);
+  run_test(test_a_commit_that_could_not_queue_is_busy_and_the_retry_succeeds, "test_a_commit_that_could_not_queue_is_busy_and_the_retry_succeeds", 1034);
+  run_test(test_a_full_transmit_ring_is_busy, "test_a_full_transmit_ring_is_busy", 1053);
+  run_test(test_tx_reap_frees_a_committed_descriptor, "test_tx_reap_frees_a_committed_descriptor", 1067);
+  run_test(test_tx_take_refuses_a_buffer_outside_the_bound_array, "test_tx_take_refuses_a_buffer_outside_the_bound_array", 1092);
+  run_test(test_tx_take_refuses_a_buffer_already_handed_out, "test_tx_take_refuses_a_buffer_already_handed_out", 1103);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 1116);
+  run_test(test_the_entries_refuse_an_index_past_their_own_ring, "test_the_entries_refuse_an_index_past_their_own_ring", 1144);
+  run_test(test_tx_post_refuses_a_length_that_is_not_a_frame_or_a_descriptor_it_does_not_hold, "test_tx_post_refuses_a_length_that_is_not_a_frame_or_a_descriptor_it_does_not_hold", 1167);
+  run_test(test_a_descriptor_that_is_neither_held_nor_pinned_is_not_given_back, "test_a_descriptor_that_is_neither_held_nor_pinned_is_not_given_back", 1196);
+  run_test(test_a_claim_with_a_length_and_no_address_is_no_frame, "test_a_claim_with_a_length_and_no_address_is_no_frame", 1211);
+  run_test(test_a_descriptor_no_longer_held_can_still_be_one_a_pin_refers_to, "test_a_descriptor_no_longer_held_can_still_be_one_a_pin_refers_to", 1225);
 
   return UNITY_END();
 }

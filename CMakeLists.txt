@@ -132,12 +132,22 @@ endif()
 # its files out of the target, so a disabled capability reaches the compiler as no file at all.
 
 set(IDEMIP_SOURCES "")
+# The base modules every build carries: the wire-integer accessors, the RFC 1071 checksum taken
+# over them, the epoch, and the readings taken onto it. None of these sits behind a capability.
+list(APPEND IDEMIP_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/endian.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/common.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/checksum.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ms.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/clock.c")
 
 feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_ETHERNET
     src/core/dispatch.c
     src/core/stats.c
     src/core/tick.c
     src/core/timeouts.c
+    src/ethernet/ethernet.c
+    src/ethernet/mii.c
     src/ethernet/phy.c
     src/ethernet/vlan.c
     src/netif/dma.c
@@ -146,11 +156,14 @@ feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_ETHERNET
 
 feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_IPV4
     src/acd/acd.c
+    src/arp/arp.c
     src/arp/arp_table.c
     src/autoip/autoip.c
     src/dhcp/dhcp4.c
+    src/icmp/icmp.c
     src/icmp/icmp_in.c
     src/igmp/igmp.c
+    src/ip/ipv4.c
     src/ip/ip4_addr.c
     src/ip/ip4_forward.c
     src/ip/ip4_frag.c
@@ -161,7 +174,9 @@ feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_IPV4
 feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_IPV6
     src/dhcp/dhcp6.c
     src/ethernet/ethip6.c
+    src/icmp/icmpv6.c
     src/icmp/icmp6_in.c
+    src/ip/ipv6.c
     src/ip/ip6_addr.c
     src/ip/ip6_forward.c
     src/ip/ip6_frag.c
@@ -175,6 +190,7 @@ feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_IPV6
     src/pmtu/pmtu6.c)
 
 feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_TCP
+    src/tcp/tcp.c
     src/tcp/tcp_in.c
     src/tcp/tcp_isn.c
     src/tcp/tcp_out.c
@@ -182,6 +198,7 @@ feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_TCP
 
 feature_sources(IDEMIP_SOURCES IDEMIP_ENABLE_UDP
     src/dns/dns.c
+    src/udp/udp.c
     src/udp/udp_pcb.c
     src/udp/udplite.c)
 
@@ -196,6 +213,17 @@ endif()
 list(APPEND IDEMIP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/ip/pseudo.c")
 feature_source_swap(IDEMIP_SOURCES IDEMIP_ENABLE_IPV4 src/ip/pseudo_v4.c src/ip/pseudo_v4_off.c)
 feature_source_swap(IDEMIP_SOURCES IDEMIP_ENABLE_IPV6 src/ip/pseudo_v6.c src/ip/pseudo_v6_off.c)
+
+# determinism_pad(), the fourth reading. A feature, so CMake decides whether it is built at all -
+# and its grade decides which translation unit implements it: milliseconds off the epoch at COARSE,
+# microseconds off a reading of its own at FINE, and pinned to a measured ceiling at LITERAL. Each
+# file carries the whole table, so no entry comes and goes with the grade and no body branches on
+# it. IDEMIP_TIME_DETERMINISM_GRADE is checked against the three names below.
+if(IDEMIP_ENABLE_TIME_DETERMINISM)
+    string(TOLOWER "${IDEMIP_TIME_DETERMINISM_GRADE}" IDEMIP_GRADE_TU)
+    list(APPEND IDEMIP_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/time_determinism_${IDEMIP_GRADE_TU}.c")
+endif()
 
 # --- the library -------------------------------------------------------------
 

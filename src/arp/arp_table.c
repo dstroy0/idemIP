@@ -13,6 +13,8 @@
 #include "src/idemip_config.h" // the entry point: the enable gate below, and the widths
 
 #include "src/arp/arp_table.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "src/arp/arp_defines.h"
 
 IDEMIP_BEGIN_DECLS
 

@@ -28,6 +28,8 @@
 
 #include "src/icmp/icmp.h"    // the RFC 792 message this reads, and through it ipv4.h
 #include "src/ip/ip4_route.h" // the row RFC 1191 sec 6.2 caches the estimate in
+#include "src/common_defines.h"
+#include "src/icmp/icmp_defines.h"
 
 #if IDEMIP_ENABLE_IPV4
 

@@ -5,6 +5,13 @@
 #include "src/idemip.h"
 #include "support/fake_phy.h"
 #include "support/pcap.h"
+#include "src/common_defines.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "src/arp/arp_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "src/icmp/icmp_defines.h"
+#include "src/tcp/tcp_defines.h"
+#include "src/udp/udp_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -120,55 +127,55 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/integration/test_loopback/test_loopback.c");
-  run_test(test_two_instances_occupy_disjoint_storage, "test_two_instances_occupy_disjoint_storage", 1533);
-  run_test(test_driving_a_changes_no_byte_of_b, "test_driving_a_changes_no_byte_of_b", 1547);
-  run_test(test_a_frame_is_the_only_thing_that_reaches_b, "test_a_frame_is_the_only_thing_that_reaches_b", 1563);
-  run_test(test_no_unit_writes_past_its_borrow, "test_no_unit_writes_past_its_borrow", 1575);
-  run_test(test_the_engine_advances_only_in_poll, "test_the_engine_advances_only_in_poll", 1592);
-  run_test(test_receive_invalidates_before_the_frame_is_readable, "test_receive_invalidates_before_the_frame_is_readable", 1614);
-  run_test(test_transmit_cleans_before_the_descriptor_is_handed_over, "test_transmit_cleans_before_the_descriptor_is_handed_over", 1634);
-  run_test(test_a_committed_frame_is_readable_only_after_a_poll, "test_a_committed_frame_is_readable_only_after_a_poll", 1652);
-  run_test(test_a_whole_exchange_leaks_no_transmit_descriptor, "test_a_whole_exchange_leaks_no_transmit_descriptor", 1663);
-  run_test(test_a_missing_pair_puts_a_broadcast_request_on_the_wire, "test_a_missing_pair_puts_a_broadcast_request_on_the_wire", 1691);
-  run_test(test_the_reply_resolves_the_pair_on_the_asking_side, "test_the_reply_resolves_the_pair_on_the_asking_side", 1712);
-  run_test(test_the_answering_side_learns_the_asker, "test_the_answering_side_learns_the_asker", 1725);
-  run_test(test_a_request_for_a_third_party_creates_no_entry, "test_a_request_for_a_third_party_creates_no_entry", 1741);
-  run_test(test_a_request_for_a_third_party_still_updates_a_known_pair, "test_a_request_for_a_third_party_still_updates_a_known_pair", 1762);
-  run_test(test_the_two_translation_tables_are_two_borrows, "test_the_two_translation_tables_are_two_borrows", 1789);
-  run_test(test_an_unhandled_ethertype_is_an_interface_unknown_proto, "test_an_unhandled_ethertype_is_an_interface_unknown_proto", 1813);
-  run_test(test_an_unhandled_ip_protocol_is_an_ip_unknown_proto, "test_an_unhandled_ip_protocol_is_an_ip_unknown_proto", 1832);
-  run_test(test_a_datagram_for_another_address_is_an_interface_discard, "test_a_datagram_for_another_address_is_an_interface_discard", 1863);
-  run_test(test_a_bad_header_is_an_interface_error, "test_a_bad_header_is_an_interface_error", 1893);
-  run_test(test_an_echo_request_draws_an_echo_reply, "test_an_echo_request_draws_an_echo_reply", 1922);
-  run_test(test_the_echo_reply_carries_the_identifier_and_sequence, "test_the_echo_reply_carries_the_identifier_and_sequence", 1934);
-  run_test(test_a_udp_datagram_reaches_b, "test_a_udp_datagram_reaches_b", 1948);
-  run_test(test_a_udp_datagram_reaches_a, "test_a_udp_datagram_reaches_a", 1965);
-  run_test(test_a_datagram_to_an_unbound_port_finds_no_binding, "test_a_datagram_to_an_unbound_port_finds_no_binding", 1981);
-  run_test(test_the_two_binding_tables_are_two_borrows, "test_the_two_binding_tables_are_two_borrows", 1995);
-  run_test(test_the_syn_moves_a_to_syn_sent_and_b_to_syn_received, "test_the_syn_moves_a_to_syn_sent_and_b_to_syn_received", 2023);
-  run_test(test_the_three_way_handshake_establishes_both_tcbs, "test_the_three_way_handshake_establishes_both_tcbs", 2037);
-  run_test(test_each_end_took_the_others_initial_sequence_number, "test_each_end_took_the_others_initial_sequence_number", 2052);
-  run_test(test_the_two_ends_draw_different_initial_sequence_numbers, "test_the_two_ends_draw_different_initial_sequence_numbers", 2077);
-  run_test(test_data_reaches_b, "test_data_reaches_b", 2096);
-  run_test(test_data_reaches_a, "test_data_reaches_a", 2113);
-  run_test(test_delivered_data_advances_the_receive_window, "test_delivered_data_advances_the_receive_window", 2131);
-  run_test(test_the_first_fin_moves_a_to_fin_wait_and_b_to_close_wait, "test_the_first_fin_moves_a_to_fin_wait_and_b_to_close_wait", 2153);
-  run_test(test_the_ack_of_the_first_fin_moves_a_to_fin_wait_2, "test_the_ack_of_the_first_fin_moves_a_to_fin_wait_2", 2169);
-  run_test(test_the_four_way_close_ends_in_time_wait_and_closed, "test_the_four_way_close_ends_in_time_wait_and_closed", 2183);
-  run_test(test_a_segment_past_rcv_nxt_is_held_on_a_pinned_descriptor, "test_a_segment_past_rcv_nxt_is_held_on_a_pinned_descriptor", 2232);
-  run_test(test_the_gap_closing_re_delivers_the_held_segments_in_order, "test_the_gap_closing_re_delivers_the_held_segments_in_order", 2253);
-  run_test(test_re_delivery_hands_every_held_descriptor_back, "test_re_delivery_hands_every_held_descriptor_back", 2265);
-  run_test(test_a_series_of_queued_segments_draws_one_acknowledgment, "test_a_series_of_queued_segments_draws_one_acknowledgment", 2279);
-  run_test(test_the_held_segments_are_bs_borrow_alone, "test_the_held_segments_are_bs_borrow_alone", 2298);
-  run_test(test_the_two_tcb_tables_are_two_borrows, "test_the_two_tcb_tables_are_two_borrows", 2324);
-  run_test(test_an_oversized_datagram_is_cut_into_fragments, "test_an_oversized_datagram_is_cut_into_fragments", 2432);
-  run_test(test_the_fragments_reassemble_into_the_original_datagram, "test_the_fragments_reassemble_into_the_original_datagram", 2442);
-  run_test(test_the_reassembled_datagram_reaches_the_binding, "test_the_reassembled_datagram_reaches_the_binding", 2459);
-  run_test(test_reassembly_hands_every_pinned_descriptor_back, "test_reassembly_hands_every_pinned_descriptor_back", 2478);
-  run_test(test_the_receive_ring_never_laps_a_pinned_buffer, "test_the_receive_ring_never_laps_a_pinned_buffer", 2500);
-  run_test(test_the_pcap_global_header_declares_dlt_en10mb, "test_the_pcap_global_header_declares_dlt_en10mb", 2518);
-  run_test(test_the_pcap_record_header_layout, "test_the_pcap_record_header_layout", 2538);
-  run_test(test_the_whole_exchange_is_written_as_a_pcap, "test_the_whole_exchange_is_written_as_a_pcap", 2555);
+  run_test(test_two_instances_occupy_disjoint_storage, "test_two_instances_occupy_disjoint_storage", 1540);
+  run_test(test_driving_a_changes_no_byte_of_b, "test_driving_a_changes_no_byte_of_b", 1554);
+  run_test(test_a_frame_is_the_only_thing_that_reaches_b, "test_a_frame_is_the_only_thing_that_reaches_b", 1570);
+  run_test(test_no_unit_writes_past_its_borrow, "test_no_unit_writes_past_its_borrow", 1582);
+  run_test(test_the_engine_advances_only_in_poll, "test_the_engine_advances_only_in_poll", 1599);
+  run_test(test_receive_invalidates_before_the_frame_is_readable, "test_receive_invalidates_before_the_frame_is_readable", 1621);
+  run_test(test_transmit_cleans_before_the_descriptor_is_handed_over, "test_transmit_cleans_before_the_descriptor_is_handed_over", 1641);
+  run_test(test_a_committed_frame_is_readable_only_after_a_poll, "test_a_committed_frame_is_readable_only_after_a_poll", 1659);
+  run_test(test_a_whole_exchange_leaks_no_transmit_descriptor, "test_a_whole_exchange_leaks_no_transmit_descriptor", 1670);
+  run_test(test_a_missing_pair_puts_a_broadcast_request_on_the_wire, "test_a_missing_pair_puts_a_broadcast_request_on_the_wire", 1698);
+  run_test(test_the_reply_resolves_the_pair_on_the_asking_side, "test_the_reply_resolves_the_pair_on_the_asking_side", 1719);
+  run_test(test_the_answering_side_learns_the_asker, "test_the_answering_side_learns_the_asker", 1732);
+  run_test(test_a_request_for_a_third_party_creates_no_entry, "test_a_request_for_a_third_party_creates_no_entry", 1748);
+  run_test(test_a_request_for_a_third_party_still_updates_a_known_pair, "test_a_request_for_a_third_party_still_updates_a_known_pair", 1769);
+  run_test(test_the_two_translation_tables_are_two_borrows, "test_the_two_translation_tables_are_two_borrows", 1796);
+  run_test(test_an_unhandled_ethertype_is_an_interface_unknown_proto, "test_an_unhandled_ethertype_is_an_interface_unknown_proto", 1820);
+  run_test(test_an_unhandled_ip_protocol_is_an_ip_unknown_proto, "test_an_unhandled_ip_protocol_is_an_ip_unknown_proto", 1839);
+  run_test(test_a_datagram_for_another_address_is_an_interface_discard, "test_a_datagram_for_another_address_is_an_interface_discard", 1870);
+  run_test(test_a_bad_header_is_an_interface_error, "test_a_bad_header_is_an_interface_error", 1900);
+  run_test(test_an_echo_request_draws_an_echo_reply, "test_an_echo_request_draws_an_echo_reply", 1929);
+  run_test(test_the_echo_reply_carries_the_identifier_and_sequence, "test_the_echo_reply_carries_the_identifier_and_sequence", 1941);
+  run_test(test_a_udp_datagram_reaches_b, "test_a_udp_datagram_reaches_b", 1955);
+  run_test(test_a_udp_datagram_reaches_a, "test_a_udp_datagram_reaches_a", 1972);
+  run_test(test_a_datagram_to_an_unbound_port_finds_no_binding, "test_a_datagram_to_an_unbound_port_finds_no_binding", 1988);
+  run_test(test_the_two_binding_tables_are_two_borrows, "test_the_two_binding_tables_are_two_borrows", 2002);
+  run_test(test_the_syn_moves_a_to_syn_sent_and_b_to_syn_received, "test_the_syn_moves_a_to_syn_sent_and_b_to_syn_received", 2030);
+  run_test(test_the_three_way_handshake_establishes_both_tcbs, "test_the_three_way_handshake_establishes_both_tcbs", 2044);
+  run_test(test_each_end_took_the_others_initial_sequence_number, "test_each_end_took_the_others_initial_sequence_number", 2059);
+  run_test(test_the_two_ends_draw_different_initial_sequence_numbers, "test_the_two_ends_draw_different_initial_sequence_numbers", 2084);
+  run_test(test_data_reaches_b, "test_data_reaches_b", 2103);
+  run_test(test_data_reaches_a, "test_data_reaches_a", 2120);
+  run_test(test_delivered_data_advances_the_receive_window, "test_delivered_data_advances_the_receive_window", 2138);
+  run_test(test_the_first_fin_moves_a_to_fin_wait_and_b_to_close_wait, "test_the_first_fin_moves_a_to_fin_wait_and_b_to_close_wait", 2160);
+  run_test(test_the_ack_of_the_first_fin_moves_a_to_fin_wait_2, "test_the_ack_of_the_first_fin_moves_a_to_fin_wait_2", 2176);
+  run_test(test_the_four_way_close_ends_in_time_wait_and_closed, "test_the_four_way_close_ends_in_time_wait_and_closed", 2190);
+  run_test(test_a_segment_past_rcv_nxt_is_held_on_a_pinned_descriptor, "test_a_segment_past_rcv_nxt_is_held_on_a_pinned_descriptor", 2239);
+  run_test(test_the_gap_closing_re_delivers_the_held_segments_in_order, "test_the_gap_closing_re_delivers_the_held_segments_in_order", 2260);
+  run_test(test_re_delivery_hands_every_held_descriptor_back, "test_re_delivery_hands_every_held_descriptor_back", 2272);
+  run_test(test_a_series_of_queued_segments_draws_one_acknowledgment, "test_a_series_of_queued_segments_draws_one_acknowledgment", 2286);
+  run_test(test_the_held_segments_are_bs_borrow_alone, "test_the_held_segments_are_bs_borrow_alone", 2305);
+  run_test(test_the_two_tcb_tables_are_two_borrows, "test_the_two_tcb_tables_are_two_borrows", 2331);
+  run_test(test_an_oversized_datagram_is_cut_into_fragments, "test_an_oversized_datagram_is_cut_into_fragments", 2439);
+  run_test(test_the_fragments_reassemble_into_the_original_datagram, "test_the_fragments_reassemble_into_the_original_datagram", 2449);
+  run_test(test_the_reassembled_datagram_reaches_the_binding, "test_the_reassembled_datagram_reaches_the_binding", 2466);
+  run_test(test_reassembly_hands_every_pinned_descriptor_back, "test_reassembly_hands_every_pinned_descriptor_back", 2485);
+  run_test(test_the_receive_ring_never_laps_a_pinned_buffer, "test_the_receive_ring_never_laps_a_pinned_buffer", 2507);
+  run_test(test_the_pcap_global_header_declares_dlt_en10mb, "test_the_pcap_global_header_declares_dlt_en10mb", 2525);
+  run_test(test_the_pcap_record_header_layout, "test_the_pcap_record_header_layout", 2545);
+  run_test(test_the_whole_exchange_is_written_as_a_pcap, "test_the_whole_exchange_is_written_as_a_pcap", 2562);
 
   return UNITY_END();
 }

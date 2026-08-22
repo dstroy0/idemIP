@@ -37,6 +37,7 @@
 #define IDEMIP_IP6_FORWARD_H
 
 #include "src/icmp/icmpv6.h" // the types and codes a decision names
+#include "src/ip/ipv6_defines.h"
 
 #if IDEMIP_ENABLE_IPV6
 

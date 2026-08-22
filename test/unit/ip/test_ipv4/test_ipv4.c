@@ -23,6 +23,8 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/common_defines.h"
+#include "src/ip/ipv4_defines.h"
 
 // The figures leave the addresses unspecified. 10.0.0.1 and 10.0.0.2.
 #define VEC_SRC 0x0A000001u

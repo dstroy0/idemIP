@@ -36,6 +36,8 @@
 #define IDEMIP_IP6_FRAG_H
 
 #include "src/ip/ipv6.h"
+#include "src/common_defines.h"
+#include "src/ip/ipv6_defines.h"
 
 #if IDEMIP_ENABLE_IPV6
 

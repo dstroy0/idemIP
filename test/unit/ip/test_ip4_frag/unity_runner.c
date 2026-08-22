@@ -3,6 +3,8 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/ip/ip4_frag.h"
+#include "src/common_defines.h"
+#include "src/ip/ipv4_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -106,43 +108,43 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/ip/test_ip4_frag/test_ip4_frag.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 159);
-  run_test(test_an_uncleared_borrow_refuses_work, "test_an_uncleared_borrow_refuses_work", 167);
-  run_test(test_clear_reports_ok, "test_clear_reports_ok", 181);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 188);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 204);
-  run_test(test_clear_drops_an_open_split, "test_clear_drops_an_open_split", 231);
-  run_test(test_a_datagram_at_or_under_the_mtu_is_written_unchanged, "test_a_datagram_at_or_under_the_mtu_is_written_unchanged", 246);
-  run_test(test_the_mtu_boundary_is_where_the_cut_starts, "test_the_mtu_boundary_is_where_the_cut_starts", 259);
-  run_test(test_df_on_an_oversized_datagram_is_refused, "test_df_on_an_oversized_datagram_is_refused", 279);
-  run_test(test_df_on_a_datagram_that_fits_is_carried_through, "test_df_on_a_datagram_that_fits_is_carried_through", 297);
-  run_test(test_an_mtu_below_the_68_octet_floor_is_refused, "test_an_mtu_below_the_68_octet_floor_is_refused", 309);
-  run_test(test_a_malformed_datagram_is_refused, "test_a_malformed_datagram_is_refused", 320);
-  run_test(test_a_span_longer_than_total_length_is_accepted, "test_a_span_longer_than_total_length_is_accepted", 342);
-  run_test(test_the_first_fragment_is_nfb_times_eight_octets_with_mf_set, "test_the_first_fragment_is_nfb_times_eight_octets_with_mf_set", 359);
-  run_test(test_every_fragment_but_the_last_carries_a_multiple_of_eight, "test_every_fragment_but_the_last_carries_a_multiple_of_eight", 375);
-  run_test(test_every_fragment_but_the_last_fills_the_mtu, "test_every_fragment_but_the_last_fills_the_mtu", 398);
-  run_test(test_offsets_are_contiguous_in_units_of_eight, "test_offsets_are_contiguous_in_units_of_eight", 414);
-  run_test(test_every_fragment_verifies_and_fits_the_mtu, "test_every_fragment_verifies_and_fits_the_mtu", 429);
-  run_test(test_the_fragments_carry_the_whole_datagram, "test_the_fragments_carry_the_whole_datagram", 443);
-  run_test(test_the_untouched_header_fields_are_carried, "test_the_untouched_header_fields_are_carried", 460);
-  run_test(test_a_fragment_of_a_fragment_carries_ofo_and_omf, "test_a_fragment_of_a_fragment_carries_ofo_and_omf", 479);
-  run_test(test_an_unaligned_fragment_input_is_refused, "test_an_unaligned_fragment_input_is_refused", 501);
-  run_test(test_no_emitted_fragment_carries_mf_off_the_boundary, "test_no_emitted_fragment_carries_mf_off_the_boundary", 518);
-  run_test(test_a_split_past_the_thirteen_bit_offset_is_refused, "test_a_split_past_the_thirteen_bit_offset_is_refused", 535);
-  run_test(test_the_widest_header_at_the_floor_still_advances, "test_the_widest_header_at_the_floor_still_advances", 547);
-  run_test(test_the_first_fragment_keeps_the_whole_option_area, "test_the_first_fragment_keeps_the_whole_option_area", 563);
-  run_test(test_only_copied_options_reach_the_later_fragments, "test_only_copied_options_reach_the_later_fragments", 574);
-  run_test(test_a_header_of_only_uncopied_options_reduces_to_twenty, "test_a_header_of_only_uncopied_options_reduces_to_twenty", 595);
-  run_test(test_an_option_length_past_the_header_is_not_followed, "test_an_option_length_past_the_header_is_not_followed", 612);
-  run_test(test_an_option_behind_end_of_option_list_is_not_copied, "test_an_option_behind_end_of_option_list_is_not_copied", 624);
-  run_test(test_a_four_octet_copied_option_needs_no_padding, "test_a_four_octet_copied_option_needs_no_padding", 634);
-  run_test(test_next_before_begin_is_refused, "test_next_before_begin_is_refused", 647);
-  run_test(test_next_past_the_last_fragment_is_refused, "test_next_past_the_last_fragment_is_refused", 658);
-  run_test(test_a_short_buffer_is_refused_and_consumes_nothing, "test_a_short_buffer_is_refused_and_consumes_nothing", 672);
-  run_test(test_begin_restarts_an_open_split, "test_begin_restarts_an_open_split", 695);
-  run_test(test_the_report_agrees_with_the_fragment, "test_the_report_agrees_with_the_fragment", 710);
-  run_test(test_the_option_walk_stops_where_the_header_does_and_a_bad_fragment_is_refused, "test_the_option_walk_stops_where_the_header_does_and_a_bad_fragment_is_refused", 740);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 161);
+  run_test(test_an_uncleared_borrow_refuses_work, "test_an_uncleared_borrow_refuses_work", 169);
+  run_test(test_clear_reports_ok, "test_clear_reports_ok", 183);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 190);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 206);
+  run_test(test_clear_drops_an_open_split, "test_clear_drops_an_open_split", 233);
+  run_test(test_a_datagram_at_or_under_the_mtu_is_written_unchanged, "test_a_datagram_at_or_under_the_mtu_is_written_unchanged", 248);
+  run_test(test_the_mtu_boundary_is_where_the_cut_starts, "test_the_mtu_boundary_is_where_the_cut_starts", 261);
+  run_test(test_df_on_an_oversized_datagram_is_refused, "test_df_on_an_oversized_datagram_is_refused", 281);
+  run_test(test_df_on_a_datagram_that_fits_is_carried_through, "test_df_on_a_datagram_that_fits_is_carried_through", 299);
+  run_test(test_an_mtu_below_the_68_octet_floor_is_refused, "test_an_mtu_below_the_68_octet_floor_is_refused", 311);
+  run_test(test_a_malformed_datagram_is_refused, "test_a_malformed_datagram_is_refused", 322);
+  run_test(test_a_span_longer_than_total_length_is_accepted, "test_a_span_longer_than_total_length_is_accepted", 344);
+  run_test(test_the_first_fragment_is_nfb_times_eight_octets_with_mf_set, "test_the_first_fragment_is_nfb_times_eight_octets_with_mf_set", 361);
+  run_test(test_every_fragment_but_the_last_carries_a_multiple_of_eight, "test_every_fragment_but_the_last_carries_a_multiple_of_eight", 377);
+  run_test(test_every_fragment_but_the_last_fills_the_mtu, "test_every_fragment_but_the_last_fills_the_mtu", 400);
+  run_test(test_offsets_are_contiguous_in_units_of_eight, "test_offsets_are_contiguous_in_units_of_eight", 416);
+  run_test(test_every_fragment_verifies_and_fits_the_mtu, "test_every_fragment_verifies_and_fits_the_mtu", 431);
+  run_test(test_the_fragments_carry_the_whole_datagram, "test_the_fragments_carry_the_whole_datagram", 445);
+  run_test(test_the_untouched_header_fields_are_carried, "test_the_untouched_header_fields_are_carried", 462);
+  run_test(test_a_fragment_of_a_fragment_carries_ofo_and_omf, "test_a_fragment_of_a_fragment_carries_ofo_and_omf", 481);
+  run_test(test_an_unaligned_fragment_input_is_refused, "test_an_unaligned_fragment_input_is_refused", 503);
+  run_test(test_no_emitted_fragment_carries_mf_off_the_boundary, "test_no_emitted_fragment_carries_mf_off_the_boundary", 520);
+  run_test(test_a_split_past_the_thirteen_bit_offset_is_refused, "test_a_split_past_the_thirteen_bit_offset_is_refused", 537);
+  run_test(test_the_widest_header_at_the_floor_still_advances, "test_the_widest_header_at_the_floor_still_advances", 549);
+  run_test(test_the_first_fragment_keeps_the_whole_option_area, "test_the_first_fragment_keeps_the_whole_option_area", 565);
+  run_test(test_only_copied_options_reach_the_later_fragments, "test_only_copied_options_reach_the_later_fragments", 576);
+  run_test(test_a_header_of_only_uncopied_options_reduces_to_twenty, "test_a_header_of_only_uncopied_options_reduces_to_twenty", 597);
+  run_test(test_an_option_length_past_the_header_is_not_followed, "test_an_option_length_past_the_header_is_not_followed", 614);
+  run_test(test_an_option_behind_end_of_option_list_is_not_copied, "test_an_option_behind_end_of_option_list_is_not_copied", 626);
+  run_test(test_a_four_octet_copied_option_needs_no_padding, "test_a_four_octet_copied_option_needs_no_padding", 636);
+  run_test(test_next_before_begin_is_refused, "test_next_before_begin_is_refused", 649);
+  run_test(test_next_past_the_last_fragment_is_refused, "test_next_past_the_last_fragment_is_refused", 660);
+  run_test(test_a_short_buffer_is_refused_and_consumes_nothing, "test_a_short_buffer_is_refused_and_consumes_nothing", 674);
+  run_test(test_begin_restarts_an_open_split, "test_begin_restarts_an_open_split", 697);
+  run_test(test_the_report_agrees_with_the_fragment, "test_the_report_agrees_with_the_fragment", 712);
+  run_test(test_the_option_walk_stops_where_the_header_does_and_a_bad_fragment_is_refused, "test_the_option_walk_stops_where_the_header_does_and_a_bad_fragment_is_refused", 742);
 
   return UNITY_END();
 }

@@ -18,6 +18,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 #include "src/ip/ipv6.h" // IDEMIP_IP6_NH_ICMPV6, the Next Header value RFC 3542 sec 3.1 excludes
+#include "src/ip/ipv6_defines.h"
 #endif
 
 IDEMIP_BEGIN_DECLS

@@ -42,6 +42,9 @@
 
 #include "src/icmp/icmpv6.h" // the RFC 4443 sec 3.2 message this reads, and through it ipv6.h
 #include "src/nd/nd6.h"      // the Destination Cache RFC 8201 sec 5.2 caches the estimate in
+#include "src/common_defines.h"
+#include "src/ip/ipv6_defines.h"
+#include "src/icmp/icmpv6_defines.h"
 
 #if IDEMIP_ENABLE_IPV6
 

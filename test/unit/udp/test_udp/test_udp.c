@@ -23,6 +23,7 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/udp/udp_defines.h"
 
 // 192.168.0.1 and 192.168.0.2, the addresses every vector below was summed with.
 #define SRC 0xC0A80001u

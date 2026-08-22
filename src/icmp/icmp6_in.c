@@ -14,6 +14,9 @@
 #include "src/idemip_config.h" // the entry point: the enable gate below, and the widths
 
 #include "src/icmp/icmp6_in.h"
+#include "src/common_defines.h"
+#include "src/ip/ipv6_defines.h"
+#include "src/icmp/icmpv6_defines.h"
 
 IDEMIP_BEGIN_DECLS
 

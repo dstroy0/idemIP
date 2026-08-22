@@ -19,6 +19,9 @@
 
 #include "src/ethernet/ethernet.h"
 #include "src/ip/ipv6.h"
+#include "src/common_defines.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "src/ip/ipv6_defines.h"
 
 #if IDEMIP_ENABLE_IPV6
 

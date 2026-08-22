@@ -15,6 +15,7 @@
 #include "src/idemip_config.h" // the entry point: the enable gate below, and the widths
 
 #include "src/ip/ip4_addr.h"
+#include "src/ethernet/ethernet_defines.h"
 
 IDEMIP_BEGIN_DECLS
 

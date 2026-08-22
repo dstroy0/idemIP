@@ -16,6 +16,7 @@
 
 #include "src/ip/ip6_addr.h"
 #include "src/mld/mld6.h"
+#include "src/ip/ipv6_defines.h"
 
 IDEMIP_BEGIN_DECLS
 

@@ -26,6 +26,8 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/common_defines.h"
+#include "src/ip/ipv6_defines.h"
 
 // --- the caller's bytes, each with a canary past the end ----------------------
 

@@ -17,6 +17,8 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/common_defines.h"
+#include "src/ip/ipv4_defines.h"
 
 #define CANARY 0x5Au
 #define DIRT 0xCCu

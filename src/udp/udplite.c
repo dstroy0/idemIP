@@ -15,6 +15,7 @@
 
 #include "src/ip/pseudo.h"
 #include "src/udp/udplite.h"
+#include "src/udp/udp_defines.h"
 
 IDEMIP_BEGIN_DECLS
 

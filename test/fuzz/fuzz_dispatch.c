@@ -42,6 +42,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "src/udp/udp_defines.h"
 
 // The interface this node answers on. The addresses are RFC 5737 sec 3's TEST-NET-1 and RFC 3849's
 // documentation prefix, so nothing here names a host that exists.

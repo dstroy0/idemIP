@@ -13,6 +13,8 @@
 #include "src/idemip_config.h" // the entry point: the enable gate below, and the widths
 
 #include "src/ethernet/vlan.h"
+#include "src/ethernet/vlan_defines.h" // the C-Tag layout, and ethernet's behind it
+#include "src/ethernet/ethernet_defines.h"
 
 IDEMIP_BEGIN_DECLS
 

@@ -21,6 +21,7 @@
 #define IDEMIP_MLD6_H
 
 #include "src/ip/ipv6.h"
+#include "src/ip/ipv6_defines.h"
 
 #if IDEMIP_ENABLE_IPV6
 

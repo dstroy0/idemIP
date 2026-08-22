@@ -21,6 +21,7 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/ip/ipv6_defines.h"
 
 #define CANARY 0x5Au
 static _Alignas(8) uint8_t work_a[IDEMIP_DHCP6_BORROW + 16];

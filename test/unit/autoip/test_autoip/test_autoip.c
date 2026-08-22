@@ -19,6 +19,7 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/arp/arp_defines.h"
 
 // The borrow, the caller's. Two of them, because the borrow is the interface. A canary follows each so
 // a write past the map is visible.

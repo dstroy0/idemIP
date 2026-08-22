@@ -3,6 +3,7 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/udp/udp.h"
+#include "src/udp/udp_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -112,49 +113,49 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/udp/test_udp/test_udp.c");
-  run_test(test_field_offsets_are_the_rfc_768_figure, "test_field_offsets_are_the_rfc_768_figure", 81);
-  run_test(test_accessors_read_the_figure_fields, "test_accessors_read_the_figure_fields", 90);
-  run_test(test_accessors_read_at_an_odd_address, "test_accessors_read_at_an_odd_address", 100);
-  run_test(test_two_headers_side_by_side_do_not_read_each_other, "test_two_headers_side_by_side_do_not_read_each_other", 111);
-  run_test(test_length_of_eight_is_the_minimum, "test_length_of_eight_is_the_minimum", 126);
-  run_test(test_length_below_eight_is_refused, "test_length_below_eight_is_refused", 133);
-  run_test(test_payload_len_is_length_less_the_header, "test_payload_len_is_length_less_the_header", 143);
-  run_test(test_a_short_length_cannot_wrap_the_payload_len, "test_a_short_length_cannot_wrap_the_payload_len", 151);
-  run_test(test_build_writes_the_four_fields_and_clears_the_checksum, "test_build_writes_the_four_fields_and_clears_the_checksum", 162);
-  run_test(test_build_round_trips_through_the_accessors, "test_build_round_trips_through_the_accessors", 170);
-  run_test(test_each_setter_writes_only_its_own_field, "test_each_setter_writes_only_its_own_field", 180);
-  run_test(test_an_unused_source_port_is_zero, "test_an_unused_source_port_is_zero", 202);
-  run_test(test_checksum_over_an_odd_length_datagram, "test_checksum_over_an_odd_length_datagram", 213);
-  run_test(test_checksum_over_an_even_length_datagram, "test_checksum_over_an_even_length_datagram", 218);
-  run_test(test_checksum_over_a_bare_header, "test_checksum_over_a_bare_header", 223);
-  run_test(test_a_computed_zero_is_transmitted_as_all_ones, "test_a_computed_zero_is_transmitted_as_all_ones", 231);
-  run_test(test_all_zero_means_no_checksum_was_generated, "test_all_zero_means_no_checksum_was_generated", 244);
-  run_test(test_compute_never_returns_the_no_checksum_value, "test_compute_never_returns_the_no_checksum_value", 257);
-  run_test(test_the_pseudo_header_covers_the_addresses_the_protocol_and_the_length, "test_the_pseudo_header_covers_the_addresses_the_protocol_and_the_length", 272);
-  run_test(test_udp_is_protocol_seventeen, "test_udp_is_protocol_seventeen", 288);
-  run_test(test_cksum_write_stores_what_compute_returned, "test_cksum_write_stores_what_compute_returned", 294);
-  run_test(test_cksum_write_repeats, "test_cksum_write_repeats", 304);
-  run_test(test_a_carried_checksum_verifies_and_a_flipped_bit_does_not, "test_a_carried_checksum_verifies_and_a_flipped_bit_does_not", 314);
-  run_test(test_a_misrouted_datagram_does_not_verify, "test_a_misrouted_datagram_does_not_verify", 331);
-  run_test(test_the_all_ones_substitution_verifies, "test_the_all_ones_substitution_verifies", 340);
-  run_test(test_coverage_replaces_length_in_place, "test_coverage_replaces_length_in_place", 352);
-  run_test(test_udplite_is_protocol_one_hundred_thirty_six, "test_udplite_is_protocol_one_hundred_thirty_six", 362);
-  run_test(test_coverage_of_zero_covers_the_whole_packet, "test_coverage_of_zero_covers_the_whole_packet", 370);
-  run_test(test_coverage_of_one_through_seven_is_discarded, "test_coverage_of_one_through_seven_is_discarded", 380);
-  run_test(test_coverage_past_the_ip_length_is_discarded, "test_coverage_past_the_ip_length_is_discarded", 394);
-  run_test(test_a_payload_shorter_than_the_header_is_discarded, "test_a_payload_shorter_than_the_header_is_discarded", 403);
-  run_test(test_udplite_build_writes_coverage_and_clears_the_checksum, "test_udplite_build_writes_coverage_and_clears_the_checksum", 415);
-  run_test(test_checksum_at_coverage_eight, "test_checksum_at_coverage_eight", 427);
-  run_test(test_octets_past_the_coverage_do_not_enter_the_sum, "test_octets_past_the_coverage_do_not_enter_the_sum", 434);
-  run_test(test_coverage_of_twelve_covers_four_payload_octets, "test_coverage_of_twelve_covers_four_payload_octets", 450);
-  run_test(test_checksum_at_full_coverage, "test_checksum_at_full_coverage", 464);
-  run_test(test_the_pseudo_header_length_comes_from_the_ip_module, "test_the_pseudo_header_length_comes_from_the_ip_module", 480);
-  run_test(test_a_computed_zero_at_partial_coverage_is_all_ones, "test_a_computed_zero_at_partial_coverage_is_all_ones", 487);
-  run_test(test_udplite_cksum_write_stores_what_compute_returned, "test_udplite_cksum_write_stores_what_compute_returned", 497);
-  run_test(test_udplite_verifies_over_its_coverage_only, "test_udplite_verifies_over_its_coverage_only", 507);
-  run_test(test_udplite_never_transmits_an_all_zero_checksum, "test_udplite_never_transmits_an_all_zero_checksum", 532);
-  run_test(test_coverage_eight_still_covers_the_coverage_field, "test_coverage_eight_still_covers_the_coverage_field", 545);
-  run_test(test_coverage_is_sixteen_bits, "test_coverage_is_sixteen_bits", 555);
+  run_test(test_field_offsets_are_the_rfc_768_figure, "test_field_offsets_are_the_rfc_768_figure", 82);
+  run_test(test_accessors_read_the_figure_fields, "test_accessors_read_the_figure_fields", 91);
+  run_test(test_accessors_read_at_an_odd_address, "test_accessors_read_at_an_odd_address", 101);
+  run_test(test_two_headers_side_by_side_do_not_read_each_other, "test_two_headers_side_by_side_do_not_read_each_other", 112);
+  run_test(test_length_of_eight_is_the_minimum, "test_length_of_eight_is_the_minimum", 127);
+  run_test(test_length_below_eight_is_refused, "test_length_below_eight_is_refused", 134);
+  run_test(test_payload_len_is_length_less_the_header, "test_payload_len_is_length_less_the_header", 144);
+  run_test(test_a_short_length_cannot_wrap_the_payload_len, "test_a_short_length_cannot_wrap_the_payload_len", 152);
+  run_test(test_build_writes_the_four_fields_and_clears_the_checksum, "test_build_writes_the_four_fields_and_clears_the_checksum", 163);
+  run_test(test_build_round_trips_through_the_accessors, "test_build_round_trips_through_the_accessors", 171);
+  run_test(test_each_setter_writes_only_its_own_field, "test_each_setter_writes_only_its_own_field", 181);
+  run_test(test_an_unused_source_port_is_zero, "test_an_unused_source_port_is_zero", 203);
+  run_test(test_checksum_over_an_odd_length_datagram, "test_checksum_over_an_odd_length_datagram", 214);
+  run_test(test_checksum_over_an_even_length_datagram, "test_checksum_over_an_even_length_datagram", 219);
+  run_test(test_checksum_over_a_bare_header, "test_checksum_over_a_bare_header", 224);
+  run_test(test_a_computed_zero_is_transmitted_as_all_ones, "test_a_computed_zero_is_transmitted_as_all_ones", 232);
+  run_test(test_all_zero_means_no_checksum_was_generated, "test_all_zero_means_no_checksum_was_generated", 245);
+  run_test(test_compute_never_returns_the_no_checksum_value, "test_compute_never_returns_the_no_checksum_value", 258);
+  run_test(test_the_pseudo_header_covers_the_addresses_the_protocol_and_the_length, "test_the_pseudo_header_covers_the_addresses_the_protocol_and_the_length", 273);
+  run_test(test_udp_is_protocol_seventeen, "test_udp_is_protocol_seventeen", 289);
+  run_test(test_cksum_write_stores_what_compute_returned, "test_cksum_write_stores_what_compute_returned", 295);
+  run_test(test_cksum_write_repeats, "test_cksum_write_repeats", 305);
+  run_test(test_a_carried_checksum_verifies_and_a_flipped_bit_does_not, "test_a_carried_checksum_verifies_and_a_flipped_bit_does_not", 315);
+  run_test(test_a_misrouted_datagram_does_not_verify, "test_a_misrouted_datagram_does_not_verify", 332);
+  run_test(test_the_all_ones_substitution_verifies, "test_the_all_ones_substitution_verifies", 341);
+  run_test(test_coverage_replaces_length_in_place, "test_coverage_replaces_length_in_place", 353);
+  run_test(test_udplite_is_protocol_one_hundred_thirty_six, "test_udplite_is_protocol_one_hundred_thirty_six", 363);
+  run_test(test_coverage_of_zero_covers_the_whole_packet, "test_coverage_of_zero_covers_the_whole_packet", 371);
+  run_test(test_coverage_of_one_through_seven_is_discarded, "test_coverage_of_one_through_seven_is_discarded", 381);
+  run_test(test_coverage_past_the_ip_length_is_discarded, "test_coverage_past_the_ip_length_is_discarded", 395);
+  run_test(test_a_payload_shorter_than_the_header_is_discarded, "test_a_payload_shorter_than_the_header_is_discarded", 404);
+  run_test(test_udplite_build_writes_coverage_and_clears_the_checksum, "test_udplite_build_writes_coverage_and_clears_the_checksum", 416);
+  run_test(test_checksum_at_coverage_eight, "test_checksum_at_coverage_eight", 428);
+  run_test(test_octets_past_the_coverage_do_not_enter_the_sum, "test_octets_past_the_coverage_do_not_enter_the_sum", 435);
+  run_test(test_coverage_of_twelve_covers_four_payload_octets, "test_coverage_of_twelve_covers_four_payload_octets", 451);
+  run_test(test_checksum_at_full_coverage, "test_checksum_at_full_coverage", 465);
+  run_test(test_the_pseudo_header_length_comes_from_the_ip_module, "test_the_pseudo_header_length_comes_from_the_ip_module", 481);
+  run_test(test_a_computed_zero_at_partial_coverage_is_all_ones, "test_a_computed_zero_at_partial_coverage_is_all_ones", 488);
+  run_test(test_udplite_cksum_write_stores_what_compute_returned, "test_udplite_cksum_write_stores_what_compute_returned", 498);
+  run_test(test_udplite_verifies_over_its_coverage_only, "test_udplite_verifies_over_its_coverage_only", 508);
+  run_test(test_udplite_never_transmits_an_all_zero_checksum, "test_udplite_never_transmits_an_all_zero_checksum", 533);
+  run_test(test_coverage_eight_still_covers_the_coverage_field, "test_coverage_eight_still_covers_the_coverage_field", 546);
+  run_test(test_coverage_is_sixteen_bits, "test_coverage_is_sixteen_bits", 556);
 
   return UNITY_END();
 }

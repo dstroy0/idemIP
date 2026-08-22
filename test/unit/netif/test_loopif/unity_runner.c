@@ -3,6 +3,9 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/netif/loopif.h"
+#include "src/common_defines.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "src/ip/ipv6_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -125,62 +128,62 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/netif/test_loopif/test_loopif.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 94);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 102);
-  run_test(test_the_two_operand_blocks_are_different_bytes, "test_the_two_operand_blocks_are_different_bytes", 125);
-  run_test(test_no_entry_writes_past_the_borrow, "test_no_entry_writes_past_the_borrow", 134);
-  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 152);
-  run_test(test_the_frame_regions_start_aligned, "test_the_frame_regions_start_aligned", 163);
-  run_test(test_a_frame_region_holds_a_whole_frame, "test_a_frame_region_holds_a_whole_frame", 169);
-  run_test(test_clear_reports_ok, "test_clear_reports_ok", 176);
-  run_test(test_clear_zeroes_the_frame_regions, "test_clear_zeroes_the_frame_regions", 183);
-  run_test(test_clear_leaves_the_operands_alone, "test_clear_leaves_the_operands_alone", 194);
-  run_test(test_clear_reaches_one_borrow_only, "test_clear_reaches_one_borrow_only", 204);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 218);
-  run_test(test_output_refuses_a_frame_no_region_can_hold, "test_output_refuses_a_frame_no_region_can_hold", 248);
-  run_test(test_output_refuses_a_null_frame_and_a_zero_length, "test_output_refuses_a_null_frame_and_a_zero_length", 260);
-  run_test(test_bind_refuses_an_unusable_mtu, "test_bind_refuses_an_unusable_mtu", 277);
-  run_test(test_bind_refuses_an_index_past_the_netif_table, "test_bind_refuses_an_index_past_the_netif_table", 292);
-  run_test(test_a_claim_that_found_nothing_reports_no_frame, "test_a_claim_that_found_nothing_reports_no_frame", 302);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 97);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 105);
+  run_test(test_the_two_operand_blocks_are_different_bytes, "test_the_two_operand_blocks_are_different_bytes", 128);
+  run_test(test_no_entry_writes_past_the_borrow, "test_no_entry_writes_past_the_borrow", 137);
+  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 155);
+  run_test(test_the_frame_regions_start_aligned, "test_the_frame_regions_start_aligned", 166);
+  run_test(test_a_frame_region_holds_a_whole_frame, "test_a_frame_region_holds_a_whole_frame", 172);
+  run_test(test_clear_reports_ok, "test_clear_reports_ok", 179);
+  run_test(test_clear_zeroes_the_frame_regions, "test_clear_zeroes_the_frame_regions", 186);
+  run_test(test_clear_leaves_the_operands_alone, "test_clear_leaves_the_operands_alone", 197);
+  run_test(test_clear_reaches_one_borrow_only, "test_clear_reaches_one_borrow_only", 207);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 221);
+  run_test(test_output_refuses_a_frame_no_region_can_hold, "test_output_refuses_a_frame_no_region_can_hold", 251);
+  run_test(test_output_refuses_a_null_frame_and_a_zero_length, "test_output_refuses_a_null_frame_and_a_zero_length", 263);
+  run_test(test_bind_refuses_an_unusable_mtu, "test_bind_refuses_an_unusable_mtu", 280);
+  run_test(test_bind_refuses_an_index_past_the_netif_table, "test_bind_refuses_an_index_past_the_netif_table", 295);
+  run_test(test_a_claim_that_found_nothing_reports_no_frame, "test_a_claim_that_found_nothing_reports_no_frame", 305);
 #if (IDEMIP_ENABLE_IPV6)
-  run_test(test_owns6_refuses_a_null_address, "test_owns6_refuses_a_null_address", 312);
-  run_test(test_bind_refuses_a_missing_ipv6_address, "test_bind_refuses_a_missing_ipv6_address", 320);
-  run_test(test_match_operands_on_two_borrows_are_independent, "test_match_operands_on_two_borrows_are_independent", 330);
+  run_test(test_owns6_refuses_a_null_address, "test_owns6_refuses_a_null_address", 315);
+  run_test(test_bind_refuses_a_missing_ipv6_address, "test_bind_refuses_a_missing_ipv6_address", 323);
+  run_test(test_match_operands_on_two_borrows_are_independent, "test_match_operands_on_two_borrows_are_independent", 333);
 #endif
-  run_test(test_bind_accepts_the_loopback_addresses, "test_bind_accepts_the_loopback_addresses", 353);
-  run_test(test_bind_accepts_any_host_part_on_network_127, "test_bind_accepts_any_host_part_on_network_127", 363);
-  run_test(test_bind_refuses_an_address_off_network_127, "test_bind_refuses_an_address_off_network_127", 380);
+  run_test(test_bind_accepts_the_loopback_addresses, "test_bind_accepts_the_loopback_addresses", 356);
+  run_test(test_bind_accepts_any_host_part_on_network_127, "test_bind_accepts_any_host_part_on_network_127", 366);
+  run_test(test_bind_refuses_an_address_off_network_127, "test_bind_refuses_an_address_off_network_127", 383);
 #if (IDEMIP_ENABLE_IPV6)
-  run_test(test_bind_refuses_an_ipv6_address_that_is_not_the_loopback, "test_bind_refuses_an_ipv6_address_that_is_not_the_loopback", 398);
+  run_test(test_bind_refuses_an_ipv6_address_that_is_not_the_loopback, "test_bind_refuses_an_ipv6_address_that_is_not_the_loopback", 401);
 #endif
-  run_test(test_owns4_answers_for_every_host_part_on_network_127, "test_owns4_answers_for_every_host_part_on_network_127", 424);
-  run_test(test_owns4_disowns_addresses_off_network_127, "test_owns4_disowns_addresses_off_network_127", 439);
-  run_test(test_owns4_is_not_narrowed_by_the_bound_address, "test_owns4_is_not_narrowed_by_the_bound_address", 454);
+  run_test(test_owns4_answers_for_every_host_part_on_network_127, "test_owns4_answers_for_every_host_part_on_network_127", 427);
+  run_test(test_owns4_disowns_addresses_off_network_127, "test_owns4_disowns_addresses_off_network_127", 442);
+  run_test(test_owns4_is_not_narrowed_by_the_bound_address, "test_owns4_is_not_narrowed_by_the_bound_address", 457);
 #if (IDEMIP_ENABLE_IPV6)
-  run_test(test_owns6_answers_for_the_one_loopback_address, "test_owns6_answers_for_the_one_loopback_address", 466);
-  run_test(test_owns6_disowns_every_other_address, "test_owns6_disowns_every_other_address", 477);
-  run_test(test_owns6_disowns_an_address_one_bit_off, "test_owns6_disowns_an_address_one_bit_off", 498);
+  run_test(test_owns6_answers_for_the_one_loopback_address, "test_owns6_answers_for_the_one_loopback_address", 469);
+  run_test(test_owns6_disowns_every_other_address, "test_owns6_disowns_every_other_address", 480);
+  run_test(test_owns6_disowns_an_address_one_bit_off, "test_owns6_disowns_an_address_one_bit_off", 501);
 #endif
-  run_test(test_a_frame_written_comes_back_on_the_next_claim, "test_a_frame_written_comes_back_on_the_next_claim", 536);
-  run_test(test_the_frame_comes_back_inside_the_borrow, "test_the_frame_comes_back_inside_the_borrow", 554);
-  run_test(test_the_looped_frame_does_not_follow_the_callers_buffer, "test_the_looped_frame_does_not_follow_the_callers_buffer", 572);
-  run_test(test_frames_come_back_in_the_order_they_were_written, "test_frames_come_back_in_the_order_they_were_written", 597);
-  run_test(test_every_region_full_is_busy_and_a_release_frees_one, "test_every_region_full_is_busy_and_a_release_frees_one", 619);
-  run_test(test_nothing_waiting_is_busy_and_the_retry_succeeds, "test_nothing_waiting_is_busy_and_the_retry_succeeds", 647);
-  run_test(test_a_second_claim_before_release_is_refused, "test_a_second_claim_before_release_is_refused", 665);
-  run_test(test_release_without_a_claim_is_refused, "test_release_without_a_claim_is_refused", 682);
-  run_test(test_the_queue_wraps, "test_the_queue_wraps", 702);
-  run_test(test_output_writes_no_octet_past_the_frame, "test_output_writes_no_octet_past_the_frame", 722);
-  run_test(test_the_longest_frame_round_trips, "test_the_longest_frame_round_trips", 738);
-  run_test(test_output_refuses_a_frame_the_bound_mtu_cannot_carry, "test_output_refuses_a_frame_the_bound_mtu_cannot_carry", 754);
-  run_test(test_output_before_a_bind_loops_nothing, "test_output_before_a_bind_loops_nothing", 781);
-  run_test(test_two_borrows_queue_independently, "test_two_borrows_queue_independently", 797);
-  run_test(test_clear_empties_the_queue, "test_clear_empties_the_queue", 821);
-  run_test(test_held_counts_the_frames_waiting, "test_held_counts_the_frames_waiting", 838);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 860);
-  run_test(test_the_published_loopback_network_is_127, "test_the_published_loopback_network_is_127", 893);
-  run_test(test_every_entry_is_present, "test_every_entry_is_present", 902);
-  run_test(test_a_match_that_names_no_address_is_refused, "test_a_match_that_names_no_address_is_refused", 917);
+  run_test(test_a_frame_written_comes_back_on_the_next_claim, "test_a_frame_written_comes_back_on_the_next_claim", 539);
+  run_test(test_the_frame_comes_back_inside_the_borrow, "test_the_frame_comes_back_inside_the_borrow", 557);
+  run_test(test_the_looped_frame_does_not_follow_the_callers_buffer, "test_the_looped_frame_does_not_follow_the_callers_buffer", 575);
+  run_test(test_frames_come_back_in_the_order_they_were_written, "test_frames_come_back_in_the_order_they_were_written", 600);
+  run_test(test_every_region_full_is_busy_and_a_release_frees_one, "test_every_region_full_is_busy_and_a_release_frees_one", 622);
+  run_test(test_nothing_waiting_is_busy_and_the_retry_succeeds, "test_nothing_waiting_is_busy_and_the_retry_succeeds", 650);
+  run_test(test_a_second_claim_before_release_is_refused, "test_a_second_claim_before_release_is_refused", 668);
+  run_test(test_release_without_a_claim_is_refused, "test_release_without_a_claim_is_refused", 685);
+  run_test(test_the_queue_wraps, "test_the_queue_wraps", 705);
+  run_test(test_output_writes_no_octet_past_the_frame, "test_output_writes_no_octet_past_the_frame", 725);
+  run_test(test_the_longest_frame_round_trips, "test_the_longest_frame_round_trips", 741);
+  run_test(test_output_refuses_a_frame_the_bound_mtu_cannot_carry, "test_output_refuses_a_frame_the_bound_mtu_cannot_carry", 757);
+  run_test(test_output_before_a_bind_loops_nothing, "test_output_before_a_bind_loops_nothing", 784);
+  run_test(test_two_borrows_queue_independently, "test_two_borrows_queue_independently", 800);
+  run_test(test_clear_empties_the_queue, "test_clear_empties_the_queue", 824);
+  run_test(test_held_counts_the_frames_waiting, "test_held_counts_the_frames_waiting", 841);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 863);
+  run_test(test_the_published_loopback_network_is_127, "test_the_published_loopback_network_is_127", 896);
+  run_test(test_every_entry_is_present, "test_every_entry_is_present", 905);
+  run_test(test_a_match_that_names_no_address_is_refused, "test_a_match_that_names_no_address_is_refused", 920);
 
   return UNITY_END();
 }

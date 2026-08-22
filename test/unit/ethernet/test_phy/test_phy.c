@@ -16,6 +16,8 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/ethernet/ethernet_defines.h"
+#include "src/ethernet/mii_defines.h"
 
 // --- a recording driver ------------------------------------------------------
 

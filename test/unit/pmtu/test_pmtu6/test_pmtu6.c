@@ -19,6 +19,8 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/common_defines.h"
+#include "src/ip/ipv6_defines.h"
 
 #define CANARY 0x5Au
 static _Alignas(8) uint8_t work_a[IDEMIP_PMTU6_BORROW + 16];

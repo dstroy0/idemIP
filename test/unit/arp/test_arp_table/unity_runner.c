@@ -3,6 +3,8 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/arp/arp_table.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "src/arp/arp_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -123,60 +125,60 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/arp/test_arp_table/test_arp_table.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 81);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 96);
-  run_test(test_clear_on_one_borrow_leaves_the_other_alone, "test_clear_on_one_borrow_leaves_the_other_alone", 128);
-  run_test(test_clear_reports_ok, "test_clear_reports_ok", 142);
-  run_test(test_clear_zeroes_the_tables, "test_clear_zeroes_the_tables", 149);
-  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 158);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 171);
-  run_test(test_a_refused_call_reports_no_row, "test_a_refused_call_reports_no_row", 193);
-  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 203);
-  run_test(test_the_borrow_covers_the_published_map, "test_the_borrow_covers_the_published_map", 213);
-  run_test(test_a_row_index_fits_the_published_terminator, "test_a_row_index_fits_the_published_terminator", 220);
-  run_test(test_every_region_starts_aligned, "test_every_region_starts_aligned", 228);
-  run_test(test_add_then_find_gives_the_hardware_address_back, "test_add_then_find_gives_the_hardware_address_back", 330);
-  run_test(test_add_reports_merge_flag_only_when_the_pair_was_already_there, "test_add_reports_merge_flag_only_when_the_pair_was_already_there", 344);
-  run_test(test_a_new_hardware_address_supersedes_the_old_one, "test_a_new_hardware_address_supersedes_the_old_one", 358);
-  run_test(test_add_refuses_a_protocol_this_end_does_not_speak, "test_add_refuses_a_protocol_this_end_does_not_speak", 369);
-  run_test(test_add_refuses_an_all_zero_sender_protocol_address, "test_add_refuses_an_all_zero_sender_protocol_address", 384);
-  run_test(test_add_refuses_a_null_hardware_address, "test_add_refuses_a_null_hardware_address", 392);
-  run_test(test_find_on_a_pair_that_is_not_in_the_table_is_refused, "test_find_on_a_pair_that_is_not_in_the_table_is_refused", 404);
-  run_test(test_find_is_busy_while_the_row_is_still_waiting_for_the_hardware_address, "test_find_is_busy_while_the_row_is_still_waiting_for_the_hardware_address", 416);
-  run_test(test_find_does_not_restart_the_cache_timeout, "test_find_does_not_restart_the_cache_timeout", 429);
-  run_test(test_a_request_for_this_end_is_added_and_owes_a_reply, "test_a_request_for_this_end_is_added_and_owes_a_reply", 450);
-  run_test(test_a_group_sender_hardware_address_is_not_believed, "test_a_group_sender_hardware_address_is_not_believed", 466);
-  run_test(test_a_sender_claiming_this_ends_address_is_a_conflict, "test_a_sender_claiming_this_ends_address_is_a_conflict", 506);
-  run_test(test_a_request_for_someone_else_creates_no_entry, "test_a_request_for_someone_else_creates_no_entry", 536);
-  run_test(test_a_request_for_someone_else_still_updates_a_row_that_exists, "test_a_request_for_someone_else_still_updates_a_row_that_exists", 553);
-  run_test(test_a_reply_is_merged_before_the_opcode_is_looked_at, "test_a_reply_is_merged_before_the_opcode_is_looked_at", 570);
-  run_test(test_an_unknown_opcode_still_merges_and_owes_no_reply, "test_an_unknown_opcode_still_merges_and_owes_no_reply", 582);
-  run_test(test_a_packet_that_is_not_the_ethernet_ipv4_pairing_is_discarded, "test_a_packet_that_is_not_the_ethernet_ipv4_pairing_is_discarded", 596);
-  run_test(test_an_arp_probe_owes_a_reply_and_pollutes_no_cache, "test_an_arp_probe_owes_a_reply_and_pollutes_no_cache", 615);
-  run_test(test_an_end_with_no_protocol_address_is_the_target_of_nothing, "test_an_end_with_no_protocol_address_is_the_target_of_nothing", 635);
-  run_test(test_the_rfc826_example_end_to_end_on_two_tables, "test_the_rfc826_example_end_to_end_on_two_tables", 647);
-  run_test(test_a_row_is_flushed_on_the_first_sweep_at_or_past_maxage, "test_a_row_is_flushed_on_the_first_sweep_at_or_past_maxage", 678);
-  run_test(test_observing_the_source_fields_restarts_the_cache_timeout, "test_observing_the_source_fields_restarts_the_cache_timeout", 693);
-  run_test(test_remove_flushes_the_row_a_pair_names, "test_remove_flushes_the_row_a_pair_names", 710);
-  run_test(test_remove_of_a_pair_with_no_row_is_refused, "test_remove_of_a_pair_with_no_row_is_refused", 722);
-  run_test(test_the_request_rate_is_one_per_second_per_destination, "test_the_request_rate_is_one_per_second_per_destination", 733);
-  run_test(test_a_stable_table_asks_for_nothing, "test_a_stable_table_asks_for_nothing", 754);
-  run_test(test_a_row_waiting_for_a_reply_stops_asking_after_maxpending, "test_a_row_waiting_for_a_reply_stops_asking_after_maxpending", 764);
-  run_test(test_a_held_frame_comes_back_when_the_reply_resolves_its_address, "test_a_held_frame_comes_back_when_the_reply_resolves_its_address", 785);
-  run_test(test_holds_on_one_row_come_back_in_the_order_they_went_on, "test_holds_on_one_row_come_back_in_the_order_they_went_on", 804);
-  run_test(test_a_queue_with_every_hold_taken_is_busy_and_the_retry_succeeds, "test_a_queue_with_every_hold_taken_is_busy_and_the_retry_succeeds", 825);
-  run_test(test_a_queue_on_a_resolved_address_is_refused, "test_a_queue_on_a_resolved_address_is_refused", 842);
-  run_test(test_a_queue_of_an_impossible_length_is_refused, "test_a_queue_of_an_impossible_length_is_refused", 852);
-  run_test(test_a_hold_past_its_deadline_hands_its_descriptor_back, "test_a_hold_past_its_deadline_hands_its_descriptor_back", 862);
-  run_test(test_a_flush_hands_back_the_descriptors_the_row_held, "test_a_flush_hands_back_the_descriptors_the_row_held", 882);
-  run_test(test_every_pinned_descriptor_comes_back_exactly_once, "test_every_pinned_descriptor_comes_back_exactly_once", 902);
-  run_test(test_holds_on_two_borrows_are_independent, "test_holds_on_two_borrows_are_independent", 937);
-  run_test(test_a_full_table_gives_up_the_row_longest_unseen, "test_a_full_table_gives_up_the_row_longest_unseen", 959);
-  run_test(test_a_row_carrying_holds_is_never_given_up, "test_a_row_carrying_holds_is_never_given_up", 975);
-  run_test(test_a_repeated_find_reports_the_same_thing, "test_a_repeated_find_reports_the_same_thing", 993);
-  run_test(test_the_same_packet_twice_leaves_one_row, "test_the_same_packet_twice_leaves_one_row", 1009);
-  run_test(test_a_lookup_outside_the_pair_this_table_holds_is_refused, "test_a_lookup_outside_the_pair_this_table_holds_is_refused", 1028);
-  run_test(test_a_hold_is_taken_off_the_list_from_behind_its_head_as_well_as_from_the_front, "test_a_hold_is_taken_off_the_list_from_behind_its_head_as_well_as_from_the_front", 1076);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 83);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 98);
+  run_test(test_clear_on_one_borrow_leaves_the_other_alone, "test_clear_on_one_borrow_leaves_the_other_alone", 130);
+  run_test(test_clear_reports_ok, "test_clear_reports_ok", 144);
+  run_test(test_clear_zeroes_the_tables, "test_clear_zeroes_the_tables", 151);
+  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 160);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 173);
+  run_test(test_a_refused_call_reports_no_row, "test_a_refused_call_reports_no_row", 195);
+  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 205);
+  run_test(test_the_borrow_covers_the_published_map, "test_the_borrow_covers_the_published_map", 215);
+  run_test(test_a_row_index_fits_the_published_terminator, "test_a_row_index_fits_the_published_terminator", 222);
+  run_test(test_every_region_starts_aligned, "test_every_region_starts_aligned", 230);
+  run_test(test_add_then_find_gives_the_hardware_address_back, "test_add_then_find_gives_the_hardware_address_back", 332);
+  run_test(test_add_reports_merge_flag_only_when_the_pair_was_already_there, "test_add_reports_merge_flag_only_when_the_pair_was_already_there", 346);
+  run_test(test_a_new_hardware_address_supersedes_the_old_one, "test_a_new_hardware_address_supersedes_the_old_one", 360);
+  run_test(test_add_refuses_a_protocol_this_end_does_not_speak, "test_add_refuses_a_protocol_this_end_does_not_speak", 371);
+  run_test(test_add_refuses_an_all_zero_sender_protocol_address, "test_add_refuses_an_all_zero_sender_protocol_address", 386);
+  run_test(test_add_refuses_a_null_hardware_address, "test_add_refuses_a_null_hardware_address", 394);
+  run_test(test_find_on_a_pair_that_is_not_in_the_table_is_refused, "test_find_on_a_pair_that_is_not_in_the_table_is_refused", 406);
+  run_test(test_find_is_busy_while_the_row_is_still_waiting_for_the_hardware_address, "test_find_is_busy_while_the_row_is_still_waiting_for_the_hardware_address", 418);
+  run_test(test_find_does_not_restart_the_cache_timeout, "test_find_does_not_restart_the_cache_timeout", 431);
+  run_test(test_a_request_for_this_end_is_added_and_owes_a_reply, "test_a_request_for_this_end_is_added_and_owes_a_reply", 452);
+  run_test(test_a_group_sender_hardware_address_is_not_believed, "test_a_group_sender_hardware_address_is_not_believed", 468);
+  run_test(test_a_sender_claiming_this_ends_address_is_a_conflict, "test_a_sender_claiming_this_ends_address_is_a_conflict", 508);
+  run_test(test_a_request_for_someone_else_creates_no_entry, "test_a_request_for_someone_else_creates_no_entry", 538);
+  run_test(test_a_request_for_someone_else_still_updates_a_row_that_exists, "test_a_request_for_someone_else_still_updates_a_row_that_exists", 555);
+  run_test(test_a_reply_is_merged_before_the_opcode_is_looked_at, "test_a_reply_is_merged_before_the_opcode_is_looked_at", 572);
+  run_test(test_an_unknown_opcode_still_merges_and_owes_no_reply, "test_an_unknown_opcode_still_merges_and_owes_no_reply", 584);
+  run_test(test_a_packet_that_is_not_the_ethernet_ipv4_pairing_is_discarded, "test_a_packet_that_is_not_the_ethernet_ipv4_pairing_is_discarded", 598);
+  run_test(test_an_arp_probe_owes_a_reply_and_pollutes_no_cache, "test_an_arp_probe_owes_a_reply_and_pollutes_no_cache", 617);
+  run_test(test_an_end_with_no_protocol_address_is_the_target_of_nothing, "test_an_end_with_no_protocol_address_is_the_target_of_nothing", 637);
+  run_test(test_the_rfc826_example_end_to_end_on_two_tables, "test_the_rfc826_example_end_to_end_on_two_tables", 649);
+  run_test(test_a_row_is_flushed_on_the_first_sweep_at_or_past_maxage, "test_a_row_is_flushed_on_the_first_sweep_at_or_past_maxage", 680);
+  run_test(test_observing_the_source_fields_restarts_the_cache_timeout, "test_observing_the_source_fields_restarts_the_cache_timeout", 695);
+  run_test(test_remove_flushes_the_row_a_pair_names, "test_remove_flushes_the_row_a_pair_names", 712);
+  run_test(test_remove_of_a_pair_with_no_row_is_refused, "test_remove_of_a_pair_with_no_row_is_refused", 724);
+  run_test(test_the_request_rate_is_one_per_second_per_destination, "test_the_request_rate_is_one_per_second_per_destination", 735);
+  run_test(test_a_stable_table_asks_for_nothing, "test_a_stable_table_asks_for_nothing", 756);
+  run_test(test_a_row_waiting_for_a_reply_stops_asking_after_maxpending, "test_a_row_waiting_for_a_reply_stops_asking_after_maxpending", 766);
+  run_test(test_a_held_frame_comes_back_when_the_reply_resolves_its_address, "test_a_held_frame_comes_back_when_the_reply_resolves_its_address", 787);
+  run_test(test_holds_on_one_row_come_back_in_the_order_they_went_on, "test_holds_on_one_row_come_back_in_the_order_they_went_on", 806);
+  run_test(test_a_queue_with_every_hold_taken_is_busy_and_the_retry_succeeds, "test_a_queue_with_every_hold_taken_is_busy_and_the_retry_succeeds", 827);
+  run_test(test_a_queue_on_a_resolved_address_is_refused, "test_a_queue_on_a_resolved_address_is_refused", 844);
+  run_test(test_a_queue_of_an_impossible_length_is_refused, "test_a_queue_of_an_impossible_length_is_refused", 854);
+  run_test(test_a_hold_past_its_deadline_hands_its_descriptor_back, "test_a_hold_past_its_deadline_hands_its_descriptor_back", 864);
+  run_test(test_a_flush_hands_back_the_descriptors_the_row_held, "test_a_flush_hands_back_the_descriptors_the_row_held", 884);
+  run_test(test_every_pinned_descriptor_comes_back_exactly_once, "test_every_pinned_descriptor_comes_back_exactly_once", 904);
+  run_test(test_holds_on_two_borrows_are_independent, "test_holds_on_two_borrows_are_independent", 939);
+  run_test(test_a_full_table_gives_up_the_row_longest_unseen, "test_a_full_table_gives_up_the_row_longest_unseen", 961);
+  run_test(test_a_row_carrying_holds_is_never_given_up, "test_a_row_carrying_holds_is_never_given_up", 977);
+  run_test(test_a_repeated_find_reports_the_same_thing, "test_a_repeated_find_reports_the_same_thing", 995);
+  run_test(test_the_same_packet_twice_leaves_one_row, "test_the_same_packet_twice_leaves_one_row", 1011);
+  run_test(test_a_lookup_outside_the_pair_this_table_holds_is_refused, "test_a_lookup_outside_the_pair_this_table_holds_is_refused", 1030);
+  run_test(test_a_hold_is_taken_off_the_list_from_behind_its_head_as_well_as_from_the_front, "test_a_hold_is_taken_off_the_list_from_behind_its_head_as_well_as_from_the_front", 1078);
 
   return UNITY_END();
 }

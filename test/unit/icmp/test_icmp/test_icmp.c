@@ -19,6 +19,9 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/common_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "src/icmp/icmp_defines.h"
 
 // A message buffer with a canary past the end, so a helper writing outside the length it was handed
 // is visible. Every build helper takes a total length, and nothing past it may move.

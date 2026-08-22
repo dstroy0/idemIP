@@ -3,6 +3,9 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/icmp/icmp6_in.h"
+#include "src/common_defines.h"
+#include "src/ip/ipv6_defines.h"
+#include "src/icmp/icmpv6_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -138,75 +141,75 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/icmp/test_icmp6_in/test_icmp6_in.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 190);
-  run_test(test_uncleared_borrow_refuses_work, "test_uncleared_borrow_refuses_work", 198);
-  run_test(test_clear_fills_the_token_bucket, "test_clear_fills_the_token_bucket", 214);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 223);
-  run_test(test_the_token_bucket_is_per_borrow, "test_the_token_bucket_is_per_borrow", 243);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 261);
-  run_test(test_an_echo_request_is_answered_with_an_echo_reply, "test_an_echo_request_is_answered_with_an_echo_reply", 280);
-  run_test(test_the_echo_reply_returns_the_data_entirely_and_unmodified, "test_the_echo_reply_returns_the_data_entirely_and_unmodified", 298);
-  run_test(test_an_echo_request_with_no_data_is_answered, "test_an_echo_request_with_no_data_is_answered", 308);
-  run_test(test_the_echo_reply_checksum_covers_the_pseudo_header, "test_the_echo_reply_checksum_covers_the_pseudo_header", 319);
-  run_test(test_the_reply_to_a_unicast_request_takes_its_destination_as_the_source, "test_the_reply_to_a_unicast_request_takes_its_destination_as_the_source", 332);
-  run_test(test_a_multicast_echo_request_is_answered_from_the_interface_address, "test_a_multicast_echo_request_is_answered_from_the_interface_address", 344);
-  run_test(test_an_anycast_echo_request_is_answered_from_the_interface_address, "test_an_anycast_echo_request_is_answered_from_the_interface_address", 353);
-  run_test(test_an_arriving_echo_reply_goes_to_the_user, "test_an_arriving_echo_reply_goes_to_the_user", 365);
-  run_test(test_recv_refuses_an_out_buffer_short_of_the_whole_reply, "test_recv_refuses_an_out_buffer_short_of_the_whole_reply", 379);
-  run_test(test_a_bad_checksum_is_discarded, "test_a_bad_checksum_is_discarded", 391);
-  run_test(test_an_informational_message_of_unknown_type_is_discarded, "test_an_informational_message_of_unknown_type_is_discarded", 406);
-  run_test(test_an_error_message_of_unknown_type_reaches_the_upper_layer, "test_an_error_message_of_unknown_type_reaches_the_upper_layer", 417);
-  run_test(test_destination_unreachable_reaches_the_upper_layer_protocol, "test_destination_unreachable_reaches_the_upper_layer_protocol", 428);
-  run_test(test_an_error_whose_body_is_shorter_than_an_ipv6_header_is_a_length_error, "test_an_error_whose_body_is_shorter_than_an_ipv6_header_is_a_length_error", 446);
-  run_test(test_a_truncated_quote_is_dropped_without_being_counted_an_error, "test_a_truncated_quote_is_dropped_without_being_counted_an_error", 467);
-  run_test(test_time_exceeded_reaches_the_upper_layer_process, "test_time_exceeded_reaches_the_upper_layer_process", 516);
-  run_test(test_packet_too_big_reports_the_mtu, "test_packet_too_big_reports_the_mtu", 531);
-  run_test(test_parameter_problem_reports_the_pointer, "test_parameter_problem_reports_the_pointer", 544);
-  run_test(test_the_message_is_found_behind_an_extension_header, "test_the_message_is_found_behind_an_extension_header", 557);
-  run_test(test_recv_refuses_a_packet_that_is_not_version_six, "test_recv_refuses_a_packet_that_is_not_version_six", 585);
-  run_test(test_recv_refuses_a_packet_whose_next_header_is_not_icmpv6, "test_recv_refuses_a_packet_whose_next_header_is_not_icmpv6", 594);
-  run_test(test_recv_refuses_a_null_packet_and_a_null_out, "test_recv_refuses_a_null_packet_and_a_null_out", 602);
-  run_test(test_recv_refuses_a_payload_length_past_the_readable_octets, "test_recv_refuses_a_payload_length_past_the_readable_octets", 617);
-  run_test(test_a_port_unreachable_is_built, "test_a_port_unreachable_is_built", 630);
-  run_test(test_an_error_goes_back_to_the_invoking_source, "test_an_error_goes_back_to_the_invoking_source", 647);
-  run_test(test_an_error_for_a_destination_that_is_not_the_nodes_uses_the_interface_address, "test_an_error_for_a_destination_that_is_not_the_nodes_uses_the_interface_address", 664);
-  run_test(test_an_error_for_an_anycast_destination_uses_the_interface_address, "test_an_error_for_an_anycast_destination_uses_the_interface_address", 680);
-  run_test(test_an_error_checksum_covers_the_pseudo_header, "test_an_error_checksum_covers_the_pseudo_header", 692);
-  run_test(test_the_quote_is_clamped_to_the_minimum_ipv6_mtu, "test_the_quote_is_clamped_to_the_minimum_ipv6_mtu", 706);
-  run_test(test_error_refuses_a_type_outside_section_three, "test_error_refuses_a_type_outside_section_three", 721);
-  run_test(test_error_refuses_a_buffer_short_of_the_message, "test_error_refuses_a_buffer_short_of_the_message", 730);
-  run_test(test_error_refuses_a_null_invoking_packet_and_a_null_out, "test_error_refuses_a_null_invoking_packet_and_a_null_out", 740);
-  run_test(test_no_error_about_an_icmpv6_error_message, "test_no_error_about_an_icmpv6_error_message", 757);
-  run_test(test_an_error_about_an_icmpv6_echo_request_is_allowed, "test_an_error_about_an_icmpv6_echo_request_is_allowed", 767);
-  run_test(test_no_error_about_a_redirect, "test_no_error_about_a_redirect", 775);
-  run_test(test_no_error_about_a_multicast_destination, "test_no_error_about_a_multicast_destination", 782);
-  run_test(test_packet_too_big_is_allowed_to_a_multicast_destination, "test_packet_too_big_is_allowed_to_a_multicast_destination", 790);
-  run_test(test_the_multicast_exception_sources_the_error_from_the_interface, "test_the_multicast_exception_sources_the_error_from_the_interface", 802);
-  run_test(test_parameter_problem_code_two_is_allowed_for_an_option_typed_ten, "test_parameter_problem_code_two_is_allowed_for_an_option_typed_ten", 826);
-  run_test(test_parameter_problem_code_two_is_refused_for_an_option_typed_eleven, "test_parameter_problem_code_two_is_refused_for_an_option_typed_eleven", 838);
-  run_test(test_parameter_problem_code_two_is_allowed_to_a_unicast_destination, "test_parameter_problem_code_two_is_allowed_to_a_unicast_destination", 848);
-  run_test(test_no_error_about_a_link_layer_multicast, "test_no_error_about_a_link_layer_multicast", 858);
-  run_test(test_no_error_about_a_link_layer_broadcast, "test_no_error_about_a_link_layer_broadcast", 869);
-  run_test(test_the_link_layer_exceptions_carry_from_e3, "test_the_link_layer_exceptions_carry_from_e3", 879);
-  run_test(test_no_error_about_an_unspecified_source, "test_no_error_about_an_unspecified_source", 892);
-  run_test(test_no_error_about_a_multicast_source, "test_no_error_about_a_multicast_source", 899);
-  run_test(test_no_error_about_a_known_anycast_source, "test_no_error_about_a_known_anycast_source", 906);
-  run_test(test_a_suppressed_error_never_becomes_ok_or_busy_on_a_retry, "test_a_suppressed_error_never_becomes_ok_or_busy_on_a_retry", 916);
-  run_test(test_a_suppressed_error_spends_no_token, "test_a_suppressed_error_spends_no_token", 929);
-  run_test(test_the_bucket_allows_a_burst_of_b_and_then_reports_busy, "test_the_bucket_allows_a_burst_of_b_and_then_reports_busy", 941);
-  run_test(test_a_token_refills_and_the_retry_succeeds, "test_a_token_refills_and_the_retry_succeeds", 961);
-  run_test(test_a_long_gap_refills_the_bucket_to_b_and_no_further, "test_a_long_gap_refills_the_bucket_to_b_and_no_further", 983);
-  run_test(test_the_long_term_average_is_n_per_second, "test_the_long_term_average_is_n_per_second", 999);
-  run_test(test_a_built_error_repeats, "test_a_built_error_repeats", 1024);
-  run_test(test_the_entries_refuse_a_call_that_names_no_packet_or_nowhere_to_put_one, "test_the_entries_refuse_a_call_that_names_no_packet_or_nowhere_to_put_one", 1045);
-  run_test(test_an_invoking_packet_that_is_not_ipv6_and_a_type_that_is_not_an_error, "test_an_invoking_packet_that_is_not_ipv6_and_a_type_that_is_not_an_error", 1072);
-  run_test(test_the_invoking_type_is_read_only_where_the_packet_carries_one, "test_the_invoking_type_is_read_only_where_the_packet_carries_one", 1094);
-  run_test(test_the_unrecognized_option_exception_reads_the_octet_the_pointer_names, "test_the_unrecognized_option_exception_reads_the_octet_the_pointer_names", 1146);
-  run_test(test_an_error_message_shorter_than_its_own_header_is_discarded, "test_an_error_message_shorter_than_its_own_header_is_discarded", 1180);
-  run_test(test_a_header_chain_that_runs_off_the_end_names_no_upper_layer, "test_a_header_chain_that_runs_off_the_end_names_no_upper_layer", 1197);
-  run_test(test_the_exception_is_the_code_it_names_and_the_types_are_the_four_sec_3_defines, "test_the_exception_is_the_code_it_names_and_the_types_are_the_four_sec_3_defines", 1220);
-  run_test(test_a_call_with_fewer_octets_than_a_header_is_refused, "test_a_call_with_fewer_octets_than_a_header_is_refused", 1239);
-  run_test(test_the_token_bucket_refill_stops_at_the_top, "test_the_token_bucket_refill_stops_at_the_top", 1259);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 193);
+  run_test(test_uncleared_borrow_refuses_work, "test_uncleared_borrow_refuses_work", 201);
+  run_test(test_clear_fills_the_token_bucket, "test_clear_fills_the_token_bucket", 217);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 226);
+  run_test(test_the_token_bucket_is_per_borrow, "test_the_token_bucket_is_per_borrow", 246);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 264);
+  run_test(test_an_echo_request_is_answered_with_an_echo_reply, "test_an_echo_request_is_answered_with_an_echo_reply", 283);
+  run_test(test_the_echo_reply_returns_the_data_entirely_and_unmodified, "test_the_echo_reply_returns_the_data_entirely_and_unmodified", 301);
+  run_test(test_an_echo_request_with_no_data_is_answered, "test_an_echo_request_with_no_data_is_answered", 311);
+  run_test(test_the_echo_reply_checksum_covers_the_pseudo_header, "test_the_echo_reply_checksum_covers_the_pseudo_header", 322);
+  run_test(test_the_reply_to_a_unicast_request_takes_its_destination_as_the_source, "test_the_reply_to_a_unicast_request_takes_its_destination_as_the_source", 335);
+  run_test(test_a_multicast_echo_request_is_answered_from_the_interface_address, "test_a_multicast_echo_request_is_answered_from_the_interface_address", 347);
+  run_test(test_an_anycast_echo_request_is_answered_from_the_interface_address, "test_an_anycast_echo_request_is_answered_from_the_interface_address", 356);
+  run_test(test_an_arriving_echo_reply_goes_to_the_user, "test_an_arriving_echo_reply_goes_to_the_user", 368);
+  run_test(test_recv_refuses_an_out_buffer_short_of_the_whole_reply, "test_recv_refuses_an_out_buffer_short_of_the_whole_reply", 382);
+  run_test(test_a_bad_checksum_is_discarded, "test_a_bad_checksum_is_discarded", 394);
+  run_test(test_an_informational_message_of_unknown_type_is_discarded, "test_an_informational_message_of_unknown_type_is_discarded", 409);
+  run_test(test_an_error_message_of_unknown_type_reaches_the_upper_layer, "test_an_error_message_of_unknown_type_reaches_the_upper_layer", 420);
+  run_test(test_destination_unreachable_reaches_the_upper_layer_protocol, "test_destination_unreachable_reaches_the_upper_layer_protocol", 431);
+  run_test(test_an_error_whose_body_is_shorter_than_an_ipv6_header_is_a_length_error, "test_an_error_whose_body_is_shorter_than_an_ipv6_header_is_a_length_error", 449);
+  run_test(test_a_truncated_quote_is_dropped_without_being_counted_an_error, "test_a_truncated_quote_is_dropped_without_being_counted_an_error", 470);
+  run_test(test_time_exceeded_reaches_the_upper_layer_process, "test_time_exceeded_reaches_the_upper_layer_process", 519);
+  run_test(test_packet_too_big_reports_the_mtu, "test_packet_too_big_reports_the_mtu", 534);
+  run_test(test_parameter_problem_reports_the_pointer, "test_parameter_problem_reports_the_pointer", 547);
+  run_test(test_the_message_is_found_behind_an_extension_header, "test_the_message_is_found_behind_an_extension_header", 560);
+  run_test(test_recv_refuses_a_packet_that_is_not_version_six, "test_recv_refuses_a_packet_that_is_not_version_six", 588);
+  run_test(test_recv_refuses_a_packet_whose_next_header_is_not_icmpv6, "test_recv_refuses_a_packet_whose_next_header_is_not_icmpv6", 597);
+  run_test(test_recv_refuses_a_null_packet_and_a_null_out, "test_recv_refuses_a_null_packet_and_a_null_out", 605);
+  run_test(test_recv_refuses_a_payload_length_past_the_readable_octets, "test_recv_refuses_a_payload_length_past_the_readable_octets", 620);
+  run_test(test_a_port_unreachable_is_built, "test_a_port_unreachable_is_built", 633);
+  run_test(test_an_error_goes_back_to_the_invoking_source, "test_an_error_goes_back_to_the_invoking_source", 650);
+  run_test(test_an_error_for_a_destination_that_is_not_the_nodes_uses_the_interface_address, "test_an_error_for_a_destination_that_is_not_the_nodes_uses_the_interface_address", 667);
+  run_test(test_an_error_for_an_anycast_destination_uses_the_interface_address, "test_an_error_for_an_anycast_destination_uses_the_interface_address", 683);
+  run_test(test_an_error_checksum_covers_the_pseudo_header, "test_an_error_checksum_covers_the_pseudo_header", 695);
+  run_test(test_the_quote_is_clamped_to_the_minimum_ipv6_mtu, "test_the_quote_is_clamped_to_the_minimum_ipv6_mtu", 709);
+  run_test(test_error_refuses_a_type_outside_section_three, "test_error_refuses_a_type_outside_section_three", 724);
+  run_test(test_error_refuses_a_buffer_short_of_the_message, "test_error_refuses_a_buffer_short_of_the_message", 733);
+  run_test(test_error_refuses_a_null_invoking_packet_and_a_null_out, "test_error_refuses_a_null_invoking_packet_and_a_null_out", 743);
+  run_test(test_no_error_about_an_icmpv6_error_message, "test_no_error_about_an_icmpv6_error_message", 760);
+  run_test(test_an_error_about_an_icmpv6_echo_request_is_allowed, "test_an_error_about_an_icmpv6_echo_request_is_allowed", 770);
+  run_test(test_no_error_about_a_redirect, "test_no_error_about_a_redirect", 778);
+  run_test(test_no_error_about_a_multicast_destination, "test_no_error_about_a_multicast_destination", 785);
+  run_test(test_packet_too_big_is_allowed_to_a_multicast_destination, "test_packet_too_big_is_allowed_to_a_multicast_destination", 793);
+  run_test(test_the_multicast_exception_sources_the_error_from_the_interface, "test_the_multicast_exception_sources_the_error_from_the_interface", 805);
+  run_test(test_parameter_problem_code_two_is_allowed_for_an_option_typed_ten, "test_parameter_problem_code_two_is_allowed_for_an_option_typed_ten", 829);
+  run_test(test_parameter_problem_code_two_is_refused_for_an_option_typed_eleven, "test_parameter_problem_code_two_is_refused_for_an_option_typed_eleven", 841);
+  run_test(test_parameter_problem_code_two_is_allowed_to_a_unicast_destination, "test_parameter_problem_code_two_is_allowed_to_a_unicast_destination", 851);
+  run_test(test_no_error_about_a_link_layer_multicast, "test_no_error_about_a_link_layer_multicast", 861);
+  run_test(test_no_error_about_a_link_layer_broadcast, "test_no_error_about_a_link_layer_broadcast", 872);
+  run_test(test_the_link_layer_exceptions_carry_from_e3, "test_the_link_layer_exceptions_carry_from_e3", 882);
+  run_test(test_no_error_about_an_unspecified_source, "test_no_error_about_an_unspecified_source", 895);
+  run_test(test_no_error_about_a_multicast_source, "test_no_error_about_a_multicast_source", 902);
+  run_test(test_no_error_about_a_known_anycast_source, "test_no_error_about_a_known_anycast_source", 909);
+  run_test(test_a_suppressed_error_never_becomes_ok_or_busy_on_a_retry, "test_a_suppressed_error_never_becomes_ok_or_busy_on_a_retry", 919);
+  run_test(test_a_suppressed_error_spends_no_token, "test_a_suppressed_error_spends_no_token", 932);
+  run_test(test_the_bucket_allows_a_burst_of_b_and_then_reports_busy, "test_the_bucket_allows_a_burst_of_b_and_then_reports_busy", 944);
+  run_test(test_a_token_refills_and_the_retry_succeeds, "test_a_token_refills_and_the_retry_succeeds", 964);
+  run_test(test_a_long_gap_refills_the_bucket_to_b_and_no_further, "test_a_long_gap_refills_the_bucket_to_b_and_no_further", 986);
+  run_test(test_the_long_term_average_is_n_per_second, "test_the_long_term_average_is_n_per_second", 1002);
+  run_test(test_a_built_error_repeats, "test_a_built_error_repeats", 1027);
+  run_test(test_the_entries_refuse_a_call_that_names_no_packet_or_nowhere_to_put_one, "test_the_entries_refuse_a_call_that_names_no_packet_or_nowhere_to_put_one", 1048);
+  run_test(test_an_invoking_packet_that_is_not_ipv6_and_a_type_that_is_not_an_error, "test_an_invoking_packet_that_is_not_ipv6_and_a_type_that_is_not_an_error", 1075);
+  run_test(test_the_invoking_type_is_read_only_where_the_packet_carries_one, "test_the_invoking_type_is_read_only_where_the_packet_carries_one", 1097);
+  run_test(test_the_unrecognized_option_exception_reads_the_octet_the_pointer_names, "test_the_unrecognized_option_exception_reads_the_octet_the_pointer_names", 1149);
+  run_test(test_an_error_message_shorter_than_its_own_header_is_discarded, "test_an_error_message_shorter_than_its_own_header_is_discarded", 1183);
+  run_test(test_a_header_chain_that_runs_off_the_end_names_no_upper_layer, "test_a_header_chain_that_runs_off_the_end_names_no_upper_layer", 1200);
+  run_test(test_the_exception_is_the_code_it_names_and_the_types_are_the_four_sec_3_defines, "test_the_exception_is_the_code_it_names_and_the_types_are_the_four_sec_3_defines", 1223);
+  run_test(test_a_call_with_fewer_octets_than_a_header_is_refused, "test_a_call_with_fewer_octets_than_a_header_is_refused", 1242);
+  run_test(test_the_token_bucket_refill_stops_at_the_top, "test_the_token_bucket_refill_stops_at_the_top", 1262);
 
   return UNITY_END();
 }

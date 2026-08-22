@@ -20,6 +20,9 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/common_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "src/icmp/icmp_defines.h"
 
 // --- the borrow, the caller's ------------------------------------------------
 // Two of them, because the borrow is the instance. A canary follows each so a write past the map is

@@ -28,6 +28,13 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/common_defines.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "src/arp/arp_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "src/icmp/icmp_defines.h"
+#include "src/tcp/tcp_defines.h"
+#include "src/udp/udp_defines.h"
 
 IDEMIP_FAKE_PHY_STORAGE;
 IDEMIP_FAKE_PHY_DRIVER(0);

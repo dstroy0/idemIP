@@ -150,6 +150,24 @@ foreach(suite_src ${IDEMIP_SUITE_SOURCES})
     if(suite_name STREQUAL "test_clock")
         target_compile_options(${suite_name} PRIVATE
             $<$<C_COMPILER_ID:GNU,Clang>:-UIDEMIP_ENABLE_TIME_DETERMINISM;-DIDEMIP_ENABLE_TIME_DETERMINISM=1>)
+
+        # determinism_pad() and the rest are a translation unit the grade names, and the library
+        # only compiles one when the capability is on. This suite turns the capability on for
+        # itself, so where the library left it off there is no such unit to link against and the
+        # suite compiles it. Where the library did compile one, this must not: both would define
+        # the same entries.
+        #
+        # clock.c comes with it, because IdemIpClock's tick fields are gated on the same capability:
+        # the library's clock_open, built with it off, has no tick_stamp to write, and every pad
+        # measured against a tick would read the epoch instead. Compiled here it is built at this
+        # suite's layout. libidemip's own clock.o is then never pulled - the linker extracts an
+        # archive member only to resolve a symbol that is still undefined.
+        if(NOT IDEMIP_ENABLE_TIME_DETERMINISM)
+            string(TOLOWER "${IDEMIP_TIME_DETERMINISM_GRADE}" IDEMIP_CLOCK_GRADE_TU)
+            target_sources(${suite_name} PRIVATE
+                "${CMAKE_SOURCE_DIR}/src/clock.c"
+                "${CMAKE_SOURCE_DIR}/src/time_determinism_${IDEMIP_CLOCK_GRADE_TU}.c")
+        endif()
     endif()
 
     set_target_properties(${suite_name} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test")

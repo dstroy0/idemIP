@@ -34,6 +34,7 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/udp/udp_defines.h"
 
 // --- the vectors -------------------------------------------------------------
 

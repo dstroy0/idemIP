@@ -35,6 +35,7 @@
 
 #include "src/ethernet/ethernet.h"
 #include "src/ethernet/phy.h"
+#include "src/ethernet/mii_defines.h" // the Clause 22 register set this fake answers with
 
 #include <string.h>
 

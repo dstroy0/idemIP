@@ -1,0 +1,120 @@
+// idemIP v0.1.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+/**
+ * @file ethernet_defines.h
+ * @brief The Ethernet II frame layout: offsets, widths and the RFC 1042 LLC and SNAP values.
+ *
+ * Constants only. No entry, no table, no storage.
+ *
+ * Separate from ethernet.h so that including the module does not drag the layout in with it.
+ * ethernet is the root of the feature tree and every capability grows from it, so a layout in its
+ * surface header would be visible to all of them and each could re-derive a field instead of
+ * asking for it. A file that reads a frame includes ethernet.h and calls an entry; a file that
+ * genuinely needs the numbers - because it states its own map in terms of this one, or sizes a
+ * field to it - includes this and says so.
+ */
+
+#ifndef IDEMIP_ETHERNET_DEFINES_H
+#define IDEMIP_ETHERNET_DEFINES_H
+
+#include "src/idemip_config.h"
+#include "src/common_defines.h" // IDEMIP_IPV4_MIN_MTU, which the frame length is asserted against
+
+/** @brief An Ethernet address: 48 bits (RFC 894 "48-bit addresses"). */
+#define IDEMIP_MAC_LEN 6u
+
+/**
+ * @brief Ethernet II header: destination, source, type. The FCS is the link's, not ours.
+ *
+ * RFC 894: "IP datagrams are transmitted in standard Ethernet frames. The type field of the
+ * Ethernet frame must contain the value hexadecimal 0800. The data field contains the IP header
+ * followed immediately by the IP data."
+ */
+#define IDEMIP_ETH_HDR_LEN 14u
+
+// ---------------------------------------------------------------------------
+// Field offsets
+// ---------------------------------------------------------------------------
+// RFC 894 "Frame Format" names the type field and the data field but prints no figure. RFC 2464
+// sec 3 draws the header this framing shares: "The Ethernet header contains the Destination and
+// Source Ethernet addresses and the Ethernet type code", in that order, two 48-bit addresses then
+// one 16-bit type code.
+
+#define IDEMIP_ETH_OFF_DST 0u      ///< Destination Ethernet Address, IDEMIP_MAC_LEN bytes
+#define IDEMIP_ETH_OFF_SRC 6u      ///< Source Ethernet Address, IDEMIP_MAC_LEN bytes
+#define IDEMIP_ETH_OFF_TYPE 12u    ///< 16-bit Ethernet type code
+#define IDEMIP_ETH_OFF_PAYLOAD 14u ///< the data field
+
+/** @brief The type code is 16 bits wide (RFC 2464 sec 3). */
+#define IDEMIP_ETH_TYPE_LEN 2u
+
+/**
+ * @brief Smallest data field a frame may carry (RFC 894).
+ *
+ * "The minimum length of the data field of a packet sent over an Ethernet is 46 octets. If
+ * necessary, the data field should be padded (with octets of zero) to meet the Ethernet minimum
+ * frame size. This padding is not part of the IP packet and is not included in the total length
+ * field of the IP header." A receiver therefore takes the length from the IP header, never from
+ * the frame.
+ */
+#define IDEMIP_ETH_MIN_PAYLOAD 46u
+
+/**
+ * @brief Largest data field a frame may carry (RFC 894).
+ *
+ * "the maximum length of an IP datagram sent over an Ethernet is 1500 octets. Implementations are
+ * encouraged to support full-length packets."
+ *
+ * RFC 1122 sec 2.3.3 reads the same number as a discriminator: "the 802.3 Length field must be
+ * less than or equal to 1500, while all valid Ether-Type values are greater than 1500."
+ */
+#define IDEMIP_ETH_MAX_PAYLOAD 1500u
+
+/** @brief Whole frame on the wire, header included. The FCS is added and checked by the MAC. */
+#define IDEMIP_ETH_FRAME_MAX (IDEMIP_ETH_HDR_LEN + IDEMIP_ETH_MAX_PAYLOAD)
+
+/** @brief Shortest frame on the wire, the RFC 894 pad included. */
+#define IDEMIP_ETH_FRAME_MIN (IDEMIP_ETH_HDR_LEN + IDEMIP_ETH_MIN_PAYLOAD)
+
+/** @brief Every octet of the broadcast address (RFC 894: "all binary ones, FF-FF-FF-FF-FF-FF hex"). */
+#define IDEMIP_ETH_BROADCAST_OCTET 0xFFu
+
+// ---------------------------------------------------------------------------
+// RFC 1042's LLC and SNAP headers
+// ---------------------------------------------------------------------------
+// The eight octets an 802.3 frame carries IP behind. "IP datagrams and ARP requests and replies are
+// transmitted in standard 802.2 LLC Type 1 Unnumbered Information format, control code 3, with the
+// DSAP and the SSAP fields of the 802.2 header set to 170, the assigned global SAP value for SNAP",
+// and "The 24-bit Organization Code in the SNAP is zero, and the remaining 16 bits are the EtherType
+// from Assigned Numbers".
+
+#define IDEMIP_LLC_SNAP_LEN 8u    ///< DSAP, SSAP, control, three Organization octets, EtherType
+#define IDEMIP_LLC_OFF_DSAP 0u    ///< 8-bit Destination Service Access Point
+#define IDEMIP_LLC_OFF_SSAP 1u    ///< 8-bit Source Service Access Point
+#define IDEMIP_LLC_OFF_CONTROL 2u ///< 8-bit control code
+#define IDEMIP_LLC_OFF_ORG 3u     ///< 24-bit Organization Code
+#define IDEMIP_LLC_OFF_TYPE 6u    ///< the 16-bit EtherType behind it
+#define IDEMIP_LLC_SAP_SNAP 170u  ///< "the assigned global SAP value for SNAP"
+#define IDEMIP_LLC_CONTROL_UI 3u  ///< "Unnumbered Information format, control code 3"
+
+// ---------------------------------------------------------------------------
+// The map closes on itself
+// ---------------------------------------------------------------------------
+// Each offset is the one before it plus that field's width, and the last lands on the header length.
+
+static_assert(IDEMIP_ETH_OFF_DST + IDEMIP_MAC_LEN == IDEMIP_ETH_OFF_SRC,
+              "the destination address is the first 48 bits of the header (RFC 2464 sec 3)");
+static_assert(IDEMIP_ETH_OFF_SRC + IDEMIP_MAC_LEN == IDEMIP_ETH_OFF_TYPE,
+              "the source address is the second 48 bits of the header (RFC 2464 sec 3)");
+static_assert(IDEMIP_ETH_OFF_TYPE + IDEMIP_ETH_TYPE_LEN == IDEMIP_ETH_OFF_PAYLOAD,
+              "the type code is the last 16 bits of the header (RFC 2464 sec 3)");
+static_assert(IDEMIP_ETH_OFF_PAYLOAD == IDEMIP_ETH_HDR_LEN,
+              "the field offsets must sum to the Ethernet II header length");
+
+// RFC 894 encourages full-length packets, and a receiver that cannot take one has to advertise a
+// smaller MSS instead. The link buffer therefore carries a whole frame or the tree does not build.
+static_assert(IDEMIP_ETH_MAX_PAYLOAD >= IDEMIP_IPV4_MIN_MTU,
+              "an Ethernet frame carries at least the IPv4 minimum reassembly buffer (RFC 1122 sec 3.3.2)");
+
+#endif // IDEMIP_ETHERNET_DEFINES_H

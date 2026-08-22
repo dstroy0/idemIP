@@ -16,6 +16,8 @@
  * version a build left out answers false.
  *
  * Reads the caller's bytes and returns a number. Holds nothing.
+ *
+ * The table is the whole surface. There are no free functions to call.
  */
 
 #ifndef IDEMIP_PSEUDO_H
@@ -25,37 +27,41 @@
 
 IDEMIP_BEGIN_DECLS
 
-/** @brief RFC 791 sec 3.1's Version 4. */
-#define IDEMIP_PSEUDO_V4 4u
+/** @brief Dispatch table. Addressed by offset, so the layout is asserted below. */
+typedef struct
+{
+    idemip_bool (*accum)(uint32_t *sum, uint8_t ip_version, uint8_t proto, const uint8_t *src, const uint8_t *dst,
+                         uint32_t upper_len);
+    idemip_bool (*accum4)(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst, uint32_t upper_len);
+    idemip_bool (*accum6)(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst, uint32_t upper_len);
+} PseudoNs;
+IDEMIP_NS_LAYOUT(PseudoNs, accum, accum4, accum6);
 
-/** @brief RFC 8200 sec 3's Version 6. */
-#define IDEMIP_PSEUDO_V6 6u
-
-/** @brief Largest upper-layer length the IPv4 form's 16-bit field carries. */
-#define IDEMIP_PSEUDO_V4_LEN_MAX 0xFFFFu
-
-/**
- * @brief Accumulate the pseudo-header @p ip_version fixes into @p sum.
- *
- * @param sum running sum, which the caller then carries over the header and data.
- * @param ip_version IDEMIP_PSEUDO_V4 or IDEMIP_PSEUDO_V6.
- * @param proto the IANA protocol number: the IPv4 Protocol field, the IPv6 Next Header.
- * @param src source address, four octets under V4 and sixteen under V6.
- * @param dst destination address, the same widths.
- * @param upper_len the length of the upper-layer header and data.
- * @return false when the build carries no such version, and when the length that version's
- *         pseudo-header cannot carry.
- */
+/** @name The entries the table points at.
+ *  @brief Nameable so a static const table can name them, and for no other reason. The table is
+ *         still the whole surface: call through it. The halves are named here because the version
+ *         branch calls them across translation units, the build having selected which one each is.
+ *  @{ */
 idemip_bool idemip_pseudo_accum(uint32_t *sum, uint8_t ip_version, uint8_t proto, const uint8_t *src,
                                 const uint8_t *dst, uint32_t upper_len);
-
-/** @brief The V4 half, RFC 768's form. Present when IDEMIP_ENABLE_IPV4, false when not. */
 idemip_bool idemip_pseudo4_accum(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst,
                                  uint32_t upper_len);
-
-/** @brief The V6 half, RFC 8200 sec 8.1's form. Present when IDEMIP_ENABLE_IPV6, false when not. */
 idemip_bool idemip_pseudo6_accum(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst,
                                  uint32_t upper_len);
+/** @} */
+
+/**
+ * @brief Module namespace.
+ *
+ * static const, like every other module's. gcc devirtualizes a call through one down to the
+ * inlined body and cannot do that through an extern one, where the table is in another
+ * translation unit and every call is a load and an indirect jump.
+ */
+IDEMIP_NS PseudoNs pseudo IDEMIP_UNUSED = {
+    .accum = idemip_pseudo_accum,
+    .accum4 = idemip_pseudo4_accum,
+    .accum6 = idemip_pseudo6_accum,
+};
 
 IDEMIP_END_DECLS
 

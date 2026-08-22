@@ -27,6 +27,7 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/ip/ipv6_defines.h"
 
 // The borrow, the caller's. Two of them, because RFC 4862 sec 5 performs autoconfiguration "on a
 // per-interface basis". A canary follows each so a write past the map is visible.

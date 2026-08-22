@@ -23,6 +23,7 @@
 #define IDEMIP_TCP_PCB_H
 
 #include "src/tcp/tcp.h"
+#include "src/tcp/tcp_defines.h"
 
 #if IDEMIP_ENABLE_TCP
 

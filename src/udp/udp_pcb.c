@@ -13,6 +13,7 @@
 #include "src/idemip_config.h" // the entry point: the enable gate below, and the widths
 
 #include "src/udp/udp_pcb.h"
+#include "src/udp/udp_defines.h"
 
 IDEMIP_BEGIN_DECLS
 

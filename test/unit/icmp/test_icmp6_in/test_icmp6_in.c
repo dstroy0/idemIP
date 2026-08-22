@@ -20,6 +20,9 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/common_defines.h"
+#include "src/ip/ipv6_defines.h"
+#include "src/icmp/icmpv6_defines.h"
 
 // --- the borrow, the caller's ------------------------------------------------
 

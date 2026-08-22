@@ -23,6 +23,7 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/udp/udp_defines.h"
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each so
 // a write past the map is visible.

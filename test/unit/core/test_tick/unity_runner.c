@@ -6,6 +6,13 @@
 #include "src/arp/arp.h"
 #include "src/ip/ipv4.h"
 #include "src/ip/ipv6.h"
+#include "src/common_defines.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "src/ethernet/vlan_defines.h"
+#include "src/arp/arp_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "src/ip/ipv6_defines.h"
+#include "src/tcp/tcp_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -119,53 +126,53 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/core/test_tick/test_tick.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 403);
-  run_test(test_every_entry_refuses_an_uncleared_borrow, "test_every_entry_refuses_an_uncleared_borrow", 415);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 434);
-  run_test(test_the_published_offsets_are_ordered_and_fit, "test_the_published_offsets_are_ordered_and_fit", 450);
-  run_test(test_if_bind_refuses_an_index_past_the_table, "test_if_bind_refuses_an_index_past_the_table", 459);
-  run_test(test_a_phase_entry_before_its_turn_is_refused, "test_a_phase_entry_before_its_turn_is_refused", 470);
-  run_test(test_a_phase_entry_after_its_turn_is_refused, "test_a_phase_entry_after_its_turn_is_refused", 481);
-  run_test(test_no_phase_runs_before_the_tick_is_opened, "test_no_phase_runs_before_the_tick_is_opened", 494);
-  run_test(test_the_three_phases_run_in_order_to_done, "test_the_three_phases_run_in_order_to_done", 506);
-  run_test(test_opening_again_starts_the_order_over, "test_opening_again_starts_the_order_over", 528);
-  run_test(test_the_service_phase_reports_its_units_in_dependency_order, "test_the_service_phase_reports_its_units_in_dependency_order", 551);
-  run_test(test_an_empty_deadline_list_reports_forever, "test_an_empty_deadline_list_reports_forever", 587);
-  run_test(test_a_deadline_ahead_is_reported_as_the_wait, "test_a_deadline_ahead_is_reported_as_the_wait", 594);
-  run_test(test_an_expired_deadline_is_reported_with_its_unit, "test_an_expired_deadline_is_reported_with_its_unit", 611);
-  run_test(test_a_deadline_across_the_wrap_is_still_ahead, "test_a_deadline_across_the_wrap_is_still_ahead", 642);
-  run_test(test_an_empty_ring_drains_busy, "test_an_empty_ring_drains_busy", 660);
-  run_test(test_a_frame_is_dispatched_and_its_descriptor_returned, "test_a_frame_is_dispatched_and_its_descriptor_returned", 670);
-  run_test(test_a_tick_hands_the_random_word_it_opened_with_to_every_frame_it_drains, "test_a_tick_hands_the_random_word_it_opened_with_to_every_frame_it_drains", 700);
-  run_test(test_a_retained_frame_keeps_its_descriptor_out_of_the_ring, "test_a_retained_frame_keeps_its_descriptor_out_of_the_ring", 718);
-  run_test(test_an_expired_datagram_returns_every_descriptor_it_pinned, "test_an_expired_datagram_returns_every_descriptor_it_pinned", 737);
-  run_test(test_a_fragment_the_reassembly_table_cannot_hold_gives_its_descriptor_back, "test_a_fragment_the_reassembly_table_cannot_hold_gives_its_descriptor_back", 779);
-  run_test(test_the_ring_still_receives_after_a_retained_frame_is_released, "test_the_ring_still_receives_after_a_retained_frame_is_released", 813);
-  run_test(test_a_completed_datagram_still_holds_its_descriptors, "test_a_completed_datagram_still_holds_its_descriptors", 841);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 410);
+  run_test(test_every_entry_refuses_an_uncleared_borrow, "test_every_entry_refuses_an_uncleared_borrow", 422);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 441);
+  run_test(test_the_published_offsets_are_ordered_and_fit, "test_the_published_offsets_are_ordered_and_fit", 457);
+  run_test(test_if_bind_refuses_an_index_past_the_table, "test_if_bind_refuses_an_index_past_the_table", 466);
+  run_test(test_a_phase_entry_before_its_turn_is_refused, "test_a_phase_entry_before_its_turn_is_refused", 477);
+  run_test(test_a_phase_entry_after_its_turn_is_refused, "test_a_phase_entry_after_its_turn_is_refused", 488);
+  run_test(test_no_phase_runs_before_the_tick_is_opened, "test_no_phase_runs_before_the_tick_is_opened", 501);
+  run_test(test_the_three_phases_run_in_order_to_done, "test_the_three_phases_run_in_order_to_done", 513);
+  run_test(test_opening_again_starts_the_order_over, "test_opening_again_starts_the_order_over", 535);
+  run_test(test_the_service_phase_reports_its_units_in_dependency_order, "test_the_service_phase_reports_its_units_in_dependency_order", 558);
+  run_test(test_an_empty_deadline_list_reports_forever, "test_an_empty_deadline_list_reports_forever", 594);
+  run_test(test_a_deadline_ahead_is_reported_as_the_wait, "test_a_deadline_ahead_is_reported_as_the_wait", 601);
+  run_test(test_an_expired_deadline_is_reported_with_its_unit, "test_an_expired_deadline_is_reported_with_its_unit", 618);
+  run_test(test_a_deadline_across_the_wrap_is_still_ahead, "test_a_deadline_across_the_wrap_is_still_ahead", 649);
+  run_test(test_an_empty_ring_drains_busy, "test_an_empty_ring_drains_busy", 667);
+  run_test(test_a_frame_is_dispatched_and_its_descriptor_returned, "test_a_frame_is_dispatched_and_its_descriptor_returned", 677);
+  run_test(test_a_tick_hands_the_random_word_it_opened_with_to_every_frame_it_drains, "test_a_tick_hands_the_random_word_it_opened_with_to_every_frame_it_drains", 707);
+  run_test(test_a_retained_frame_keeps_its_descriptor_out_of_the_ring, "test_a_retained_frame_keeps_its_descriptor_out_of_the_ring", 725);
+  run_test(test_an_expired_datagram_returns_every_descriptor_it_pinned, "test_an_expired_datagram_returns_every_descriptor_it_pinned", 744);
+  run_test(test_a_fragment_the_reassembly_table_cannot_hold_gives_its_descriptor_back, "test_a_fragment_the_reassembly_table_cannot_hold_gives_its_descriptor_back", 786);
+  run_test(test_the_ring_still_receives_after_a_retained_frame_is_released, "test_the_ring_still_receives_after_a_retained_frame_is_released", 820);
+  run_test(test_a_completed_datagram_still_holds_its_descriptors, "test_a_completed_datagram_still_holds_its_descriptors", 848);
 #if (IDEMIP_ENABLE_IPV6)
-  run_test(test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned, "test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned", 911);
-  run_test(test_an_expired_ipv6_datagram_returns_the_descriptors_of_every_fragment, "test_an_expired_ipv6_datagram_returns_the_descriptors_of_every_fragment", 954);
-  run_test(test_a_completed_ipv6_datagram_still_holds_its_descriptors, "test_a_completed_ipv6_datagram_still_holds_its_descriptors", 984);
-  run_test(test_the_service_phase_runs_the_mld_report_delay_down, "test_the_service_phase_runs_the_mld_report_delay_down", 1007);
+  run_test(test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned, "test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned", 918);
+  run_test(test_an_expired_ipv6_datagram_returns_the_descriptors_of_every_fragment, "test_an_expired_ipv6_datagram_returns_the_descriptors_of_every_fragment", 961);
+  run_test(test_a_completed_ipv6_datagram_still_holds_its_descriptors, "test_a_completed_ipv6_datagram_still_holds_its_descriptors", 991);
+  run_test(test_the_service_phase_runs_the_mld_report_delay_down, "test_the_service_phase_runs_the_mld_report_delay_down", 1014);
 #endif
-  run_test(test_the_drain_takes_every_waiting_frame, "test_the_drain_takes_every_waiting_frame", 1044);
-  run_test(test_the_drain_takes_a_frame_addressed_to_our_directed_broadcast, "test_the_drain_takes_a_frame_addressed_to_our_directed_broadcast", 1064);
-  run_test(test_the_drain_reads_a_tagged_frame_behind_its_tag, "test_the_drain_reads_a_tagged_frame_behind_its_tag", 1100);
-  run_test(test_the_drain_discards_a_wire_frame_addressed_to_the_loopback_range, "test_the_drain_discards_a_wire_frame_addressed_to_the_loopback_range", 1154);
-  run_test(test_a_resolved_hold_is_reported_and_unpinned_one_step_later, "test_a_resolved_hold_is_reported_and_unpinned_one_step_later", 1191);
-  run_test(test_a_frame_waiting_on_neighbor_discovery_comes_back_from_the_service_phase, "test_a_frame_waiting_on_neighbor_discovery_comes_back_from_the_service_phase", 1253);
+  run_test(test_the_drain_takes_every_waiting_frame, "test_the_drain_takes_every_waiting_frame", 1051);
+  run_test(test_the_drain_takes_a_frame_addressed_to_our_directed_broadcast, "test_the_drain_takes_a_frame_addressed_to_our_directed_broadcast", 1071);
+  run_test(test_the_drain_reads_a_tagged_frame_behind_its_tag, "test_the_drain_reads_a_tagged_frame_behind_its_tag", 1107);
+  run_test(test_the_drain_discards_a_wire_frame_addressed_to_the_loopback_range, "test_the_drain_discards_a_wire_frame_addressed_to_the_loopback_range", 1161);
+  run_test(test_a_resolved_hold_is_reported_and_unpinned_one_step_later, "test_a_resolved_hold_is_reported_and_unpinned_one_step_later", 1198);
+  run_test(test_a_frame_waiting_on_neighbor_discovery_comes_back_from_the_service_phase, "test_a_frame_waiting_on_neighbor_discovery_comes_back_from_the_service_phase", 1260);
 #if (IDEMIP_ENABLE_TCP)
-  run_test(test_the_flush_phase_sends_the_acknowledgment_the_batch_aggregated, "test_the_flush_phase_sends_the_acknowledgment_the_batch_aggregated", 1321);
+  run_test(test_the_flush_phase_sends_the_acknowledgment_the_batch_aggregated, "test_the_flush_phase_sends_the_acknowledgment_the_batch_aggregated", 1328);
 #endif
-  run_test(test_the_flush_phase_reports_its_units_in_order, "test_the_flush_phase_reports_its_units_in_order", 1406);
-  run_test(test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded, "test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded", 1466);
-  run_test(test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded, "test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded", 1521);
-  run_test(test_an_interface_with_no_ring_is_stepped_over, "test_an_interface_with_no_ring_is_stepped_over", 1568);
+  run_test(test_the_flush_phase_reports_its_units_in_order, "test_the_flush_phase_reports_its_units_in_order", 1413);
+  run_test(test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded, "test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded", 1473);
+  run_test(test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded, "test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded", 1528);
+  run_test(test_an_interface_with_no_ring_is_stepped_over, "test_an_interface_with_no_ring_is_stepped_over", 1575);
 #if (IDEMIP_ENABLE_IPV4)
-  run_test(test_a_descriptor_from_the_second_interface_goes_back_to_it, "test_a_descriptor_from_the_second_interface_goes_back_to_it", 1596);
-  run_test(test_a_descriptor_handle_round_trips, "test_a_descriptor_handle_round_trips", 1685);
+  run_test(test_a_descriptor_from_the_second_interface_goes_back_to_it, "test_a_descriptor_from_the_second_interface_goes_back_to_it", 1603);
+  run_test(test_a_descriptor_handle_round_trips, "test_a_descriptor_handle_round_trips", 1692);
 #endif
-  run_test(test_an_unbound_service_is_skipped, "test_an_unbound_service_is_skipped", 1702);
+  run_test(test_an_unbound_service_is_skipped, "test_an_unbound_service_is_skipped", 1709);
 
   return UNITY_END();
 }

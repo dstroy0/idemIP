@@ -4,6 +4,7 @@
 #include "unity.h"
 #include "src/ethernet/mii.h"
 #include "src/ethernet/phy.h"
+#include "src/ethernet/mii_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -104,40 +105,40 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/ethernet/test_mii/test_mii.c");
-  run_test(test_register_addresses_match_both_sources, "test_register_addresses_match_both_sources", 40);
-  run_test(test_register_addresses_fit_the_five_bit_field, "test_register_addresses_fit_the_five_bit_field", 54);
-  run_test(test_bmcr_bits_match_both_sources, "test_bmcr_bits_match_both_sources", 69);
-  run_test(test_bmcr_names_no_bit_the_sources_call_reserved, "test_bmcr_names_no_bit_the_sources_call_reserved", 85);
-  run_test(test_bmcr_speed_select_is_one_field_split_across_two_bits, "test_bmcr_speed_select_is_one_field_split_across_two_bits", 98);
-  run_test(test_bmsr_bits_match_both_sources, "test_bmsr_bits_match_both_sources", 113);
-  run_test(test_bmsr_preamble_suppression_is_bit_six_only, "test_bmsr_preamble_suppression_is_bit_six_only", 133);
-  run_test(test_bmsr_ability_bits_are_the_top_seven, "test_bmsr_ability_bits_are_the_top_seven", 140);
-  run_test(test_bmsr_ability_bits_are_six_above_the_register_four_bits, "test_bmsr_ability_bits_are_six_above_the_register_four_bits", 151);
-  run_test(test_the_two_t2_ability_bits_have_no_base_page_bit, "test_the_two_t2_ability_bits_have_no_base_page_bit", 162);
-  run_test(test_anar_bits_match_both_sources, "test_anar_bits_match_both_sources", 180);
-  run_test(test_anar_pause_is_a_two_bit_field, "test_anar_pause_is_a_two_bit_field", 198);
-  run_test(test_tech_ability_field_is_bits_nine_through_five, "test_tech_ability_field_is_bits_nine_through_five", 205);
-  run_test(test_anlpar_bits_match_both_sources, "test_anlpar_bits_match_both_sources", 218);
-  run_test(test_register_five_holds_register_four_bit_positions, "test_register_five_holds_register_four_bit_positions", 234);
-  run_test(test_anlpar_decode_of_a_fully_able_partner, "test_anlpar_decode_of_a_fully_able_partner", 252);
-  run_test(test_anlpar_decode_of_a_ten_half_only_partner, "test_anlpar_decode_of_a_ten_half_only_partner", 274);
-  run_test(test_anlpar_decode_of_a_silent_partner_reports_nothing, "test_anlpar_decode_of_a_silent_partner_reports_nothing", 291);
-  run_test(test_selector_takes_only_the_low_five_bits, "test_selector_takes_only_the_low_five_bits", 305);
-  run_test(test_common_ability_is_the_and_of_the_two_words, "test_common_ability_is_the_and_of_the_two_words", 317);
-  run_test(test_common_ability_ignores_everything_outside_bits_nine_through_five, "test_common_ability_ignores_everything_outside_bits_nine_through_five", 329);
-  run_test(test_resolve_picks_hundred_full_first, "test_resolve_picks_hundred_full_first", 341);
-  run_test(test_resolve_picks_t4_over_hundred_half, "test_resolve_picks_t4_over_hundred_half", 353);
-  run_test(test_resolve_picks_hundred_half_over_ten, "test_resolve_picks_hundred_half_over_ten", 364);
-  run_test(test_resolve_picks_ten_full_over_ten_half, "test_resolve_picks_ten_full_over_ten_half", 374);
-  run_test(test_resolve_falls_to_ten_half, "test_resolve_falls_to_ten_half", 384);
-  run_test(test_resolve_is_bounded_by_the_weaker_end, "test_resolve_is_bounded_by_the_weaker_end", 395);
-  run_test(test_resolve_reports_no_rate_when_the_ends_share_nothing, "test_resolve_reports_no_rate_when_the_ends_share_nothing", 407);
-  run_test(test_resolve_reports_no_rate_while_negotiation_is_unfinished, "test_resolve_reports_no_rate_while_negotiation_is_unfinished", 421);
-  run_test(test_resolve_reports_no_rate_while_the_link_is_down, "test_resolve_reports_no_rate_while_the_link_is_down", 435);
-  run_test(test_resolve_reports_that_the_base_page_is_not_the_whole_story, "test_resolve_reports_that_the_base_page_is_not_the_whole_story", 448);
-  run_test(test_resolve_is_a_function_of_its_three_arguments, "test_resolve_is_a_function_of_its_three_arguments", 461);
-  run_test(test_the_resolved_rates_are_the_phy_speed_values, "test_the_resolved_rates_are_the_phy_speed_values", 479);
-  run_test(test_the_unit_has_no_storage_to_share, "test_the_unit_has_no_storage_to_share", 497);
+  run_test(test_register_addresses_match_both_sources, "test_register_addresses_match_both_sources", 41);
+  run_test(test_register_addresses_fit_the_five_bit_field, "test_register_addresses_fit_the_five_bit_field", 55);
+  run_test(test_bmcr_bits_match_both_sources, "test_bmcr_bits_match_both_sources", 70);
+  run_test(test_bmcr_names_no_bit_the_sources_call_reserved, "test_bmcr_names_no_bit_the_sources_call_reserved", 86);
+  run_test(test_bmcr_speed_select_is_one_field_split_across_two_bits, "test_bmcr_speed_select_is_one_field_split_across_two_bits", 99);
+  run_test(test_bmsr_bits_match_both_sources, "test_bmsr_bits_match_both_sources", 114);
+  run_test(test_bmsr_preamble_suppression_is_bit_six_only, "test_bmsr_preamble_suppression_is_bit_six_only", 134);
+  run_test(test_bmsr_ability_bits_are_the_top_seven, "test_bmsr_ability_bits_are_the_top_seven", 141);
+  run_test(test_bmsr_ability_bits_are_six_above_the_register_four_bits, "test_bmsr_ability_bits_are_six_above_the_register_four_bits", 152);
+  run_test(test_the_two_t2_ability_bits_have_no_base_page_bit, "test_the_two_t2_ability_bits_have_no_base_page_bit", 163);
+  run_test(test_anar_bits_match_both_sources, "test_anar_bits_match_both_sources", 181);
+  run_test(test_anar_pause_is_a_two_bit_field, "test_anar_pause_is_a_two_bit_field", 199);
+  run_test(test_tech_ability_field_is_bits_nine_through_five, "test_tech_ability_field_is_bits_nine_through_five", 206);
+  run_test(test_anlpar_bits_match_both_sources, "test_anlpar_bits_match_both_sources", 219);
+  run_test(test_register_five_holds_register_four_bit_positions, "test_register_five_holds_register_four_bit_positions", 235);
+  run_test(test_anlpar_decode_of_a_fully_able_partner, "test_anlpar_decode_of_a_fully_able_partner", 253);
+  run_test(test_anlpar_decode_of_a_ten_half_only_partner, "test_anlpar_decode_of_a_ten_half_only_partner", 275);
+  run_test(test_anlpar_decode_of_a_silent_partner_reports_nothing, "test_anlpar_decode_of_a_silent_partner_reports_nothing", 292);
+  run_test(test_selector_takes_only_the_low_five_bits, "test_selector_takes_only_the_low_five_bits", 306);
+  run_test(test_common_ability_is_the_and_of_the_two_words, "test_common_ability_is_the_and_of_the_two_words", 318);
+  run_test(test_common_ability_ignores_everything_outside_bits_nine_through_five, "test_common_ability_ignores_everything_outside_bits_nine_through_five", 330);
+  run_test(test_resolve_picks_hundred_full_first, "test_resolve_picks_hundred_full_first", 342);
+  run_test(test_resolve_picks_t4_over_hundred_half, "test_resolve_picks_t4_over_hundred_half", 354);
+  run_test(test_resolve_picks_hundred_half_over_ten, "test_resolve_picks_hundred_half_over_ten", 365);
+  run_test(test_resolve_picks_ten_full_over_ten_half, "test_resolve_picks_ten_full_over_ten_half", 375);
+  run_test(test_resolve_falls_to_ten_half, "test_resolve_falls_to_ten_half", 385);
+  run_test(test_resolve_is_bounded_by_the_weaker_end, "test_resolve_is_bounded_by_the_weaker_end", 396);
+  run_test(test_resolve_reports_no_rate_when_the_ends_share_nothing, "test_resolve_reports_no_rate_when_the_ends_share_nothing", 408);
+  run_test(test_resolve_reports_no_rate_while_negotiation_is_unfinished, "test_resolve_reports_no_rate_while_negotiation_is_unfinished", 422);
+  run_test(test_resolve_reports_no_rate_while_the_link_is_down, "test_resolve_reports_no_rate_while_the_link_is_down", 436);
+  run_test(test_resolve_reports_that_the_base_page_is_not_the_whole_story, "test_resolve_reports_that_the_base_page_is_not_the_whole_story", 449);
+  run_test(test_resolve_is_a_function_of_its_three_arguments, "test_resolve_is_a_function_of_its_three_arguments", 462);
+  run_test(test_the_resolved_rates_are_the_phy_speed_values, "test_the_resolved_rates_are_the_phy_speed_values", 480);
+  run_test(test_the_unit_has_no_storage_to_share, "test_the_unit_has_no_storage_to_share", 498);
 
   return UNITY_END();
 }

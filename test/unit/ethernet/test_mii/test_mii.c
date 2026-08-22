@@ -21,6 +21,7 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/ethernet/mii_defines.h"
 
 void setUp(void)
 {

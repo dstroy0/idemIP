@@ -16,6 +16,7 @@
 
 #include "src/endian.h" // the option's 32-bit Lifetime, big-endian on the wire
 #include "src/nd/rdnss.h"
+#include "src/ip/ipv6_defines.h"
 
 IDEMIP_BEGIN_DECLS
 

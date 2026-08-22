@@ -3,6 +3,9 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/icmp/icmp.h"
+#include "src/common_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "src/icmp/icmp_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -96,33 +99,33 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/icmp/test_icmp/test_icmp.c");
-  run_test(test_rfc792_common_fields_are_the_first_word, "test_rfc792_common_fields_are_the_first_word", 70);
-  run_test(test_rfc792_summary_of_message_types, "test_rfc792_summary_of_message_types", 83);
-  run_test(test_rfc1122_error_and_query_classes, "test_rfc1122_error_and_query_classes", 101);
-  run_test(test_rfc792_echo_figure_offsets, "test_rfc792_echo_figure_offsets", 122);
-  run_test(test_echo_vector_carries_a_valid_checksum, "test_echo_vector_carries_a_valid_checksum", 134);
-  run_test(test_rfc792_echo_reply_is_the_request_retyped, "test_rfc792_echo_reply_is_the_request_retyped", 142);
-  run_test(test_rfc1122_echo_reply_returns_every_data_octet, "test_rfc1122_echo_reply_returns_every_data_octet", 158);
-  run_test(test_rfc792_odd_length_echo_pads_with_one_zero_octet, "test_rfc792_odd_length_echo_pads_with_one_zero_octet", 172);
-  run_test(test_build_echo_reproduces_the_vector, "test_build_echo_reproduces_the_vector", 188);
-  run_test(test_rfc792_destination_unreachable_codes, "test_rfc792_destination_unreachable_codes", 201);
-  run_test(test_rfc1122_destination_unreachable_added_codes, "test_rfc1122_destination_unreachable_added_codes", 216);
-  run_test(test_rfc1122_port_unreachable_message, "test_rfc1122_port_unreachable_message", 230);
-  run_test(test_rfc792_unused_word_is_zero_when_sent, "test_rfc792_unused_word_is_zero_when_sent", 247);
-  run_test(test_rfc792_time_exceeded_codes, "test_rfc792_time_exceeded_codes", 267);
-  run_test(test_rfc792_reassembly_time_exceeded_message, "test_rfc792_reassembly_time_exceeded_message", 275);
-  run_test(test_rfc792_and_rfc1122_parameter_problem_codes, "test_rfc792_and_rfc1122_parameter_problem_codes", 291);
-  run_test(test_rfc792_parameter_problem_pointer_at_octet_four, "test_rfc792_parameter_problem_pointer_at_octet_four", 300);
-  run_test(test_rfc792_pointer_one_is_the_type_of_service_octet, "test_rfc792_pointer_one_is_the_type_of_service_octet", 318);
-  run_test(test_rfc792_source_quench_message, "test_rfc792_source_quench_message", 336);
-  run_test(test_rfc792_redirect_codes, "test_rfc792_redirect_codes", 352);
-  run_test(test_rfc792_redirect_gateway_address, "test_rfc792_redirect_gateway_address", 363);
-  run_test(test_rfc792_error_quotes_header_plus_sixty_four_bits, "test_rfc792_error_quotes_header_plus_sixty_four_bits", 377);
-  run_test(test_rfc792_timestamp_figure_offsets, "test_rfc792_timestamp_figure_offsets", 399);
-  run_test(test_rfc792_nonstandard_timestamp_high_order_bit, "test_rfc792_nonstandard_timestamp_high_order_bit", 417);
-  run_test(test_rfc792_information_request_is_eight_octets, "test_rfc792_information_request_is_eight_octets", 429);
-  run_test(test_accessors_read_the_same_at_an_odd_offset, "test_accessors_read_the_same_at_an_odd_offset", 445);
-  run_test(test_building_twice_gives_the_same_bytes, "test_building_twice_gives_the_same_bytes", 461);
+  run_test(test_rfc792_common_fields_are_the_first_word, "test_rfc792_common_fields_are_the_first_word", 73);
+  run_test(test_rfc792_summary_of_message_types, "test_rfc792_summary_of_message_types", 86);
+  run_test(test_rfc1122_error_and_query_classes, "test_rfc1122_error_and_query_classes", 104);
+  run_test(test_rfc792_echo_figure_offsets, "test_rfc792_echo_figure_offsets", 125);
+  run_test(test_echo_vector_carries_a_valid_checksum, "test_echo_vector_carries_a_valid_checksum", 137);
+  run_test(test_rfc792_echo_reply_is_the_request_retyped, "test_rfc792_echo_reply_is_the_request_retyped", 145);
+  run_test(test_rfc1122_echo_reply_returns_every_data_octet, "test_rfc1122_echo_reply_returns_every_data_octet", 161);
+  run_test(test_rfc792_odd_length_echo_pads_with_one_zero_octet, "test_rfc792_odd_length_echo_pads_with_one_zero_octet", 175);
+  run_test(test_build_echo_reproduces_the_vector, "test_build_echo_reproduces_the_vector", 191);
+  run_test(test_rfc792_destination_unreachable_codes, "test_rfc792_destination_unreachable_codes", 204);
+  run_test(test_rfc1122_destination_unreachable_added_codes, "test_rfc1122_destination_unreachable_added_codes", 219);
+  run_test(test_rfc1122_port_unreachable_message, "test_rfc1122_port_unreachable_message", 233);
+  run_test(test_rfc792_unused_word_is_zero_when_sent, "test_rfc792_unused_word_is_zero_when_sent", 250);
+  run_test(test_rfc792_time_exceeded_codes, "test_rfc792_time_exceeded_codes", 270);
+  run_test(test_rfc792_reassembly_time_exceeded_message, "test_rfc792_reassembly_time_exceeded_message", 278);
+  run_test(test_rfc792_and_rfc1122_parameter_problem_codes, "test_rfc792_and_rfc1122_parameter_problem_codes", 294);
+  run_test(test_rfc792_parameter_problem_pointer_at_octet_four, "test_rfc792_parameter_problem_pointer_at_octet_four", 303);
+  run_test(test_rfc792_pointer_one_is_the_type_of_service_octet, "test_rfc792_pointer_one_is_the_type_of_service_octet", 321);
+  run_test(test_rfc792_source_quench_message, "test_rfc792_source_quench_message", 339);
+  run_test(test_rfc792_redirect_codes, "test_rfc792_redirect_codes", 355);
+  run_test(test_rfc792_redirect_gateway_address, "test_rfc792_redirect_gateway_address", 366);
+  run_test(test_rfc792_error_quotes_header_plus_sixty_four_bits, "test_rfc792_error_quotes_header_plus_sixty_four_bits", 380);
+  run_test(test_rfc792_timestamp_figure_offsets, "test_rfc792_timestamp_figure_offsets", 402);
+  run_test(test_rfc792_nonstandard_timestamp_high_order_bit, "test_rfc792_nonstandard_timestamp_high_order_bit", 420);
+  run_test(test_rfc792_information_request_is_eight_octets, "test_rfc792_information_request_is_eight_octets", 432);
+  run_test(test_accessors_read_the_same_at_an_odd_offset, "test_accessors_read_the_same_at_an_odd_offset", 448);
+  run_test(test_building_twice_gives_the_same_bytes, "test_building_twice_gives_the_same_bytes", 464);
 
   return UNITY_END();
 }

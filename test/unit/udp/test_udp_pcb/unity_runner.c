@@ -3,6 +3,7 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/udp/udp_pcb.h"
+#include "src/udp/udp_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -131,68 +132,68 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/udp/test_udp_pcb/test_udp_pcb.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 79);
-  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 88);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 102);
-  run_test(test_clear_zeroes_the_table, "test_clear_zeroes_the_table", 129);
-  run_test(test_clear_repeats, "test_clear_repeats", 143);
-  run_test(test_clear_leaves_the_operands_alone, "test_clear_leaves_the_operands_alone", 153);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 168);
-  run_test(test_a_clear_on_one_borrow_leaves_the_other_table_untouched, "test_a_clear_on_one_borrow_leaves_the_other_table_untouched", 190);
-  run_test(test_an_index_past_the_table_is_refused, "test_an_index_past_the_table_is_refused", 209);
-  run_test(test_a_missing_address_operand_is_refused, "test_a_missing_address_operand_is_refused", 232);
-  run_test(test_a_refused_load_reports_no_binding, "test_a_refused_load_reports_no_binding", 253);
-  run_test(test_open_takes_a_free_entry_and_reports_it, "test_open_takes_a_free_entry_and_reports_it", 374);
-  run_test(test_open_refuses_a_version_that_is_not_4_or_6, "test_open_refuses_a_version_that_is_not_4_or_6", 386);
-  run_test(test_open_stamps_the_rfc1112_multicast_ttl_default_of_one, "test_open_stamps_the_rfc1112_multicast_ttl_default_of_one", 407);
-  run_test(test_a_full_table_is_busy_and_a_close_makes_the_retry_succeed, "test_a_full_table_is_busy_and_a_close_makes_the_retry_succeed", 424);
-  run_test(test_close_frees_the_entry_and_a_load_then_refuses_it, "test_close_frees_the_entry_and_a_load_then_refuses_it", 448);
-  run_test(test_an_entry_that_is_not_open_is_refused, "test_an_entry_that_is_not_open_is_refused", 466);
-  run_test(test_bind_reports_the_port_it_was_given, "test_bind_reports_the_port_it_was_given", 499);
-  run_test(test_bind_of_port_any_settles_in_the_rfc6335_dynamic_range, "test_bind_of_port_any_settles_in_the_rfc6335_dynamic_range", 515);
-  run_test(test_two_binds_of_port_any_settle_on_different_ports, "test_two_binds_of_port_any_settle_on_different_ports", 529);
-  run_test(test_the_ephemeral_draw_follows_the_callers_random_word, "test_the_ephemeral_draw_follows_the_callers_random_word", 547);
-  run_test(test_bind_refuses_an_endpoint_another_binding_carries, "test_bind_refuses_an_endpoint_another_binding_carries", 575);
-  run_test(test_bind_admits_the_same_port_on_two_different_addresses, "test_bind_admits_the_same_port_on_two_different_addresses", 595);
-  run_test(test_a_wildcard_and_a_named_address_are_two_bindings_of_one_port, "test_a_wildcard_and_a_named_address_are_two_bindings_of_one_port", 606);
-  run_test(test_two_wildcard_binds_of_one_port_are_refused, "test_two_wildcard_binds_of_one_port_are_refused", 616);
-  run_test(test_one_endpoint_on_two_interfaces_is_two_bindings, "test_one_endpoint_on_two_interfaces_is_two_bindings", 634);
-  run_test(test_two_connects_off_one_local_endpoint_are_two_bindings, "test_two_connects_off_one_local_endpoint_are_two_bindings", 655);
-  run_test(test_two_versions_do_not_conflict_on_one_port, "test_two_versions_do_not_conflict_on_one_port", 678);
-  run_test(test_connect_sets_the_remote_pair, "test_connect_sets_the_remote_pair", 689);
-  run_test(test_connect_refuses_a_destination_port_of_zero, "test_connect_refuses_a_destination_port_of_zero", 706);
-  run_test(test_connect_refuses_an_unspecified_destination_address, "test_connect_refuses_an_unspecified_destination_address", 723);
-  run_test(test_disconnect_clears_the_remote_pair_and_keeps_the_local_one, "test_disconnect_clears_the_remote_pair_and_keeps_the_local_one", 738);
-  run_test(test_set_opts_stores_the_rfc1122_mechanisms, "test_set_opts_stores_the_rfc1122_mechanisms", 762);
-  run_test(test_set_opts_refuses_a_time_to_live_of_zero, "test_set_opts_refuses_a_time_to_live_of_zero", 787);
-  run_test(test_set_opts_refuses_a_coverage_of_one_through_seven, "test_set_opts_refuses_a_coverage_of_one_through_seven", 829);
-  run_test(test_set_opts_admits_a_coverage_of_zero_and_eight_on_a_lite_binding, "test_set_opts_admits_a_coverage_of_zero_and_eight_on_a_lite_binding", 855);
-  run_test(test_set_opts_refuses_a_coverage_on_a_binding_that_is_not_lite, "test_set_opts_refuses_a_coverage_on_a_binding_that_is_not_lite", 878);
-  run_test(test_find_delivers_to_the_only_binding, "test_find_delivers_to_the_only_binding", 897);
-  run_test(test_find_prefers_a_specific_local_address_over_the_wildcard, "test_find_prefers_a_specific_local_address_over_the_wildcard", 912);
-  run_test(test_find_prefers_a_connected_binding_over_an_unconnected_one, "test_find_prefers_a_connected_binding_over_an_unconnected_one", 935);
-  run_test(test_find_passes_over_a_connected_binding_whose_remote_pair_differs, "test_find_passes_over_a_connected_binding_whose_remote_pair_differs", 953);
-  run_test(test_find_reports_no_binding_when_the_port_is_unbound, "test_find_reports_no_binding_when_the_port_is_unbound", 978);
-  run_test(test_find_passes_over_an_open_entry_that_was_never_bound, "test_find_passes_over_an_open_entry_that_was_never_bound", 993);
-  run_test(test_find_honors_the_interface_a_binding_is_pinned_to, "test_find_honors_the_interface_a_binding_is_pinned_to", 1006);
-  run_test(test_find_discards_a_coverage_of_one_through_seven, "test_find_discards_a_coverage_of_one_through_seven", 1025);
-  run_test(test_find_blocks_a_coverage_under_the_bindings_minimum, "test_find_blocks_a_coverage_under_the_bindings_minimum", 1078);
-  run_test(test_find_keeps_a_partial_coverage_off_a_binding_that_is_not_lite, "test_find_keeps_a_partial_coverage_off_a_binding_that_is_not_lite", 1111);
-  run_test(test_find_compares_four_octets_for_version_4, "test_find_compares_four_octets_for_version_4", 1130);
-  run_test(test_find_compares_sixteen_octets_for_version_6, "test_find_compares_sixteen_octets_for_version_6", 1151);
-  run_test(test_find_separates_two_zones_of_one_address, "test_find_separates_two_zones_of_one_address", 1170);
-  run_test(test_find_refuses_a_version_the_binding_does_not_carry, "test_find_refuses_a_version_the_binding_does_not_carry", 1196);
-  run_test(test_find_repeats, "test_find_repeats", 1215);
-  run_test(test_a_find_is_a_function_of_its_borrow_alone, "test_a_find_is_a_function_of_its_borrow_alone", 1232);
-  run_test(test_two_tables_do_not_share_a_port, "test_two_tables_do_not_share_a_port", 1258);
-  run_test(test_a_connect_claims_the_whole_five_tuple_and_not_a_part_of_it, "test_a_connect_claims_the_whole_five_tuple_and_not_a_part_of_it", 1274);
-  run_test(test_a_connect_pins_the_interface_the_caller_names, "test_a_connect_pins_the_interface_the_caller_names", 1340);
-  run_test(test_a_zone_is_part_of_the_endpoint_a_connect_names, "test_a_zone_is_part_of_the_endpoint_a_connect_names", 1375);
-  run_test(test_the_most_specific_binding_takes_a_datagram_whatever_order_the_table_holds_them, "test_the_most_specific_binding_takes_a_datagram_whatever_order_the_table_holds_them", 1407);
-  run_test(test_a_lookup_with_no_source_address_is_refused, "test_a_lookup_with_no_source_address_is_refused", 1428);
-  run_test(test_a_binding_that_is_not_udp_lite_takes_no_partial_coverage_at_either_end, "test_a_binding_that_is_not_udp_lite_takes_no_partial_coverage_at_either_end", 1445);
-  run_test(test_a_rebind_of_a_connected_binding_is_refused_only_where_the_whole_tuple_would_repeat, "test_a_rebind_of_a_connected_binding_is_refused_only_where_the_whole_tuple_would_repeat", 1471);
-  run_test(test_the_connect_scan_passes_over_what_cannot_be_the_same_tuple, "test_the_connect_scan_passes_over_what_cannot_be_the_same_tuple", 1509);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 80);
+  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 89);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 103);
+  run_test(test_clear_zeroes_the_table, "test_clear_zeroes_the_table", 130);
+  run_test(test_clear_repeats, "test_clear_repeats", 144);
+  run_test(test_clear_leaves_the_operands_alone, "test_clear_leaves_the_operands_alone", 154);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 169);
+  run_test(test_a_clear_on_one_borrow_leaves_the_other_table_untouched, "test_a_clear_on_one_borrow_leaves_the_other_table_untouched", 191);
+  run_test(test_an_index_past_the_table_is_refused, "test_an_index_past_the_table_is_refused", 210);
+  run_test(test_a_missing_address_operand_is_refused, "test_a_missing_address_operand_is_refused", 233);
+  run_test(test_a_refused_load_reports_no_binding, "test_a_refused_load_reports_no_binding", 254);
+  run_test(test_open_takes_a_free_entry_and_reports_it, "test_open_takes_a_free_entry_and_reports_it", 375);
+  run_test(test_open_refuses_a_version_that_is_not_4_or_6, "test_open_refuses_a_version_that_is_not_4_or_6", 387);
+  run_test(test_open_stamps_the_rfc1112_multicast_ttl_default_of_one, "test_open_stamps_the_rfc1112_multicast_ttl_default_of_one", 408);
+  run_test(test_a_full_table_is_busy_and_a_close_makes_the_retry_succeed, "test_a_full_table_is_busy_and_a_close_makes_the_retry_succeed", 425);
+  run_test(test_close_frees_the_entry_and_a_load_then_refuses_it, "test_close_frees_the_entry_and_a_load_then_refuses_it", 449);
+  run_test(test_an_entry_that_is_not_open_is_refused, "test_an_entry_that_is_not_open_is_refused", 467);
+  run_test(test_bind_reports_the_port_it_was_given, "test_bind_reports_the_port_it_was_given", 500);
+  run_test(test_bind_of_port_any_settles_in_the_rfc6335_dynamic_range, "test_bind_of_port_any_settles_in_the_rfc6335_dynamic_range", 516);
+  run_test(test_two_binds_of_port_any_settle_on_different_ports, "test_two_binds_of_port_any_settle_on_different_ports", 530);
+  run_test(test_the_ephemeral_draw_follows_the_callers_random_word, "test_the_ephemeral_draw_follows_the_callers_random_word", 548);
+  run_test(test_bind_refuses_an_endpoint_another_binding_carries, "test_bind_refuses_an_endpoint_another_binding_carries", 576);
+  run_test(test_bind_admits_the_same_port_on_two_different_addresses, "test_bind_admits_the_same_port_on_two_different_addresses", 596);
+  run_test(test_a_wildcard_and_a_named_address_are_two_bindings_of_one_port, "test_a_wildcard_and_a_named_address_are_two_bindings_of_one_port", 607);
+  run_test(test_two_wildcard_binds_of_one_port_are_refused, "test_two_wildcard_binds_of_one_port_are_refused", 617);
+  run_test(test_one_endpoint_on_two_interfaces_is_two_bindings, "test_one_endpoint_on_two_interfaces_is_two_bindings", 635);
+  run_test(test_two_connects_off_one_local_endpoint_are_two_bindings, "test_two_connects_off_one_local_endpoint_are_two_bindings", 656);
+  run_test(test_two_versions_do_not_conflict_on_one_port, "test_two_versions_do_not_conflict_on_one_port", 679);
+  run_test(test_connect_sets_the_remote_pair, "test_connect_sets_the_remote_pair", 690);
+  run_test(test_connect_refuses_a_destination_port_of_zero, "test_connect_refuses_a_destination_port_of_zero", 707);
+  run_test(test_connect_refuses_an_unspecified_destination_address, "test_connect_refuses_an_unspecified_destination_address", 724);
+  run_test(test_disconnect_clears_the_remote_pair_and_keeps_the_local_one, "test_disconnect_clears_the_remote_pair_and_keeps_the_local_one", 739);
+  run_test(test_set_opts_stores_the_rfc1122_mechanisms, "test_set_opts_stores_the_rfc1122_mechanisms", 763);
+  run_test(test_set_opts_refuses_a_time_to_live_of_zero, "test_set_opts_refuses_a_time_to_live_of_zero", 788);
+  run_test(test_set_opts_refuses_a_coverage_of_one_through_seven, "test_set_opts_refuses_a_coverage_of_one_through_seven", 830);
+  run_test(test_set_opts_admits_a_coverage_of_zero_and_eight_on_a_lite_binding, "test_set_opts_admits_a_coverage_of_zero_and_eight_on_a_lite_binding", 856);
+  run_test(test_set_opts_refuses_a_coverage_on_a_binding_that_is_not_lite, "test_set_opts_refuses_a_coverage_on_a_binding_that_is_not_lite", 879);
+  run_test(test_find_delivers_to_the_only_binding, "test_find_delivers_to_the_only_binding", 898);
+  run_test(test_find_prefers_a_specific_local_address_over_the_wildcard, "test_find_prefers_a_specific_local_address_over_the_wildcard", 913);
+  run_test(test_find_prefers_a_connected_binding_over_an_unconnected_one, "test_find_prefers_a_connected_binding_over_an_unconnected_one", 936);
+  run_test(test_find_passes_over_a_connected_binding_whose_remote_pair_differs, "test_find_passes_over_a_connected_binding_whose_remote_pair_differs", 954);
+  run_test(test_find_reports_no_binding_when_the_port_is_unbound, "test_find_reports_no_binding_when_the_port_is_unbound", 979);
+  run_test(test_find_passes_over_an_open_entry_that_was_never_bound, "test_find_passes_over_an_open_entry_that_was_never_bound", 994);
+  run_test(test_find_honors_the_interface_a_binding_is_pinned_to, "test_find_honors_the_interface_a_binding_is_pinned_to", 1007);
+  run_test(test_find_discards_a_coverage_of_one_through_seven, "test_find_discards_a_coverage_of_one_through_seven", 1026);
+  run_test(test_find_blocks_a_coverage_under_the_bindings_minimum, "test_find_blocks_a_coverage_under_the_bindings_minimum", 1079);
+  run_test(test_find_keeps_a_partial_coverage_off_a_binding_that_is_not_lite, "test_find_keeps_a_partial_coverage_off_a_binding_that_is_not_lite", 1112);
+  run_test(test_find_compares_four_octets_for_version_4, "test_find_compares_four_octets_for_version_4", 1131);
+  run_test(test_find_compares_sixteen_octets_for_version_6, "test_find_compares_sixteen_octets_for_version_6", 1152);
+  run_test(test_find_separates_two_zones_of_one_address, "test_find_separates_two_zones_of_one_address", 1171);
+  run_test(test_find_refuses_a_version_the_binding_does_not_carry, "test_find_refuses_a_version_the_binding_does_not_carry", 1197);
+  run_test(test_find_repeats, "test_find_repeats", 1216);
+  run_test(test_a_find_is_a_function_of_its_borrow_alone, "test_a_find_is_a_function_of_its_borrow_alone", 1233);
+  run_test(test_two_tables_do_not_share_a_port, "test_two_tables_do_not_share_a_port", 1259);
+  run_test(test_a_connect_claims_the_whole_five_tuple_and_not_a_part_of_it, "test_a_connect_claims_the_whole_five_tuple_and_not_a_part_of_it", 1275);
+  run_test(test_a_connect_pins_the_interface_the_caller_names, "test_a_connect_pins_the_interface_the_caller_names", 1341);
+  run_test(test_a_zone_is_part_of_the_endpoint_a_connect_names, "test_a_zone_is_part_of_the_endpoint_a_connect_names", 1376);
+  run_test(test_the_most_specific_binding_takes_a_datagram_whatever_order_the_table_holds_them, "test_the_most_specific_binding_takes_a_datagram_whatever_order_the_table_holds_them", 1408);
+  run_test(test_a_lookup_with_no_source_address_is_refused, "test_a_lookup_with_no_source_address_is_refused", 1429);
+  run_test(test_a_binding_that_is_not_udp_lite_takes_no_partial_coverage_at_either_end, "test_a_binding_that_is_not_udp_lite_takes_no_partial_coverage_at_either_end", 1446);
+  run_test(test_a_rebind_of_a_connected_binding_is_refused_only_where_the_whole_tuple_would_repeat, "test_a_rebind_of_a_connected_binding_is_refused_only_where_the_whole_tuple_would_repeat", 1472);
+  run_test(test_the_connect_scan_passes_over_what_cannot_be_the_same_tuple, "test_the_connect_scan_passes_over_what_cannot_be_the_same_tuple", 1510);
 
   return UNITY_END();
 }

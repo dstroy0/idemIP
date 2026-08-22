@@ -3,6 +3,7 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/autoip/autoip.h"
+#include "src/arp/arp_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -121,58 +122,58 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/autoip/test_autoip/test_autoip.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 84);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 93);
-  run_test(test_clear_on_one_borrow_leaves_the_other_untouched, "test_clear_on_one_borrow_leaves_the_other_untouched", 122);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 138);
-  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 159);
-  run_test(test_every_published_offset_is_aligned, "test_every_published_offset_is_aligned", 170);
-  run_test(test_the_io_macro_reaches_the_operand_block, "test_the_io_macro_reaches_the_operand_block", 177);
-  run_test(test_clear_reports_ok, "test_clear_reports_ok", 185);
-  run_test(test_clear_takes_the_context_to_one_state, "test_clear_takes_the_context_to_one_state", 193);
-  run_test(test_clear_zeroes_the_context_apart_from_the_mark, "test_clear_zeroes_the_context_apart_from_the_mark", 204);
-  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 221);
-  run_test(test_clear_is_idempotent, "test_clear_is_idempotent", 232);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 243);
-  run_test(test_clearing_one_borrow_does_not_ready_the_other, "test_clearing_one_borrow_does_not_ready_the_other", 260);
-  run_test(test_start_refuses_no_hardware_address, "test_start_refuses_no_hardware_address", 268);
-  run_test(test_the_range_is_the_one_rfc_3927_prints, "test_the_range_is_the_one_rfc_3927_prints", 281);
-  run_test(test_the_reserved_ends_are_outside_the_range, "test_the_reserved_ends_are_outside_the_range", 291);
-  run_test(test_the_prefix_is_never_subnetted, "test_the_prefix_is_never_subnetted", 301);
-  run_test(test_the_states_are_distinct_and_one_octet, "test_the_states_are_distinct_and_one_octet", 311);
-  run_test(test_the_timing_constants_are_shared_with_rfc_5227, "test_the_timing_constants_are_shared_with_rfc_5227", 321);
-  run_test(test_start_draws_a_candidate_and_asks_for_the_claim, "test_start_draws_a_candidate_and_asks_for_the_claim", 387);
-  run_test(test_no_draw_lands_on_a_reserved_address, "test_no_draw_lands_on_a_reserved_address", 400);
-  run_test(test_the_fold_span_lands_inside_the_reserved_range_bounds, "test_the_fold_span_lands_inside_the_reserved_range_bounds", 423);
-  run_test(test_a_conflict_draws_a_new_address, "test_a_conflict_draws_a_new_address", 447);
-  run_test(test_one_interface_draws_the_same_address_every_time, "test_one_interface_draws_the_same_address_every_time", 464);
-  run_test(test_two_interfaces_do_not_walk_the_same_sequence, "test_two_interfaces_do_not_walk_the_same_sequence", 473);
-  run_test(test_every_octet_of_the_interface_address_reaches_the_draw, "test_every_octet_of_the_interface_address_reaches_the_draw", 501);
-  run_test(test_a_held_address_is_the_first_candidate_after_a_stop, "test_a_held_address_is_the_first_candidate_after_a_stop", 519);
-  run_test(test_bound_configures_the_address_with_the_prefix_mask, "test_bound_configures_the_address_with_the_prefix_mask", 537);
-  run_test(test_a_conflict_on_a_bound_address_replaces_it, "test_a_conflict_on_a_bound_address_replaces_it", 553);
-  run_test(test_stop_leaves_no_address_on_the_interface, "test_stop_leaves_no_address_on_the_interface", 569);
-  run_test(test_max_conflicts_are_each_answered_at_once, "test_max_conflicts_are_each_answered_at_once", 587);
-  run_test(test_the_conflict_past_max_conflicts_is_rate_limited, "test_the_conflict_past_max_conflicts_is_rate_limited", 604);
-  run_test(test_the_rate_limit_deadline_is_one_interval_in_milliseconds, "test_the_rate_limit_deadline_is_one_interval_in_milliseconds", 620);
-  run_test(test_the_held_draw_is_released_at_the_deadline, "test_the_held_draw_is_released_at_the_deadline", 633);
-  run_test(test_every_draw_past_max_conflicts_waits_an_interval, "test_every_draw_past_max_conflicts_waits_an_interval", 658);
-  run_test(test_the_rate_limit_survives_a_clock_rollover, "test_the_rate_limit_survives_a_clock_rollover", 677);
-  run_test(test_binding_the_address_starts_the_conflict_count_over, "test_binding_the_address_starts_the_conflict_count_over", 703);
-  run_test(test_a_conflict_and_a_bind_with_no_address_out_are_refused, "test_a_conflict_and_a_bind_with_no_address_out_are_refused", 726);
-  run_test(test_a_conflict_and_a_bind_inside_the_rate_limit_are_refused, "test_a_conflict_and_a_bind_inside_the_rate_limit_are_refused", 737);
-  run_test(test_a_second_start_asks_for_no_second_claim, "test_a_second_start_asks_for_no_second_claim", 766);
-  run_test(test_a_start_inside_the_rate_limit_reports_busy, "test_a_start_inside_the_rate_limit_reports_busy", 780);
-  run_test(test_a_start_after_a_stop_over_the_count_is_still_rate_limited, "test_a_start_after_a_stop_over_the_count_is_still_rate_limited", 796);
-  run_test(test_a_tick_with_nothing_due_is_ok_and_asks_for_no_claim, "test_a_tick_with_nothing_due_is_ok_and_asks_for_no_claim", 824);
-  run_test(test_a_tick_with_nothing_due_repeats, "test_a_tick_with_nothing_due_repeats", 841);
-  run_test(test_a_tick_does_not_restart_a_stopped_interface, "test_a_tick_does_not_restart_a_stopped_interface", 851);
-  run_test(test_a_conflict_storm_on_one_borrow_leaves_the_other_running, "test_a_conflict_storm_on_one_borrow_leaves_the_other_running", 873);
-  run_test(test_a_seed_whose_draws_all_fall_outside_the_range_still_lands_inside_it, "test_a_seed_whose_draws_all_fall_outside_the_range_still_lands_inside_it", 908);
-  run_test(test_a_seed_that_lands_on_zero_still_moves, "test_a_seed_that_lands_on_zero_still_moves", 936);
-  run_test(test_a_draw_that_lands_on_the_address_already_held_is_drawn_again, "test_a_draw_that_lands_on_the_address_already_held_is_drawn_again", 951);
-  run_test(test_a_start_over_an_address_already_in_the_range_keeps_it, "test_a_start_over_an_address_already_in_the_range_keeps_it", 971);
-  run_test(test_the_counts_hold_at_the_top_of_their_width, "test_the_counts_hold_at_the_top_of_their_width", 993);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 85);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 94);
+  run_test(test_clear_on_one_borrow_leaves_the_other_untouched, "test_clear_on_one_borrow_leaves_the_other_untouched", 123);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 139);
+  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 160);
+  run_test(test_every_published_offset_is_aligned, "test_every_published_offset_is_aligned", 171);
+  run_test(test_the_io_macro_reaches_the_operand_block, "test_the_io_macro_reaches_the_operand_block", 178);
+  run_test(test_clear_reports_ok, "test_clear_reports_ok", 186);
+  run_test(test_clear_takes_the_context_to_one_state, "test_clear_takes_the_context_to_one_state", 194);
+  run_test(test_clear_zeroes_the_context_apart_from_the_mark, "test_clear_zeroes_the_context_apart_from_the_mark", 205);
+  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 222);
+  run_test(test_clear_is_idempotent, "test_clear_is_idempotent", 233);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 244);
+  run_test(test_clearing_one_borrow_does_not_ready_the_other, "test_clearing_one_borrow_does_not_ready_the_other", 261);
+  run_test(test_start_refuses_no_hardware_address, "test_start_refuses_no_hardware_address", 269);
+  run_test(test_the_range_is_the_one_rfc_3927_prints, "test_the_range_is_the_one_rfc_3927_prints", 282);
+  run_test(test_the_reserved_ends_are_outside_the_range, "test_the_reserved_ends_are_outside_the_range", 292);
+  run_test(test_the_prefix_is_never_subnetted, "test_the_prefix_is_never_subnetted", 302);
+  run_test(test_the_states_are_distinct_and_one_octet, "test_the_states_are_distinct_and_one_octet", 312);
+  run_test(test_the_timing_constants_are_shared_with_rfc_5227, "test_the_timing_constants_are_shared_with_rfc_5227", 322);
+  run_test(test_start_draws_a_candidate_and_asks_for_the_claim, "test_start_draws_a_candidate_and_asks_for_the_claim", 388);
+  run_test(test_no_draw_lands_on_a_reserved_address, "test_no_draw_lands_on_a_reserved_address", 401);
+  run_test(test_the_fold_span_lands_inside_the_reserved_range_bounds, "test_the_fold_span_lands_inside_the_reserved_range_bounds", 424);
+  run_test(test_a_conflict_draws_a_new_address, "test_a_conflict_draws_a_new_address", 448);
+  run_test(test_one_interface_draws_the_same_address_every_time, "test_one_interface_draws_the_same_address_every_time", 465);
+  run_test(test_two_interfaces_do_not_walk_the_same_sequence, "test_two_interfaces_do_not_walk_the_same_sequence", 474);
+  run_test(test_every_octet_of_the_interface_address_reaches_the_draw, "test_every_octet_of_the_interface_address_reaches_the_draw", 502);
+  run_test(test_a_held_address_is_the_first_candidate_after_a_stop, "test_a_held_address_is_the_first_candidate_after_a_stop", 520);
+  run_test(test_bound_configures_the_address_with_the_prefix_mask, "test_bound_configures_the_address_with_the_prefix_mask", 538);
+  run_test(test_a_conflict_on_a_bound_address_replaces_it, "test_a_conflict_on_a_bound_address_replaces_it", 554);
+  run_test(test_stop_leaves_no_address_on_the_interface, "test_stop_leaves_no_address_on_the_interface", 570);
+  run_test(test_max_conflicts_are_each_answered_at_once, "test_max_conflicts_are_each_answered_at_once", 588);
+  run_test(test_the_conflict_past_max_conflicts_is_rate_limited, "test_the_conflict_past_max_conflicts_is_rate_limited", 605);
+  run_test(test_the_rate_limit_deadline_is_one_interval_in_milliseconds, "test_the_rate_limit_deadline_is_one_interval_in_milliseconds", 621);
+  run_test(test_the_held_draw_is_released_at_the_deadline, "test_the_held_draw_is_released_at_the_deadline", 634);
+  run_test(test_every_draw_past_max_conflicts_waits_an_interval, "test_every_draw_past_max_conflicts_waits_an_interval", 659);
+  run_test(test_the_rate_limit_survives_a_clock_rollover, "test_the_rate_limit_survives_a_clock_rollover", 678);
+  run_test(test_binding_the_address_starts_the_conflict_count_over, "test_binding_the_address_starts_the_conflict_count_over", 704);
+  run_test(test_a_conflict_and_a_bind_with_no_address_out_are_refused, "test_a_conflict_and_a_bind_with_no_address_out_are_refused", 727);
+  run_test(test_a_conflict_and_a_bind_inside_the_rate_limit_are_refused, "test_a_conflict_and_a_bind_inside_the_rate_limit_are_refused", 738);
+  run_test(test_a_second_start_asks_for_no_second_claim, "test_a_second_start_asks_for_no_second_claim", 767);
+  run_test(test_a_start_inside_the_rate_limit_reports_busy, "test_a_start_inside_the_rate_limit_reports_busy", 781);
+  run_test(test_a_start_after_a_stop_over_the_count_is_still_rate_limited, "test_a_start_after_a_stop_over_the_count_is_still_rate_limited", 797);
+  run_test(test_a_tick_with_nothing_due_is_ok_and_asks_for_no_claim, "test_a_tick_with_nothing_due_is_ok_and_asks_for_no_claim", 825);
+  run_test(test_a_tick_with_nothing_due_repeats, "test_a_tick_with_nothing_due_repeats", 842);
+  run_test(test_a_tick_does_not_restart_a_stopped_interface, "test_a_tick_does_not_restart_a_stopped_interface", 852);
+  run_test(test_a_conflict_storm_on_one_borrow_leaves_the_other_running, "test_a_conflict_storm_on_one_borrow_leaves_the_other_running", 874);
+  run_test(test_a_seed_whose_draws_all_fall_outside_the_range_still_lands_inside_it, "test_a_seed_whose_draws_all_fall_outside_the_range_still_lands_inside_it", 909);
+  run_test(test_a_seed_that_lands_on_zero_still_moves, "test_a_seed_that_lands_on_zero_still_moves", 937);
+  run_test(test_a_draw_that_lands_on_the_address_already_held_is_drawn_again, "test_a_draw_that_lands_on_the_address_already_held_is_drawn_again", 952);
+  run_test(test_a_start_over_an_address_already_in_the_range_keeps_it, "test_a_start_over_an_address_already_in_the_range_keeps_it", 972);
+  run_test(test_the_counts_hold_at_the_top_of_their_width, "test_the_counts_hold_at_the_top_of_their_width", 994);
 
   return UNITY_END();
 }

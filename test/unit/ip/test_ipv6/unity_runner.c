@@ -4,6 +4,8 @@
 #include "unity.h"
 #include "src/checksum.h"
 #include "src/ip/ipv6.h"
+#include "src/common_defines.h"
+#include "src/ip/ipv6_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -117,53 +119,53 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/ip/test_ipv6/test_ipv6.c");
-  run_test(test_version_traffic_class_and_flow_label_split_the_first_word, "test_version_traffic_class_and_flow_label_split_the_first_word", 103);
-  run_test(test_the_fixed_fields_sit_where_the_section_3_figure_puts_them, "test_the_fixed_fields_sit_where_the_section_3_figure_puts_them", 111);
-  run_test(test_payload_length_excludes_the_fixed_header, "test_payload_length_excludes_the_fixed_header", 122);
-  run_test(test_every_field_reads_the_same_at_an_odd_offset, "test_every_field_reads_the_same_at_an_odd_offset", 130);
-  run_test(test_build_writes_the_section_3_figure, "test_build_writes_the_section_3_figure", 146);
-  run_test(test_build_forces_version_six, "test_build_forces_version_six", 161);
-  run_test(test_build_masks_each_packed_field_to_its_width, "test_build_masks_each_packed_field_to_its_width", 178);
-  run_test(test_build_round_trips_through_the_accessors, "test_build_round_trips_through_the_accessors", 195);
-  run_test(test_the_field_writers_touch_only_their_own_field, "test_the_field_writers_touch_only_their_own_field", 217);
-  run_test(test_next_header_values_match_the_defining_sections, "test_next_header_values_match_the_defining_sections", 235);
-  run_test(test_only_the_four_headers_this_document_specifies_are_extensions, "test_only_the_four_headers_this_document_specifies_are_extensions", 250);
-  run_test(test_hdr_ext_len_of_zero_is_eight_octets, "test_hdr_ext_len_of_zero_is_eight_octets", 267);
-  run_test(test_hdr_ext_len_counts_units_past_the_first_eight, "test_hdr_ext_len_counts_units_past_the_first_eight", 275);
-  run_test(test_pad1_is_one_octet_with_no_length, "test_pad1_is_one_octet_with_no_length", 289);
-  run_test(test_padn_occupies_its_length_plus_two, "test_padn_occupies_its_length_plus_two", 298);
-  run_test(test_the_three_high_option_type_bits_decode_as_section_4_2_states, "test_the_three_high_option_type_bits_decode_as_section_4_2_states", 311);
-  run_test(test_fragment_offset_is_the_field_scaled_by_eight, "test_fragment_offset_is_the_field_scaled_by_eight", 352);
-  run_test(test_fragment_more_flag_is_the_low_bit, "test_fragment_more_flag_is_the_low_bit", 363);
-  run_test(test_fragment_reserved_bits_reach_neither_the_offset_nor_the_flag, "test_fragment_reserved_bits_reach_neither_the_offset_nor_the_flag", 374);
-  run_test(test_fragment_identification_is_thirty_two_bits, "test_fragment_identification_is_thirty_two_bits", 382);
-  run_test(test_fragment_build_writes_the_first_fragment, "test_fragment_build_writes_the_first_fragment", 393);
-  run_test(test_fragment_build_writes_the_last_fragment, "test_fragment_build_writes_the_last_fragment", 407);
-  run_test(test_fragment_offset_field_reaches_65528, "test_fragment_offset_field_reaches_65528", 418);
-  run_test(test_routing_type_and_segments_left_sit_at_two_and_three, "test_routing_type_and_segments_left_sit_at_two_and_three", 429);
-  run_test(test_walk_with_no_extension_header_lands_on_the_upper_layer, "test_walk_with_no_extension_header_lands_on_the_upper_layer", 443);
-  run_test(test_walk_steps_over_a_routing_header, "test_walk_steps_over_a_routing_header", 457);
-  run_test(test_walk_steps_over_routing_then_fragment, "test_walk_steps_over_routing_then_fragment", 472);
-  run_test(test_walk_sizes_a_fragment_header_at_eight_not_by_the_second_octet, "test_walk_sizes_a_fragment_header_at_eight_not_by_the_second_octet", 490);
-  run_test(test_walk_stops_at_a_fragment_header_carrying_a_non_zero_offset, "test_walk_stops_at_a_fragment_header_carrying_a_non_zero_offset", 506);
-  run_test(test_walk_records_a_routing_header_with_segments_left, "test_walk_records_a_routing_header_with_segments_left", 551);
-  run_test(test_walk_refuses_an_option_whose_action_bits_are_not_skip, "test_walk_refuses_an_option_whose_action_bits_are_not_skip", 579);
-  run_test(test_walk_steps_over_hop_by_hop_options_when_it_is_first, "test_walk_steps_over_hop_by_hop_options_when_it_is_first", 622);
-  run_test(test_walk_refuses_hop_by_hop_options_below_the_ipv6_header, "test_walk_refuses_hop_by_hop_options_below_the_ipv6_header", 637);
-  run_test(test_walk_stops_at_no_next_header, "test_walk_stops_at_no_next_header", 651);
-  run_test(test_walk_steps_the_recommended_order, "test_walk_steps_the_recommended_order", 662);
-  run_test(test_walk_refuses_a_chain_truncated_inside_a_header, "test_walk_refuses_a_chain_truncated_inside_a_header", 680);
-  run_test(test_walk_refuses_a_header_longer_than_the_span, "test_walk_refuses_a_header_longer_than_the_span", 691);
-  run_test(test_walk_refuses_a_span_shorter_than_the_fixed_header, "test_walk_refuses_a_span_shorter_than_the_fixed_header", 701);
-  run_test(test_walk_does_not_write_the_packet, "test_walk_does_not_write_the_packet", 712);
-  run_test(test_upper_layer_length_subtracts_the_extension_headers, "test_upper_layer_length_subtracts_the_extension_headers", 727);
-  run_test(test_upper_layer_length_is_the_payload_length_with_no_extensions, "test_upper_layer_length_is_the_payload_length_with_no_extensions", 737);
-  run_test(test_upper_layer_length_floors_at_zero, "test_upper_layer_length_floors_at_zero", 747);
-  run_test(test_the_pseudo_header_next_header_is_the_upper_layer_not_the_packets, "test_the_pseudo_header_next_header_is_the_upper_layer_not_the_packets", 758);
-  run_test(test_pseudo_header_sum_matches_the_section_8_1_figure, "test_pseudo_header_sum_matches_the_section_8_1_figure", 769);
-  run_test(test_pseudo_header_sums_both_halves_of_the_length, "test_pseudo_header_sums_both_halves_of_the_length", 786);
-  run_test(test_an_option_area_that_ends_inside_an_option_is_malformed, "test_an_option_area_that_ends_inside_an_option_is_malformed", 807);
-  run_test(test_the_first_refused_option_is_the_one_the_walk_keeps, "test_the_first_refused_option_is_the_one_the_walk_keeps", 844);
+  run_test(test_version_traffic_class_and_flow_label_split_the_first_word, "test_version_traffic_class_and_flow_label_split_the_first_word", 105);
+  run_test(test_the_fixed_fields_sit_where_the_section_3_figure_puts_them, "test_the_fixed_fields_sit_where_the_section_3_figure_puts_them", 113);
+  run_test(test_payload_length_excludes_the_fixed_header, "test_payload_length_excludes_the_fixed_header", 124);
+  run_test(test_every_field_reads_the_same_at_an_odd_offset, "test_every_field_reads_the_same_at_an_odd_offset", 132);
+  run_test(test_build_writes_the_section_3_figure, "test_build_writes_the_section_3_figure", 148);
+  run_test(test_build_forces_version_six, "test_build_forces_version_six", 163);
+  run_test(test_build_masks_each_packed_field_to_its_width, "test_build_masks_each_packed_field_to_its_width", 180);
+  run_test(test_build_round_trips_through_the_accessors, "test_build_round_trips_through_the_accessors", 197);
+  run_test(test_the_field_writers_touch_only_their_own_field, "test_the_field_writers_touch_only_their_own_field", 219);
+  run_test(test_next_header_values_match_the_defining_sections, "test_next_header_values_match_the_defining_sections", 237);
+  run_test(test_only_the_four_headers_this_document_specifies_are_extensions, "test_only_the_four_headers_this_document_specifies_are_extensions", 252);
+  run_test(test_hdr_ext_len_of_zero_is_eight_octets, "test_hdr_ext_len_of_zero_is_eight_octets", 269);
+  run_test(test_hdr_ext_len_counts_units_past_the_first_eight, "test_hdr_ext_len_counts_units_past_the_first_eight", 277);
+  run_test(test_pad1_is_one_octet_with_no_length, "test_pad1_is_one_octet_with_no_length", 291);
+  run_test(test_padn_occupies_its_length_plus_two, "test_padn_occupies_its_length_plus_two", 300);
+  run_test(test_the_three_high_option_type_bits_decode_as_section_4_2_states, "test_the_three_high_option_type_bits_decode_as_section_4_2_states", 313);
+  run_test(test_fragment_offset_is_the_field_scaled_by_eight, "test_fragment_offset_is_the_field_scaled_by_eight", 354);
+  run_test(test_fragment_more_flag_is_the_low_bit, "test_fragment_more_flag_is_the_low_bit", 365);
+  run_test(test_fragment_reserved_bits_reach_neither_the_offset_nor_the_flag, "test_fragment_reserved_bits_reach_neither_the_offset_nor_the_flag", 376);
+  run_test(test_fragment_identification_is_thirty_two_bits, "test_fragment_identification_is_thirty_two_bits", 384);
+  run_test(test_fragment_build_writes_the_first_fragment, "test_fragment_build_writes_the_first_fragment", 395);
+  run_test(test_fragment_build_writes_the_last_fragment, "test_fragment_build_writes_the_last_fragment", 409);
+  run_test(test_fragment_offset_field_reaches_65528, "test_fragment_offset_field_reaches_65528", 420);
+  run_test(test_routing_type_and_segments_left_sit_at_two_and_three, "test_routing_type_and_segments_left_sit_at_two_and_three", 431);
+  run_test(test_walk_with_no_extension_header_lands_on_the_upper_layer, "test_walk_with_no_extension_header_lands_on_the_upper_layer", 445);
+  run_test(test_walk_steps_over_a_routing_header, "test_walk_steps_over_a_routing_header", 459);
+  run_test(test_walk_steps_over_routing_then_fragment, "test_walk_steps_over_routing_then_fragment", 474);
+  run_test(test_walk_sizes_a_fragment_header_at_eight_not_by_the_second_octet, "test_walk_sizes_a_fragment_header_at_eight_not_by_the_second_octet", 492);
+  run_test(test_walk_stops_at_a_fragment_header_carrying_a_non_zero_offset, "test_walk_stops_at_a_fragment_header_carrying_a_non_zero_offset", 508);
+  run_test(test_walk_records_a_routing_header_with_segments_left, "test_walk_records_a_routing_header_with_segments_left", 553);
+  run_test(test_walk_refuses_an_option_whose_action_bits_are_not_skip, "test_walk_refuses_an_option_whose_action_bits_are_not_skip", 581);
+  run_test(test_walk_steps_over_hop_by_hop_options_when_it_is_first, "test_walk_steps_over_hop_by_hop_options_when_it_is_first", 624);
+  run_test(test_walk_refuses_hop_by_hop_options_below_the_ipv6_header, "test_walk_refuses_hop_by_hop_options_below_the_ipv6_header", 639);
+  run_test(test_walk_stops_at_no_next_header, "test_walk_stops_at_no_next_header", 653);
+  run_test(test_walk_steps_the_recommended_order, "test_walk_steps_the_recommended_order", 664);
+  run_test(test_walk_refuses_a_chain_truncated_inside_a_header, "test_walk_refuses_a_chain_truncated_inside_a_header", 682);
+  run_test(test_walk_refuses_a_header_longer_than_the_span, "test_walk_refuses_a_header_longer_than_the_span", 693);
+  run_test(test_walk_refuses_a_span_shorter_than_the_fixed_header, "test_walk_refuses_a_span_shorter_than_the_fixed_header", 703);
+  run_test(test_walk_does_not_write_the_packet, "test_walk_does_not_write_the_packet", 714);
+  run_test(test_upper_layer_length_subtracts_the_extension_headers, "test_upper_layer_length_subtracts_the_extension_headers", 729);
+  run_test(test_upper_layer_length_is_the_payload_length_with_no_extensions, "test_upper_layer_length_is_the_payload_length_with_no_extensions", 739);
+  run_test(test_upper_layer_length_floors_at_zero, "test_upper_layer_length_floors_at_zero", 749);
+  run_test(test_the_pseudo_header_next_header_is_the_upper_layer_not_the_packets, "test_the_pseudo_header_next_header_is_the_upper_layer_not_the_packets", 760);
+  run_test(test_pseudo_header_sum_matches_the_section_8_1_figure, "test_pseudo_header_sum_matches_the_section_8_1_figure", 771);
+  run_test(test_pseudo_header_sums_both_halves_of_the_length, "test_pseudo_header_sums_both_halves_of_the_length", 788);
+  run_test(test_an_option_area_that_ends_inside_an_option_is_malformed, "test_an_option_area_that_ends_inside_an_option_is_malformed", 809);
+  run_test(test_the_first_refused_option_is_the_one_the_walk_keeps, "test_the_first_refused_option_is_the_one_the_walk_keeps", 846);
 
   return UNITY_END();
 }

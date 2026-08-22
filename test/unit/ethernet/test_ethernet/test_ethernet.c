@@ -15,6 +15,7 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/ethernet/ethernet_defines.h"
 
 // A frame, and a canary past the longest one RFC 894 allows so a write off the end is visible.
 #define CANARY 0x5Au

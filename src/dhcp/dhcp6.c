@@ -19,6 +19,7 @@
 
 #include "src/dhcp/dhcp6.h"
 #include "src/endian.h"
+#include "src/ip/ipv6_defines.h"
 
 IDEMIP_BEGIN_DECLS
 

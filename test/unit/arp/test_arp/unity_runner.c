@@ -3,6 +3,8 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/arp/arp.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "src/arp/arp_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -87,24 +89,24 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/arp/test_arp/test_arp.c");
-  run_test(test_constants_match_rfc826_definitions, "test_constants_match_rfc826_definitions", 88);
-  run_test(test_protocol_address_space_is_the_ethernet_type, "test_protocol_address_space_is_the_ethernet_type", 99);
-  run_test(test_field_offsets_match_rfc826_packet_format, "test_field_offsets_match_rfc826_packet_format", 106);
-  run_test(test_no_padding_between_the_addresses, "test_no_padding_between_the_addresses", 122);
-  run_test(test_the_three_words_are_high_byte_first, "test_the_three_words_are_high_byte_first", 135);
-  run_test(test_request_vector_parses, "test_request_vector_parses", 146);
-  run_test(test_reply_vector_parses, "test_reply_vector_parses", 161);
-  run_test(test_target_hardware_address_is_unset_in_a_request_and_the_requester_in_a_reply, "test_target_hardware_address_is_unset_in_a_request_and_the_requester_in_a_reply", 176);
-  run_test(test_is_target_answers_the_reception_question, "test_is_target_answers_the_reception_question", 186);
-  run_test(test_is_ethernet_ipv4_rejects_any_other_pairing, "test_is_ethernet_ipv4_rejects_any_other_pairing", 197);
-  run_test(test_build_request_matches_the_vector, "test_build_request_matches_the_vector", 220);
-  run_test(test_build_reply_matches_the_vector, "test_build_reply_matches_the_vector", 226);
-  run_test(test_reply_in_place_turns_the_request_into_the_reply, "test_reply_in_place_turns_the_request_into_the_reply", 236);
-  run_test(test_reply_in_place_ignores_whatever_ar_tha_arrived_as, "test_reply_in_place_ignores_whatever_ar_tha_arrived_as", 247);
-  run_test(test_a_build_is_a_function_of_its_arguments, "test_a_build_is_a_function_of_its_arguments", 257);
-  run_test(test_build_request_carries_a_zero_sender_protocol_address, "test_build_request_carries_a_zero_sender_protocol_address", 271);
-  run_test(test_a_padded_frame_still_parses, "test_a_padded_frame_still_parses", 285);
-  run_test(test_a_build_writes_exactly_the_payload, "test_a_build_writes_exactly_the_payload", 299);
+  run_test(test_constants_match_rfc826_definitions, "test_constants_match_rfc826_definitions", 90);
+  run_test(test_protocol_address_space_is_the_ethernet_type, "test_protocol_address_space_is_the_ethernet_type", 101);
+  run_test(test_field_offsets_match_rfc826_packet_format, "test_field_offsets_match_rfc826_packet_format", 108);
+  run_test(test_no_padding_between_the_addresses, "test_no_padding_between_the_addresses", 124);
+  run_test(test_the_three_words_are_high_byte_first, "test_the_three_words_are_high_byte_first", 137);
+  run_test(test_request_vector_parses, "test_request_vector_parses", 148);
+  run_test(test_reply_vector_parses, "test_reply_vector_parses", 163);
+  run_test(test_target_hardware_address_is_unset_in_a_request_and_the_requester_in_a_reply, "test_target_hardware_address_is_unset_in_a_request_and_the_requester_in_a_reply", 178);
+  run_test(test_is_target_answers_the_reception_question, "test_is_target_answers_the_reception_question", 188);
+  run_test(test_is_ethernet_ipv4_rejects_any_other_pairing, "test_is_ethernet_ipv4_rejects_any_other_pairing", 199);
+  run_test(test_build_request_matches_the_vector, "test_build_request_matches_the_vector", 222);
+  run_test(test_build_reply_matches_the_vector, "test_build_reply_matches_the_vector", 228);
+  run_test(test_reply_in_place_turns_the_request_into_the_reply, "test_reply_in_place_turns_the_request_into_the_reply", 238);
+  run_test(test_reply_in_place_ignores_whatever_ar_tha_arrived_as, "test_reply_in_place_ignores_whatever_ar_tha_arrived_as", 249);
+  run_test(test_a_build_is_a_function_of_its_arguments, "test_a_build_is_a_function_of_its_arguments", 259);
+  run_test(test_build_request_carries_a_zero_sender_protocol_address, "test_build_request_carries_a_zero_sender_protocol_address", 273);
+  run_test(test_a_padded_frame_still_parses, "test_a_padded_frame_still_parses", 287);
+  run_test(test_a_build_writes_exactly_the_payload, "test_a_build_writes_exactly_the_payload", 301);
 
   return UNITY_END();
 }

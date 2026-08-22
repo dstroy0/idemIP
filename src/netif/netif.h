@@ -24,6 +24,8 @@
 
 #include "src/ethernet/ethernet.h" // IDEMIP_MAC_LEN, and through it the config
 #include "src/ip/ipv6.h"           // IDEMIP_IP6_ADDR_LEN, under the IPv6 gate
+#include "src/ethernet/ethernet_defines.h"
+#include "src/ip/ipv6_defines.h"
 
 #if IDEMIP_ENABLE_ETHERNET
 

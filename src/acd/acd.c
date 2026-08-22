@@ -15,6 +15,7 @@
 #include "src/idemip_config.h" // the entry point: the enable gate below, and the widths
 
 #include "src/acd/acd.h"
+#include "src/arp/arp_defines.h"
 
 IDEMIP_BEGIN_DECLS
 

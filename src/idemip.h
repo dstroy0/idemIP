@@ -245,5 +245,6 @@
 // Last, because these two drive every unit above and are the only ones that decide what runs when.
 #include "src/core/dispatch.h" // one frame in, one decision out
 #include "src/core/tick.h"     // drain, service and flush, in that order
+#include "src/ethernet/ethernet_defines.h"
 
 #endif // IDEMIP_IDEMIP_H

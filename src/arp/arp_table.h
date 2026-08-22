@@ -28,6 +28,7 @@
 #define IDEMIP_ARP_TABLE_H
 
 #include "src/arp/arp.h"
+#include "src/arp/arp_defines.h"
 
 #if IDEMIP_ENABLE_IPV4
 

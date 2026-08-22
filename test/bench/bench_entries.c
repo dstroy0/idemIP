@@ -26,6 +26,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "src/common_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "src/ip/ipv6_defines.h"
 
 #if !defined(__GNUC__) && !defined(__clang__)
 volatile uint64_t idemip_bench_sink;

@@ -57,6 +57,7 @@
 
 #if IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6
 #include "src/raw/raw_pcb.h"
+#include "src/ethernet/vlan_defines.h"
 #endif
 
 #if IDEMIP_ENABLE_ETHERNET

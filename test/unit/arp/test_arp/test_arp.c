@@ -13,6 +13,8 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/ethernet/ethernet_defines.h"
+#include "src/arp/arp_defines.h"
 
 // The RFC's symbols, bound. EA is a 48-bit Ethernet address, IPA a 32-bit DOD Internet address.
 static const uint8_t EA_X[6] = {0x02, 0x1A, 0x2B, 0x3C, 0x4D, 0x5E};

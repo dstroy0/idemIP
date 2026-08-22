@@ -20,6 +20,7 @@
 #define IDEMIP_AUTOIP_H
 
 #include "src/acd/acd.h"
+#include "src/arp/arp_defines.h"
 
 #if IDEMIP_ENABLE_IPV4
 

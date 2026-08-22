@@ -21,6 +21,7 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/ip/ipv6_defines.h"
 
 // Eight 16-bit pieces, the "preferred form" of RFC 4291 sec 2.2.
 typedef struct

@@ -33,6 +33,7 @@
 #define IDEMIP_IP4_FRAG_H
 
 #include "src/ip/ipv4.h"
+#include "src/ip/ipv4_defines.h"
 
 #if IDEMIP_ENABLE_IPV4
 

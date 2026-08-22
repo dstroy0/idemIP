@@ -29,6 +29,15 @@
 #endif
 #if IDEMIP_ENABLE_TCP
 #include "src/tcp/tcp.h"
+#include "src/common_defines.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "src/ethernet/vlan_defines.h"
+#include "src/arp/arp_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "src/ip/ipv6_defines.h"
+#include "src/icmp/icmpv6_defines.h"
+#include "src/tcp/tcp_defines.h"
+#include "src/udp/udp_defines.h"
 #endif
 
 IDEMIP_BEGIN_DECLS
@@ -493,7 +502,7 @@ static idemip_bool d_udp_cksum_ok(const uint8_t *udp, const uint8_t *local_ip, c
 
     if (!idemip_udp_cksum_present(udp))
     {
-        return (ip_version == (uint8_t)IDEMIP_PSEUDO_V6) ? IDEMIP_FALSE : IDEMIP_TRUE;
+        return (ip_version == (uint8_t)IDEMIP_IP6_VERSION) ? IDEMIP_FALSE : IDEMIP_TRUE;
     }
     // Not measured: d_udp is reached from d_ip4 and d_ip6 alone, each of which passes its own
     // version, so the two the pseudo-header is defined for are the only two that arrive. The test is

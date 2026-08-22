@@ -3,6 +3,9 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/ip/ip6_forward.h"
+#include "src/common_defines.h"
+#include "src/ip/ipv6_defines.h"
+#include "src/icmp/icmpv6_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -121,58 +124,58 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/ip/test_ip6_forward/test_ip6_forward.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 149);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 157);
-  run_test(test_a_decision_is_a_function_of_its_borrow_alone, "test_a_decision_is_a_function_of_its_borrow_alone", 175);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 197);
-  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 206);
-  run_test(test_clear_reclaims_a_dirty_borrow, "test_clear_reclaims_a_dirty_borrow", 217);
-  run_test(test_the_offset_map_is_ordered_and_fits, "test_the_offset_map_is_ordered_and_fits", 228);
-  run_test(test_a_routed_packet_is_forwarded, "test_a_routed_packet_is_forwarded", 239);
-  run_test(test_the_hop_limit_is_decremented_by_one, "test_the_hop_limit_is_decremented_by_one", 257);
-  run_test(test_a_hop_limit_of_one_expires_with_time_exceeded, "test_a_hop_limit_of_one_expires_with_time_exceeded", 272);
-  run_test(test_a_hop_limit_of_zero_expires_too, "test_a_hop_limit_of_zero_expires_too", 291);
-  run_test(test_no_route_answers_destination_unreachable_code_zero, "test_no_route_answers_destination_unreachable_code_zero", 305);
-  run_test(test_a_packet_larger_than_the_link_answers_packet_too_big, "test_a_packet_larger_than_the_link_answers_packet_too_big", 328);
-  run_test(test_a_packet_the_size_of_the_link_mtu_is_forwarded, "test_a_packet_the_size_of_the_link_mtu_is_forwarded", 346);
-  run_test(test_packet_too_big_is_sent_even_to_a_multicast_destination, "test_packet_too_big_is_sent_even_to_a_multicast_destination", 361);
-  run_test(test_a_multicast_destination_gets_no_time_exceeded, "test_a_multicast_destination_gets_no_time_exceeded", 377);
-  run_test(test_a_link_layer_multicast_gets_no_time_exceeded, "test_a_link_layer_multicast_gets_no_time_exceeded", 391);
-  run_test(test_a_link_layer_broadcast_gets_no_time_exceeded, "test_a_link_layer_broadcast_gets_no_time_exceeded", 403);
-  run_test(test_an_unspecified_source_is_never_forwarded, "test_an_unspecified_source_is_never_forwarded", 417);
-  run_test(test_a_multicast_source_is_never_forwarded, "test_a_multicast_source_is_never_forwarded", 428);
-  run_test(test_a_loopback_source_is_never_forwarded, "test_a_loopback_source_is_never_forwarded", 439);
-  run_test(test_an_unspecified_destination_is_never_forwarded, "test_an_unspecified_destination_is_never_forwarded", 449);
-  run_test(test_a_loopback_destination_is_never_forwarded, "test_a_loopback_destination_is_never_forwarded", 460);
-  run_test(test_an_address_that_only_resembles_loopback_is_forwarded, "test_an_address_that_only_resembles_loopback_is_forwarded", 472);
-  run_test(test_a_link_local_destination_is_not_forwarded_to_another_link, "test_a_link_local_destination_is_not_forwarded_to_another_link", 493);
-  run_test(test_a_link_local_source_is_not_forwarded_to_another_link, "test_a_link_local_source_is_not_forwarded_to_another_link", 503);
-  run_test(test_a_link_local_packet_stays_on_its_own_link, "test_a_link_local_packet_stays_on_its_own_link", 514);
-  run_test(test_a_reserved_scope_multicast_is_silently_dropped, "test_a_reserved_scope_multicast_is_silently_dropped", 528);
-  run_test(test_an_interface_local_multicast_is_never_forwarded, "test_an_interface_local_multicast_is_never_forwarded", 541);
-  run_test(test_a_link_local_multicast_does_not_cross_a_link, "test_a_link_local_multicast_does_not_cross_a_link", 553);
-  run_test(test_a_site_local_multicast_crosses_a_link, "test_a_site_local_multicast_crosses_a_link", 564);
-  run_test(test_a_global_multicast_crosses_a_link, "test_a_global_multicast_crosses_a_link", 574);
-  run_test(test_an_icmpv6_error_draws_no_icmpv6_error, "test_an_icmpv6_error_draws_no_icmpv6_error", 586);
-  run_test(test_an_icmpv6_redirect_draws_no_icmpv6_error, "test_an_icmpv6_redirect_draws_no_icmpv6_error", 598);
-  run_test(test_an_icmpv6_echo_still_draws_the_error, "test_an_icmpv6_echo_still_draws_the_error", 608);
-  run_test(test_a_wrong_version_is_discarded, "test_a_wrong_version_is_discarded", 620);
-  run_test(test_a_payload_length_past_the_span_is_discarded, "test_a_payload_length_past_the_span_is_discarded", 634);
-  run_test(test_a_span_longer_than_the_payload_length_is_forwarded, "test_a_span_longer_than_the_payload_length_is_forwarded", 644);
-  run_test(test_a_redirect_is_owed_when_the_source_is_a_neighbor_on_the_same_link, "test_a_redirect_is_owed_when_the_source_is_a_neighbor_on_the_same_link", 658);
-  run_test(test_no_redirect_to_a_next_hop_that_is_not_link_local, "test_no_redirect_to_a_next_hop_that_is_not_link_local", 678);
-  run_test(test_a_redirect_to_the_destination_itself_is_owed, "test_a_redirect_to_the_destination_itself_is_owed", 697);
-  run_test(test_no_redirect_across_interfaces, "test_no_redirect_across_interfaces", 714);
-  run_test(test_no_redirect_to_a_multicast_destination, "test_no_redirect_to_a_multicast_destination", 725);
-  run_test(test_no_redirect_when_the_source_is_not_a_neighbor, "test_no_redirect_when_the_source_is_not_a_neighbor", 738);
-  run_test(test_an_mtu_below_the_ipv6_minimum_is_refused, "test_an_mtu_below_the_ipv6_minimum_is_refused", 752);
-  run_test(test_a_null_packet_is_refused, "test_a_null_packet_is_refused", 766);
-  run_test(test_a_routed_call_with_no_next_hop_is_refused, "test_a_routed_call_with_no_next_hop_is_refused", 777);
-  run_test(test_an_interface_index_past_the_count_is_refused, "test_an_interface_index_past_the_count_is_refused", 787);
-  run_test(test_nothing_is_ever_busy, "test_nothing_is_ever_busy", 804);
-  run_test(test_the_prefixes_are_read_to_their_whole_width, "test_the_prefixes_are_read_to_their_whole_width", 827);
-  run_test(test_the_error_rules_read_the_source_and_the_chain, "test_the_error_rules_read_the_source_and_the_chain", 852);
-  run_test(test_a_link_scope_group_may_be_sent_back_out_the_interface_it_arrived_on, "test_a_link_scope_group_may_be_sent_back_out_the_interface_it_arrived_on", 888);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 152);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 160);
+  run_test(test_a_decision_is_a_function_of_its_borrow_alone, "test_a_decision_is_a_function_of_its_borrow_alone", 178);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 200);
+  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 209);
+  run_test(test_clear_reclaims_a_dirty_borrow, "test_clear_reclaims_a_dirty_borrow", 220);
+  run_test(test_the_offset_map_is_ordered_and_fits, "test_the_offset_map_is_ordered_and_fits", 231);
+  run_test(test_a_routed_packet_is_forwarded, "test_a_routed_packet_is_forwarded", 242);
+  run_test(test_the_hop_limit_is_decremented_by_one, "test_the_hop_limit_is_decremented_by_one", 260);
+  run_test(test_a_hop_limit_of_one_expires_with_time_exceeded, "test_a_hop_limit_of_one_expires_with_time_exceeded", 275);
+  run_test(test_a_hop_limit_of_zero_expires_too, "test_a_hop_limit_of_zero_expires_too", 294);
+  run_test(test_no_route_answers_destination_unreachable_code_zero, "test_no_route_answers_destination_unreachable_code_zero", 308);
+  run_test(test_a_packet_larger_than_the_link_answers_packet_too_big, "test_a_packet_larger_than_the_link_answers_packet_too_big", 331);
+  run_test(test_a_packet_the_size_of_the_link_mtu_is_forwarded, "test_a_packet_the_size_of_the_link_mtu_is_forwarded", 349);
+  run_test(test_packet_too_big_is_sent_even_to_a_multicast_destination, "test_packet_too_big_is_sent_even_to_a_multicast_destination", 364);
+  run_test(test_a_multicast_destination_gets_no_time_exceeded, "test_a_multicast_destination_gets_no_time_exceeded", 380);
+  run_test(test_a_link_layer_multicast_gets_no_time_exceeded, "test_a_link_layer_multicast_gets_no_time_exceeded", 394);
+  run_test(test_a_link_layer_broadcast_gets_no_time_exceeded, "test_a_link_layer_broadcast_gets_no_time_exceeded", 406);
+  run_test(test_an_unspecified_source_is_never_forwarded, "test_an_unspecified_source_is_never_forwarded", 420);
+  run_test(test_a_multicast_source_is_never_forwarded, "test_a_multicast_source_is_never_forwarded", 431);
+  run_test(test_a_loopback_source_is_never_forwarded, "test_a_loopback_source_is_never_forwarded", 442);
+  run_test(test_an_unspecified_destination_is_never_forwarded, "test_an_unspecified_destination_is_never_forwarded", 452);
+  run_test(test_a_loopback_destination_is_never_forwarded, "test_a_loopback_destination_is_never_forwarded", 463);
+  run_test(test_an_address_that_only_resembles_loopback_is_forwarded, "test_an_address_that_only_resembles_loopback_is_forwarded", 475);
+  run_test(test_a_link_local_destination_is_not_forwarded_to_another_link, "test_a_link_local_destination_is_not_forwarded_to_another_link", 496);
+  run_test(test_a_link_local_source_is_not_forwarded_to_another_link, "test_a_link_local_source_is_not_forwarded_to_another_link", 506);
+  run_test(test_a_link_local_packet_stays_on_its_own_link, "test_a_link_local_packet_stays_on_its_own_link", 517);
+  run_test(test_a_reserved_scope_multicast_is_silently_dropped, "test_a_reserved_scope_multicast_is_silently_dropped", 531);
+  run_test(test_an_interface_local_multicast_is_never_forwarded, "test_an_interface_local_multicast_is_never_forwarded", 544);
+  run_test(test_a_link_local_multicast_does_not_cross_a_link, "test_a_link_local_multicast_does_not_cross_a_link", 556);
+  run_test(test_a_site_local_multicast_crosses_a_link, "test_a_site_local_multicast_crosses_a_link", 567);
+  run_test(test_a_global_multicast_crosses_a_link, "test_a_global_multicast_crosses_a_link", 577);
+  run_test(test_an_icmpv6_error_draws_no_icmpv6_error, "test_an_icmpv6_error_draws_no_icmpv6_error", 589);
+  run_test(test_an_icmpv6_redirect_draws_no_icmpv6_error, "test_an_icmpv6_redirect_draws_no_icmpv6_error", 601);
+  run_test(test_an_icmpv6_echo_still_draws_the_error, "test_an_icmpv6_echo_still_draws_the_error", 611);
+  run_test(test_a_wrong_version_is_discarded, "test_a_wrong_version_is_discarded", 623);
+  run_test(test_a_payload_length_past_the_span_is_discarded, "test_a_payload_length_past_the_span_is_discarded", 637);
+  run_test(test_a_span_longer_than_the_payload_length_is_forwarded, "test_a_span_longer_than_the_payload_length_is_forwarded", 647);
+  run_test(test_a_redirect_is_owed_when_the_source_is_a_neighbor_on_the_same_link, "test_a_redirect_is_owed_when_the_source_is_a_neighbor_on_the_same_link", 661);
+  run_test(test_no_redirect_to_a_next_hop_that_is_not_link_local, "test_no_redirect_to_a_next_hop_that_is_not_link_local", 681);
+  run_test(test_a_redirect_to_the_destination_itself_is_owed, "test_a_redirect_to_the_destination_itself_is_owed", 700);
+  run_test(test_no_redirect_across_interfaces, "test_no_redirect_across_interfaces", 717);
+  run_test(test_no_redirect_to_a_multicast_destination, "test_no_redirect_to_a_multicast_destination", 728);
+  run_test(test_no_redirect_when_the_source_is_not_a_neighbor, "test_no_redirect_when_the_source_is_not_a_neighbor", 741);
+  run_test(test_an_mtu_below_the_ipv6_minimum_is_refused, "test_an_mtu_below_the_ipv6_minimum_is_refused", 755);
+  run_test(test_a_null_packet_is_refused, "test_a_null_packet_is_refused", 769);
+  run_test(test_a_routed_call_with_no_next_hop_is_refused, "test_a_routed_call_with_no_next_hop_is_refused", 780);
+  run_test(test_an_interface_index_past_the_count_is_refused, "test_an_interface_index_past_the_count_is_refused", 790);
+  run_test(test_nothing_is_ever_busy, "test_nothing_is_ever_busy", 807);
+  run_test(test_the_prefixes_are_read_to_their_whole_width, "test_the_prefixes_are_read_to_their_whole_width", 830);
+  run_test(test_the_error_rules_read_the_source_and_the_chain, "test_the_error_rules_read_the_source_and_the_chain", 855);
+  run_test(test_a_link_scope_group_may_be_sent_back_out_the_interface_it_arrived_on, "test_a_link_scope_group_may_be_sent_back_out_the_interface_it_arrived_on", 891);
 
   return UNITY_END();
 }

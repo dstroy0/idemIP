@@ -21,6 +21,9 @@
 #define IDEMIP_ICMP_IN_H
 
 #include "src/icmp/icmp.h"
+#include "src/common_defines.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "src/icmp/icmp_defines.h"
 
 #if IDEMIP_ENABLE_IPV4
 

@@ -19,6 +19,7 @@
 
 #include "src/ethernet/ethernet.h" // IDEMIP_MAC_LEN, the address RFC 1112 sec 6.4 maps onto
 #include "src/ip/ipv4.h"
+#include "src/ethernet/ethernet_defines.h"
 
 #if IDEMIP_ENABLE_IPV4
 

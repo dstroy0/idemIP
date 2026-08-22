@@ -3,6 +3,8 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/ethernet/vlan.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "src/ethernet/vlan_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -119,56 +121,56 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/ethernet/test_vlan/test_vlan.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 145);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 157);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 178);
-  run_test(test_an_uncleared_borrow_refuses_work, "test_an_uncleared_borrow_refuses_work", 194);
-  run_test(test_a_refused_build_writes_no_octet, "test_a_refused_build_writes_no_octet", 208);
-  run_test(test_clear_reports_ok_and_opens_the_borrow, "test_clear_reports_ok_and_opens_the_borrow", 216);
-  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 225);
-  run_test(test_the_published_map_covers_the_private_layout, "test_the_published_map_covers_the_private_layout", 241);
-  run_test(test_the_c_tag_ethertype_is_8100, "test_the_c_tag_ethertype_is_8100", 253);
-  run_test(test_the_s_tag_ethertype_is_88a8, "test_the_s_tag_ethertype_is_88a8", 259);
-  run_test(test_the_tag_sits_in_the_type_field_and_adds_four_octets, "test_the_tag_sits_in_the_type_field_and_adds_four_octets", 265);
-  run_test(test_a_tagged_frame_is_four_octets_longer, "test_a_tagged_frame_is_four_octets_longer", 276);
-  run_test(test_the_vlan_id_range_is_the_stated_one, "test_the_vlan_id_range_is_the_stated_one", 284);
-  run_test(test_the_priority_field_is_three_bits, "test_the_priority_field_is_three_bits", 294);
-  run_test(test_parse_of_an_untagged_frame_reports_its_own_type, "test_parse_of_an_untagged_frame_reports_its_own_type", 303);
-  run_test(test_parse_of_an_802_3_frame_takes_the_snap_ethertype, "test_parse_of_an_802_3_frame_takes_the_snap_ethertype", 330);
-  run_test(test_the_length_and_ethertype_boundary_is_1500, "test_the_length_and_ethertype_boundary_is_1500", 345);
-  run_test(test_an_802_3_frame_that_is_not_snap_is_refused, "test_an_802_3_frame_that_is_not_snap_is_refused", 364);
-  run_test(test_a_tagged_802_3_frame_takes_the_snap_ethertype, "test_a_tagged_802_3_frame_takes_the_snap_ethertype", 380);
-  run_test(test_parse_of_an_untagged_frame_reports_no_tag_fields, "test_parse_of_an_untagged_frame_reports_no_tag_fields", 395);
-  run_test(test_parse_reads_an_s_tag_frame_as_untagged, "test_parse_reads_an_s_tag_frame_as_untagged", 408);
-  run_test(test_parse_of_a_tagged_frame, "test_parse_of_a_tagged_frame", 419);
-  run_test(test_parse_reports_the_c_bit, "test_parse_reports_the_c_bit", 436);
-  run_test(test_parse_reports_the_null_vlan_identifier, "test_parse_reports_the_null_vlan_identifier", 447);
-  run_test(test_parse_reports_the_reserved_vlan_identifier, "test_parse_reports_the_reserved_vlan_identifier", 460);
-  run_test(test_parse_refuses_a_frame_shorter_than_the_ethernet_header, "test_parse_refuses_a_frame_shorter_than_the_ethernet_header", 471);
-  run_test(test_parse_accepts_a_frame_of_exactly_the_ethernet_header, "test_parse_accepts_a_frame_of_exactly_the_ethernet_header", 480);
-  run_test(test_parse_refuses_a_tagged_frame_short_of_the_tag, "test_parse_refuses_a_tagged_frame_short_of_the_tag", 490);
-  run_test(test_parse_accepts_a_tagged_frame_of_exactly_the_tagged_header, "test_parse_accepts_a_tagged_frame_of_exactly_the_tagged_header", 499);
-  run_test(test_parse_refuses_a_null_frame, "test_parse_refuses_a_null_frame", 508);
-  run_test(test_a_refused_parse_reports_nothing_stale, "test_a_refused_parse_reports_nothing_stale", 518);
-  run_test(test_parse_writes_no_octet_of_the_frame, "test_parse_writes_no_octet_of_the_frame", 533);
-  run_test(test_build_writes_the_tag_and_the_encapsulated_type, "test_build_writes_the_tag_and_the_encapsulated_type", 547);
-  run_test(test_build_reports_what_it_wrote, "test_build_reports_what_it_wrote", 558);
-  run_test(test_build_and_parse_round_trip, "test_build_and_parse_round_trip", 571);
-  run_test(test_build_and_parse_round_trip_every_vlan_id, "test_build_and_parse_round_trip_every_vlan_id", 592);
-  run_test(test_build_touches_only_the_six_octets_it_names, "test_build_touches_only_the_six_octets_it_names", 606);
-  run_test(test_build_refuses_a_priority_above_seven, "test_build_refuses_a_priority_above_seven", 620);
-  run_test(test_build_refuses_a_vlan_id_outside_the_field, "test_build_refuses_a_vlan_id_outside_the_field", 629);
-  run_test(test_build_refuses_the_reserved_vlan_id, "test_build_refuses_the_reserved_vlan_id", 638);
-  run_test(test_build_accepts_the_null_vlan_identifier, "test_build_accepts_the_null_vlan_identifier", 647);
-  run_test(test_build_refuses_a_null_frame, "test_build_refuses_a_null_frame", 656);
-  run_test(test_pack_places_each_field_where_the_figure_draws_it, "test_pack_places_each_field_where_the_figure_draws_it", 671);
-  run_test(test_pack_refuses_what_build_refuses, "test_pack_refuses_what_build_refuses", 683);
-  run_test(test_split_reports_each_field, "test_split_reports_each_field", 695);
-  run_test(test_split_reports_the_reserved_vlan_id_rather_than_refusing_it, "test_split_reports_the_reserved_vlan_id_rather_than_refusing_it", 707);
-  run_test(test_split_and_pack_round_trip_over_every_value, "test_split_and_pack_round_trip_over_every_value", 718);
-  run_test(test_split_agrees_with_parse, "test_split_agrees_with_parse", 739);
-  run_test(test_pack_writes_no_octet_of_the_frame, "test_pack_writes_no_octet_of_the_frame", 754);
-  run_test(test_a_length_frame_that_carries_no_snap_header_is_not_decoded, "test_a_length_frame_that_carries_no_snap_header_is_not_decoded", 767);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 147);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 159);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 180);
+  run_test(test_an_uncleared_borrow_refuses_work, "test_an_uncleared_borrow_refuses_work", 196);
+  run_test(test_a_refused_build_writes_no_octet, "test_a_refused_build_writes_no_octet", 210);
+  run_test(test_clear_reports_ok_and_opens_the_borrow, "test_clear_reports_ok_and_opens_the_borrow", 218);
+  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 227);
+  run_test(test_the_published_map_covers_the_private_layout, "test_the_published_map_covers_the_private_layout", 243);
+  run_test(test_the_c_tag_ethertype_is_8100, "test_the_c_tag_ethertype_is_8100", 255);
+  run_test(test_the_s_tag_ethertype_is_88a8, "test_the_s_tag_ethertype_is_88a8", 261);
+  run_test(test_the_tag_sits_in_the_type_field_and_adds_four_octets, "test_the_tag_sits_in_the_type_field_and_adds_four_octets", 267);
+  run_test(test_a_tagged_frame_is_four_octets_longer, "test_a_tagged_frame_is_four_octets_longer", 278);
+  run_test(test_the_vlan_id_range_is_the_stated_one, "test_the_vlan_id_range_is_the_stated_one", 286);
+  run_test(test_the_priority_field_is_three_bits, "test_the_priority_field_is_three_bits", 296);
+  run_test(test_parse_of_an_untagged_frame_reports_its_own_type, "test_parse_of_an_untagged_frame_reports_its_own_type", 305);
+  run_test(test_parse_of_an_802_3_frame_takes_the_snap_ethertype, "test_parse_of_an_802_3_frame_takes_the_snap_ethertype", 332);
+  run_test(test_the_length_and_ethertype_boundary_is_1500, "test_the_length_and_ethertype_boundary_is_1500", 347);
+  run_test(test_an_802_3_frame_that_is_not_snap_is_refused, "test_an_802_3_frame_that_is_not_snap_is_refused", 366);
+  run_test(test_a_tagged_802_3_frame_takes_the_snap_ethertype, "test_a_tagged_802_3_frame_takes_the_snap_ethertype", 382);
+  run_test(test_parse_of_an_untagged_frame_reports_no_tag_fields, "test_parse_of_an_untagged_frame_reports_no_tag_fields", 397);
+  run_test(test_parse_reads_an_s_tag_frame_as_untagged, "test_parse_reads_an_s_tag_frame_as_untagged", 410);
+  run_test(test_parse_of_a_tagged_frame, "test_parse_of_a_tagged_frame", 421);
+  run_test(test_parse_reports_the_c_bit, "test_parse_reports_the_c_bit", 438);
+  run_test(test_parse_reports_the_null_vlan_identifier, "test_parse_reports_the_null_vlan_identifier", 449);
+  run_test(test_parse_reports_the_reserved_vlan_identifier, "test_parse_reports_the_reserved_vlan_identifier", 462);
+  run_test(test_parse_refuses_a_frame_shorter_than_the_ethernet_header, "test_parse_refuses_a_frame_shorter_than_the_ethernet_header", 473);
+  run_test(test_parse_accepts_a_frame_of_exactly_the_ethernet_header, "test_parse_accepts_a_frame_of_exactly_the_ethernet_header", 482);
+  run_test(test_parse_refuses_a_tagged_frame_short_of_the_tag, "test_parse_refuses_a_tagged_frame_short_of_the_tag", 492);
+  run_test(test_parse_accepts_a_tagged_frame_of_exactly_the_tagged_header, "test_parse_accepts_a_tagged_frame_of_exactly_the_tagged_header", 501);
+  run_test(test_parse_refuses_a_null_frame, "test_parse_refuses_a_null_frame", 510);
+  run_test(test_a_refused_parse_reports_nothing_stale, "test_a_refused_parse_reports_nothing_stale", 520);
+  run_test(test_parse_writes_no_octet_of_the_frame, "test_parse_writes_no_octet_of_the_frame", 535);
+  run_test(test_build_writes_the_tag_and_the_encapsulated_type, "test_build_writes_the_tag_and_the_encapsulated_type", 549);
+  run_test(test_build_reports_what_it_wrote, "test_build_reports_what_it_wrote", 560);
+  run_test(test_build_and_parse_round_trip, "test_build_and_parse_round_trip", 573);
+  run_test(test_build_and_parse_round_trip_every_vlan_id, "test_build_and_parse_round_trip_every_vlan_id", 594);
+  run_test(test_build_touches_only_the_six_octets_it_names, "test_build_touches_only_the_six_octets_it_names", 608);
+  run_test(test_build_refuses_a_priority_above_seven, "test_build_refuses_a_priority_above_seven", 622);
+  run_test(test_build_refuses_a_vlan_id_outside_the_field, "test_build_refuses_a_vlan_id_outside_the_field", 631);
+  run_test(test_build_refuses_the_reserved_vlan_id, "test_build_refuses_the_reserved_vlan_id", 640);
+  run_test(test_build_accepts_the_null_vlan_identifier, "test_build_accepts_the_null_vlan_identifier", 649);
+  run_test(test_build_refuses_a_null_frame, "test_build_refuses_a_null_frame", 658);
+  run_test(test_pack_places_each_field_where_the_figure_draws_it, "test_pack_places_each_field_where_the_figure_draws_it", 673);
+  run_test(test_pack_refuses_what_build_refuses, "test_pack_refuses_what_build_refuses", 685);
+  run_test(test_split_reports_each_field, "test_split_reports_each_field", 697);
+  run_test(test_split_reports_the_reserved_vlan_id_rather_than_refusing_it, "test_split_reports_the_reserved_vlan_id_rather_than_refusing_it", 709);
+  run_test(test_split_and_pack_round_trip_over_every_value, "test_split_and_pack_round_trip_over_every_value", 720);
+  run_test(test_split_agrees_with_parse, "test_split_agrees_with_parse", 741);
+  run_test(test_pack_writes_no_octet_of_the_frame, "test_pack_writes_no_octet_of_the_frame", 756);
+  run_test(test_a_length_frame_that_carries_no_snap_header_is_not_decoded, "test_a_length_frame_that_carries_no_snap_header_is_not_decoded", 769);
 
   return UNITY_END();
 }

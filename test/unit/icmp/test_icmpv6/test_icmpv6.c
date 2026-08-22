@@ -16,6 +16,9 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/common_defines.h"
+#include "src/ip/ipv6_defines.h"
+#include "src/icmp/icmpv6_defines.h"
 
 // Big enough for a full error message: eight octets plus the largest quote sec 2.4 (c) allows.
 static uint8_t msg[IDEMIP_ICMP6_ERR_HDR_LEN + IDEMIP_ICMP6_ERR_QUOTE_MAX + 64];

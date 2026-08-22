@@ -16,6 +16,7 @@
 #include "src/ip/ip4_addr.h"
 #include "src/ip/ip6_addr.h"
 #include "src/tcp/tcp_pcb.h"
+#include "src/tcp/tcp_defines.h"
 
 IDEMIP_BEGIN_DECLS
 

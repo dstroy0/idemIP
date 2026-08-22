@@ -3,6 +3,9 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/ip/ip4_forward.h"
+#include "src/common_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "src/icmp/icmp_defines.h"
 #include <string.h>
 
 /*=======External Functions This Runner Calls=====*/
@@ -132,69 +135,69 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/ip/test_ip4_forward/test_ip4_forward.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 146);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 155);
-  run_test(test_a_decision_is_a_function_of_its_borrow_alone, "test_a_decision_is_a_function_of_its_borrow_alone", 172);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 196);
-  run_test(test_clear_raises_both_switches_the_rfc_defaults_on, "test_clear_raises_both_switches_the_rfc_defaults_on", 208);
-  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 218);
-  run_test(test_the_offset_map_is_ordered_and_fits, "test_the_offset_map_is_ordered_and_fits", 229);
-  run_test(test_a_routed_datagram_is_forwarded, "test_a_routed_datagram_is_forwarded", 242);
-  run_test(test_the_ttl_is_decremented_by_one, "test_the_ttl_is_decremented_by_one", 261);
-  run_test(test_a_ttl_of_one_expires_with_time_exceeded, "test_a_ttl_of_one_expires_with_time_exceeded", 276);
-  run_test(test_a_ttl_of_zero_is_never_forwarded, "test_a_ttl_of_zero_is_never_forwarded", 294);
-  run_test(test_a_multicast_destination_gets_no_time_exceeded, "test_a_multicast_destination_gets_no_time_exceeded", 310);
-  run_test(test_no_route_answers_network_unreachable, "test_no_route_answers_network_unreachable", 327);
-  run_test(test_oversize_with_df_answers_fragmentation_needed_and_the_next_hop_mtu, "test_oversize_with_df_answers_fragmentation_needed_and_the_next_hop_mtu", 346);
-  run_test(test_oversize_without_df_asks_for_fragmentation, "test_oversize_without_df_asks_for_fragmentation", 367);
-  run_test(test_a_datagram_the_size_of_the_mtu_is_not_fragmented, "test_a_datagram_the_size_of_the_mtu_is_not_fragmented", 383);
-  run_test(test_a_wrong_version_is_silently_discarded, "test_a_wrong_version_is_silently_discarded", 399);
-  run_test(test_a_bad_checksum_is_silently_discarded, "test_a_bad_checksum_is_silently_discarded", 415);
-  run_test(test_a_truncated_datagram_is_silently_discarded, "test_a_truncated_datagram_is_silently_discarded", 428);
-  run_test(test_a_link_layer_broadcast_is_not_forwarded, "test_a_link_layer_broadcast_is_not_forwarded", 441);
-  run_test(test_a_link_layer_broadcast_to_a_multicast_destination_passes_the_check, "test_a_link_layer_broadcast_to_a_multicast_destination_passes_the_check", 458);
-  run_test(test_a_link_layer_multicast_to_a_unicast_destination_is_not_forwarded, "test_a_link_layer_multicast_to_a_unicast_destination_is_not_forwarded", 470);
-  run_test(test_a_source_on_network_zero_is_not_forwarded, "test_a_source_on_network_zero_is_not_forwarded", 484);
-  run_test(test_a_source_on_network_127_is_not_forwarded, "test_a_source_on_network_127_is_not_forwarded", 497);
-  run_test(test_a_multicast_source_is_not_forwarded, "test_a_multicast_source_is_not_forwarded", 509);
-  run_test(test_the_limited_broadcast_as_a_source_is_not_forwarded, "test_the_limited_broadcast_as_a_source_is_not_forwarded", 519);
-  run_test(test_a_destination_on_network_zero_is_not_forwarded, "test_a_destination_on_network_zero_is_not_forwarded", 531);
-  run_test(test_a_class_e_destination_is_not_forwarded, "test_a_class_e_destination_is_not_forwarded", 541);
-  run_test(test_the_limited_broadcast_destination_is_not_a_martian, "test_the_limited_broadcast_destination_is_not_a_martian", 552);
-  run_test(test_the_martian_switch_can_be_lowered, "test_the_martian_switch_can_be_lowered", 562);
-  run_test(test_the_limited_broadcast_is_not_forwarded, "test_the_limited_broadcast_is_not_forwarded", 581);
-  run_test(test_a_directed_broadcast_is_forwarded_by_default, "test_a_directed_broadcast_is_forwarded_by_default", 597);
-  run_test(test_the_directed_broadcast_switch_stops_it, "test_the_directed_broadcast_switch_stops_it", 613);
-  run_test(test_a_broadcast_form_through_a_gateway_is_forwarded_but_draws_no_icmp_error, "test_a_broadcast_form_through_a_gateway_is_forwarded_but_draws_no_icmp_error", 641);
-  run_test(test_a_directed_broadcast_gets_no_icmp_error, "test_a_directed_broadcast_gets_no_icmp_error", 687);
-  run_test(test_a_link_local_source_or_destination_is_never_forwarded, "test_a_link_local_source_or_destination_is_never_forwarded", 706);
-  run_test(test_a_directed_broadcast_source_is_discarded_and_draws_no_icmp_error, "test_a_directed_broadcast_source_is_discarded_and_draws_no_icmp_error", 746);
-  run_test(test_the_obsolete_broadcast_destination_is_treated_as_a_broadcast, "test_the_obsolete_broadcast_destination_is_treated_as_a_broadcast", 796);
-  run_test(test_a_31_bit_prefix_endpoint_is_not_a_directed_broadcast, "test_a_31_bit_prefix_endpoint_is_not_a_directed_broadcast", 828);
-  run_test(test_an_unusable_type_of_service_draws_the_unreachable_for_tos_codes, "test_an_unusable_type_of_service_draws_the_unreachable_for_tos_codes", 862);
-  run_test(test_a_strict_source_route_answers_parameter_problem, "test_a_strict_source_route_answers_parameter_problem", 901);
-  run_test(test_a_loose_source_route_is_forwarded_and_suppresses_the_redirect, "test_a_loose_source_route_is_forwarded_and_suppresses_the_redirect", 920);
-  run_test(test_a_redirect_is_owed_when_the_next_hop_shares_the_source_subnet, "test_a_redirect_is_owed_when_the_next_hop_shares_the_source_subnet", 941);
-  run_test(test_no_redirect_when_the_datagram_leaves_another_interface, "test_no_redirect_when_the_datagram_leaves_another_interface", 961);
-  run_test(test_no_redirect_when_the_next_hop_is_off_the_source_subnet, "test_no_redirect_when_the_next_hop_is_off_the_source_subnet", 977);
-  run_test(test_an_icmp_error_draws_no_icmp_error, "test_an_icmp_error_draws_no_icmp_error", 994);
-  run_test(test_an_icmp_echo_still_draws_the_error, "test_an_icmp_echo_still_draws_the_error", 1009);
-  run_test(test_a_later_fragment_draws_no_icmp_error, "test_a_later_fragment_draws_no_icmp_error", 1022);
-  run_test(test_the_first_fragment_still_draws_the_error, "test_the_first_fragment_still_draws_the_error", 1034);
-  run_test(test_a_link_layer_broadcast_draws_no_icmp_error, "test_a_link_layer_broadcast_draws_no_icmp_error", 1046);
-  run_test(test_an_invalid_source_draws_no_icmp_error, "test_an_invalid_source_draws_no_icmp_error", 1060);
-  run_test(test_an_mtu_below_the_minimum_forward_size_is_refused, "test_an_mtu_below_the_minimum_forward_size_is_refused", 1079);
-  run_test(test_a_null_datagram_is_refused, "test_a_null_datagram_is_refused", 1093);
-  run_test(test_an_interface_index_past_the_count_is_refused, "test_an_interface_index_past_the_count_is_refused", 1102);
-  run_test(test_set_policy_refuses_a_reserved_bit, "test_set_policy_refuses_a_reserved_bit", 1118);
-  run_test(test_set_policy_lowers_after_it_raises, "test_set_policy_lowers_after_it_raises", 1129);
-  run_test(test_nothing_is_ever_busy, "test_nothing_is_ever_busy", 1141);
-  run_test(test_a_destination_on_the_loopback_network_is_not_forwarded, "test_a_destination_on_the_loopback_network_is_not_forwarded", 1165);
-  run_test(test_a_directed_broadcast_needs_a_prefix_to_be_directed_under, "test_a_directed_broadcast_needs_a_prefix_to_be_directed_under", 1181);
-  run_test(test_a_source_broadcast_needs_a_prefix_on_the_receiving_side_too, "test_a_source_broadcast_needs_a_prefix_on_the_receiving_side_too", 1240);
-  run_test(test_the_option_walk_takes_each_form_the_area_can_carry, "test_the_option_walk_takes_each_form_the_area_can_carry", 1262);
-  run_test(test_the_icmp_error_test_reads_the_type_the_datagram_carries, "test_the_icmp_error_test_reads_the_type_the_datagram_carries", 1327);
-  run_test(test_a_redirect_needs_every_one_of_its_conditions, "test_a_redirect_needs_every_one_of_its_conditions", 1376);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 149);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 158);
+  run_test(test_a_decision_is_a_function_of_its_borrow_alone, "test_a_decision_is_a_function_of_its_borrow_alone", 175);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 199);
+  run_test(test_clear_raises_both_switches_the_rfc_defaults_on, "test_clear_raises_both_switches_the_rfc_defaults_on", 211);
+  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 221);
+  run_test(test_the_offset_map_is_ordered_and_fits, "test_the_offset_map_is_ordered_and_fits", 232);
+  run_test(test_a_routed_datagram_is_forwarded, "test_a_routed_datagram_is_forwarded", 245);
+  run_test(test_the_ttl_is_decremented_by_one, "test_the_ttl_is_decremented_by_one", 264);
+  run_test(test_a_ttl_of_one_expires_with_time_exceeded, "test_a_ttl_of_one_expires_with_time_exceeded", 279);
+  run_test(test_a_ttl_of_zero_is_never_forwarded, "test_a_ttl_of_zero_is_never_forwarded", 297);
+  run_test(test_a_multicast_destination_gets_no_time_exceeded, "test_a_multicast_destination_gets_no_time_exceeded", 313);
+  run_test(test_no_route_answers_network_unreachable, "test_no_route_answers_network_unreachable", 330);
+  run_test(test_oversize_with_df_answers_fragmentation_needed_and_the_next_hop_mtu, "test_oversize_with_df_answers_fragmentation_needed_and_the_next_hop_mtu", 349);
+  run_test(test_oversize_without_df_asks_for_fragmentation, "test_oversize_without_df_asks_for_fragmentation", 370);
+  run_test(test_a_datagram_the_size_of_the_mtu_is_not_fragmented, "test_a_datagram_the_size_of_the_mtu_is_not_fragmented", 386);
+  run_test(test_a_wrong_version_is_silently_discarded, "test_a_wrong_version_is_silently_discarded", 402);
+  run_test(test_a_bad_checksum_is_silently_discarded, "test_a_bad_checksum_is_silently_discarded", 418);
+  run_test(test_a_truncated_datagram_is_silently_discarded, "test_a_truncated_datagram_is_silently_discarded", 431);
+  run_test(test_a_link_layer_broadcast_is_not_forwarded, "test_a_link_layer_broadcast_is_not_forwarded", 444);
+  run_test(test_a_link_layer_broadcast_to_a_multicast_destination_passes_the_check, "test_a_link_layer_broadcast_to_a_multicast_destination_passes_the_check", 461);
+  run_test(test_a_link_layer_multicast_to_a_unicast_destination_is_not_forwarded, "test_a_link_layer_multicast_to_a_unicast_destination_is_not_forwarded", 473);
+  run_test(test_a_source_on_network_zero_is_not_forwarded, "test_a_source_on_network_zero_is_not_forwarded", 487);
+  run_test(test_a_source_on_network_127_is_not_forwarded, "test_a_source_on_network_127_is_not_forwarded", 500);
+  run_test(test_a_multicast_source_is_not_forwarded, "test_a_multicast_source_is_not_forwarded", 512);
+  run_test(test_the_limited_broadcast_as_a_source_is_not_forwarded, "test_the_limited_broadcast_as_a_source_is_not_forwarded", 522);
+  run_test(test_a_destination_on_network_zero_is_not_forwarded, "test_a_destination_on_network_zero_is_not_forwarded", 534);
+  run_test(test_a_class_e_destination_is_not_forwarded, "test_a_class_e_destination_is_not_forwarded", 544);
+  run_test(test_the_limited_broadcast_destination_is_not_a_martian, "test_the_limited_broadcast_destination_is_not_a_martian", 555);
+  run_test(test_the_martian_switch_can_be_lowered, "test_the_martian_switch_can_be_lowered", 565);
+  run_test(test_the_limited_broadcast_is_not_forwarded, "test_the_limited_broadcast_is_not_forwarded", 584);
+  run_test(test_a_directed_broadcast_is_forwarded_by_default, "test_a_directed_broadcast_is_forwarded_by_default", 600);
+  run_test(test_the_directed_broadcast_switch_stops_it, "test_the_directed_broadcast_switch_stops_it", 616);
+  run_test(test_a_broadcast_form_through_a_gateway_is_forwarded_but_draws_no_icmp_error, "test_a_broadcast_form_through_a_gateway_is_forwarded_but_draws_no_icmp_error", 644);
+  run_test(test_a_directed_broadcast_gets_no_icmp_error, "test_a_directed_broadcast_gets_no_icmp_error", 690);
+  run_test(test_a_link_local_source_or_destination_is_never_forwarded, "test_a_link_local_source_or_destination_is_never_forwarded", 709);
+  run_test(test_a_directed_broadcast_source_is_discarded_and_draws_no_icmp_error, "test_a_directed_broadcast_source_is_discarded_and_draws_no_icmp_error", 749);
+  run_test(test_the_obsolete_broadcast_destination_is_treated_as_a_broadcast, "test_the_obsolete_broadcast_destination_is_treated_as_a_broadcast", 799);
+  run_test(test_a_31_bit_prefix_endpoint_is_not_a_directed_broadcast, "test_a_31_bit_prefix_endpoint_is_not_a_directed_broadcast", 831);
+  run_test(test_an_unusable_type_of_service_draws_the_unreachable_for_tos_codes, "test_an_unusable_type_of_service_draws_the_unreachable_for_tos_codes", 865);
+  run_test(test_a_strict_source_route_answers_parameter_problem, "test_a_strict_source_route_answers_parameter_problem", 904);
+  run_test(test_a_loose_source_route_is_forwarded_and_suppresses_the_redirect, "test_a_loose_source_route_is_forwarded_and_suppresses_the_redirect", 923);
+  run_test(test_a_redirect_is_owed_when_the_next_hop_shares_the_source_subnet, "test_a_redirect_is_owed_when_the_next_hop_shares_the_source_subnet", 944);
+  run_test(test_no_redirect_when_the_datagram_leaves_another_interface, "test_no_redirect_when_the_datagram_leaves_another_interface", 964);
+  run_test(test_no_redirect_when_the_next_hop_is_off_the_source_subnet, "test_no_redirect_when_the_next_hop_is_off_the_source_subnet", 980);
+  run_test(test_an_icmp_error_draws_no_icmp_error, "test_an_icmp_error_draws_no_icmp_error", 997);
+  run_test(test_an_icmp_echo_still_draws_the_error, "test_an_icmp_echo_still_draws_the_error", 1012);
+  run_test(test_a_later_fragment_draws_no_icmp_error, "test_a_later_fragment_draws_no_icmp_error", 1025);
+  run_test(test_the_first_fragment_still_draws_the_error, "test_the_first_fragment_still_draws_the_error", 1037);
+  run_test(test_a_link_layer_broadcast_draws_no_icmp_error, "test_a_link_layer_broadcast_draws_no_icmp_error", 1049);
+  run_test(test_an_invalid_source_draws_no_icmp_error, "test_an_invalid_source_draws_no_icmp_error", 1063);
+  run_test(test_an_mtu_below_the_minimum_forward_size_is_refused, "test_an_mtu_below_the_minimum_forward_size_is_refused", 1082);
+  run_test(test_a_null_datagram_is_refused, "test_a_null_datagram_is_refused", 1096);
+  run_test(test_an_interface_index_past_the_count_is_refused, "test_an_interface_index_past_the_count_is_refused", 1105);
+  run_test(test_set_policy_refuses_a_reserved_bit, "test_set_policy_refuses_a_reserved_bit", 1121);
+  run_test(test_set_policy_lowers_after_it_raises, "test_set_policy_lowers_after_it_raises", 1132);
+  run_test(test_nothing_is_ever_busy, "test_nothing_is_ever_busy", 1144);
+  run_test(test_a_destination_on_the_loopback_network_is_not_forwarded, "test_a_destination_on_the_loopback_network_is_not_forwarded", 1168);
+  run_test(test_a_directed_broadcast_needs_a_prefix_to_be_directed_under, "test_a_directed_broadcast_needs_a_prefix_to_be_directed_under", 1184);
+  run_test(test_a_source_broadcast_needs_a_prefix_on_the_receiving_side_too, "test_a_source_broadcast_needs_a_prefix_on_the_receiving_side_too", 1243);
+  run_test(test_the_option_walk_takes_each_form_the_area_can_carry, "test_the_option_walk_takes_each_form_the_area_can_carry", 1265);
+  run_test(test_the_icmp_error_test_reads_the_type_the_datagram_carries, "test_the_icmp_error_test_reads_the_type_the_datagram_carries", 1330);
+  run_test(test_a_redirect_needs_every_one_of_its_conditions, "test_a_redirect_needs_every_one_of_its_conditions", 1379);
 
   return UNITY_END();
 }

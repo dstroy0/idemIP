@@ -24,6 +24,13 @@
 
 #include <string.h>
 #include <unity.h>
+#include "src/common_defines.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "src/ethernet/vlan_defines.h"
+#include "src/arp/arp_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "src/ip/ipv6_defines.h"
+#include "src/tcp/tcp_defines.h"
 
 #define CANARY 0x5Au
 static _Alignas(8) uint8_t work_a[IDEMIP_TICK_BORROW + 16];
