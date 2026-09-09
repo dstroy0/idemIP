@@ -51,13 +51,13 @@ opening comment for the worked example.
 
 ## Requirements
 
-| | |
-| --- | --- |
-| CMake | 3.20 or newer |
+|            |                                                                    |
+| ---------- | ------------------------------------------------------------------ |
+| CMake      | 3.20 or newer                                                      |
 | C compiler | any C11 compiler; the warning set and `-Os` apply to GCC and Clang |
-| Python 3 | drives `test/harness.py`, which generates the Unity runners |
-| Ruby | runs Unity's `generate_test_runner.rb` |
-| Network | once, so `FetchContent` can clone Unity v2.6.1 |
+| Python 3   | drives `test/harness.py`, which generates the Unity runners        |
+| Ruby       | runs Unity's `generate_test_runner.rb`                             |
+| Network    | once, so `FetchContent` can clone Unity v2.6.1                     |
 
 Python and Ruby are needed only to build the tests.
 
@@ -87,13 +87,13 @@ The feature tree is declared child to parent in `CMakeLists.txt`, over the helpe
 `cmake/FeatureTree.cmake`. `ETHERNET` is the root; each child names the parent it sits on, and a
 build that turns a parent off is refused with the reason:
 
-| capability | sits on | because |
-| --- | --- | --- |
-| `IDEMIP_ENABLE_ETHERNET` | root | |
-| `IDEMIP_ENABLE_IPV4` | ETHERNET | `arp.h` resolves to a 48-bit Ethernet address (RFC 826) |
-| `IDEMIP_ENABLE_IPV6` | ETHERNET | the link layer here is Ethernet II (RFC 2464) |
-| `IDEMIP_ENABLE_TCP` | IPV4 or IPV6 | the checksum covers a pseudo-header |
-| `IDEMIP_ENABLE_UDP` | IPV4 or IPV6 | the checksum covers a pseudo-header |
+| capability               | sits on      | because                                                 |
+| ------------------------ | ------------ | ------------------------------------------------------- |
+| `IDEMIP_ENABLE_ETHERNET` | root         |                                                         |
+| `IDEMIP_ENABLE_IPV4`     | ETHERNET     | `arp.h` resolves to a 48-bit Ethernet address (RFC 826) |
+| `IDEMIP_ENABLE_IPV6`     | ETHERNET     | the link layer here is Ethernet II (RFC 2464)           |
+| `IDEMIP_ENABLE_TCP`      | IPV4 or IPV6 | the checksum covers a pseudo-header                     |
+| `IDEMIP_ENABLE_UDP`      | IPV4 or IPV6 | the checksum covers a pseudo-header                     |
 
 Each value reaches the library and every consumer as a compile definition, because
 `idemip_config.h` sizes tables with them: `IDEMIP_TIMEOUTS` is arithmetic over the five.
@@ -200,6 +200,16 @@ Warnings are attached to an INTERFACE target so they reach the suites as well as
 `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wcast-align -Wundef`, with
 `-Wstrict-prototypes -Wmissing-prototypes` on the library.
 
-## License
+## Licensing - This library is dual licensed.
 
-AGPL-3.0-or-later. Every file carries the SPDX identifier.
+Licensed AGPL-3.0-or-later. // various commercial contracts available
+It will always be free to use under the AGPL.
+Educators: If you would like an exception to use this in your classrooms or research projects,
+please feel free to email dstroy0 (Douglas Quigg) <dquigg123@gmail.com> from your _.edu or _.org
+faculty email address, I would be happy to grant you an exception on a case-by-case basis. Your exception
+governs your use, specifically the accreditation requirement of underlying systems in any research/presentation materials.
+Academic exemptions can lead to viable market products, in which case this license shifts to a royalty ladder,
+based arbitrarily off of the amount of goodwill you've shown and how well you've adhered to crediting students and
+other faculty involved in the project, a portion of the royalties go directly to your institution at a minimum and
+straight to your department if their rules allow for it.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).

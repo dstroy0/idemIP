@@ -11,13 +11,14 @@ grep -n "MUST-66" docs/learn/RFC/rfc9293.txt
 sed -n '3500,3530p' docs/learn/RFC/rfc9293.txt
 ```
 
-100 documents.
+108 documents.
 
 | RFC | Title |
 | --- | --- |
 | [768](rfc768.txt) | User Datagram Protocol |
 | [791](rfc791.txt) | Internet Protocol |
 | [792](rfc792.txt) | Internet Control Message Protocol |
+| [793](rfc793.txt) | Transmission Control Protocol |
 | [815](rfc815.txt) | IP Datagram Reassembly Algorithms |
 | [826](rfc826.txt) | An Ethernet Address Resolution Protocol -- or -- Converting Network Protocol Addresses to 48.bit Ethernet Address for Transmission on Ethernet Hardware |
 | [894](rfc894.txt) | A Standard for the Transmission of IP Datagrams over Ethernet Networks |
@@ -56,17 +57,22 @@ sed -n '3500,3530p' docs/learn/RFC/rfc9293.txt
 | [2578](rfc2578.txt) | Structure of Management Information Version 2 (SMIv2) |
 | [2579](rfc2579.txt) | Textual Conventions for SMIv2 |
 | [2710](rfc2710.txt) | Multicast Listener Discovery (MLD) for IPv6 |
+| [2711](rfc2711.txt) | IPv6 Router Alert Option |
 | [2827](rfc2827.txt) | Network Ingress Filtering: Defeating Denial of Service Attacks which employ IP Source Address Spoofing |
 | [3021](rfc3021.txt) | Using 31-Bit Prefixes on IPv4 Point-to-Point Links |
 | [3128](rfc3128.txt) | Protection Against a Variant of the Tiny Fragment Attack |
 | [3306](rfc3306.txt) | Unicast-Prefix-based IPv6 Multicast Addresses |
 | [3376](rfc3376.txt) | Internet Group Management Protocol, Version 3 |
+| [3390](rfc3390.txt) | Increasing TCP's Initial Window |
 | [3465](rfc3465.txt) | TCP Congestion Control with Appropriate Byte Counting (ABC) |
 | [3542](rfc3542.txt) | Advanced Sockets Application Program Interface (API) for IPv6 |
 | [3596](rfc3596.txt) | DNS Extensions to Support IP Version 6 |
 | [3646](rfc3646.txt) | DNS Configuration options for Dynamic Host Configuration Protocol for IPv6 (DHCPv6) |
+| [3692](rfc3692.txt) | Assigning Experimental and Testing Numbers Considered Useful |
 | [3810](rfc3810.txt) | Multicast Listener Discovery Version 2 (MLDv2) for IPv6 |
 | [3828](rfc3828.txt) | The Lightweight User Datagram Protocol (UDP-Lite) |
+| [3849](rfc3849.txt) | IPv6 Address Prefix Reserved for Documentation |
+| [3879](rfc3879.txt) | Deprecating Site Local Addresses |
 | [3927](rfc3927.txt) | Dynamic Configuration of IPv4 Link-Local Addresses |
 | [3956](rfc3956.txt) | Embedding the Rendezvous Point (RP) Address in an IPv6 Multicast Address |
 | [4007](rfc4007.txt) | IPv6 Scoped Address Architecture |
@@ -87,6 +93,7 @@ sed -n '3500,3530p' docs/learn/RFC/rfc9293.txt
 | [5452](rfc5452.txt) | Measures for Making DNS More Resilient against Forged Answers |
 | [5681](rfc5681.txt) | TCP Congestion Control |
 | [5722](rfc5722.txt) | Handling of Overlapping IPv6 Fragments |
+| [5737](rfc5737.txt) | IPv4 Address Blocks Reserved for Documentation |
 | [5942](rfc5942.txt) | IPv6 Subnet Model: The Relationship between Links and Subnet Prefixes |
 | [5952](rfc5952.txt) | A Recommendation for IPv6 Address Text Representation |
 | [5961](rfc5961.txt) | Improving TCP's Robustness to Blind In-Window Attacks |
@@ -100,6 +107,7 @@ sed -n '3500,3530p' docs/learn/RFC/rfc9293.txt
 | [6528](rfc6528.txt) | Defending against Sequence Number Attacks |
 | [6724](rfc6724.txt) | Default Address Selection for Internet Protocol Version 6 (IPv6) |
 | [6890](rfc6890.txt) | Special-Purpose IP Address Registries |
+| [6946](rfc6946.txt) | Processing of IPv6 "Atomic" Fragments |
 | [6980](rfc6980.txt) | Security Implications of IPv6 Fragmentation with IPv6 Neighbor Discovery |
 | [7042](rfc7042.txt) | IANA Considerations and IETF Protocol and Documentation Usage for IEEE 802 Parameters |
 | [7112](rfc7112.txt) | Implications of Oversized IPv6 Header Chains |
