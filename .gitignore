@@ -32,3 +32,7 @@ include/MMgr/
 # tools/dev_env/rfc.py had to fetch because no path carried it, and the RFC Editor is where it
 # came from.
 .rfc-cache/
+
+# The toolkit scratch directory. `repotools` resolves [layout] scratch to it and the retrieval
+# ledger and its HTTP cache are written there. Measurement and cache, not the tree.
+build/

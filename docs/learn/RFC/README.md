@@ -11,7 +11,7 @@ grep -n "MUST-66" docs/learn/RFC/rfc9293.txt
 sed -n '3500,3530p' docs/learn/RFC/rfc9293.txt
 ```
 
-108 documents.
+111 documents.
 
 | RFC | Title |
 | --- | --- |
@@ -25,6 +25,7 @@ sed -n '3500,3530p' docs/learn/RFC/rfc9293.txt
 | [907](rfc907.txt) | Host Access Protocol Specification |
 | [919](rfc919.txt) | BROADCASTING INTERNET DATAGRAMS |
 | [950](rfc950.txt) | Internet Standard Subnetting Procedure |
+| [1034](rfc1034.txt) | Domain Names - Concepts and Facilities |
 | [1035](rfc1035.txt) | Domain Names - Implementation and Specification |
 | [1042](rfc1042.txt) | A Standard for the Transmission of IP Datagrams over IEEE 802 Networks |
 | [1044](rfc1044.txt) | Internet Protocol on Network Systems HYPERchannel Protocol Specification |
@@ -43,6 +44,7 @@ sed -n '3500,3530p' docs/learn/RFC/rfc9293.txt
 | [1542](rfc1542.txt) | Clarifications and Extensions for the Bootstrap Protocol |
 | [1812](rfc1812.txt) | Requirements for IP Version 4 Routers |
 | [1858](rfc1858.txt) | Security Considerations for IP Fragment Filtering |
+| [1918](rfc1918.txt) | Address Allocation for Private Internets |
 | [2011](rfc2011.txt) | SNMPv2 Management Information Base for the Internet Protocol using SMIv2 |
 | [2018](rfc2018.txt) | TCP Selective Acknowledgment Options |
 | [2113](rfc2113.txt) | IP Router Alert Option |
@@ -54,6 +56,7 @@ sed -n '3500,3530p' docs/learn/RFC/rfc9293.txt
 | [2464](rfc2464.txt) | Transmission of IPv6 Packets over Ethernet Networks |
 | [2465](rfc2465.txt) | Management Information Base for IP Version 6: Textual Conventions and General Group |
 | [2466](rfc2466.txt) | Management Information Base for IP Version 6: ICMPv6 Group |
+| [2474](rfc2474.txt) | Definition of the Differentiated Services Field (DS Field) in the IPv4 and IPv6 Headers |
 | [2578](rfc2578.txt) | Structure of Management Information Version 2 (SMIv2) |
 | [2579](rfc2579.txt) | Textual Conventions for SMIv2 |
 | [2710](rfc2710.txt) | Multicast Listener Discovery (MLD) for IPv6 |

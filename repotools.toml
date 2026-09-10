@@ -1,0 +1,64 @@
+# idemIP - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This repository's settings for the shared toolkit at ../../repo_tools. Everything not stated here
+# comes from lib/repotools/defaults.toml; what is stated differs from the default and says why.
+#
+#   repotools config     what this resolves to once the defaults are merged under it
+#   repotools fetch      copy the named tool sets in, and write repotools.lock
+#   repotools check      report a fetched tool edited here, or one the toolkit has moved past
+
+[project]
+name = "idemIP"
+version = "0.1.0"
+spdx = "AGPL-3.0-or-later"
+copyright = "Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>"
+prefix = "IDEMIP"
+
+[layout]
+# NOT the default ["src", "include"]. include/ holds exactly one entry, the MMgr submodule, and
+# nothing of idemIP's own. Config.walk_all prunes a nested checkout, but Config.walk does not, so a
+# root that contains only a submodule is better left unnamed than left to a prune in one method.
+source = ["src"]
+docs = ["docs"]
+# idemIP ships none. The default ["examples"] names a directory that is not here, and a root that is
+# absent is reported by name rather than passed over.
+examples = []
+tests = ["test"]
+tools = "tools"
+scratch = "build"
+
+[code]
+extensions = [".c", ".h"]
+# unity_runner.c is generated per suite by the Unity runner generator. It is not written here, and
+# reading it reports the generator's shape as this tree's.
+skip_files = ["unity_runner.c"]
+# Extends the defaults rather than replacing them. Four this tree has that the defaults do not name:
+# the RFC text cache, the editor and agent directories, and ctest's scratch.
+exclude = [".rfc-cache", ".claude", ".vscode", "Testing"]
+
+[prose]
+# The two files in this tree that are prose. docs/ is deliberately not a root: everything under
+# docs/learn is the RFC corpus as the RFC Editor published it, which is not ours to check and not
+# ours to rewrite.
+roots = ["README.md", "test"]
+
+[hooks]
+gates = ["docs_check", "fetch_check"]
+
+[hooks.docs_check]
+roots = ["README.md", "test"]
+
+[corpus]
+# Where the vendored normative text lives, and how a document in it is named. These match the
+# defaults; they are stated because this tree is the one the defaults were taken from, and a reader
+# should not have to know that to find the corpus.
+dir = "docs/learn/RFC"
+name = "rfc%d.txt"
+source = "rfc_editor"
+
+[fetch]
+# Starting with the two sets whose tools this tree already has its own copies of, so `repotools
+# check` has something to compare and the changeover is visible one set at a time.
+sets = ["lib/repotools", "code/code_maint"]
+into = "repotools"

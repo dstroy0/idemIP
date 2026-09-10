@@ -52,8 +52,6 @@ import argparse
 import os
 import re
 import sys
-import urllib.error
-import urllib.request
 
 ROOT = os.getcwd()
 CACHE = os.path.join(ROOT, ".rfc-cache")
@@ -72,8 +70,6 @@ def law():
     out = [d for d in env.split(os.pathsep) if d] + out
     out.append(os.path.join(ROOT, os.pardir, os.pardir, "ProtoCore", "docs", "learn", "rfc", "text"))
     return [d for d in out if os.path.isdir(d)]
-URL = "https://www.rfc-editor.org/rfc/rfc{n}.txt"
-TIMEOUT = 30
 
 # A page break, the running footer above it and the running header below it. All three are furniture
 # the document's own text does not include, and a quote that spans a page boundary has to step over
@@ -162,20 +158,26 @@ def fetch(number):
     path = os.path.join(CACHE, "rfc%s.txt" % number)
     if os.path.exists(path):
         return read(path)
-    req = urllib.request.Request(
-        URL.format(n=number),
-        headers={"User-Agent": "idemIP-rfc-tool (+https://github.com/dstroy0/idemIP)"},
+    # The network arm is closed. This tool predates the toolkit's machine-wide rate floor and knew
+    # nothing about it: no delay between calls, no robots.txt, no Retry-After, and the citation audit
+    # reaches here from inside a SPECULATIVE candidate loop, so a wrong guess cost a full request.
+    # Several sessions fetch from this machine now, and a rate limit belongs to the address rather
+    # than to a process. An uncoordinated second requester spends everyone's turn.
+    #
+    # It also wrote with a bare open(path, "w"), so on Windows the cache held carriage returns the
+    # RFC Editor never sent. Copying one of those into docs/learn/RFC, which is governed by
+    # `* text=auto eol=lf`, puts CRLF into a tree that states LF everywhere.
+    #
+    # This closes acquisition, not use. The 111 documents in docs/learn/RFC and the 10 in .rfc-cache
+    # stay readable, and every other mode of this tool runs entirely off local text.
+    raise SystemExit(
+        "RFC %s is not vendored and not cached, and this tool no longer fetches.\n"
+        "  Acquire it through the toolkit, which coordinates with every other session on this\n"
+        "  machine and normalizes line endings deliberately:\n"
+        "      python <repo_tools>/data/data_fetch/corpus.py get %s --tree . --corpus docs/learn/RFC\n"
+        "  IDEMIP_RFC_PATH prepends directories to the search where it is vendored elsewhere."
+        % (number, number)
     )
-    try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as e:
-        raise SystemExit("RFC %s: the RFC Editor answered %s" % (number, e.code))
-    except Exception as e:  # noqa: BLE001 - a name, a timeout and a refused connection read the same here
-        raise SystemExit("RFC %s: %s, and no directory on the RFC path carries it" % (number, e))
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(body)
-    return body
 
 
 def flatten(text):
