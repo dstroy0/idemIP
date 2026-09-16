@@ -10,7 +10,7 @@ was checked - it carries the authority of the document without the document havi
 is worse again, because a case named after a sentence is asserting that sentence, and if the sentence
 is not in the document the case is asserting something nobody wrote.
 
-The 101 documents in docs/learn/RFC are the source, and a sibling ProtoCore checkout's own set is
+The 111 documents in docs/learn/RFC are the source, and a sibling ProtoCore checkout's own set is
 read after them when one is there. IDEMIP_RFC_PATH prepends directories. One no path carries is
 fetched from the RFC Editor into .rfc-cache, which is ignored - so the tool needs no network for any
 RFC the library actually cites, and CI can run the audit offline.
