@@ -68,7 +68,7 @@ def law():
     out = [os.path.join(ROOT, "docs", "learn", "RFC")]
     env = os.environ.get("IDEMIP_RFC_PATH", "")
     out = [d for d in env.split(os.pathsep) if d] + out
-    out.append(os.path.join(ROOT, os.pardir, os.pardir, "ProtoCore", "docs", "learn", "rfc", "text"))
+    out.append(os.path.join(ROOT, os.pardir, "ProtoCore", "docs", "learn", "rfc", "text"))
     return [d for d in out if os.path.isdir(d)]
 
 # A page break, the running footer above it and the running header below it. All three are furniture

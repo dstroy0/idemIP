@@ -1,7 +1,7 @@
 # idemIP - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# This repository's settings for the shared toolkit at ../../repo_tools. Everything not stated here
+# This repository's settings for the shared toolkit at ../../private/repo_tools. Everything not stated here
 # comes from lib/repotools/defaults.toml; what is stated differs from the default and says why.
 #
 #   repotools config     what this resolves to once the defaults are merged under it
