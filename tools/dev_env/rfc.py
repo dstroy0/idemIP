@@ -148,8 +148,14 @@ def read(path):
 
 def fetch(number):
     """The text of one RFC: the vendored copy, then the cache, then the RFC Editor."""
+    # An RFC number is one document however it is spelled, so a lookup tries every spelling of it.
+    # Padding alone was not enough: an RFC's own reference tags carry the zero-padded form, so a
+    # comment quoting RFC 9293 quotes "[RFC0793]", and "0793" padded to four is still "0793" while
+    # the vendored file is rfc793.txt. The audit then reported a document the corpus holds as
+    # missing. Stripping is the arm that was absent.
+    digits = str(number).lstrip("0") or "0"
     for d in law():
-        for name in ("rfc%s.txt" % number, "rfc%s.txt" % str(number).zfill(4)):
+        for name in ("rfc%s.txt" % number, "rfc%s.txt" % str(number).zfill(4), "rfc%s.txt" % digits):
             local = os.path.join(d, name)
             if os.path.exists(local):
                 return read(local)
