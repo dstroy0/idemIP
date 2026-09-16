@@ -340,6 +340,22 @@ if(IDEMIP_FUZZ)
     target_link_options(fuzz_dispatch PRIVATE -fsanitize=fuzzer)
 endif()
 
+# --- examples -----------------------------------------------------------------
+# An example is an application, so it links idemip through the same front door a consumer uses and
+# takes the warning set the library takes. The tree is optional because it is not here yet: the
+# guard keeps a configure step working in a checkout without it, and picks it up on the first
+# configure after one lands. tools/build.py examples drives this option.
+
+option(IDEMIP_EXAMPLES "Build the examples/ tree" OFF)
+
+if(IDEMIP_EXAMPLES)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/CMakeLists.txt")
+        add_subdirectory(examples)
+    else()
+        message(STATUS "IDEMIP_EXAMPLES is ON, but examples/CMakeLists.txt is not in this tree")
+    endif()
+endif()
+
 # --- tests -------------------------------------------------------------------
 
 include(CTest)

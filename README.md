@@ -63,7 +63,34 @@ Python and Ruby are needed only to build the tests.
 
 ## Build
 
-The build directory lives outside the repository, and `.clangd` expects it at `../build`:
+`tools/build.py` drives every tree here. A first build starts with `check`, which names each
+prerequisite, what that part is needed for, and whether this host has it:
+
+```
+python tools/build.py check
+python tools/build.py all
+```
+
+`all` builds the library from `src/`, then the `examples/` tree, then the suites, and runs ctest
+over them. Each tree also has its own entry point:
+
+```
+python tools/build.py lib          the static library, plus the idemip_sizes tool
+python tools/build.py examples     the examples/ tree
+python tools/build.py tests        the suites, then ctest over them
+python tools/build.py configure    write the CMake cache and stop
+```
+
+Every subcommand takes `--dry-run`, which prints the `cmake` and `ctest` invocations without
+running them, and `-D`, which forwards a define to the configure step:
+
+```
+python tools/build.py lib --dry-run
+python tools/build.py lib -D IDEMIP_ENABLE_TCP=OFF -D IDEMIP_ENABLE_UDP=OFF
+```
+
+The build directory lives outside the repository, and `.clangd` expects it at `../build`. That is
+the default `tools/build.py` configures, and `--build-dir` moves it. By hand the same build is:
 
 ```
 cmake -S . -B ../build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -111,7 +138,8 @@ cmake/           FeatureTree.cmake: add_root_option, add_child_option, feature_s
                  feature_source_swap, enforce_mutually_exclusive_with_fallback
 src/             the library, included as "src/..." with the repo root as the one include path
 test/            one CTest target per suite, plus harness.py and unwired.py
-tools/           idemip_sizes.c
+tools/           build.py, the entry point for every build; idemip_sizes.c, the footprint tool;
+                 dev_env/, the checkers the repository runs over its own source
 ```
 
 ## What is here
