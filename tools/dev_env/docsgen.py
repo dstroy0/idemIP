@@ -24,7 +24,10 @@ hand, and is never touched.
 --check is the CI shape, beside guards.py, counters.py and deadstate.py. It needs idemip_sizes to
 have been built, because the footprint is the compiler's arithmetic and not this script's:
 
-    cmake --build ../build --target idemip_sizes
+    python tools/build.py lib
+
+Pass --build-dir here when the build is not where tools/build.py puts it by default; this script
+asks that module where the build went instead of guessing.
 
 WHERE EACH REGION COMES FROM
 
@@ -50,6 +53,14 @@ import subprocess
 import sys
 
 ROOT = os.getcwd()
+
+# tools/build.py owns the build layout. Import it instead of carrying a second copy of where the
+# build went; see resolve_build_dir there for what the two copies cost before they were folded.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+import build  # noqa: E402
+
+# Set from --build-dir. None takes the default tools/build.py resolves.
+BUILD_DIR = None
 PAGE = os.path.join("docs", "index.html")
 FRONT = os.path.join("src", "idemip.h")
 RFC_DIR = os.path.join("docs", "learn", "RFC")
@@ -136,17 +147,17 @@ def unit(rel):
 
 def sizes():
     """Run idemip_sizes and read back every borrow term and the sums."""
-    exe = None
-    for candidate in ("../build/idemip_sizes.exe", "../build/idemip_sizes",
-                      "build/idemip_sizes.exe", "build/idemip_sizes"):
-        path = os.path.join(ROOT, candidate)
-        if os.path.exists(path):
-            exe = path
-            break
+    # Where the build went is tools/build.py's to answer, not this script's. This guessed at four
+    # paths and took no --build-dir, so it called a built idemip_sizes missing whenever anyone put
+    # the build anywhere but ../build, and then printed a rebuild command for a directory that did
+    # not exist.
+    exe = build.resolve_built_tool("idemip_sizes", BUILD_DIR)
     if exe is None:
         sys.exit(
             "idemip_sizes is not built, and the footprint is its arithmetic rather than this "
-            "script's.\n    cmake --build ../build --target idemip_sizes"
+            "script's.\n    python tools/build.py lib{}".format(
+                "" if BUILD_DIR is None else " --build-dir " + BUILD_DIR
+            )
         )
     out = subprocess.run([exe], capture_output=True, text=True, check=True).stdout
 
@@ -481,7 +492,11 @@ def main():
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--write", action="store_true", help="write the regions")
     mode.add_argument("--check", action="store_true", help="exit nonzero when out of date")
+    ap.add_argument("--build-dir", help="where the build went; the default is tools/build.py's ../build")
     args = ap.parse_args()
+
+    global BUILD_DIR
+    BUILD_DIR = args.build_dir
 
     page = read(PAGE)
     data = gather()

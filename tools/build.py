@@ -73,11 +73,36 @@ def c_compiler_name():
     return None
 
 
-def build_directory(args):
-    """Return the absolute build directory, defaulting to the ../build that .clangd expects."""
-    if args.build_dir:
-        return os.path.abspath(args.build_dir)
+def resolve_build_dir(explicit=None):
+    """Return the absolute build directory, defaulting to the ../build that .clangd expects.
+
+    Every tool in this tree that needs to know where the build went calls this. It stood in two
+    implementations until 2026-09-16: this one, which takes --build-dir, and a four-candidate guess
+    inside tools/dev_env/docsgen.py, which took nothing. The two disagreed the moment anyone passed
+    --build-dir, and docsgen then reported a built idemip_sizes as missing and printed a rebuild
+    command naming a directory that did not exist.
+    """
+    if explicit:
+        return os.path.abspath(explicit)
     return os.path.abspath(os.path.join(REPO_ROOT, os.pardir, "build"))
+
+
+def resolve_built_tool(name, build_dir=None):
+    """Return the path to a built executable under the build directory, or None when it is absent.
+
+    The suffix is the platform's, so a caller names the target and not the file.
+    """
+    root = resolve_build_dir(build_dir)
+    for candidate in (name + ".exe", name):
+        path = os.path.join(root, candidate)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def build_directory(args):
+    """The build directory this invocation runs in."""
+    return resolve_build_dir(args.build_dir)
 
 
 def run(command, dry_run):
