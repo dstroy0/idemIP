@@ -66,6 +66,8 @@ A citation here names a section, and the section decides. RFC 9293 puts the Mins
 
 No third-party copyrighted document may be committed to this repository. The rule is about who holds the copyright and not about the file format: a PDF this project builds from its own sources is fine, and somebody else's paper is not, whatever extension it carries. Copies of other people's work live only in the private corpus at `repos/owned/private/anchor_sift_citations`. idemIP carries none today and that is the state to preserve.
 
+This file is tracked past the `.claude/` entry in `.git/info/exclude`, and it names that private path here and in its Scope line. Both were put to Douglas on 2026-09-16 with the repository confirmed `PUBLIC` by `gh repo view dstroy0/idemIP --json visibility`, and he kept them. A path is not a credential and the corpus is named across the tree's planning documents already. Leave both alone; an audit that finds a private path in a public repository has found a decision and not a leak.
+
 `docs/learn/RFC/` is a separate case and stays. It holds 112 verbatim IETF RFC text files, which the IETF Trust's terms permit redistributing. Treat them as read-only: they are normative standards text, and an edit to one silently changes what every citation pointing at it claims.
 
 ## Prose and comments
