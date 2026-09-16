@@ -58,7 +58,11 @@ Fixing them belongs to the repository agents that own those chapters, not to a c
 
 ## Citations leave this repository
 
-idemIP cites 95 distinct RFCs plus six IEEE standards, and two algorithms appear by author surname with no RFC number attached: Nagle in `src/tcp/tcp_out.c` and `src/tcp/tcp_out.h`, and Karn in the same two files. The session holding `repos/owned/private/anchor_sift_citations` keeps the corpus and has the inventory.
+idemIP cites 94 distinct RFCs plus six IEEE standards, and every borrowed claim carries an RFC number and section inline. Two algorithms are named after their authors, Nagle and Karn in `src/tcp/tcp_out.c` and `src/tcp/tcp_out.h`, and both sit beside the citation that governs them: Nagle at RFC 9293 sec 3.7.4, Karn at RFC 6298 sec 3. The surname is descriptive and never stands in for the reference.
+
+Those two reach their original papers transitively. RFC 9293 sec 3.7.4 opens "The 'Nagle algorithm' was described in RFC 896", and RFC 6298 sec 3 carries `[KP87]` inside the sentence `tcp_out.c:468` quotes. A work a standard cites is not a work this code rests on; idemIP implements the RFC's requirement. The session holding `repos/owned/private/anchor_sift_citations` keeps the corpus and has the inventory.
+
+A citation here names a section, and the section decides. RFC 9293 puts the Minshall variation of the Nagle algorithm in Appendix A.3 and the baseline in sec 3.7.4. This tree cites sec 3.7.4 and never Appendix A.3, so the citation answers which of the two it implements. Cite the section, not the document.
 
 No third-party copyrighted document may be committed to this repository. The rule is about who holds the copyright and not about the file format: a PDF this project builds from its own sources is fine, and somebody else's paper is not, whatever extension it carries. Copies of other people's work live only in the private corpus at `repos/owned/private/anchor_sift_citations`. idemIP carries none today and that is the state to preserve.
 
