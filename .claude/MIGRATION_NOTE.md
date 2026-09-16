@@ -72,15 +72,31 @@ No third-party copyrighted document may be committed to this repository. The rul
 
 Comment prose belongs to the prose compliance session, which reviews and sends edit requests without editing this tree. Two standing points for anyone writing here.
 
-This repository carries 58 British spellings across 50 files, and migration objective 13 bans them in tool comments and description blocks. Do not hand-edit them. The objective 13 gate is being built with a `--fix` mode, and running it over the whole tree at once proves the gate catches them; a tree cleaned by hand beforehand tests nothing.
+This repository carried 58 British spellings across 50 files. 43 of them were corrected in commit 242ec74, on a request from the prose compliance session: the repeated Doxygen note beginning "Aggregate-initialised HERE" appeared once per protocol header, and the same sentence already read `initializer` in American four words later. The block contradicted itself, so the fix was internal consistency and not a locale imposed on the tree. Lead with the contradiction wherever one exists; a house rule invites an argument that a self-contradiction does not.
 
-Most of the count is one repeated block. `initialised` accounts for 44 of the 58, nearly all of them in the Doxygen note beginning "Aggregate-initialised HERE" that appears once per protocol header. `licence` accounts for 4, all inside `tools/dev_env/readclean.py` and `tools/dev_env/strip_comments.py`, and every one of them is prose describing a license block instead of license text itself, so the gate may rewrite them. The remainder is `optimisation` three times in the `CMakeLists.txt` bench block at lines 305, 311 and 321, plus single hits on `optimised`, `modelled`, `behaviour`, `initialiser` and three on `signalled`.
+15 remain and they are deliberate. Migration holds them as fixtures for the objective 13 gate, which is being built with a `--fix` mode, and a tree cleaned by hand proves nothing about a gate. Do not fix them. They are `optimisation` at `CMakeLists.txt` lines 305, 311 and 321 and `behaviour` at line 123; `initialiser` and "zero initialised" at `src/idemip_config.h:270`; `optimised` at `test/bench/bench_entries.c:232`; `modelled` at `test/unit/netif/test_dma/test_dma.c:51`; `signalled` at `test/unit/tcp/test_tcp_in/test_tcp_in.c:1607`, `:1615` and `:1700`; and `licence` at `tools/dev_env/readclean.py:12` and `:36` and at `tools/dev_env/strip_comments.py:4` and `:12`. The 43 that were fixed are recoverable from commit 82dc143, which is the state before the correction.
+
+Those four `licence` sites describe a license block instead of being one, so a gate may rewrite them. Every file here carries an SPDX line, and a gate that edits inside one is changing a legal artifact, so the exclusion has to be a rule and not a habit.
+
+`rather than` is banned outright by the `code-comments` standard and survives in all 43 of those headers and in the commit message that spawned them, `f9202c7`. It was left alone deliberately. Removing it needs the sentence rebuilt, because the hinge carries the contrast against the `extern` form, and that is a separate decision from the spelling.
 
 `SHOULD` and `MUST` in this repository's comments are RFC 2119 normative keywords and are not hedging. Rewording one breaks the citation it sits inside.
 
+## Commit gates
+
+No git hook is installed. `core.hooksPath` is unset and `.git/hooks` holds only the `.sample` files git ships, so nothing runs on commit and nothing has. The four migration commits passed through no gate.
+
+`repotools.toml` reads otherwise, and that is the trap in it. Line 47 declares `gates = ["docs_check", "fetch_check"]` and line 50 gives `[hooks.docs_check]` its roots, so a reader takes both for live. They are configuration for gates nobody wired. A gate that is declared and not installed prints nothing at all, which is quieter than one that fails to find its tool and quieter than one that checks the wrong tree.
+
+Installing one would still not reach the code. The declared roots are `README.md` and `test`, so `src/` sits outside them and so does `CMakeLists.txt`.
+
+When a hook does go in, compute the tree with `git rev-parse --show-toplevel`. From a linked worktree under `.claude/worktrees/` that returns the worktree while `--git-dir` returns the per-worktree git directory, both verified here. A hook that derives its tree from the script's own location reconciles the main checkout instead, reports that every file matches, and lets an unrecorded file through; the exit status cannot tell that case from a real pass. Test a new hook by committing a deliberately bad file from a linked worktree and checking whether it lands.
+
 ## What the migration did not change
 
-No file under `src/` or `test/` was modified. The changes are `tools/build.py` (new), the `IDEMIP_EXAMPLES` block in `CMakeLists.txt`, the README Build and Layout sections, and this note. `include/MMgr` is a submodule and belongs to the MMgr captain.
+`include/MMgr` is a submodule and belongs to the MMgr captain. This repository's whole dependency on it is three lines at `src/idemip_config.h:26-27`, which take `mmgr_string_shim.h` for `memcpy`, `memset`, `memcmp` and `memmove` when `IDEMIP_MMGR` is on. That option is off by default (`CMakeLists.txt:51`), so a default build compiles and links nothing from the submodule.
+
+The `src/` changes are confined to one comment line per file in the 43 headers named above. No code changed: the diff over `src/` is 43 insertions and 43 deletions, every one of them the same sentence. The other changes are `tools/build.py` (new), the `IDEMIP_EXAMPLES` block in `CMakeLists.txt`, the `ProtoCore` path in `tools/dev_env/rfc.py`, the toolkit path in this file's own `repotools.toml` header, the README Build and Layout sections, and this note.
 
 **Author:** dstroy0 (Douglas Quigg) <dquigg123@gmail.com>
 **Date:** 2026-09-16
