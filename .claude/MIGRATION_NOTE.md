@@ -60,7 +60,7 @@ Fixing them belongs to the repository agents that own those chapters, not to a c
 
 idemIP cites 95 distinct RFCs plus six IEEE standards, and two algorithms appear by author surname with no RFC number attached: Nagle in `src/tcp/tcp_out.c` and `src/tcp/tcp_out.h`, and Karn in the same two files. The session holding `repos/owned/private/anchor_sift_citations` keeps the corpus and has the inventory.
 
-No PDF may be committed to this repository. Copyrighted third-party documents live only in the private corpus. idemIP carries none today and that is the state to preserve.
+No third-party copyrighted document may be committed to this repository. The rule is about who holds the copyright and not about the file format: a PDF this project builds from its own sources is fine, and somebody else's paper is not, whatever extension it carries. Copies of other people's work live only in the private corpus at `repos/owned/private/anchor_sift_citations`. idemIP carries none today and that is the state to preserve.
 
 `docs/learn/RFC/` is a separate case and stays. It holds 112 verbatim IETF RFC text files, which the IETF Trust's terms permit redistributing. Treat them as read-only: they are normative standards text, and an edit to one silently changes what every citation pointing at it claims.
 

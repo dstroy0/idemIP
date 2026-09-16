@@ -238,7 +238,7 @@ void idemip_ethip6_linklocal(uint8_t *work);
 /**
  * @brief The one symbol this module exports. Immutable, so it costs no RAM.
  *
- * Aggregate-initialised HERE rather than declared `extern` against a definition in the .c. A
+ * Aggregate-initialized HERE rather than declared `extern` against a definition in the .c. A
  * `const` object whose initializer every translation unit can see is a compile-time fact, so
  * `Ethip6.entry(w)` resolves to a named function and becomes a direct call, and the table itself is
  * read by nothing at run time and is not emitted. An `extern` table leaves the call indirect: the
