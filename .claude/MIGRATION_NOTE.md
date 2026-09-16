@@ -26,13 +26,25 @@ python tools/build.py all
 
 The README Build section carries the same commands. Migration objective 8 requires that worked invocation in the README of every repository, because a build discoverable only by reading the script is a build that lives in an agent's transcript.
 
-## What examples/ still owes
+## Why there is no examples/ tree
 
-There is no `examples/` tree in this repository. Migration objective 18 requires one that a build script can walk a user through, so idemIP owes it.
+There is no `examples/` tree, and one was measured for and deliberately not written on 2026-09-16. Objective 18 asks for a build script covering `src/` and `examples/`, and `tools/build.py` covers both; what it reports for `examples` is that the tree holds nothing to build, which is true.
 
-The wiring is already in place and inert. `CMakeLists.txt` declares `IDEMIP_EXAMPLES`, off by default, and adds the subdirectory only when `examples/CMakeLists.txt` exists. A configure with the option on and no tree present prints a status line and continues. Dropping an `examples/CMakeLists.txt` into the tree is all that remains; `python tools/build.py examples` picks it up on the next configure with no change to the script.
+**Writing one would be the fourth copy of a single engine.** Standing up an instance and driving a tick already exists three times:
 
-An example is an application, so it links `idemip` through `src/idemip.h` the way a consumer does. That include is the only compile the front door gets outside the fuzz harness (`CMakeLists.txt:334`), which is a second reason to want the tree.
+| where | form | compiled |
+| --- | --- | --- |
+| `src/idemip.h`, the `@file` block | the stages by hand, then the same three through `Tick` with the order enforced | no |
+| `test/integration/test_loopback/test_loopback.c` | `Phy.bind`, `Dma.bind`, `Netif.bind`, `Netif.set_addr4`, then a hand-rolled drain and timer loop across 2606 lines | yes, asserted |
+| `test/unit/core/test_tick/test_tick.c` | `bind_tick`, `open_tick`, `run_phase` over real borrows, driving all four phases | yes, asserted |
+
+An example would carry that sequence again, and the rule it would break governs this tree: a primitive lands in one place, and variants of it are arguments to that one place. The copies here agree with each other today, so this is a finding ahead of a defect.
+
+`test/support/fake_phy.h` is the host `IdemIpPhyDriver`, used by `test_loopback.c`. An example would need a driver and must use that one; a second host driver would be the same mistake one layer down.
+
+**The remedy is a fold and it needs a decision, so it is proposed and not run.** Factor the bring-up into one helper that takes its borrows as arguments, have `test_loopback.c` and `test_tick.c` call it, An example then becomes a short program calling that helper, transcribing nothing. That means editing two asserted suites, which changes what they cover, so it belongs to Douglas. Until then the tree is correct as it stands and `build.py examples` reports the truth.
+
+The CMake wiring stays. `CMakeLists.txt` declares `IDEMIP_EXAMPLES`, off by default, and adds the subdirectory only when `examples/CMakeLists.txt` exists, so the day a tree lands nothing else has to change.
 
 ## Theory
 
