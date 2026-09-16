@@ -90,7 +90,13 @@ No git hook is installed. `core.hooksPath` is unset and `.git/hooks` holds only 
 
 Installing one would still not reach the code. The declared roots are `README.md` and `test`, so `src/` sits outside them and so does `CMakeLists.txt`.
 
-When a hook does go in, compute the tree with `git rev-parse --show-toplevel`. From a linked worktree under `.claude/worktrees/` that returns the worktree while `--git-dir` returns the per-worktree git directory, both verified here. A hook that derives its tree from the script's own location reconciles the main checkout instead, reports that every file matches, and lets an unrecorded file through; the exit status cannot tell that case from a real pass. Test a new hook by committing a deliberately bad file from a linked worktree and checking whether it lands.
+When a hook does go in, compute the tree with `git rev-parse --show-toplevel`. From a linked worktree under `.claude/worktrees/` that returns the worktree while `--git-dir` returns the per-worktree git directory, both checked in this repository.
+
+Two ways of finding the tree are known to fail, and both were found in this tree by other captains during the migration. Deriving it from the script's own location reconciles the main checkout instead, reports that every file matches, and lets an unrecorded file through. Climbing parent directories until one holding `build/` appears fails in both directions, because `build/` is generated: a linked worktree has none, so the climb walks past it into the main checkout and lands on a real repository, and a fresh clone has none anywhere, so the climb runs to the filesystem root.
+
+`--show-toplevel` on its own is not sufficient inside a hook. Git exports `GIT_DIR` to a hook, and a `rev-parse` that inherits it answers about that repository instead of the directory it was asked from; with `GIT_DIR` set and no work tree named, `--show-toplevel` is reported to return the current directory. So clear `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_PREFIX` and `GIT_COMMON_DIR` before every git query a hook makes. Nothing in this paragraph was checked here, and every other claim in this section was. The session isolation that protects these worktrees refuses the git calls the test needs, so this rests on the migration session's report of anchoring's fix hitting it on first run. Verify it before relying on it.
+
+Nothing weaker than a destructive test proves a gate runs. Commit a deliberately bad file from a linked worktree and check whether it lands. An exit status of zero cannot tell a real pass from a gate that reconciled the wrong tree, and neither can a gate that was never installed, which is the state this repository is in today.
 
 ## What the migration did not change
 
