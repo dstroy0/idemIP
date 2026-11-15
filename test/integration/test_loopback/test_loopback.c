@@ -2241,9 +2241,9 @@ void test_the_four_way_close_ends_in_time_wait_and_closed(void)
 // Put three ten-octet segments on the wire as 2, 3, 1, so the first two arrive past RCV.NXT.
 static void tcp_three_out_of_order(void)
 {
-    static const uint8_t part1[10] = "AAAAAAAAAA";
-    static const uint8_t part2[10] = "BBBBBBBBBB";
-    static const uint8_t part3[10] = "CCCCCCCCCC";
+    static const uint8_t part1[] = "AAAAAAAAAA";
+    static const uint8_t part2[] = "BBBBBBBBBB";
+    static const uint8_t part3[] = "CCCCCCCCCC";
 
     resolve_both();
     tcp_listen(&g_b, TCP_PORT_B);
@@ -2264,7 +2264,7 @@ static void tcp_three_out_of_order(void)
 // of per connection.
 void test_a_segment_past_rcv_nxt_is_held_on_a_pinned_descriptor(void)
 {
-    static const uint8_t part2[10] = "BBBBBBBBBB";
+    static const uint8_t part2[] = "BBBBBBBBBB";
 
     resolve_both();
     tcp_listen(&g_b, TCP_PORT_B);
@@ -2330,7 +2330,7 @@ void test_a_series_of_queued_segments_draws_one_acknowledgment(void)
 // The out-of-order queue is B's borrow: holding two segments on B leaves A's queue empty.
 void test_the_held_segments_are_bs_borrow_alone(void)
 {
-    static const uint8_t part2[10] = "BBBBBBBBBB";
+    static const uint8_t part2[] = "BBBBBBBBBB";
 
     resolve_both();
     tcp_listen(&g_b, TCP_PORT_B);

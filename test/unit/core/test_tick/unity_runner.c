@@ -165,15 +165,18 @@ int main(void)
 #if (IDEMIP_ENABLE_TCP)
   run_test(test_the_flush_phase_sends_the_acknowledgment_the_batch_aggregated, "test_the_flush_phase_sends_the_acknowledgment_the_batch_aggregated", 1375);
 #endif
-  run_test(test_the_flush_phase_reports_its_units_in_order, "test_the_flush_phase_reports_its_units_in_order", 1460);
-  run_test(test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded, "test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded", 1520);
-  run_test(test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded, "test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded", 1575);
-  run_test(test_an_interface_with_no_ring_is_stepped_over, "test_an_interface_with_no_ring_is_stepped_over", 1622);
+  run_test(test_the_flush_phase_reports_its_units_in_order, "test_the_flush_phase_reports_its_units_in_order", 1461);
+  run_test(test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded,
+           "test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded", 1521);
+  run_test(test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded,
+           "test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded", 1576);
+  run_test(test_an_interface_with_no_ring_is_stepped_over, "test_an_interface_with_no_ring_is_stepped_over", 1623);
 #if (IDEMIP_ENABLE_IPV4)
-  run_test(test_a_descriptor_from_the_second_interface_goes_back_to_it, "test_a_descriptor_from_the_second_interface_goes_back_to_it", 1650);
-  run_test(test_a_descriptor_handle_round_trips, "test_a_descriptor_handle_round_trips", 1739);
+  run_test(test_a_descriptor_from_the_second_interface_goes_back_to_it,
+           "test_a_descriptor_from_the_second_interface_goes_back_to_it", 1651);
+  run_test(test_a_descriptor_handle_round_trips, "test_a_descriptor_handle_round_trips", 1740);
 #endif
-  run_test(test_an_unbound_service_is_skipped, "test_an_unbound_service_is_skipped", 1756);
+  run_test(test_an_unbound_service_is_skipped, "test_an_unbound_service_is_skipped", 1757);
 
   return UNITY_END();
 }

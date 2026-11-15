@@ -60,9 +60,9 @@ static void vlan_split_tci(VlanIo *io, uint16_t tci)
 // The same three fields, back into one word.
 static uint16_t vlan_pack_tci(const VlanTagArgs *tag)
 {
+    // dei is an embed_bool, which holds 0 or 1 alone, so its bit needs no mask before the shift
     return (uint16_t)(((uint16_t)(tag->pcp & IDEMIP_VLAN_PCP_MASK) << IDEMIP_VLAN_PCP_SHIFT) |
-                      ((uint16_t)(tag->dei & IDEMIP_VLAN_DEI_MASK) << IDEMIP_VLAN_DEI_SHIFT) |
-                      (uint16_t)(tag->vid & IDEMIP_VLAN_VID_MASK));
+                      ((uint16_t)tag->dei << IDEMIP_VLAN_DEI_SHIFT) | (uint16_t)(tag->vid & IDEMIP_VLAN_VID_MASK));
 }
 
 // What a written tag has to satisfy: RFC 6325 sec 4.1.1 puts the Priority at "0 through 7", holds

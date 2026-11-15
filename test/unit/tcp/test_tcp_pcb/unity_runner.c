@@ -187,95 +187,154 @@ int main(void)
   run_test(test_the_eleven_states_of_section_3_3_2, "test_the_eleven_states_of_section_3_3_2", 388);
   run_test(test_a_state_section_3_3_2_does_not_name_is_refused, "test_a_state_section_3_3_2_does_not_name_is_refused", 405);
   run_test(test_the_section_3_3_1_variables_are_each_a_sequence_space_wide, "test_the_section_3_3_1_variables_are_each_a_sequence_space_wide", 416);
-  run_test(test_an_index_past_a_table_is_refused, "test_an_index_past_a_table_is_refused", 437);
-  run_test(test_a_missing_address_operand_is_refused, "test_a_missing_address_operand_is_refused", 476);
-  run_test(test_a_refused_load_reports_no_connection, "test_a_refused_load_reports_no_connection", 505);
-  run_test(test_a_refused_queue_read_reports_no_segment, "test_a_refused_queue_read_reports_no_segment", 524);
-  run_test(test_the_out_of_order_table_holds_what_the_pin_bound_counts, "test_the_out_of_order_table_holds_what_the_pin_bound_counts", 546);
-  run_test(test_open_creates_a_tcb_in_the_state_that_has_no_connection, "test_open_creates_a_tcb_in_the_state_that_has_no_connection", 670);
-  run_test(test_open_refuses_a_version_that_names_no_address_family, "test_open_refuses_a_version_that_names_no_address_family", 689);
-  run_test(test_a_full_table_is_busy_and_a_close_makes_the_same_call_succeed, "test_a_full_table_is_busy_and_a_close_makes_the_same_call_succeed", 703);
-  run_test(test_every_open_reports_a_different_tcb, "test_every_open_reports_a_different_tcb", 726);
-  run_test(test_a_call_on_a_tcb_that_is_not_open_is_refused, "test_a_call_on_a_tcb_that_is_not_open_is_refused", 740);
-  run_test(test_bind_sets_the_local_half_of_the_four_tuple, "test_bind_sets_the_local_half_of_the_four_tuple", 767);
-  run_test(test_a_bind_of_port_any_draws_from_the_ephemeral_pool, "test_a_bind_of_port_any_draws_from_the_ephemeral_pool", 798);
-  run_test(test_the_ephemeral_draw_steps_over_a_port_a_listener_holds, "test_the_ephemeral_draw_steps_over_a_port_a_listener_holds", 836);
-  run_test(test_the_ephemeral_draw_steps_over_a_port_another_connection_holds, "test_the_ephemeral_draw_steps_over_a_port_another_connection_holds", 877);
-  run_test(test_a_store_naming_a_state_the_figure_does_not_draw_is_refused, "test_a_store_naming_a_state_the_figure_does_not_draw_is_refused", 915);
-  run_test(test_a_lookup_at_a_version_that_names_no_address_width_is_refused, "test_a_lookup_at_a_version_that_names_no_address_width_is_refused", 940);
-  run_test(test_the_ephemeral_draw_follows_the_callers_random_word, "test_the_ephemeral_draw_follows_the_callers_random_word", 976);
-  run_test(test_two_connections_share_one_local_port_and_differ_by_the_remote_socket, "test_two_connections_share_one_local_port_and_differ_by_the_remote_socket", 1018);
-  run_test(test_the_same_pair_of_sockets_twice_is_busy, "test_the_same_pair_of_sockets_twice_is_busy", 1054);
-  run_test(test_a_rebind_of_the_same_tcb_repeats, "test_a_rebind_of_the_same_tcb_repeats", 1096);
-  run_test(test_the_local_socket_is_fixed_once_the_connection_left_closed, "test_the_local_socket_is_fixed_once_the_connection_left_closed", 1115);
-  run_test(test_connect_refuses_an_unspecified_remote_socket, "test_connect_refuses_an_unspecified_remote_socket", 1136);
-  run_test(test_connect_refuses_an_invalid_remote_ip_address, "test_connect_refuses_an_invalid_remote_ip_address", 1152);
-  run_test(test_connect_refuses_an_invalid_remote_ipv6_address, "test_connect_refuses_an_invalid_remote_ipv6_address", 1187);
-  run_test(test_a_four_tuple_another_open_tcb_holds_is_busy, "test_a_four_tuple_another_open_tcb_holds_is_busy", 1227);
-  run_test(test_a_store_and_a_load_round_trip_every_variable, "test_a_store_and_a_load_round_trip_every_variable", 1269);
-  run_test(test_a_store_and_a_load_round_trip_every_octet_of_the_control_state, "test_a_store_and_a_load_round_trip_every_octet_of_the_control_state", 1331);
-  run_test(test_opt_sets_the_diffserv_field_and_the_r2_thresholds, "test_opt_sets_the_diffserv_field_and_the_r2_thresholds", 1359);
-  run_test(test_the_default_syn_r2_carries_three_minutes_of_retransmission, "test_the_default_syn_r2_carries_three_minutes_of_retransmission", 1408);
-  run_test(test_the_send_window_carries_a_shifted_window_field, "test_the_send_window_carries_a_shifted_window_field", 1440);
-  run_test(test_an_unnamed_state_is_refused_on_an_open_tcb, "test_an_unnamed_state_is_refused_on_an_open_tcb", 1459);
-  run_test(test_the_transition_relation_table_is_square, "test_the_transition_relation_table_is_square", 1474);
-  run_test(test_every_transition_matches_the_relation_rfc_9293_states, "test_every_transition_matches_the_relation_rfc_9293_states", 1494);
-  run_test(test_a_store_that_leaves_the_state_alone_is_permitted_everywhere, "test_a_store_that_leaves_the_state_alone_is_permitted_everywhere", 1520);
-  run_test(test_the_three_way_handshake_of_figure_6_from_the_active_side, "test_the_three_way_handshake_of_figure_6_from_the_active_side", 1532);
-  run_test(test_the_three_way_handshake_of_figure_6_from_the_passive_side, "test_the_three_way_handshake_of_figure_6_from_the_passive_side", 1573);
-  run_test(test_the_simultaneous_open_of_figure_7, "test_the_simultaneous_open_of_figure_7", 1615);
-  run_test(test_the_old_duplicate_syn_recovery_of_figure_8, "test_the_old_duplicate_syn_recovery_of_figure_8", 1626);
-  run_test(test_the_normal_close_of_figure_12_from_the_closing_side, "test_the_normal_close_of_figure_12_from_the_closing_side", 1646);
-  run_test(test_the_normal_close_of_figure_12_from_the_closed_upon_side, "test_the_normal_close_of_figure_12_from_the_closed_upon_side", 1665);
-  run_test(test_the_simultaneous_close_of_figure_13, "test_the_simultaneous_close_of_figure_13", 1678);
-  run_test(test_figure_5_note_2_reaches_time_wait_straight_from_fin_wait_1, "test_figure_5_note_2_reaches_time_wait_straight_from_fin_wait_1", 1691);
-  run_test(test_issuing_a_reset_reaches_time_wait_from_every_state_that_has_a_peer, "test_issuing_a_reset_reaches_time_wait_from_every_state_that_has_a_peer", 1700);
-  run_test(test_a_reset_from_closed_or_listen_does_not_reach_time_wait, "test_a_reset_from_closed_or_listen_does_not_reach_time_wait", 1716);
-  run_test(test_time_wait_leaves_only_for_closed, "test_time_wait_leaves_only_for_closed", 1728);
-  run_test(test_only_syn_received_returns_to_listen, "test_only_syn_received_returns_to_listen", 1749);
-  run_test(test_abort_reaches_closed_from_every_state, "test_abort_reaches_closed_from_every_state", 1768);
-  run_test(test_find_matches_the_swapped_four_tuple_of_a_segment, "test_find_matches_the_swapped_four_tuple_of_a_segment", 1785);
-  run_test(test_find_honors_the_interface_a_connection_is_pinned_to, "test_find_honors_the_interface_a_connection_is_pinned_to", 1832);
-  run_test(test_a_segment_that_names_no_tcb_is_the_closed_case, "test_a_segment_that_names_no_tcb_is_the_closed_case", 1862);
-  run_test(test_listen_creates_a_record_in_the_listen_state, "test_listen_creates_a_record_in_the_listen_state", 1880);
-  run_test(test_a_passive_open_on_port_zero_is_refused, "test_a_passive_open_on_port_zero_is_refused", 1913);
-  run_test(test_a_second_passive_open_on_one_socket_is_busy, "test_a_second_passive_open_on_one_socket_is_busy", 1929);
-  run_test(test_a_full_listener_table_is_busy, "test_a_full_listener_table_is_busy", 1954);
-  run_test(test_a_bound_listener_is_matched_before_an_unspecified_one, "test_a_bound_listener_is_matched_before_an_unspecified_one", 1975);
-  run_test(test_the_send_queue_keeps_the_order_segments_were_queued_in, "test_the_send_queue_keeps_the_order_segments_were_queued_in", 2021);
-  run_test(test_a_segment_with_octets_must_name_them, "test_a_segment_with_octets_must_name_them", 2064);
-  run_test(test_a_full_segment_table_is_busy_and_a_free_makes_the_same_call_succeed, "test_a_full_segment_table_is_busy_and_a_free_makes_the_same_call_succeed", 2091);
-  run_test(test_a_segment_freed_from_the_tail_of_a_longer_queue_leaves_the_rest_linked, "test_a_segment_freed_from_the_tail_of_a_longer_queue_leaves_the_rest_linked", 2126);
-  run_test(test_a_held_segment_freed_from_the_middle_leaves_the_queue_linked, "test_a_held_segment_freed_from_the_middle_leaves_the_queue_linked", 2166);
-  run_test(test_a_segment_freed_from_the_middle_leaves_the_queue_linked, "test_a_segment_freed_from_the_middle_leaves_the_queue_linked", 2211);
-  run_test(test_a_close_frees_every_segment_the_connection_queued, "test_a_close_frees_every_segment_the_connection_queued", 2246);
-  run_test(test_held_segments_are_linked_in_seg_seq_order, "test_held_segments_are_linked_in_seg_seq_order", 2278);
-  run_test(test_held_segments_order_across_the_sequence_space_wrap, "test_held_segments_order_across_the_sequence_space_wrap", 2325);
-  run_test(test_one_connection_holds_at_most_the_oos_bound_and_then_is_busy, "test_one_connection_holds_at_most_the_oos_bound_and_then_is_busy", 2366);
-  run_test(test_the_hold_bound_is_per_connection, "test_the_hold_bound_is_per_connection", 2403);
-  run_test(test_a_held_segment_with_no_octets_is_refused, "test_a_held_segment_with_no_octets_is_refused", 2427);
-  run_test(test_a_close_is_busy_while_the_hold_still_names_a_pinned_descriptor, "test_a_close_is_busy_while_the_hold_still_names_a_pinned_descriptor", 2441);
-  run_test(test_a_close_succeeds_once_the_hold_is_drained, "test_a_close_succeeds_once_the_hold_is_drained", 2477);
-  run_test(test_a_connection_in_one_borrow_is_invisible_in_the_other, "test_a_connection_in_one_borrow_is_invisible_in_the_other", 2521);
-  run_test(test_an_ipv6_connection_keys_on_all_sixteen_octets_and_its_zone, "test_an_ipv6_connection_keys_on_all_sixteen_octets_and_its_zone", 2567);
-  run_test(test_a_listener_is_matched_on_its_version_its_port_its_interface_and_its_zone, "test_a_listener_is_matched_on_its_version_its_port_its_interface_and_its_zone", 2631);
-  run_test(test_max_snd_wnd_is_not_one_of_the_eleven_section_3_3_1_variables, "test_max_snd_wnd_is_not_one_of_the_eleven_section_3_3_1_variables", 2689);
-  run_test(test_max_snd_wnd_round_trips_a_scaled_window, "test_max_snd_wnd_round_trips_a_scaled_window", 2698);
-  run_test(test_accept_records_the_listener_a_connection_came_through, "test_accept_records_the_listener_a_connection_came_through", 2718);
-  run_test(test_a_listener_at_its_backlog_refuses_a_further_connection, "test_a_listener_at_its_backlog_refuses_a_further_connection", 2768);
-  run_test(test_accepting_one_connection_twice_is_the_same_as_once, "test_accepting_one_connection_twice_is_the_same_as_once", 2810);
-  run_test(test_listen_refuses_a_backlog_of_zero, "test_listen_refuses_a_backlog_of_zero", 2837);
-  run_test(test_accept_refuses_a_listener_no_passive_open_took, "test_accept_refuses_a_listener_no_passive_open_took", 2851);
-  run_test(test_seg_sent_moves_the_head_of_unsent_onto_the_retransmit_queue, "test_seg_sent_moves_the_head_of_unsent_onto_the_retransmit_queue", 2872);
-  run_test(test_seg_sent_refuses_a_segment_that_is_not_the_head_of_unsent, "test_seg_sent_refuses_a_segment_that_is_not_the_head_of_unsent", 2915);
-  run_test(test_a_close_frees_the_segments_on_the_retransmit_queue_too, "test_a_close_frees_the_segments_on_the_retransmit_queue_too", 2950);
-  run_test(test_the_remaining_entries_refuse_an_index_past_their_table_and_a_lookup_with_no_address, "test_the_remaining_entries_refuse_an_index_past_their_table_and_a_lookup_with_no_address", 2992);
-  run_test(test_a_lookup_differing_in_any_part_of_the_four_tuple_finds_nothing, "test_a_lookup_differing_in_any_part_of_the_four_tuple_finds_nothing", 3025);
-  run_test(test_an_active_open_is_refused_only_where_all_four_parts_already_stand_together, "test_an_active_open_is_refused_only_where_all_four_parts_already_stand_together", 3074);
-  run_test(test_a_backlog_counts_only_the_connections_that_came_through_that_listener, "test_a_backlog_counts_only_the_connections_that_came_through_that_listener", 3145);
-  run_test(test_a_segment_is_taken_off_the_queue_it_moved_to, "test_a_segment_is_taken_off_the_queue_it_moved_to", 3191);
+  run_test(test_an_index_past_a_table_is_refused, "test_an_index_past_a_table_is_refused", 436);
+  run_test(test_a_missing_address_operand_is_refused, "test_a_missing_address_operand_is_refused", 475);
+  run_test(test_a_refused_load_reports_no_connection, "test_a_refused_load_reports_no_connection", 504);
+  run_test(test_a_refused_queue_read_reports_no_segment, "test_a_refused_queue_read_reports_no_segment", 523);
+  run_test(test_the_out_of_order_table_holds_what_the_pin_bound_counts,
+           "test_the_out_of_order_table_holds_what_the_pin_bound_counts", 545);
+  run_test(test_open_creates_a_tcb_in_the_state_that_has_no_connection,
+           "test_open_creates_a_tcb_in_the_state_that_has_no_connection", 669);
+  run_test(test_open_refuses_a_version_that_names_no_address_family,
+           "test_open_refuses_a_version_that_names_no_address_family", 688);
+  run_test(test_a_full_table_is_busy_and_a_close_makes_the_same_call_succeed,
+           "test_a_full_table_is_busy_and_a_close_makes_the_same_call_succeed", 702);
+  run_test(test_every_open_reports_a_different_tcb, "test_every_open_reports_a_different_tcb", 725);
+  run_test(test_a_call_on_a_tcb_that_is_not_open_is_refused, "test_a_call_on_a_tcb_that_is_not_open_is_refused", 739);
+  run_test(test_bind_sets_the_local_half_of_the_four_tuple, "test_bind_sets_the_local_half_of_the_four_tuple", 766);
+  run_test(test_a_bind_of_port_any_draws_from_the_ephemeral_pool,
+           "test_a_bind_of_port_any_draws_from_the_ephemeral_pool", 797);
+  run_test(test_the_ephemeral_draw_steps_over_a_port_a_listener_holds,
+           "test_the_ephemeral_draw_steps_over_a_port_a_listener_holds", 835);
+  run_test(test_the_ephemeral_draw_steps_over_a_port_another_connection_holds,
+           "test_the_ephemeral_draw_steps_over_a_port_another_connection_holds", 876);
+  run_test(test_a_store_naming_a_state_the_figure_does_not_draw_is_refused,
+           "test_a_store_naming_a_state_the_figure_does_not_draw_is_refused", 914);
+  run_test(test_a_lookup_at_a_version_that_names_no_address_width_is_refused,
+           "test_a_lookup_at_a_version_that_names_no_address_width_is_refused", 939);
+  run_test(test_the_ephemeral_draw_follows_the_callers_random_word,
+           "test_the_ephemeral_draw_follows_the_callers_random_word", 975);
+  run_test(test_two_connections_share_one_local_port_and_differ_by_the_remote_socket,
+           "test_two_connections_share_one_local_port_and_differ_by_the_remote_socket", 1017);
+  run_test(test_the_same_pair_of_sockets_twice_is_busy, "test_the_same_pair_of_sockets_twice_is_busy", 1053);
+  run_test(test_a_rebind_of_the_same_tcb_repeats, "test_a_rebind_of_the_same_tcb_repeats", 1095);
+  run_test(test_the_local_socket_is_fixed_once_the_connection_left_closed,
+           "test_the_local_socket_is_fixed_once_the_connection_left_closed", 1114);
+  run_test(test_connect_refuses_an_unspecified_remote_socket, "test_connect_refuses_an_unspecified_remote_socket",
+           1135);
+  run_test(test_connect_refuses_an_invalid_remote_ip_address, "test_connect_refuses_an_invalid_remote_ip_address",
+           1151);
+  run_test(test_connect_refuses_an_invalid_remote_ipv6_address, "test_connect_refuses_an_invalid_remote_ipv6_address",
+           1186);
+  run_test(test_a_four_tuple_another_open_tcb_holds_is_busy, "test_a_four_tuple_another_open_tcb_holds_is_busy", 1226);
+  run_test(test_a_store_and_a_load_round_trip_every_variable, "test_a_store_and_a_load_round_trip_every_variable",
+           1268);
+  run_test(test_a_store_and_a_load_round_trip_every_octet_of_the_control_state,
+           "test_a_store_and_a_load_round_trip_every_octet_of_the_control_state", 1330);
+  run_test(test_opt_sets_the_diffserv_field_and_the_r2_thresholds,
+           "test_opt_sets_the_diffserv_field_and_the_r2_thresholds", 1358);
+  run_test(test_the_default_syn_r2_carries_three_minutes_of_retransmission,
+           "test_the_default_syn_r2_carries_three_minutes_of_retransmission", 1407);
+  run_test(test_the_send_window_carries_a_shifted_window_field, "test_the_send_window_carries_a_shifted_window_field",
+           1439);
+  run_test(test_an_unnamed_state_is_refused_on_an_open_tcb, "test_an_unnamed_state_is_refused_on_an_open_tcb", 1458);
+  run_test(test_the_transition_relation_table_is_square, "test_the_transition_relation_table_is_square", 1473);
+  run_test(test_every_transition_matches_the_relation_rfc_9293_states,
+           "test_every_transition_matches_the_relation_rfc_9293_states", 1493);
+  run_test(test_a_store_that_leaves_the_state_alone_is_permitted_everywhere,
+           "test_a_store_that_leaves_the_state_alone_is_permitted_everywhere", 1519);
+  run_test(test_the_three_way_handshake_of_figure_6_from_the_active_side,
+           "test_the_three_way_handshake_of_figure_6_from_the_active_side", 1531);
+  run_test(test_the_three_way_handshake_of_figure_6_from_the_passive_side,
+           "test_the_three_way_handshake_of_figure_6_from_the_passive_side", 1572);
+  run_test(test_the_simultaneous_open_of_figure_7, "test_the_simultaneous_open_of_figure_7", 1614);
+  run_test(test_the_old_duplicate_syn_recovery_of_figure_8, "test_the_old_duplicate_syn_recovery_of_figure_8", 1625);
+  run_test(test_the_normal_close_of_figure_12_from_the_closing_side,
+           "test_the_normal_close_of_figure_12_from_the_closing_side", 1645);
+  run_test(test_the_normal_close_of_figure_12_from_the_closed_upon_side,
+           "test_the_normal_close_of_figure_12_from_the_closed_upon_side", 1664);
+  run_test(test_the_simultaneous_close_of_figure_13, "test_the_simultaneous_close_of_figure_13", 1677);
+  run_test(test_figure_5_note_2_reaches_time_wait_straight_from_fin_wait_1,
+           "test_figure_5_note_2_reaches_time_wait_straight_from_fin_wait_1", 1690);
+  run_test(test_issuing_a_reset_reaches_time_wait_from_every_state_that_has_a_peer,
+           "test_issuing_a_reset_reaches_time_wait_from_every_state_that_has_a_peer", 1699);
+  run_test(test_a_reset_from_closed_or_listen_does_not_reach_time_wait,
+           "test_a_reset_from_closed_or_listen_does_not_reach_time_wait", 1715);
+  run_test(test_time_wait_leaves_only_for_closed, "test_time_wait_leaves_only_for_closed", 1727);
+  run_test(test_only_syn_received_returns_to_listen, "test_only_syn_received_returns_to_listen", 1748);
+  run_test(test_abort_reaches_closed_from_every_state, "test_abort_reaches_closed_from_every_state", 1767);
+  run_test(test_find_matches_the_swapped_four_tuple_of_a_segment,
+           "test_find_matches_the_swapped_four_tuple_of_a_segment", 1784);
+  run_test(test_find_honors_the_interface_a_connection_is_pinned_to,
+           "test_find_honors_the_interface_a_connection_is_pinned_to", 1831);
+  run_test(test_a_segment_that_names_no_tcb_is_the_closed_case, "test_a_segment_that_names_no_tcb_is_the_closed_case",
+           1861);
+  run_test(test_listen_creates_a_record_in_the_listen_state, "test_listen_creates_a_record_in_the_listen_state", 1879);
+  run_test(test_a_passive_open_on_port_zero_is_refused, "test_a_passive_open_on_port_zero_is_refused", 1912);
+  run_test(test_a_second_passive_open_on_one_socket_is_busy, "test_a_second_passive_open_on_one_socket_is_busy", 1928);
+  run_test(test_a_full_listener_table_is_busy, "test_a_full_listener_table_is_busy", 1953);
+  run_test(test_a_bound_listener_is_matched_before_an_unspecified_one,
+           "test_a_bound_listener_is_matched_before_an_unspecified_one", 1974);
+  run_test(test_the_send_queue_keeps_the_order_segments_were_queued_in,
+           "test_the_send_queue_keeps_the_order_segments_were_queued_in", 2020);
+  run_test(test_a_segment_with_octets_must_name_them, "test_a_segment_with_octets_must_name_them", 2063);
+  run_test(test_a_full_segment_table_is_busy_and_a_free_makes_the_same_call_succeed,
+           "test_a_full_segment_table_is_busy_and_a_free_makes_the_same_call_succeed", 2090);
+  run_test(test_a_segment_freed_from_the_tail_of_a_longer_queue_leaves_the_rest_linked,
+           "test_a_segment_freed_from_the_tail_of_a_longer_queue_leaves_the_rest_linked", 2125);
+  run_test(test_a_held_segment_freed_from_the_middle_leaves_the_queue_linked,
+           "test_a_held_segment_freed_from_the_middle_leaves_the_queue_linked", 2165);
+  run_test(test_a_segment_freed_from_the_middle_leaves_the_queue_linked,
+           "test_a_segment_freed_from_the_middle_leaves_the_queue_linked", 2210);
+  run_test(test_a_close_frees_every_segment_the_connection_queued,
+           "test_a_close_frees_every_segment_the_connection_queued", 2245);
+  run_test(test_held_segments_are_linked_in_seg_seq_order, "test_held_segments_are_linked_in_seg_seq_order", 2277);
+  run_test(test_held_segments_order_across_the_sequence_space_wrap,
+           "test_held_segments_order_across_the_sequence_space_wrap", 2324);
+  run_test(test_one_connection_holds_at_most_the_oos_bound_and_then_is_busy,
+           "test_one_connection_holds_at_most_the_oos_bound_and_then_is_busy", 2365);
+  run_test(test_the_hold_bound_is_per_connection, "test_the_hold_bound_is_per_connection", 2402);
+  run_test(test_a_held_segment_with_no_octets_is_refused, "test_a_held_segment_with_no_octets_is_refused", 2426);
+  run_test(test_a_close_is_busy_while_the_hold_still_names_a_pinned_descriptor,
+           "test_a_close_is_busy_while_the_hold_still_names_a_pinned_descriptor", 2440);
+  run_test(test_a_close_succeeds_once_the_hold_is_drained, "test_a_close_succeeds_once_the_hold_is_drained", 2476);
+  run_test(test_a_connection_in_one_borrow_is_invisible_in_the_other,
+           "test_a_connection_in_one_borrow_is_invisible_in_the_other", 2520);
+  run_test(test_an_ipv6_connection_keys_on_all_sixteen_octets_and_its_zone,
+           "test_an_ipv6_connection_keys_on_all_sixteen_octets_and_its_zone", 2566);
+  run_test(test_a_listener_is_matched_on_its_version_its_port_its_interface_and_its_zone,
+           "test_a_listener_is_matched_on_its_version_its_port_its_interface_and_its_zone", 2630);
+  run_test(test_max_snd_wnd_is_not_one_of_the_eleven_section_3_3_1_variables,
+           "test_max_snd_wnd_is_not_one_of_the_eleven_section_3_3_1_variables", 2688);
+  run_test(test_max_snd_wnd_round_trips_a_scaled_window, "test_max_snd_wnd_round_trips_a_scaled_window", 2697);
+  run_test(test_accept_records_the_listener_a_connection_came_through,
+           "test_accept_records_the_listener_a_connection_came_through", 2717);
+  run_test(test_a_listener_at_its_backlog_refuses_a_further_connection,
+           "test_a_listener_at_its_backlog_refuses_a_further_connection", 2767);
+  run_test(test_accepting_one_connection_twice_is_the_same_as_once,
+           "test_accepting_one_connection_twice_is_the_same_as_once", 2809);
+  run_test(test_listen_refuses_a_backlog_of_zero, "test_listen_refuses_a_backlog_of_zero", 2836);
+  run_test(test_accept_refuses_a_listener_no_passive_open_took, "test_accept_refuses_a_listener_no_passive_open_took",
+           2850);
+  run_test(test_seg_sent_moves_the_head_of_unsent_onto_the_retransmit_queue,
+           "test_seg_sent_moves_the_head_of_unsent_onto_the_retransmit_queue", 2871);
+  run_test(test_seg_sent_refuses_a_segment_that_is_not_the_head_of_unsent,
+           "test_seg_sent_refuses_a_segment_that_is_not_the_head_of_unsent", 2914);
+  run_test(test_a_close_frees_the_segments_on_the_retransmit_queue_too,
+           "test_a_close_frees_the_segments_on_the_retransmit_queue_too", 2949);
+  run_test(test_the_remaining_entries_refuse_an_index_past_their_table_and_a_lookup_with_no_address,
+           "test_the_remaining_entries_refuse_an_index_past_their_table_and_a_lookup_with_no_address", 2991);
+  run_test(test_a_lookup_differing_in_any_part_of_the_four_tuple_finds_nothing,
+           "test_a_lookup_differing_in_any_part_of_the_four_tuple_finds_nothing", 3024);
+  run_test(test_an_active_open_is_refused_only_where_all_four_parts_already_stand_together,
+           "test_an_active_open_is_refused_only_where_all_four_parts_already_stand_together", 3073);
+  run_test(test_a_backlog_counts_only_the_connections_that_came_through_that_listener,
+           "test_a_backlog_counts_only_the_connections_that_came_through_that_listener", 3144);
+  run_test(test_a_segment_is_taken_off_the_queue_it_moved_to, "test_a_segment_is_taken_off_the_queue_it_moved_to",
+           3190);
 #if (IDEMIP_ENABLE_IPV4 && IDEMIP_ENABLE_IPV6)
-  run_test(test_the_ip_version_is_part_of_the_name_a_socket_is_held_under, "test_the_ip_version_is_part_of_the_name_a_socket_is_held_under", 3235);
+  run_test(test_the_ip_version_is_part_of_the_name_a_socket_is_held_under,
+           "test_the_ip_version_is_part_of_the_name_a_socket_is_held_under", 3234);
 #endif
 
   return UNITY_END();

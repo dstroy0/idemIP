@@ -416,18 +416,17 @@ void test_a_state_section_3_3_2_does_not_name_is_refused(void)
 void test_the_section_3_3_1_variables_are_each_a_sequence_space_wide(void)
 {
     TEST_ASSERT_EQUAL_size_t(11u * sizeof(uint32_t), sizeof(IdemIpTcpVars));
-    const IdemIpTcpVars *v = &IDEMIP_TCP_PCB_IO(work_a)->vars;
-    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->snd_una);
-    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->snd_nxt);
-    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->snd_wnd);
-    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->snd_up);
-    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->snd_wl1);
-    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->snd_wl2);
-    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->iss);
-    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->rcv_nxt);
-    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->rcv_wnd);
-    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->rcv_up);
-    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof v->irs);
+    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof IDEMIP_TCP_PCB_IO(work_a)->vars.snd_una);
+    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof IDEMIP_TCP_PCB_IO(work_a)->vars.snd_nxt);
+    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof IDEMIP_TCP_PCB_IO(work_a)->vars.snd_wnd);
+    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof IDEMIP_TCP_PCB_IO(work_a)->vars.snd_up);
+    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof IDEMIP_TCP_PCB_IO(work_a)->vars.snd_wl1);
+    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof IDEMIP_TCP_PCB_IO(work_a)->vars.snd_wl2);
+    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof IDEMIP_TCP_PCB_IO(work_a)->vars.iss);
+    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof IDEMIP_TCP_PCB_IO(work_a)->vars.rcv_nxt);
+    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof IDEMIP_TCP_PCB_IO(work_a)->vars.rcv_wnd);
+    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof IDEMIP_TCP_PCB_IO(work_a)->vars.rcv_up);
+    TEST_ASSERT_EQUAL_size_t(sizeof(uint32_t), sizeof IDEMIP_TCP_PCB_IO(work_a)->vars.irs);
 }
 
 // --- the bounds on an operand ------------------------------------------------

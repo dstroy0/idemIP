@@ -1376,7 +1376,8 @@ void test_the_flush_phase_sends_the_acknowledgment_the_batch_aggregated(void)
 {
     // A listener, and the handshake that puts a connection behind it.
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
-    uint8_t local[IDEMIP_TCP_PCB_ADDR_BYTES];
+    // Static, because the TCP borrow keeps this address after the call returns.
+    static uint8_t local[IDEMIP_TCP_PCB_ADDR_BYTES];
     mmgr_zero_buf(local, sizeof local);
     idemip_wr32(local, LOCAL_IP4);
     tp->listen_args.ip = local;

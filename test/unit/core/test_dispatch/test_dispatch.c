@@ -3610,7 +3610,8 @@ void test_an_ipv6_fragment_the_reassembler_refuses_counts_a_reassembly_failure(v
 static uint16_t listen_on(uint16_t port)
 {
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
-    uint8_t local[IDEMIP_TCP_PCB_ADDR_BYTES];
+    // Static, because the TCP borrow keeps this address after the call returns.
+    static uint8_t local[IDEMIP_TCP_PCB_ADDR_BYTES];
     mmgr_zero_buf(local, sizeof local);
     idemip_wr32(local, LOCAL_IP4);
     tp->listen_args.ip = local;
@@ -3943,8 +3944,10 @@ static uint16_t establish(void)
 static uint16_t active_open(uint16_t local_port, uint16_t remote_port)
 {
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
-    uint8_t local[IDEMIP_TCP_PCB_ADDR_BYTES];
-    uint8_t remote[IDEMIP_TCP_PCB_ADDR_BYTES];
+    // Static, because the TCP borrow keeps this address after the call returns.
+    static uint8_t local[IDEMIP_TCP_PCB_ADDR_BYTES];
+    // Static, because the TCP borrow keeps this address after the call returns.
+    static uint8_t remote[IDEMIP_TCP_PCB_ADDR_BYTES];
     mmgr_zero_buf(local, sizeof local);
     mmgr_zero_buf(remote, sizeof remote);
     idemip_wr32(local, LOCAL_IP4);

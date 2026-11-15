@@ -1439,7 +1439,7 @@ void test_an_owner_longer_than_the_wire_bound_is_refused(void)
     for (int label = 0; label < 5; label++) // 5 * 64 = 320 octets, past sec 3.1's 255
     {
         g_msg[at++] = (uint8_t)IDEMIP_DNS_LABEL_MAX;
-        fill_bytes(g_msg + at, (int)'a', (size_t)IDEMIP_DNS_LABEL_MAX);
+        fill_bytes(g_msg + at, 'a', (size_t)IDEMIP_DNS_LABEL_MAX);
         at += (size_t)IDEMIP_DNS_LABEL_MAX;
     }
     g_msg[at++] = 0u;
