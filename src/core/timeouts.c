@@ -15,7 +15,7 @@
 
 #include "src/core/timeouts.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // One slot, padded to its published width so slot i sits at (i << SHIFT) and no index multiplies.
 // next threads the armed slots in deadline order; a slot is free when flags carries no ARMED bit.
@@ -49,20 +49,20 @@ IDEMIP_ASSERT_REGION(IDEMIP_TIMEOUTS_OFF_CTX, sizeof(TimeoutsCtx), IDEMIP_TIMEOU
 #define TIMEOUTS_HALF_PERIOD_MS 0x7FFFFFFFu ///< half the millisecond count's range
 
 // Slot i sits at (i << IDEMIP_TIMEOUT_ENTRY_SHIFT), so the width is a power of two.
-static_assert(sizeof(TimeoutEntry) == (1u << IDEMIP_TIMEOUT_ENTRY_SHIFT),
-              "TimeoutEntry is not 1 << IDEMIP_TIMEOUT_ENTRY_SHIFT wide - pad it, or raise the shift in "
-              "idemip_config.h");
+EMBED_STATIC_ASSERT(sizeof(TimeoutEntry) == (1u << IDEMIP_TIMEOUT_ENTRY_SHIFT),
+                    "TimeoutEntry is not 1 << IDEMIP_TIMEOUT_ENTRY_SHIFT wide - pad it, or raise the shift in "
+                    "idemip_config.h");
 
 // next is one octet, so the last index has to be below the sentinel.
-static_assert(IDEMIP_TIMEOUTS <= TIMEOUTS_NONE, "IDEMIP_TIMEOUTS reaches the one-octet end-of-list sentinel");
+EMBED_STATIC_ASSERT(IDEMIP_TIMEOUTS <= TIMEOUTS_NONE, "IDEMIP_TIMEOUTS reaches the one-octet end-of-list sentinel");
 
 // The caller's borrow, split: the operand block, the context, then the table. timeouts.h publishes
 // the offsets; the asserts below prove the span covers them before anything runs.
-static_assert(IDEMIP_TIMEOUTS_OFF_CTX + sizeof(TimeoutsCtx) <= IDEMIP_TIMEOUTS_OFF_TAB,
-              "the operand block and the context overrun the table's offset - raise IDEMIP_TIMEOUTS_CTX_BYTES in "
-              "idemip_config.h");
-static_assert(IDEMIP_TIMEOUTS_OFF_TAB + TIMEOUTS_TAB_BYTES <= IDEMIP_TIMEOUTS_BORROW,
-              "IDEMIP_TIMEOUTS_BORROW is short of the context and the table - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_TIMEOUTS_OFF_CTX + sizeof(TimeoutsCtx) <= IDEMIP_TIMEOUTS_OFF_TAB,
+                    "the operand block and the context overrun the table's offset - raise IDEMIP_TIMEOUTS_CTX_BYTES in "
+                    "idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_TIMEOUTS_OFF_TAB + TIMEOUTS_TAB_BYTES <= IDEMIP_TIMEOUTS_BORROW,
+                    "IDEMIP_TIMEOUTS_BORROW is short of the context and the table - raise it in idemip_config.h");
 
 // The regions, at their offsets in the caller's borrow.
 #define TIMEOUTS_IO(w) IDEMIP_TIMEOUTS_IO(w)
@@ -74,9 +74,9 @@ static_assert(IDEMIP_TIMEOUTS_OFF_TAB + TIMEOUTS_TAB_BYTES <= IDEMIP_TIMEOUTS_BO
 
 // Answers whether a precedes b on a count that wraps: the unsigned difference a - b lands in the
 // upper half of the range. A plain a < b calls every deadline past the wrap due at once.
-static idemip_bool timeouts_before(uint32_t a, uint32_t b)
+static embed_bool timeouts_before(uint32_t a, uint32_t b)
 {
-    return (idemip_bool)((a - b) > TIMEOUTS_HALF_PERIOD_MS);
+    return (embed_bool)((a - b) > TIMEOUTS_HALF_PERIOD_MS);
 }
 
 // The index of the armed slot holding unit and arg, TIMEOUTS_NONE when none does.
@@ -157,7 +157,7 @@ static void timeouts_unlink(uint8_t *work, uint8_t i)
 static void timeouts_drop(uint8_t *work, uint8_t i)
 {
     timeouts_unlink(work, i);
-    memset(TIMEOUTS_AT(work, i), 0, sizeof(TimeoutEntry));
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = TIMEOUTS_AT(work, i), .val = 0, .bytes = sizeof(TimeoutEntry));
     TIMEOUTS_CTX(work)->armed--;
 }
 
@@ -187,8 +187,8 @@ void idemip_timeouts_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_TIMEOUTS_OFF_CTX, 0, sizeof(TimeoutsCtx));
-    memset(work + IDEMIP_TIMEOUTS_OFF_TAB, 0, TIMEOUTS_TAB_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_TIMEOUTS_OFF_CTX, .val = 0, .bytes = sizeof(TimeoutsCtx));
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_TIMEOUTS_OFF_TAB, .val = 0, .bytes = TIMEOUTS_TAB_BYTES);
     TimeoutsCtx *ctx = TIMEOUTS_CTX(work);
     ctx->magic = TIMEOUTS_MAGIC;
     ctx->head = TIMEOUTS_NONE;
@@ -322,4 +322,4 @@ void idemip_timeouts_expire(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

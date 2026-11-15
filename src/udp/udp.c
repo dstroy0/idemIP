@@ -16,7 +16,7 @@
 
 #if IDEMIP_ENABLE_UDP
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief One datagram access. */
 typedef struct
@@ -39,33 +39,33 @@ typedef struct
 // --- reading a received datagram -------------------------------------------
 
 /** @brief Source Port. RFC 768: optional; "If not used, a value of zero is inserted." */
-IDEMIP_INLINE uint16_t udp_src_port(const UdpCtx *c)
+EMBED_INLINE uint16_t udp_src_port(const UdpCtx *c)
 {
     return idemip_rd16(c->h + IDEMIP_UDP_OFF_SRC_PORT);
 }
 
 /** @brief Destination Port. */
-IDEMIP_INLINE uint16_t udp_dst_port(const UdpCtx *c)
+EMBED_INLINE uint16_t udp_dst_port(const UdpCtx *c)
 {
     return idemip_rd16(c->h + IDEMIP_UDP_OFF_DST_PORT);
 }
 
 /** @brief Length: this header plus the data. */
-IDEMIP_INLINE uint16_t udp_len(const UdpCtx *c)
+EMBED_INLINE uint16_t udp_len(const UdpCtx *c)
 {
     return idemip_rd16(c->h + IDEMIP_UDP_OFF_LEN);
 }
 
 /** @brief Checksum as carried; IDEMIP_UDP_CKSUM_NONE means the sender computed none. */
-IDEMIP_INLINE uint16_t udp_cksum_field(const UdpCtx *c)
+EMBED_INLINE uint16_t udp_cksum_field(const UdpCtx *c)
 {
     return idemip_rd16(c->h + IDEMIP_UDP_OFF_CKSUM);
 }
 
 /** @brief True when Length reaches the eight octets RFC 768 fixes as its minimum. */
-IDEMIP_INLINE idemip_bool udp_len_valid(const UdpCtx *c)
+EMBED_INLINE embed_bool udp_len_valid(const UdpCtx *c)
 {
-    return (udp_len(c) >= IDEMIP_UDP_LEN_MIN) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (udp_len(c) >= IDEMIP_UDP_LEN_MIN) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 /**
@@ -74,40 +74,40 @@ IDEMIP_INLINE idemip_bool udp_len_valid(const UdpCtx *c)
  * Zero when Length is below RFC 768's minimum of eight, so a short field cannot wrap into a large
  * payload.
  */
-IDEMIP_INLINE uint16_t udp_payload_len(const UdpCtx *c)
+EMBED_INLINE uint16_t udp_payload_len(const UdpCtx *c)
 {
     uint16_t len = udp_len(c);
     return (len >= IDEMIP_UDP_LEN_MIN) ? (uint16_t)(len - IDEMIP_UDP_HDR_LEN) : 0u;
 }
 
 /** @brief True when the Checksum field carries one at all (RFC 768's all-zero value means none). */
-IDEMIP_INLINE idemip_bool udp_cksum_present(const UdpCtx *c)
+EMBED_INLINE embed_bool udp_cksum_present(const UdpCtx *c)
 {
-    return (udp_cksum_field(c) != IDEMIP_UDP_CKSUM_NONE) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (udp_cksum_field(c) != IDEMIP_UDP_CKSUM_NONE) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // --- writing the four fields -----------------------------------------------
 
 /** @brief Source Port. */
-IDEMIP_INLINE void udp_set_src_port(const UdpCtx *c)
+EMBED_INLINE void udp_set_src_port(const UdpCtx *c)
 {
     idemip_wr16(c->w + IDEMIP_UDP_OFF_SRC_PORT, c->v16);
 }
 
 /** @brief Destination Port. */
-IDEMIP_INLINE void udp_set_dst_port(const UdpCtx *c)
+EMBED_INLINE void udp_set_dst_port(const UdpCtx *c)
 {
     idemip_wr16(c->w + IDEMIP_UDP_OFF_DST_PORT, c->v16);
 }
 
 /** @brief Length. */
-IDEMIP_INLINE void udp_set_len(const UdpCtx *c)
+EMBED_INLINE void udp_set_len(const UdpCtx *c)
 {
     idemip_wr16(c->w + IDEMIP_UDP_OFF_LEN, c->v16);
 }
 
 /** @brief Checksum. */
-IDEMIP_INLINE void udp_set_cksum(const UdpCtx *c)
+EMBED_INLINE void udp_set_cksum(const UdpCtx *c)
 {
     idemip_wr16(c->w + IDEMIP_UDP_OFF_CKSUM, c->v16);
 }
@@ -119,7 +119,7 @@ IDEMIP_INLINE void udp_set_cksum(const UdpCtx *c)
  * carries. The Checksum field goes out zeroed because the sum is taken over the datagram with it
  * zero; idemip_udp_cksum_write then fills it.
  */
-IDEMIP_INLINE void udp_build(const UdpCtx *c)
+EMBED_INLINE void udp_build(const UdpCtx *c)
 {
     idemip_udp_set_src_port(c->w, c->src_port);
     idemip_udp_set_dst_port(c->w, c->dst_port);
@@ -142,7 +142,7 @@ IDEMIP_INLINE void udp_build(const UdpCtx *c)
  * Not part of the datagram: it is summed, never sent, so this accumulates into a running sum the
  * caller then carries over the header and data.
  */
-IDEMIP_INLINE uint32_t udp_pseudo_accum(const UdpCtx *c)
+EMBED_INLINE uint32_t udp_pseudo_accum(const UdpCtx *c)
 {
     uint32_t sum = c->sum;
     sum += (c->src >> 16) & 0xFFFFu;
@@ -163,7 +163,7 @@ IDEMIP_INLINE uint32_t udp_pseudo_accum(const UdpCtx *c)
  *
  * A computed zero comes back as all ones, per RFC 768.
  */
-IDEMIP_INLINE uint16_t udp_cksum_compute(const UdpCtx *c)
+EMBED_INLINE uint16_t udp_cksum_compute(const UdpCtx *c)
 {
     uint32_t sum = idemip_udp_pseudo_accum(0u, c->src, c->dst, (uint16_t)c->len, (uint8_t)IDEMIP_UDP_PROTO);
     uint16_t v = idemip_cksum_final(idemip_cksum_accum(sum, c->h, c->len));
@@ -171,7 +171,7 @@ IDEMIP_INLINE uint16_t udp_cksum_compute(const UdpCtx *c)
 }
 
 /** @brief Clear the Checksum field, sum the datagram with it clear, and store the result there. */
-IDEMIP_INLINE void udp_cksum_write(const UdpCtx *c)
+EMBED_INLINE void udp_cksum_write(const UdpCtx *c)
 {
     idemip_udp_set_cksum(c->w, IDEMIP_UDP_CKSUM_NONE);
     idemip_udp_set_cksum(c->w, idemip_udp_cksum_compute(c->w, c->len, c->src, c->dst));
@@ -183,22 +183,22 @@ IDEMIP_INLINE void udp_cksum_write(const UdpCtx *c)
  * RFC 1071 sec 1: summing a span that already holds its checksum yields all ones, whose complement
  * is zero. Says nothing about an absent checksum, which is idemip_udp_cksum_present.
  */
-IDEMIP_INLINE idemip_bool udp_cksum_valid(const UdpCtx *c)
+EMBED_INLINE embed_bool udp_cksum_valid(const UdpCtx *c)
 {
     uint32_t sum = idemip_udp_pseudo_accum(0u, c->src, c->dst, (uint16_t)c->len, (uint8_t)IDEMIP_UDP_PROTO);
-    return (idemip_cksum_final(idemip_cksum_accum(sum, c->h, c->len)) == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (idemip_cksum_final(idemip_cksum_accum(sum, c->h, c->len)) == 0u) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // --- UDP-Lite (RFC 3828) ---------------------------------------------------
 
 /** @brief Checksum Coverage: octets from the first octet of this header that the checksum covers. */
-IDEMIP_INLINE uint16_t udplite_cov(const UdpCtx *c)
+EMBED_INLINE uint16_t udplite_cov(const UdpCtx *c)
 {
     return idemip_rd16(c->h + IDEMIP_UDPLITE_OFF_COV);
 }
 
 /** @brief Write the Checksum Coverage. */
-IDEMIP_INLINE void udplite_set_cov(const UdpCtx *c)
+EMBED_INLINE void udplite_set_cov(const UdpCtx *c)
 {
     idemip_wr16(c->w + IDEMIP_UDPLITE_OFF_COV, c->v16);
 }
@@ -209,7 +209,7 @@ IDEMIP_INLINE void udplite_set_cov(const UdpCtx *c)
  *
  * RFC 3828 sec 3.1: "Prior to computation, the checksum field MUST be set to zero."
  */
-IDEMIP_INLINE void udplite_build(const UdpCtx *c)
+EMBED_INLINE void udplite_build(const UdpCtx *c)
 {
     idemip_udp_set_src_port(c->w, c->src_port);
     idemip_udp_set_dst_port(c->w, c->dst_port);
@@ -223,7 +223,7 @@ IDEMIP_INLINE void udplite_build(const UdpCtx *c)
  * RFC 3828 sec 3.4: the IP module supplies "the length of the IP payload", which is this header and
  * every octet after it.
  */
-IDEMIP_INLINE size_t udplite_cov_bytes(const UdpCtx *c)
+EMBED_INLINE size_t udplite_cov_bytes(const UdpCtx *c)
 {
     return (c->cov == IDEMIP_UDPLITE_COV_ALL) ? (size_t)c->ip_payload_len : (size_t)c->cov;
 }
@@ -235,17 +235,17 @@ IDEMIP_INLINE size_t udplite_cov_bytes(const UdpCtx *c)
  * greater than the IP length MUST also be discarded", and the header "MUST always be covered", which
  * a payload shorter than eight octets cannot satisfy at any Coverage.
  */
-IDEMIP_INLINE idemip_bool udplite_cov_valid(const UdpCtx *c)
+EMBED_INLINE embed_bool udplite_cov_valid(const UdpCtx *c)
 {
     if (c->ip_payload_len < IDEMIP_UDPLITE_COV_MIN)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (c->cov == IDEMIP_UDPLITE_COV_ALL)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
-    return (c->cov >= IDEMIP_UDPLITE_COV_MIN && c->cov <= c->ip_payload_len) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (c->cov >= IDEMIP_UDPLITE_COV_MIN && c->cov <= c->ip_payload_len) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 /**
@@ -261,7 +261,7 @@ IDEMIP_INLINE idemip_bool udplite_cov_valid(const UdpCtx *c)
  * bounds only the span summed. sec 3.1 again: "If the computed checksum is 0, it is transmitted as
  * all ones."
  */
-IDEMIP_INLINE uint16_t udplite_cksum_compute(const UdpCtx *c)
+EMBED_INLINE uint16_t udplite_cksum_compute(const UdpCtx *c)
 {
     uint32_t sum = idemip_udp_pseudo_accum(0u, c->src, c->dst, c->ip_payload_len, (uint8_t)IDEMIP_UDPLITE_PROTO);
     uint16_t v = idemip_cksum_final(
@@ -270,7 +270,7 @@ IDEMIP_INLINE uint16_t udplite_cksum_compute(const UdpCtx *c)
 }
 
 /** @brief Clear the Checksum field, sum the covered octets, and store the result there. */
-IDEMIP_INLINE void udplite_cksum_write(const UdpCtx *c)
+EMBED_INLINE void udplite_cksum_write(const UdpCtx *c)
 {
     idemip_udp_set_cksum(c->w, IDEMIP_UDP_CKSUM_NONE);
     idemip_udp_set_cksum(c->w, idemip_udplite_cksum_compute(c->w, c->cov, c->ip_payload_len, c->src, c->dst));
@@ -283,13 +283,13 @@ IDEMIP_INLINE void udplite_cksum_write(const UdpCtx *c)
  * whose complement is zero. RFC 3828 sec 3.1 forbids an all-zero transmitted checksum, so an absent
  * one is not a case here.
  */
-IDEMIP_INLINE idemip_bool udplite_cksum_valid(const UdpCtx *c)
+EMBED_INLINE embed_bool udplite_cksum_valid(const UdpCtx *c)
 {
     uint32_t sum = idemip_udp_pseudo_accum(0u, c->src, c->dst, c->ip_payload_len, (uint8_t)IDEMIP_UDPLITE_PROTO);
     return (idemip_cksum_final(idemip_cksum_accum(sum, c->h, idemip_udplite_cov_bytes(c->cov, c->ip_payload_len))) ==
             0u)
-               ? IDEMIP_TRUE
-               : IDEMIP_FALSE;
+               ? EMBED_TRUE
+               : EMBED_FALSE;
 }
 
 /* The namespaces are tables of function pointers with the caller's argument lists in their types,
@@ -297,130 +297,129 @@ IDEMIP_INLINE idemip_bool udplite_cksum_valid(const UdpCtx *c)
 
 uint16_t idemip_udp_src_port(const uint8_t *h)
 {
-    return IDEMIP_CALL(udp_src_port, UdpCtx, .h = h);
+    return EMBED_CALL(udp_src_port, UdpCtx, .h = h);
 }
 
 uint16_t idemip_udp_dst_port(const uint8_t *h)
 {
-    return IDEMIP_CALL(udp_dst_port, UdpCtx, .h = h);
+    return EMBED_CALL(udp_dst_port, UdpCtx, .h = h);
 }
 
 uint16_t idemip_udp_len(const uint8_t *h)
 {
-    return IDEMIP_CALL(udp_len, UdpCtx, .h = h);
+    return EMBED_CALL(udp_len, UdpCtx, .h = h);
 }
 
 uint16_t idemip_udp_cksum(const uint8_t *h)
 {
-    return IDEMIP_CALL(udp_cksum_field, UdpCtx, .h = h);
+    return EMBED_CALL(udp_cksum_field, UdpCtx, .h = h);
 }
 
-idemip_bool idemip_udp_len_valid(const uint8_t *h)
+embed_bool idemip_udp_len_valid(const uint8_t *h)
 {
-    return IDEMIP_CALL(udp_len_valid, UdpCtx, .h = h);
+    return EMBED_CALL(udp_len_valid, UdpCtx, .h = h);
 }
 
 uint16_t idemip_udp_payload_len(const uint8_t *h)
 {
-    return IDEMIP_CALL(udp_payload_len, UdpCtx, .h = h);
+    return EMBED_CALL(udp_payload_len, UdpCtx, .h = h);
 }
 
-idemip_bool idemip_udp_cksum_present(const uint8_t *h)
+embed_bool idemip_udp_cksum_present(const uint8_t *h)
 {
-    return IDEMIP_CALL(udp_cksum_present, UdpCtx, .h = h);
+    return EMBED_CALL(udp_cksum_present, UdpCtx, .h = h);
 }
 
 void idemip_udp_set_src_port(uint8_t *h, uint16_t port)
 {
-    IDEMIP_CALL(udp_set_src_port, UdpCtx, .w = h, .v16 = port);
+    EMBED_CALL(udp_set_src_port, UdpCtx, .w = h, .v16 = port);
 }
 
 void idemip_udp_set_dst_port(uint8_t *h, uint16_t port)
 {
-    IDEMIP_CALL(udp_set_dst_port, UdpCtx, .w = h, .v16 = port);
+    EMBED_CALL(udp_set_dst_port, UdpCtx, .w = h, .v16 = port);
 }
 
 void idemip_udp_set_len(uint8_t *h, uint16_t len)
 {
-    IDEMIP_CALL(udp_set_len, UdpCtx, .w = h, .v16 = len);
+    EMBED_CALL(udp_set_len, UdpCtx, .w = h, .v16 = len);
 }
 
-void idemip_udp_set_cksum(uint8_t *h, uint16_t cksum)
+void idemip_udp_set_cksum(uint8_t *h, uint16_t checksum)
 {
-    IDEMIP_CALL(udp_set_cksum, UdpCtx, .w = h, .v16 = cksum);
+    EMBED_CALL(udp_set_cksum, UdpCtx, .w = h, .v16 = checksum);
 }
 
 void idemip_udp_build(uint8_t *h, uint16_t src_port, uint16_t dst_port, uint16_t len)
 {
-    IDEMIP_CALL(udp_build, UdpCtx, .w = h, .src_port = src_port, .dst_port = dst_port, .v16 = len);
+    EMBED_CALL(udp_build, UdpCtx, .w = h, .src_port = src_port, .dst_port = dst_port, .v16 = len);
 }
 
 uint32_t idemip_udp_pseudo_accum(uint32_t sum, uint32_t src, uint32_t dst, uint16_t udp_len, uint8_t proto)
 {
-    return IDEMIP_CALL(udp_pseudo_accum, UdpCtx, .sum = sum, .src = src, .dst = dst, .udp_len = udp_len,
-                       .proto = proto);
+    return EMBED_CALL(udp_pseudo_accum, UdpCtx, .sum = sum, .src = src, .dst = dst, .udp_len = udp_len, .proto = proto);
 }
 
 uint16_t idemip_udp_cksum_compute(const uint8_t *h, size_t len, uint32_t src, uint32_t dst)
 {
-    return IDEMIP_CALL(udp_cksum_compute, UdpCtx, .h = h, .len = len, .src = src, .dst = dst);
+    return EMBED_CALL(udp_cksum_compute, UdpCtx, .h = h, .len = len, .src = src, .dst = dst);
 }
 
 void idemip_udp_cksum_write(uint8_t *h, size_t len, uint32_t src, uint32_t dst)
 {
-    IDEMIP_CALL(udp_cksum_write, UdpCtx, .w = h, .len = len, .src = src, .dst = dst);
+    EMBED_CALL(udp_cksum_write, UdpCtx, .w = h, .len = len, .src = src, .dst = dst);
 }
 
-idemip_bool idemip_udp_cksum_valid(const uint8_t *h, size_t len, uint32_t src, uint32_t dst)
+embed_bool idemip_udp_cksum_valid(const uint8_t *h, size_t len, uint32_t src, uint32_t dst)
 {
-    return IDEMIP_CALL(udp_cksum_valid, UdpCtx, .h = h, .len = len, .src = src, .dst = dst);
+    return EMBED_CALL(udp_cksum_valid, UdpCtx, .h = h, .len = len, .src = src, .dst = dst);
 }
 
 uint16_t idemip_udplite_cov(const uint8_t *h)
 {
-    return IDEMIP_CALL(udplite_cov, UdpCtx, .h = h);
+    return EMBED_CALL(udplite_cov, UdpCtx, .h = h);
 }
 
 void idemip_udplite_set_cov(uint8_t *h, uint16_t cov)
 {
-    IDEMIP_CALL(udplite_set_cov, UdpCtx, .w = h, .v16 = cov);
+    EMBED_CALL(udplite_set_cov, UdpCtx, .w = h, .v16 = cov);
 }
 
 void idemip_udplite_build(uint8_t *h, uint16_t src_port, uint16_t dst_port, uint16_t cov)
 {
-    IDEMIP_CALL(udplite_build, UdpCtx, .w = h, .src_port = src_port, .dst_port = dst_port, .cov = cov);
+    EMBED_CALL(udplite_build, UdpCtx, .w = h, .src_port = src_port, .dst_port = dst_port, .cov = cov);
 }
 
 size_t idemip_udplite_cov_bytes(uint16_t cov, uint16_t ip_payload_len)
 {
-    return IDEMIP_CALL(udplite_cov_bytes, UdpCtx, .cov = cov, .ip_payload_len = ip_payload_len);
+    return EMBED_CALL(udplite_cov_bytes, UdpCtx, .cov = cov, .ip_payload_len = ip_payload_len);
 }
 
-idemip_bool idemip_udplite_cov_valid(uint16_t cov, uint16_t ip_payload_len)
+embed_bool idemip_udplite_cov_valid(uint16_t cov, uint16_t ip_payload_len)
 {
-    return IDEMIP_CALL(udplite_cov_valid, UdpCtx, .cov = cov, .ip_payload_len = ip_payload_len);
+    return EMBED_CALL(udplite_cov_valid, UdpCtx, .cov = cov, .ip_payload_len = ip_payload_len);
 }
 
 uint16_t idemip_udplite_cksum_compute(const uint8_t *h, uint16_t cov, uint16_t ip_payload_len, uint32_t src,
                                       uint32_t dst)
 {
-    return IDEMIP_CALL(udplite_cksum_compute, UdpCtx, .h = h, .cov = cov, .ip_payload_len = ip_payload_len, .src = src,
-                       .dst = dst);
+    return EMBED_CALL(udplite_cksum_compute, UdpCtx, .h = h, .cov = cov, .ip_payload_len = ip_payload_len, .src = src,
+                      .dst = dst);
 }
 
 void idemip_udplite_cksum_write(uint8_t *h, uint16_t cov, uint16_t ip_payload_len, uint32_t src, uint32_t dst)
 {
-    IDEMIP_CALL(udplite_cksum_write, UdpCtx, .w = h, .cov = cov, .ip_payload_len = ip_payload_len, .src = src,
-                .dst = dst);
+    EMBED_CALL(udplite_cksum_write, UdpCtx, .w = h, .cov = cov, .ip_payload_len = ip_payload_len, .src = src,
+               .dst = dst);
 }
 
-idemip_bool idemip_udplite_cksum_valid(const uint8_t *h, uint16_t cov, uint16_t ip_payload_len, uint32_t src,
-                                       uint32_t dst)
+embed_bool idemip_udplite_cksum_valid(const uint8_t *h, uint16_t cov, uint16_t ip_payload_len, uint32_t src,
+                                      uint32_t dst)
 {
-    return IDEMIP_CALL(udplite_cksum_valid, UdpCtx, .h = h, .cov = cov, .ip_payload_len = ip_payload_len, .src = src,
-                       .dst = dst);
+    return EMBED_CALL(udplite_cksum_valid, UdpCtx, .h = h, .cov = cov, .ip_payload_len = ip_payload_len, .src = src,
+                      .dst = dst);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_UDP

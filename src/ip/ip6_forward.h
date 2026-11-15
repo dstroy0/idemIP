@@ -41,7 +41,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief What the forwarder decided to do with the packet.
@@ -51,11 +51,7 @@ IDEMIP_BEGIN_DECLS
  * @var IDEMIP_IP6_FORWARD_SEND    the packet is forwarded to @ref Ip6ForwardIo::next_hop with
  *                                 @ref Ip6ForwardIo::hop_limit written into its Hop Limit
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IP6_FORWARD_DISCARD = 0,
-    IDEMIP_IP6_FORWARD_SEND,
-} IdemIpIp6ForwardAction;
+EMBED_ENUM_BYTE(IdemIpIp6ForwardAction, IDEMIP_IP6_FORWARD_DISCARD = 0, IDEMIP_IP6_FORWARD_SEND, );
 
 /**
  * @brief Which rule decided, each in the RFC's own words.
@@ -85,21 +81,11 @@ typedef enum IDEMIP_ENUM_PACKED
  * @var IDEMIP_IP6_FORWARD_R_TOO_BIG   RFC 8200 sec 4.5: a router does not fragment, so a packet
  *                                     larger than the outgoing link's MTU is discarded
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IP6_FORWARD_R_OK = 0,
-    IDEMIP_IP6_FORWARD_R_HEADER,
-    IDEMIP_IP6_FORWARD_R_SRC_UNSPEC,
-    IDEMIP_IP6_FORWARD_R_SRC_MCAST,
-    IDEMIP_IP6_FORWARD_R_SRC_LOOP,
-    IDEMIP_IP6_FORWARD_R_DST_UNSPEC,
-    IDEMIP_IP6_FORWARD_R_DST_LOOP,
-    IDEMIP_IP6_FORWARD_R_LINK_LOCAL,
-    IDEMIP_IP6_FORWARD_R_SCOPE,
-    IDEMIP_IP6_FORWARD_R_NO_ROUTE,
-    IDEMIP_IP6_FORWARD_R_HOP_LIMIT,
-    IDEMIP_IP6_FORWARD_R_TOO_BIG,
-} IdemIpIp6ForwardReason;
+EMBED_ENUM_BYTE(IdemIpIp6ForwardReason, IDEMIP_IP6_FORWARD_R_OK = 0, IDEMIP_IP6_FORWARD_R_HEADER,
+                IDEMIP_IP6_FORWARD_R_SRC_UNSPEC, IDEMIP_IP6_FORWARD_R_SRC_MCAST, IDEMIP_IP6_FORWARD_R_SRC_LOOP,
+                IDEMIP_IP6_FORWARD_R_DST_UNSPEC, IDEMIP_IP6_FORWARD_R_DST_LOOP, IDEMIP_IP6_FORWARD_R_LINK_LOCAL,
+                IDEMIP_IP6_FORWARD_R_SCOPE, IDEMIP_IP6_FORWARD_R_NO_ROUTE, IDEMIP_IP6_FORWARD_R_HOP_LIMIT,
+                IDEMIP_IP6_FORWARD_R_TOO_BIG, );
 
 /** @brief No ICMPv6 is owed. @ref Ip6ForwardIo::icmp_type reads this whenever @c icmp is false. */
 #define IDEMIP_IP6_FORWARD_ICMP_NONE 0u
@@ -133,10 +119,10 @@ typedef struct
     uint16_t out_mtu;
     uint8_t in_netif;
     uint8_t out_netif;
-    idemip_bool routed;
-    idemip_bool ll_multicast;
-    idemip_bool ll_broadcast;
-    idemip_bool src_neighbor;
+    embed_bool routed;
+    embed_bool ll_multicast;
+    embed_bool ll_broadcast;
+    embed_bool src_neighbor;
 } Ip6ForwardArgs;
 
 /**
@@ -176,8 +162,8 @@ typedef struct
     uint8_t netif;
     uint8_t icmp_type;
     uint8_t icmp_code;
-    idemip_bool icmp;
-    idemip_bool redirect;
+    embed_bool icmp;
+    embed_bool redirect;
 } Ip6ForwardIo;
 
 // ---------------------------------------------------------------------------
@@ -200,7 +186,7 @@ typedef struct
  *   Ip6Forward.clear(work);
  *   IDEMIP_IP6_FORWARD_IO(work)->fwd_args.hdr = packet;
  *   IDEMIP_IP6_FORWARD_IO(work)->fwd_args.len = len;
- *   IDEMIP_IP6_FORWARD_IO(work)->fwd_args.routed = IDEMIP_TRUE;
+ *   IDEMIP_IP6_FORWARD_IO(work)->fwd_args.routed = EMBED_TRUE;
  *   IDEMIP_IP6_FORWARD_IO(work)->fwd_args.next_hop = router;
  *   IDEMIP_IP6_FORWARD_IO(work)->fwd_args.out_mtu = 1500u;
  *   Ip6Forward.decide(work);
@@ -248,10 +234,9 @@ void idemip_ip6_forward_decide(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Ip6ForwardNs Ip6Forward IDEMIP_UNUSED = {
-    .clear = idemip_ip6_forward_clear,
-    .decide = idemip_ip6_forward_decide};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE Ip6ForwardNs Ip6Forward EMBED_UNUSED = {.clear = idemip_ip6_forward_clear,
+                                                            .decide = idemip_ip6_forward_decide};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

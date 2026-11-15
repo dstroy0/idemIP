@@ -48,7 +48,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief No stamp. Every index result reads this when no path matched. */
 #define IDEMIP_PMTU6_NONE 0xFFu
@@ -144,8 +144,8 @@ typedef struct
     uint16_t mtu;
     IdemIpStatus status;
     uint8_t index;
-    idemip_bool decreased;
-    idemip_bool probe;
+    embed_bool decreased;
+    embed_bool probe;
 } Pmtu6Io;
 
 // ---------------------------------------------------------------------------
@@ -164,8 +164,8 @@ typedef struct
 #define IDEMIP_PMTU6_IO(w) ((Pmtu6Io *)(void *)((w) + IDEMIP_PMTU6_OFF_IO))
 
 // A stamp index is one octet, so a count at or above the terminator is unaddressable.
-static_assert(IDEMIP_PMTU6_PATHS < IDEMIP_PMTU6_NONE,
-              "IDEMIP_PMTU6_PATHS must stay below IDEMIP_PMTU6_NONE: a stamp index is one octet");
+EMBED_STATIC_ASSERT(IDEMIP_PMTU6_PATHS < IDEMIP_PMTU6_NONE,
+                    "IDEMIP_PMTU6_PATHS must stay below IDEMIP_PMTU6_NONE: a stamp index is one octet");
 
 /**
  * @brief RFC 8201 Path MTU Discovery over IPv6.
@@ -233,12 +233,11 @@ void idemip_pmtu6_forget(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Pmtu6Ns Pmtu6 IDEMIP_UNUSED = {
-    .clear = idemip_pmtu6_clear,
-    .too_big = idemip_pmtu6_too_big,
-    .tick = idemip_pmtu6_tick,
-    .forget = idemip_pmtu6_forget};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE Pmtu6Ns Pmtu6 EMBED_UNUSED = {.clear = idemip_pmtu6_clear,
+                                                  .too_big = idemip_pmtu6_too_big,
+                                                  .tick = idemip_pmtu6_tick,
+                                                  .forget = idemip_pmtu6_forget};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

@@ -16,16 +16,18 @@
 
 #include "src/tcp/tcp_pcb.h"
 
-#include <stdio.h>
-#include <string.h>
-#include <unity.h>
 #include "src/tcp/tcp_defines.h"
+#include "support/borrows.h"
+#include <stdio.h>
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each so
 // a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_TCP_PCB_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_TCP_PCB_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_TCP_PCB_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_TCP_PCB_BORROW + 16))
+static uint8_t *work_b;
 
 #define TCB_BYTES ((size_t)IDEMIP_TCP_PCBS << IDEMIP_TCP_PCB_ENTRY_SHIFT)
 #define LISTEN_BYTES ((size_t)IDEMIP_TCP_LISTEN_PCBS << IDEMIP_TCP_LISTEN_ENTRY_SHIFT)
@@ -59,8 +61,9 @@ static const uint8_t g_remote[IDEMIP_TCP_PCB_ADDR_BYTES] = {0x20u, 0x01u, 0x0Du,
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_TCP_PCB_BORROW, CANARY, cap - IDEMIP_TCP_PCB_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_TCP_PCB_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_TCP_PCB_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -81,14 +84,16 @@ static void check_zero(const uint8_t *w, size_t off, size_t len, const char *wha
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_tcp_pcb);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_tcp_pcb);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void call_every_entry(uint8_t *w)
@@ -195,7 +200,8 @@ void test_an_uncleared_borrow_is_refused(void)
 
 void test_clear_zeroes_the_four_tables(void)
 {
-    memset(work_a + IDEMIP_TCP_PCB_OFF_CTX, 0xEE, (size_t)IDEMIP_TCP_PCB_BORROW - IDEMIP_TCP_PCB_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a + IDEMIP_TCP_PCB_OFF_CTX, .val = 0xEE,
+               .bytes = (size_t)IDEMIP_TCP_PCB_BORROW - IDEMIP_TCP_PCB_OFF_CTX);
     TcpPcb.clear(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_PCB_IO(work_a)->status);
     check_zero(work_a, IDEMIP_TCP_PCB_OFF_TCB, TCB_BYTES, "clear left a TCB unzeroed");
@@ -365,7 +371,7 @@ void test_every_entry_refuses_a_row_that_is_not_in_use(void)
 // A clear on one borrow reaches no byte of the other's tables.
 void test_a_clear_on_one_borrow_leaves_the_other_tables_untouched(void)
 {
-    memset(work_b + IDEMIP_TCP_PCB_OFF_TCB, 0xC3, TABLES_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b + IDEMIP_TCP_PCB_OFF_TCB, .val = 0xC3, .bytes = TABLES_BYTES);
     TcpPcb.clear(work_a);
     for (size_t i = 0; i < TABLES_BYTES; i++)
     {
@@ -1292,8 +1298,8 @@ void test_a_store_and_a_load_round_trip_every_variable(void)
     TcpPcb.store(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
-    memset(&IO(work_a)->vars, 0, sizeof IO(work_a)->vars);
-    memset(&IO(work_a)->ctl, 0, sizeof IO(work_a)->ctl);
+    IO(work_a)->vars = (IdemIpTcpVars){0};
+    IO(work_a)->ctl = (TcpPcbCtl){0};
     IO(work_a)->pcb_args.index = idx;
     TcpPcb.load(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1338,7 +1344,7 @@ void test_a_store_and_a_load_round_trip_every_octet_of_the_control_state(void)
     TcpPcb.store(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
-    memset(&IO(work_a)->ctl, 0, sizeof IO(work_a)->ctl);
+    IO(work_a)->ctl = (TcpPcbCtl){0};
     IO(work_a)->pcb_args.index = idx;
     TcpPcb.load(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1469,13 +1475,16 @@ void test_the_transition_relation_table_is_square(void)
 {
     for (int from = 0; from < (int)IDEMIP_TCP_STATES; from++)
     {
-        TEST_ASSERT_EQUAL_size_t_MESSAGE((size_t)IDEMIP_TCP_STATES, strlen(g_edges[from]),
-                                         "a row of the transition relation is not eleven wide");
         for (int to = 0; to < (int)IDEMIP_TCP_STATES; to++)
         {
             TEST_ASSERT_TRUE_MESSAGE(g_edges[from][to] == '1' || g_edges[from][to] == '.',
                                      "a cell of the transition relation is neither set nor clear");
         }
+        // The eleven cells above hold no terminator. Thus the row is eleven wide when the next byte is
+        // the terminator. A shorter row fails a cell check first, and this read stays in the row.
+        TEST_ASSERT_TRUE_MESSAGE(
+            EMBED_CALL(memor.cmp, MemoriaCfg, .src = &g_edges[from][IDEMIP_TCP_STATES], .other = "", .bytes = 1u) == 0,
+            "a row of the transition relation is not eleven wide");
     }
 }
 
@@ -2697,7 +2706,7 @@ void test_max_snd_wnd_round_trips_a_scaled_window(void)
     TcpPcb.store(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
-    memset(&IO(work_a)->ctl, 0, sizeof IO(work_a)->ctl);
+    IO(work_a)->ctl = (TcpPcbCtl){0};
     IO(work_a)->pcb_args.index = idx;
     TcpPcb.load(work_a);
     TEST_ASSERT_EQUAL_UINT32((uint32_t)0xFFFFu << 14, IO(work_a)->ctl.max_snd_wnd);
@@ -3043,7 +3052,7 @@ void test_a_lookup_differing_in_any_part_of_the_four_tuple_finds_nothing(void)
 
     // The same name with the local address moved by one octet is a different connection.
     uint8_t other_local[IDEMIP_TCP_PCB_ADDR_BYTES];
-    memcpy(other_local, g_local, sizeof other_local);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = other_local, .at = g_local, .size = sizeof other_local);
     other_local[G_ADDR_OCTETS - 1u] = (uint8_t)(other_local[G_ADDR_OCTETS - 1u] + 1u);
     IO(work_a)->find_args.local_ip = other_local;
     TcpPcb.find(work_a);
@@ -3066,11 +3075,11 @@ void test_an_active_open_is_refused_only_where_all_four_parts_already_stand_toge
 {
     TcpPcb.clear(work_a);
     uint8_t other_remote[IDEMIP_TCP_PCB_ADDR_BYTES];
-    memcpy(other_remote, g_remote, sizeof other_remote);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = other_remote, .at = g_remote, .size = sizeof other_remote);
     other_remote[G_ADDR_OCTETS - 1u] = (uint8_t)(other_remote[G_ADDR_OCTETS - 1u] + 1u);
 
     uint8_t other_local[IDEMIP_TCP_PCB_ADDR_BYTES];
-    memcpy(other_local, g_local, sizeof other_local);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = other_local, .at = g_local, .size = sizeof other_local);
     other_local[G_ADDR_OCTETS - 1u] = (uint8_t)(other_local[G_ADDR_OCTETS - 1u] + 1u);
 
     // Three connections, each differing from the fourth in exactly one of the four parts: the local

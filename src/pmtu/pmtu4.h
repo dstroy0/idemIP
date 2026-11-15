@@ -33,7 +33,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief The Next-Hop MTU field, RFC 1191 sec 4.
@@ -146,8 +146,8 @@ typedef struct
     uint16_t next_hop_mtu;
     IdemIpStatus status;
     uint8_t tos;
-    idemip_bool decreased;
-    idemip_bool old_style;
+    embed_bool decreased;
+    embed_bool old_style;
 } Pmtu4Io;
 
 // ---------------------------------------------------------------------------
@@ -235,13 +235,12 @@ void idemip_pmtu4_age(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Pmtu4Ns Pmtu4 IDEMIP_UNUSED = {
-    .clear = idemip_pmtu4_clear,
-    .too_big = idemip_pmtu4_too_big,
-    .plateau_below = idemip_pmtu4_plateau_below,
-    .plateau_above = idemip_pmtu4_plateau_above,
-    .age = idemip_pmtu4_age};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE Pmtu4Ns Pmtu4 EMBED_UNUSED = {.clear = idemip_pmtu4_clear,
+                                                  .too_big = idemip_pmtu4_too_big,
+                                                  .plateau_below = idemip_pmtu4_plateau_below,
+                                                  .plateau_above = idemip_pmtu4_plateau_above,
+                                                  .age = idemip_pmtu4_age};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

@@ -17,14 +17,16 @@
 
 #include "src/pmtu/pmtu6.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_PMTU6_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_PMTU6_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_PMTU6_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_PMTU6_BORROW + 16))
+static uint8_t *work_b;
 
 // A Packet Too Big: RFC 4443 sec 3.2's Type 2, its 32-bit MTU, then the invoking packet.
 static uint8_t g_msg[192];
@@ -46,7 +48,7 @@ static void put32(uint8_t *p, uint32_t v)
 // Returns the octets built through that header; an extension header is appended by the caller.
 static size_t build(uint8_t type, uint8_t code, uint32_t mtu, uint8_t nh, const uint8_t *dst)
 {
-    memset(g_msg, 0, sizeof g_msg);
+    mmgr_zero_buf(g_msg, sizeof g_msg);
     g_msg[0] = type;
     g_msg[1] = code;
     put32(g_msg + 4, mtu);
@@ -54,7 +56,7 @@ static size_t build(uint8_t type, uint8_t code, uint32_t mtu, uint8_t nh, const 
     put32(p, 0x60000000u); // version 6, traffic class 0, flow label 0
     p[6] = nh;
     p[7] = 64u; // hop limit
-    memcpy(p + 24, dst, 16);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = p + 24, .at = dst, .size = 16);
     return (size_t)8u + 40u;
 }
 
@@ -71,14 +73,15 @@ static size_t routing_header(size_t at, uint8_t segments_left, const uint8_t *ad
     g_msg[at + 1] = 2u;  // 24 octets in all
     g_msg[at + 2] = 4u;  // Routing Type, unread here
     g_msg[at + 3] = segments_left;
-    memcpy(g_msg + at + 8, address, 16);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_msg + at + 8, .at = address, .size = 16);
     return at + 24u;
 }
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_PMTU6_BORROW, CANARY, cap - IDEMIP_PMTU6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_PMTU6_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_PMTU6_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -91,15 +94,17 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(g_msg, 0, sizeof g_msg);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_pmtu6);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_pmtu6);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(g_msg, sizeof g_msg);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void ready(uint8_t *w)
@@ -502,7 +507,7 @@ void test_a_full_table_takes_the_longest_running_clock(void)
 {
     ready(work_a);
     uint8_t dst[16];
-    memcpy(dst, dst_one, sizeof dst);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = dst, .at = dst_one, .size = sizeof dst);
     for (uint8_t i = 0; i < (uint8_t)IDEMIP_PMTU6_PATHS; i++)
     {
         dst[15] = (uint8_t)(0x10u + i);

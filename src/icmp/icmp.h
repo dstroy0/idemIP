@@ -20,23 +20,15 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief Message types RFC 792 assigns, as its "Summary of Message Types" lists them. */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_ICMP_ECHO_REPLY = 0, ///< "0 for echo reply message"
-    IDEMIP_ICMP_DEST_UNREACHABLE = 3,
-    IDEMIP_ICMP_SOURCE_QUENCH = 4,
-    IDEMIP_ICMP_REDIRECT = 5,
-    IDEMIP_ICMP_ECHO = 8, ///< "8 for echo message"
-    IDEMIP_ICMP_TIME_EXCEEDED = 11,
-    IDEMIP_ICMP_PARAMETER_PROBLEM = 12,
-    IDEMIP_ICMP_TIMESTAMP = 13,
-    IDEMIP_ICMP_TIMESTAMP_REPLY = 14,
-    IDEMIP_ICMP_INFO_REQUEST = 15,
-    IDEMIP_ICMP_INFO_REPLY = 16,
-} IdemIpIcmpType;
+EMBED_ENUM_BYTE(IdemIpIcmpType,
+                IDEMIP_ICMP_ECHO_REPLY = 0, ///< "0 for echo reply message"
+                IDEMIP_ICMP_DEST_UNREACHABLE = 3, IDEMIP_ICMP_SOURCE_QUENCH = 4, IDEMIP_ICMP_REDIRECT = 5,
+                IDEMIP_ICMP_ECHO = 8, ///< "8 for echo message"
+                IDEMIP_ICMP_TIME_EXCEEDED = 11, IDEMIP_ICMP_PARAMETER_PROBLEM = 12, IDEMIP_ICMP_TIMESTAMP = 13,
+                IDEMIP_ICMP_TIMESTAMP_REPLY = 14, IDEMIP_ICMP_INFO_REQUEST = 15, IDEMIP_ICMP_INFO_REPLY = 16, );
 
 /** @brief Reading a received message, and the checksum RFC 792 covers it with. */
 typedef struct
@@ -52,11 +44,11 @@ typedef struct
     uint32_t (*recv_ts)(const uint8_t *m);
     uint32_t (*xmit_ts)(const uint8_t *m);
     const uint8_t *(*quote)(const uint8_t *m);
-    idemip_bool (*is_error)(const uint8_t *m);
+    embed_bool (*is_error)(const uint8_t *m);
     uint16_t (*cksum_compute)(const uint8_t *m, size_t len);
 } IcmpReadNs;
-IDEMIP_NS_LAYOUT(IcmpReadNs, type, code, cksum, id, seq, pointer, gateway, orig_ts, recv_ts, xmit_ts, quote, is_error,
-                 cksum_compute);
+EMBED_TABLE_LAYOUT(IcmpReadNs, type, code, cksum, id, seq, pointer, gateway, orig_ts, recv_ts, xmit_ts, quote, is_error,
+                   cksum_compute);
 
 /**
  * @brief Writing a message into the caller's bytes, then the checksum over it.
@@ -76,8 +68,8 @@ typedef struct
     void (*source_quench)(uint8_t *m, size_t len);
     size_t (*err_len)(const uint8_t *ip);
 } IcmpBuildNs;
-IDEMIP_NS_LAYOUT(IcmpBuildNs, echo, echo_reply, error, dest_unreachable, time_exceeded, parameter_problem,
-                 source_quench, err_len);
+EMBED_TABLE_LAYOUT(IcmpBuildNs, echo, echo_reply, error, dest_unreachable, time_exceeded, parameter_problem,
+                   source_quench, err_len);
 
 /** @name The entries the tables point at.
  *  @brief Nameable so a static const table can name them, and for no other reason. The tables are
@@ -94,7 +86,7 @@ uint32_t idemip_icmp_orig_ts(const uint8_t *m);
 uint32_t idemip_icmp_recv_ts(const uint8_t *m);
 uint32_t idemip_icmp_xmit_ts(const uint8_t *m);
 const uint8_t *idemip_icmp_quote(const uint8_t *m);
-idemip_bool idemip_icmp_is_error(const uint8_t *m);
+embed_bool idemip_icmp_is_error(const uint8_t *m);
 uint16_t idemip_icmp_cksum_compute(const uint8_t *m, size_t len);
 
 void idemip_icmp_build_echo(uint8_t *m, uint8_t type, uint16_t id, uint16_t seq, size_t len);
@@ -114,7 +106,7 @@ size_t idemip_icmp_err_len(const uint8_t *ip);
  * inlined body and cannot do that through an extern one, where the table is in another
  * translation unit and every call is a load and an indirect jump.
  */
-IDEMIP_NS IcmpReadNs icmp_read IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE IcmpReadNs icmp_read EMBED_UNUSED = {
     .type = idemip_icmp_type,
     .code = idemip_icmp_code,
     .cksum = idemip_icmp_cksum,
@@ -130,7 +122,7 @@ IDEMIP_NS IcmpReadNs icmp_read IDEMIP_UNUSED = {
     .cksum_compute = idemip_icmp_cksum_compute,
 };
 
-IDEMIP_NS IcmpBuildNs icmp_build IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE IcmpBuildNs icmp_build EMBED_UNUSED = {
     .echo = idemip_icmp_build_echo,
     .echo_reply = idemip_icmp_echo_reply,
     .error = idemip_icmp_build_error,
@@ -141,7 +133,7 @@ IDEMIP_NS IcmpBuildNs icmp_build IDEMIP_UNUSED = {
     .err_len = idemip_icmp_err_len,
 };
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

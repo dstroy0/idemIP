@@ -21,7 +21,7 @@
 //
 // The host is one machine with one word width, so the widths are reached by instantiating the
 // helpers on a 16-, 32- and 64-bit word rather than by pretending. That is what changes between the
-// targets: the same source, a different IdemIpWord. Endianness reaches only the tail mask - every
+// targets: the same source, a different embed_word. Endianness reaches only the tail mask - every
 // other load here is a memcpy of a constant width, which has no byte order - so the two arms are
 // measured as the two arms, and their answers are checked against each other before either is
 // timed.
@@ -43,10 +43,10 @@
 
 #include "bench_harness.h"
 
+#include "support/fill_bytes.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <string.h>
 
 #if !defined(__GNUC__) && !defined(__clang__)
 volatile uint64_t idemip_bench_sink;
@@ -62,8 +62,8 @@ volatile uint64_t idemip_bench_sink;
     static inline WORD NAME##_tail(const uint8_t *p, size_t r)                                                         \
     {                                                                                                                  \
         WORD w;                                                                                                        \
-        memcpy(&w, p, sizeof w);                                                                                       \
-        const WORD mask = (BIG) ? (WORD) ~(((((WORD)1u) << (8u * (sizeof(WORD) - r - 1u))) << 8u) - 1u)                 \
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = &w, .at = p, .size = sizeof w);                                    \
+        const WORD mask = (BIG) ? (WORD) ~(((((WORD)1u) << (8u * (sizeof(WORD) - r - 1u))) << 8u) - 1u)                \
                                 : (WORD)((((WORD)1u) << (8u * r)) - 1u);                                               \
         return (WORD)(w & mask);                                                                                       \
     }                                                                                                                  \
@@ -74,7 +74,7 @@ volatile uint64_t idemip_bench_sink;
         while (i + sizeof(WORD) <= n)                                                                                  \
         {                                                                                                              \
             WORD w;                                                                                                    \
-            memcpy(&w, p + i, sizeof w);                                                                               \
+            EMBED_CALL(proxim.read, ProximusCfg, .dst = &w, .at = p + i, .size = sizeof w);                            \
             any |= w;                                                                                                  \
             i += sizeof w;                                                                                             \
         }                                                                                                              \
@@ -176,7 +176,7 @@ static const char *dist_name(unsigned d)
 // runs of this bench compare.
 static void fill(uint8_t *p, size_t n, size_t bits, unsigned d)
 {
-    memset(p, 0, n + 16u); // the tail reads out to a word past the span
+    mmgr_zero_buf(p, n + 16u); // the tail reads out to a word past the span
     const size_t total = n * 8u;
     if (bits > total)
     {
@@ -278,7 +278,7 @@ static unsigned long iters_for(size_t n)
 
 static void tails(void)
 {
-    memset(g_a, 0xA5u, sizeof g_a);
+    fill_bytes(g_a, 0xA5u, sizeof g_a);
     printf("# the tail alone: one load and one mask, at each remainder\n");
     printf("kind,arm,remainders_walked,cycles_per_call,ns_per_call\n");
     TAIL_SWEEP("w64le", w64le_tail, 8u);

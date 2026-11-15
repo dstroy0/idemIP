@@ -29,51 +29,73 @@
 #include "src/udp/udp.h"
 #endif
 
-#include <string.h>
-#include <unity.h>
+#include "src/arp/arp_defines.h"
 #include "src/common_defines.h"
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ethernet/vlan_defines.h"
-#include "src/arp/arp_defines.h"
-#include "src/ip/ipv4_defines.h"
-#include "src/ip/ipv6_defines.h"
 #include "src/icmp/icmp_defines.h"
 #include "src/icmp/icmpv6_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "src/ip/ipv6_defines.h"
 #include "src/tcp/tcp_defines.h"
 #include "src/udp/udp_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_DISPATCH_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_DISPATCH_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_DISPATCH_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_DISPATCH_BORROW + 16))
+static uint8_t *work_b;
 
 // Every borrow the path calls into, each the caller's own.
-static _Alignas(8) uint8_t stats_mem[IDEMIP_STATS_BORROW];
-static _Alignas(8) uint8_t netif_mem[IDEMIP_NETIF_BORROW];
-static _Alignas(8) uint8_t loopif_mem[IDEMIP_LOOPIF_BORROW];
-static _Alignas(8) uint8_t vlan_mem[IDEMIP_VLAN_BORROW];
-static _Alignas(8) uint8_t arp_mem[IDEMIP_ARP_BORROW];
-static _Alignas(8) uint8_t ip4_addr_mem[IDEMIP_IP4_ADDR_BORROW];
-static _Alignas(8) uint8_t ip4_reass_mem[IDEMIP_IP4_REASS_BORROW];
-static _Alignas(8) uint8_t icmp_in_mem[IDEMIP_ICMP_IN_BORROW];
-static _Alignas(8) uint8_t igmp_mem[IDEMIP_IGMP_BORROW];
+#define STATS_MEM_BYTES ((size_t)(IDEMIP_STATS_BORROW))
+static uint8_t *stats_mem;
+#define NETIF_MEM_BYTES ((size_t)(IDEMIP_NETIF_BORROW))
+static uint8_t *netif_mem;
+#define LOOPIF_MEM_BYTES ((size_t)(IDEMIP_LOOPIF_BORROW))
+static uint8_t *loopif_mem;
+#define VLAN_MEM_BYTES ((size_t)(IDEMIP_VLAN_BORROW))
+static uint8_t *vlan_mem;
+#define ARP_MEM_BYTES ((size_t)(IDEMIP_ARP_BORROW))
+static uint8_t *arp_mem;
+#define IP4_ADDR_MEM_BYTES ((size_t)(IDEMIP_IP4_ADDR_BORROW))
+static uint8_t *ip4_addr_mem;
+#define IP4_REASS_MEM_BYTES ((size_t)(IDEMIP_IP4_REASS_BORROW))
+static uint8_t *ip4_reass_mem;
+#define ICMP_IN_MEM_BYTES ((size_t)(IDEMIP_ICMP_IN_BORROW))
+static uint8_t *icmp_in_mem;
+#define IGMP_MEM_BYTES ((size_t)(IDEMIP_IGMP_BORROW))
+static uint8_t *igmp_mem;
 #if IDEMIP_ENABLE_IPV6
-static _Alignas(8) uint8_t ip6_addr_mem[IDEMIP_IP6_ADDR_BORROW];
-static _Alignas(8) uint8_t ip6_reass_mem[IDEMIP_IP6_REASS_BORROW];
-static _Alignas(8) uint8_t icmp6_in_mem[IDEMIP_ICMP6_IN_BORROW];
-static _Alignas(8) uint8_t mld6_mem[IDEMIP_MLD6_BORROW];
+#define IP6_ADDR_MEM_BYTES ((size_t)(IDEMIP_IP6_ADDR_BORROW))
+static uint8_t *ip6_addr_mem;
+#define IP6_REASS_MEM_BYTES ((size_t)(IDEMIP_IP6_REASS_BORROW))
+static uint8_t *ip6_reass_mem;
+#define ICMP6_IN_MEM_BYTES ((size_t)(IDEMIP_ICMP6_IN_BORROW))
+static uint8_t *icmp6_in_mem;
+#define MLD6_MEM_BYTES ((size_t)(IDEMIP_MLD6_BORROW))
+static uint8_t *mld6_mem;
 #endif
-static _Alignas(8) uint8_t raw_mem[IDEMIP_RAW_PCB_BORROW];
+#define RAW_MEM_BYTES ((size_t)(IDEMIP_RAW_PCB_BORROW))
+static uint8_t *raw_mem;
 #if IDEMIP_ENABLE_UDP
-static _Alignas(8) uint8_t udp_mem[IDEMIP_UDP_PCB_BORROW];
-static _Alignas(8) uint8_t udplite_mem[IDEMIP_UDPLITE_BORROW];
+#define UDP_MEM_BYTES ((size_t)(IDEMIP_UDP_PCB_BORROW))
+static uint8_t *udp_mem;
+#define UDPLITE_MEM_BYTES ((size_t)(IDEMIP_UDPLITE_BORROW))
+static uint8_t *udplite_mem;
 #endif
 #if IDEMIP_ENABLE_TCP
-static _Alignas(8) uint8_t tcp_pcb_mem[IDEMIP_TCP_PCB_BORROW];
-static _Alignas(8) uint8_t tcp_in_mem[IDEMIP_TCP_IN_BORROW];
+#define TCP_PCB_MEM_BYTES ((size_t)(IDEMIP_TCP_PCB_BORROW))
+static uint8_t *tcp_pcb_mem;
+#define TCP_IN_MEM_BYTES ((size_t)(IDEMIP_TCP_IN_BORROW))
+static uint8_t *tcp_in_mem;
 #endif
-static _Alignas(8) uint8_t phy_mem[IDEMIP_PHY_BORROW];
+#define PHY_MEM_BYTES ((size_t)(IDEMIP_PHY_BORROW))
+static uint8_t *phy_mem;
 
 // The caller's frame and its transmit buffer.
 static uint8_t g_frame[256];
@@ -103,8 +125,9 @@ static const uint8_t g_lo6[IDEMIP_IP6_ADDR_LEN] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_DISPATCH_BORROW, CANARY, cap - IDEMIP_DISPATCH_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_DISPATCH_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_DISPATCH_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -152,7 +175,7 @@ static void if_untagged(uint8_t *w, uint8_t index)
     io->if_args.index = index;
     io->if_args.dma = NULL;
     io->if_args.vid = 0u;
-    io->if_args.tagged = IDEMIP_FALSE;
+    io->if_args.tagged = EMBED_FALSE;
     Dispatch.if_bind(w);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
 }
@@ -163,7 +186,7 @@ static void if_tagged(uint8_t *w, uint8_t index, uint16_t vid)
     io->if_args.index = index;
     io->if_args.dma = NULL;
     io->if_args.vid = vid;
-    io->if_args.tagged = IDEMIP_TRUE;
+    io->if_args.tagged = EMBED_TRUE;
     Dispatch.if_bind(w);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
 }
@@ -188,7 +211,7 @@ static uint16_t bind_udp4(uint16_t port)
 {
     UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
     up->open_args.ip_version = 4u;
-    up->open_args.lite = IDEMIP_FALSE;
+    up->open_args.lite = EMBED_FALSE;
     UdpPcb.open(udp_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
     uint16_t pcb = up->index;
@@ -209,7 +232,7 @@ static uint16_t bind_udp6(uint16_t port)
 {
     UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
     up->open_args.ip_version = 6u;
-    up->open_args.lite = IDEMIP_FALSE;
+    up->open_args.lite = EMBED_FALSE;
     UdpPcb.open(udp_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
     uint16_t pcb = up->index;
@@ -304,7 +327,7 @@ static size_t build_eth_tagged(uint8_t *f, const uint8_t *dst, uint16_t type, ui
     IDEMIP_VLAN_IO(vlan_mem)->build_args.type = type;
     IDEMIP_VLAN_IO(vlan_mem)->tag_args.vid = vid;
     IDEMIP_VLAN_IO(vlan_mem)->tag_args.pcp = 0u;
-    IDEMIP_VLAN_IO(vlan_mem)->tag_args.dei = IDEMIP_FALSE;
+    IDEMIP_VLAN_IO(vlan_mem)->tag_args.dei = EMBED_FALSE;
     Vlan.build(vlan_mem);
     return IDEMIP_VLAN_OFF_PAYLOAD;
 }
@@ -323,7 +346,7 @@ static size_t build_ip4(uint8_t *f, size_t off, uint8_t proto, uint32_t src, uin
                         uint16_t flags_frag)
 {
     IdemIpIp4Fields fields;
-    memset(&fields, 0, sizeof fields);
+    fields = (IdemIpIp4Fields){0};
     fields.total_len = (uint16_t)(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + payload_len);
     fields.id = 0x1234u;
     fields.flags_frag = flags_frag;
@@ -339,7 +362,7 @@ static size_t build_ip4(uint8_t *f, size_t off, uint8_t proto, uint32_t src, uin
 static size_t build_udp(uint8_t *f, size_t off, uint16_t sport, uint16_t dport, size_t data_len)
 {
     idemip_udp_build(f + off, sport, dport, (uint16_t)(IDEMIP_UDP_HDR_LEN + data_len));
-    memset(f + off + IDEMIP_UDP_HDR_LEN, 0xAB, data_len);
+    fill_bytes(f + off + IDEMIP_UDP_HDR_LEN, 0xAB, data_len);
     return off + IDEMIP_UDP_HDR_LEN + data_len;
 }
 
@@ -372,7 +395,7 @@ static size_t build_icmp_echo(uint8_t *f, size_t off, size_t data_len)
     idemip_wr16(f + off + 2u, 0u);
     idemip_wr16(f + off + 4u, 0x0AAAu);
     idemip_wr16(f + off + 6u, 0x0001u);
-    memset(f + off + IDEMIP_ICMP_ECHO_HDR_LEN, 0x77, data_len);
+    fill_bytes(f + off + IDEMIP_ICMP_ECHO_HDR_LEN, 0x77, data_len);
     size_t len = IDEMIP_ICMP_ECHO_HDR_LEN + data_len;
     idemip_wr16(f + off + 2u, idemip_cksum(f + off, len));
     return off + len;
@@ -383,12 +406,12 @@ static size_t build_icmp_echo(uint8_t *f, size_t off, size_t data_len)
 // @p gateway is the Redirect's own field, and is the unused word for the other four.
 static size_t build_icmp_error(uint8_t *f, size_t off, uint8_t type, uint32_t gateway)
 {
-    memset(f + off, 0, IDEMIP_ICMP_ERR_HDR_LEN);
+    mmgr_zero_buf(f + off, IDEMIP_ICMP_ERR_HDR_LEN);
     f[off + IDEMIP_ICMP_OFF_TYPE] = type;
     idemip_wr32(f + off + 4u, gateway);
     const size_t quoted =
         build_ip4(f, off + IDEMIP_ICMP_OFF_QUOTE, IDEMIP_IP4_PROTO_UDP, LOCAL_IP4, REMOTE_IP4, 8u, 0u);
-    memset(f + quoted, 0, 8u);
+    mmgr_zero_buf(f + quoted, 8u);
     const size_t len = (quoted + 8u) - off;
     idemip_wr16(f + off + 2u, idemip_cksum(f + off, len));
     return off + len;
@@ -422,7 +445,7 @@ static size_t build_ip6(uint8_t *f, size_t off, uint8_t next_hdr, const uint8_t 
                         size_t payload_len)
 {
     IdemIpIp6BuildArgs a;
-    memset(&a, 0, sizeof a);
+    a = (IdemIpIp6BuildArgs){0};
     a.src = src;
     a.dst = dst;
     a.payload_len = (uint16_t)payload_len;
@@ -455,12 +478,39 @@ static void input(uint8_t *w, size_t len, uint8_t netif, uint16_t desc)
 
 void setUp(void)
 {
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_dispatch);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_dispatch);
+    idemip_test_borrow(&stats_mem, STATS_MEM_BYTES, idemip_owner_stats);
+    idemip_test_borrow(&netif_mem, NETIF_MEM_BYTES, idemip_owner_netif);
+    idemip_test_borrow(&loopif_mem, LOOPIF_MEM_BYTES, idemip_owner_loopif);
+    idemip_test_borrow(&vlan_mem, VLAN_MEM_BYTES, idemip_owner_vlan);
+    idemip_test_borrow(&arp_mem, ARP_MEM_BYTES, idemip_owner_arp);
+    idemip_test_borrow(&ip4_addr_mem, IP4_ADDR_MEM_BYTES, idemip_owner_ip4_addr);
+    idemip_test_borrow(&ip4_reass_mem, IP4_REASS_MEM_BYTES, idemip_owner_ip4_reass);
+    idemip_test_borrow(&icmp_in_mem, ICMP_IN_MEM_BYTES, idemip_owner_icmp_in);
+    idemip_test_borrow(&igmp_mem, IGMP_MEM_BYTES, idemip_owner_igmp);
+#if IDEMIP_ENABLE_IPV6
+    idemip_test_borrow(&ip6_addr_mem, IP6_ADDR_MEM_BYTES, idemip_owner_ip6_addr);
+    idemip_test_borrow(&ip6_reass_mem, IP6_REASS_MEM_BYTES, idemip_owner_ip6_reass);
+    idemip_test_borrow(&icmp6_in_mem, ICMP6_IN_MEM_BYTES, idemip_owner_icmp6_in);
+    idemip_test_borrow(&mld6_mem, MLD6_MEM_BYTES, idemip_owner_mld6);
+#endif
+    idemip_test_borrow(&raw_mem, RAW_MEM_BYTES, idemip_owner_raw_pcb);
+#if IDEMIP_ENABLE_UDP
+    idemip_test_borrow(&udp_mem, UDP_MEM_BYTES, idemip_owner_udp_pcb);
+    idemip_test_borrow(&udplite_mem, UDPLITE_MEM_BYTES, idemip_owner_udplite);
+#endif
+#if IDEMIP_ENABLE_TCP
+    idemip_test_borrow(&tcp_pcb_mem, TCP_PCB_MEM_BYTES, idemip_owner_tcp_pcb);
+    idemip_test_borrow(&tcp_in_mem, TCP_IN_MEM_BYTES, idemip_owner_tcp_in);
+#endif
+    idemip_test_borrow(&phy_mem, PHY_MEM_BYTES, idemip_owner_phy);
     g_rand = DISPATCH_TEST_RAND;
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(g_frame, 0, sizeof g_frame);
-    memset(g_out, 0, sizeof g_out);
-    memset(phy_mem, 0, sizeof phy_mem);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(g_frame, sizeof g_frame);
+    mmgr_zero_buf(g_out, sizeof g_out);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = phy_mem, .val = 0, .bytes = PHY_MEM_BYTES);
     wire_units();
     Dispatch.clear(work_a);
     Dispatch.clear(work_b);
@@ -470,8 +520,8 @@ void setUp(void)
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // --- the borrow --------------------------------------------------------------
@@ -495,7 +545,7 @@ void test_every_entry_survives_a_null_borrow(void)
 void test_every_entry_refuses_an_uncleared_borrow(void)
 {
     static _Alignas(8) uint8_t raw[IDEMIP_DISPATCH_BORROW];
-    memset(raw, 0, sizeof raw);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = raw, .val = 0, .bytes = sizeof raw);
     Dispatch.bind(raw);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DISPATCH_IO(raw)->status);
     Dispatch.if_bind(raw);
@@ -742,7 +792,7 @@ void test_if_bind_refuses_a_membership_outside_the_usable_range(void)
 {
     DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
     io->if_args.index = 0u;
-    io->if_args.tagged = IDEMIP_TRUE;
+    io->if_args.tagged = EMBED_TRUE;
     io->if_args.vid = IDEMIP_VLAN_VID_NULL;
     Dispatch.if_bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, io->status);
@@ -758,7 +808,7 @@ void test_if_bind_and_if_get_refuse_an_index_past_the_table(void)
 {
     DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
     io->if_args.index = (uint8_t)IDEMIP_NETIF_COUNT;
-    io->if_args.tagged = IDEMIP_FALSE;
+    io->if_args.tagged = EMBED_FALSE;
     Dispatch.if_bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, io->status);
     Dispatch.if_get(work_a);
@@ -957,7 +1007,7 @@ void test_an_ipv6_address_the_loopback_interface_does_not_own_is_not_ours(void)
 // preventing them from being deliverable to a higher-layer protocol", and not ifInUnknownProtos.
 void test_a_frame_shorter_than_an_ethernet_header_is_an_error_not_an_unknown_proto(void)
 {
-    memset(g_frame, 0, 16u);
+    mmgr_zero_buf(g_frame, 16u);
     input(work_a, 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop,
                                   "a frame with no type field to read was reported as an encapsulation");
@@ -977,7 +1027,7 @@ void test_a_fragment_with_no_octet_after_its_header_is_not_matched_against_the_t
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     const size_t fh = off + IDEMIP_IPV6_HDR_LEN;
     (void)build_ip6(g_frame, off, IDEMIP_IP6_NH_FRAGMENT, g_remote_ip6, g_local_ip6, IDEMIP_IP6_FRAG_HDR_LEN);
-    idemip_ip6_frag_build(g_frame + fh, IDEMIP_IP6_NH_ICMPV6, 0u, IDEMIP_TRUE, 0x12345678u);
+    idemip_ip6_frag_build(g_frame + fh, IDEMIP_IP6_NH_ICMPV6, 0u, EMBED_TRUE, 0x12345678u);
 
     input(work_a, fh + IDEMIP_IP6_FRAG_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_NOT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP6_FRAG_ND, IDEMIP_DISPATCH_IO(work_a)->drop,
@@ -1189,7 +1239,7 @@ void test_an_igmp_message_longer_than_eight_octets_sums_over_the_whole_payload(v
     m[IDEMIP_IGMP_OFF_MAX_RESP] = 100u;
     idemip_wr16(m + IDEMIP_IGMP_OFF_CKSUM, 0u);
     idemip_wr32(m + IDEMIP_IGMP_OFF_GROUP, 0xE0000102u);
-    memset(m + IDEMIP_IGMP_MSG_LEN, 0xA5, 4u);
+    fill_bytes(m + IDEMIP_IGMP_MSG_LEN, 0xA5, 4u);
     idemip_wr16(m + IDEMIP_IGMP_OFF_CKSUM, idemip_cksum(m, msg_len));
 
     input(work_a, off + msg_len, 0u, IDEMIP_DISPATCH_DESC_NONE);
@@ -1245,7 +1295,7 @@ void test_an_igmp_report_from_another_host_reaches_the_group_table(void)
         join_group(0xE0000102u);
 
         // A General Query arms this host's own delayed Report for the group.
-        memset(g_frame, 0, sizeof g_frame);
+        mmgr_zero_buf(g_frame, sizeof g_frame);
         size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
         const uint32_t all_systems = IDEMIP_IGMP_ALL_SYSTEMS;
         off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, all_systems, IDEMIP_IGMP_MSG_LEN, 0u);
@@ -1255,7 +1305,7 @@ void test_an_igmp_report_from_another_host_reaches_the_group_table(void)
                                       "the General Query did not arm a delayed Report");
 
         // Another host's Report for the same group, which withdraws it.
-        memset(g_frame, 0, sizeof g_frame);
+        mmgr_zero_buf(g_frame, sizeof g_frame);
         off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
         off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, 0xE0000102u, IDEMIP_IGMP_MSG_LEN, 0u);
         end = build_igmp(g_frame, off, reports[i], 0u, 0xE0000102u);
@@ -1276,7 +1326,7 @@ void test_an_igmp_message_shorter_than_its_header_is_refused(void)
     join_group(0xE0000102u);
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     off = build_ip4(g_frame, off, IDEMIP_IGMP_IP_PROTO, REMOTE_IP4, 0xE0000102u, IDEMIP_IGMP_MSG_LEN - 4u, 0u);
-    memset(g_frame + off, 0, IDEMIP_IGMP_MSG_LEN - 4u);
+    mmgr_zero_buf(g_frame + off, IDEMIP_IGMP_MSG_LEN - 4u);
     input(work_a, off + (IDEMIP_IGMP_MSG_LEN - 4u), 0u, IDEMIP_DISPATCH_DESC_NONE);
 
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop,
@@ -1322,10 +1372,10 @@ void test_an_rfc_1042_encapsulated_datagram_is_received(void)
 {
     UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
     up->open_args.ip_version = 4u;
-    up->open_args.lite = IDEMIP_FALSE;
+    up->open_args.lite = EMBED_FALSE;
     UdpPcb.open(udp_mem);
     uint8_t local[IDEMIP_UDP_PCB_ADDR_BYTES];
-    memset(local, 0, sizeof local);
+    mmgr_zero_buf(local, sizeof local);
     idemip_wr32(local, LOCAL_IP4);
     up->bind_args.index = up->index;
     up->bind_args.ip = local;
@@ -1362,7 +1412,7 @@ void test_an_rfc_1042_encapsulated_datagram_is_received(void)
     // A Length in the type position with no SNAP header behind it is not ours.
     idemip_eth_build(g_frame, g_local_mac, g_remote_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     idemip_wr16(g_frame + IDEMIP_ETH_OFF_TYPE, 0x002Eu);
-    memset(g_frame + IDEMIP_ETH_OFF_PAYLOAD, 0x11, 0x2Eu);
+    fill_bytes(g_frame + IDEMIP_ETH_OFF_PAYLOAD, 0x11, 0x2Eu);
     input(work_a, IDEMIP_ETH_OFF_PAYLOAD + 0x2Eu, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_ETHERTYPE, IDEMIP_DISPATCH_IO(work_a)->drop);
 }
@@ -1469,7 +1519,7 @@ void test_a_udp_datagram_shorter_than_its_header_is_an_error(void)
 {
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_UDP, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN - 4u, 0u);
-    memset(g_frame + off, 0, IDEMIP_UDP_HDR_LEN - 4u);
+    mmgr_zero_buf(g_frame + off, IDEMIP_UDP_HDR_LEN - 4u);
     input(work_a, off + (IDEMIP_UDP_HDR_LEN - 4u), 0u, IDEMIP_DISPATCH_DESC_NONE);
 
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop,
@@ -1568,7 +1618,7 @@ void test_each_icmp_error_type_counts_itself_by_type(void)
         Dispatch.clear(work_a);
         bind_all(work_a);
         if_untagged(work_a, 0u);
-        memset(g_frame, 0, sizeof g_frame);
+        mmgr_zero_buf(g_frame, sizeof g_frame);
 
         size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
         const size_t ip = off;
@@ -1608,7 +1658,7 @@ void test_a_timestamp_is_discarded_without_counting_as_an_error(void)
         Dispatch.clear(work_a);
         bind_all(work_a);
         if_untagged(work_a, 0u);
-        memset(g_frame, 0, sizeof g_frame);
+        mmgr_zero_buf(g_frame, sizeof g_frame);
 
         // RFC 792's Timestamp: type, code and checksum, an Identifier and a Sequence Number, then the
         // three timestamps. Twenty octets and a checksum that holds, so neither length nor checksum is
@@ -1616,7 +1666,7 @@ void test_a_timestamp_is_discarded_without_counting_as_an_error(void)
         size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
         const size_t ip = off;
         off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, LOCAL_IP4, 20u, 0u);
-        memset(g_frame + off, 0, 20u);
+        mmgr_zero_buf(g_frame + off, 20u);
         g_frame[off + IDEMIP_ICMP_OFF_TYPE] = rows[r].type;
         idemip_wr16(g_frame + off + 4u, 0x0AAAu);
         idemip_wr16(g_frame + off + 6u, 0x0001u);
@@ -1729,7 +1779,7 @@ void test_an_icmp_message_too_short_for_its_type_is_an_error(void)
     size_t ip = off;
     const size_t len = (size_t)IDEMIP_ICMP_ECHO_HDR_LEN - 2u; // through the Identifier, and no more
     off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_ICMP, REMOTE_IP4, LOCAL_IP4, len, 0u);
-    memset(g_frame + off, 0, len);
+    mmgr_zero_buf(g_frame + off, len);
     g_frame[off + IDEMIP_ICMP_OFF_TYPE] = IDEMIP_ICMP_ECHO;
     idemip_wr16(g_frame + off + 2u, idemip_cksum(g_frame + off, len));
     idemip_ip4_set_total_len(g_frame + ip, (uint16_t)(off + len - ip));
@@ -1765,7 +1815,7 @@ void test_an_unclaimed_ipv6_next_header_counts_unknown_protos(void)
 {
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     off = build_ip6(g_frame, off, 253u, g_remote_ip6, g_local_ip6, 8u); // RFC 3692 leaves 253 to testing
-    memset(g_frame + off, 0, 8u);
+    mmgr_zero_buf(g_frame + off, 8u);
     input(work_a, off + 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_IP_PROTO, IDEMIP_DISPATCH_IO(work_a)->drop);
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_IP6_IN_UNKNOWN_PROTOS));
@@ -1806,7 +1856,7 @@ void test_a_raw_ipv6_binding_with_ipv6_checksum_verifies_the_received_checksum(v
     // Eight octets of payload whose 16-bit field at offset 2 holds a wrong sum.
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     off = build_ip6(g_frame, off, 253u, g_remote_ip6, g_local_ip6, 8u);
-    memset(g_frame + off, 0x5A, 8u);
+    fill_bytes(g_frame + off, 0x5A, 8u);
     idemip_wr16(g_frame + off + 2u, 0x0000u);
     input(work_a, off + 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_CKSUM, IDEMIP_DISPATCH_IO(work_a)->drop,
@@ -1816,7 +1866,7 @@ void test_a_raw_ipv6_binding_with_ipv6_checksum_verifies_the_received_checksum(v
     // The same payload with the sum RFC 8200 sec 8.1's pseudo-header makes correct.
     off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     off = build_ip6(g_frame, off, 253u, g_remote_ip6, g_local_ip6, 8u);
-    memset(g_frame + off, 0x5A, 8u);
+    fill_bytes(g_frame + off, 0x5A, 8u);
     idemip_wr16(g_frame + off + 2u, 0x0000u);
     uint32_t sum = 0u;
     TEST_ASSERT_TRUE(idemip_pseudo_accum(&sum, 6u, 253u, g_remote_ip6, g_local_ip6, 8u));
@@ -1834,7 +1884,7 @@ void test_a_raw_ipv6_binding_with_ipv6_checksum_verifies_the_received_checksum(v
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, rp->status);
     off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     off = build_ip6(g_frame, off, 253u, g_remote_ip6, g_local_ip6, 8u);
-    memset(g_frame + off, 0x5A, 8u);
+    fill_bytes(g_frame + off, 0x5A, 8u);
     input(work_a, off + 8u, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_RAW, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
     TEST_ASSERT_BITS_HIGH(IDEMIP_DISPATCH_ACT_DELIVER, IDEMIP_DISPATCH_IO(work_a)->act);
@@ -2150,7 +2200,7 @@ void test_an_ipv6_packet_for_our_address_is_delivered(void)
 {
     UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
     up->open_args.ip_version = 6u;
-    up->open_args.lite = IDEMIP_FALSE;
+    up->open_args.lite = EMBED_FALSE;
     UdpPcb.open(udp_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
     up->bind_args.index = up->index;
@@ -2180,7 +2230,7 @@ static size_t build_ip6_atomic_icmp6(uint8_t *f, size_t off, uint8_t type)
     const size_t msg_len = 8u;
     (void)build_ip6(f, off, IDEMIP_IP6_NH_FRAGMENT, g_remote_ip6, g_local_ip6,
                     IDEMIP_IP6_FRAG_HDR_LEN + msg_len);
-    idemip_ip6_frag_build(f + fh, IDEMIP_IP6_NH_ICMPV6, 0u, IDEMIP_FALSE, 0x12345678u);
+    idemip_ip6_frag_build(f + fh, IDEMIP_IP6_NH_ICMPV6, 0u, EMBED_FALSE, 0x12345678u);
     const size_t m = fh + IDEMIP_IP6_FRAG_HDR_LEN;
     for (size_t i = 0u; i < msg_len; i++)
     {
@@ -2232,7 +2282,7 @@ void test_a_second_hop_by_hop_header_is_a_header_error(void)
     (void)build_ip6(g_frame, off, IDEMIP_IP6_NH_HOPOPT, g_remote_ip6, g_local_ip6, IDEMIP_IP6_EXT_UNIT * 2u);
 
     // Two Hop-by-Hop headers of one unit each, the first naming the second, the second naming UDP.
-    memset(g_frame + hop1, 0, IDEMIP_IP6_EXT_UNIT * 2u);
+    mmgr_zero_buf(g_frame + hop1, IDEMIP_IP6_EXT_UNIT * 2u);
     g_frame[hop1 + IDEMIP_IP6_EXT_OFF_NEXT_HDR] = IDEMIP_IP6_NH_HOPOPT;
     g_frame[hop1 + IDEMIP_IP6_EXT_OFF_LEN] = 0u; // one unit, which sec 4.3 counts as the header alone
     g_frame[hop1 + 2u] = IDEMIP_IP6_OPT_PADN;
@@ -2463,7 +2513,7 @@ void test_an_icmpv6_error_of_unknown_type_is_passed_up_and_counted_once(void)
     const size_t msg_len = (size_t)IDEMIP_ICMP6_ERR_HDR_LEN + IDEMIP_IP6_OFF_PAYLOAD + IDEMIP_UDP_HDR_LEN;
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     off = build_ip6(g_frame, off, IDEMIP_IP6_NH_ICMPV6, g_remote_ip6, g_local_ip6, msg_len);
-    memset(g_frame + off, 0, msg_len);
+    mmgr_zero_buf(g_frame + off, msg_len);
     g_frame[off + IDEMIP_ICMP6_OFF_TYPE] = 100u;
     g_frame[off + IDEMIP_ICMP6_OFF_CODE] = 0u;
     // sec 2.4 (c)'s invoking packet, whole enough that sec 2.4 (d) can read a protocol out of it. A
@@ -2569,7 +2619,7 @@ void test_an_icmpv6_message_shorter_than_its_own_header_is_an_error(void)
 {
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     off = build_ip6(g_frame, off, IDEMIP_IP6_NH_ICMPV6, g_remote_ip6, g_local_ip6, 2u);
-    memset(g_frame + off, 0, 2u);
+    mmgr_zero_buf(g_frame + off, 2u);
     input(work_a, off + 2u, 0u, IDEMIP_DISPATCH_DESC_NONE);
 
     TEST_ASSERT_FALSE_MESSAGE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_SEND) != 0u,
@@ -2615,7 +2665,7 @@ void test_a_zero_udp_checksum_is_discarded_over_ipv6(void)
 {
     UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
     up->open_args.ip_version = 6u;
-    up->open_args.lite = IDEMIP_FALSE;
+    up->open_args.lite = EMBED_FALSE;
     UdpPcb.open(udp_mem);
     up->bind_args.index = up->index;
     up->bind_args.ip = g_local_ip6;
@@ -2639,7 +2689,7 @@ void test_a_bad_udp_checksum_is_discarded_over_ipv6(void)
 {
     UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
     up->open_args.ip_version = 6u;
-    up->open_args.lite = IDEMIP_FALSE;
+    up->open_args.lite = EMBED_FALSE;
     UdpPcb.open(udp_mem);
     up->bind_args.index = up->index;
     up->bind_args.ip = g_local_ip6;
@@ -2761,7 +2811,7 @@ void test_the_solicited_node_address_of_our_own_is_local(void)
     // forward, which no multicast destination ever takes.
     UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
     up->open_args.ip_version = 6u;
-    up->open_args.lite = IDEMIP_FALSE;
+    up->open_args.lite = EMBED_FALSE;
     UdpPcb.open(udp_mem);
     up->bind_args.index = up->index;
     up->bind_args.ip = g_ip6_any;
@@ -2784,7 +2834,7 @@ void test_the_solicited_node_address_of_our_own_is_local(void)
 
     // The solicited-node address of an address this node does not hold is not.
     uint8_t other[IDEMIP_IP6_ADDR_LEN];
-    memcpy(other, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = other, .at = g_local_ip6, .size = IDEMIP_IP6_ADDR_LEN);
     other[IDEMIP_IP6_ADDR_LEN - 1u] = (uint8_t)(other[IDEMIP_IP6_ADDR_LEN - 1u] ^ 0x5Au);
     idemip_ip6_addr_solicited(solicited, other);
     off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
@@ -2820,7 +2870,7 @@ static size_t build_icmp6_msg(uint8_t *f, size_t off, uint8_t type, const uint8_
     {
         idemip_ip6_set_hop_limit(f + ip, 1u);
     }
-    memset(f + off, 0, msg_len);
+    mmgr_zero_buf(f + off, msg_len);
     f[off + IDEMIP_ICMP6_OFF_TYPE] = type;
     f[off + IDEMIP_ICMP6_OFF_CODE] = 0u;
     return off;
@@ -2842,7 +2892,8 @@ void test_a_neighbor_solicitation_reaches_the_neighbor_discovery_module(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, g_remote_ip6, solicited,
                                  IDEMIP_ICMP6_NS_HDR_LEN);
-    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, .at = g_local_ip6,
+               .size = IDEMIP_IP6_ADDR_LEN);
     seal_icmp6(g_frame, msg, IDEMIP_ICMP6_NS_HDR_LEN, g_remote_ip6, solicited);
     input(work_a, msg + IDEMIP_ICMP6_NS_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
 
@@ -2881,7 +2932,8 @@ void test_a_neighbor_advertisement_reaches_the_neighbor_discovery_module(void)
     size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_ADVERT, g_remote_ip6, g_local_ip6,
                                  IDEMIP_ICMP6_NA_HDR_LEN);
     g_frame[msg + IDEMIP_ICMP6_OFF_NA_FLAGS] = IDEMIP_ICMP6_NA_FLAG_S | IDEMIP_ICMP6_NA_FLAG_O;
-    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NA_TARGET, g_remote_ip6, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_frame + msg + IDEMIP_ICMP6_OFF_NA_TARGET, .at = g_remote_ip6,
+               .size = IDEMIP_IP6_ADDR_LEN);
     seal_icmp6(g_frame, msg, IDEMIP_ICMP6_NA_HDR_LEN, g_remote_ip6, g_local_ip6);
     input(work_a, msg + IDEMIP_ICMP6_NA_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
 
@@ -2908,7 +2960,8 @@ void test_a_router_advertisement_carrying_a_prefix_option_reaches_the_module(voi
     o[IDEMIP_ICMP6_ND_OPT_OFF_LEN] = IDEMIP_ICMP6_ND_OPT_PREFIX_LEN;
     o[IDEMIP_ICMP6_ND_OPT_OFF_PREFIX_LEN] = 64u;
     o[IDEMIP_ICMP6_ND_OPT_OFF_PREFIX_FLAGS] = IDEMIP_ICMP6_ND_PREFIX_FLAG_L | IDEMIP_ICMP6_ND_PREFIX_FLAG_A;
-    memcpy(o + IDEMIP_ICMP6_ND_OPT_OFF_PREFIX, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = o + IDEMIP_ICMP6_ND_OPT_OFF_PREFIX, .at = g_local_ip6,
+               .size = IDEMIP_IP6_ADDR_LEN);
     seal_icmp6(g_frame, msg, len, g_remote_ip6, g_local_ip6);
     input(work_a, msg + len, 0u, IDEMIP_DISPATCH_DESC_NONE);
 
@@ -2979,7 +3032,8 @@ void test_every_neighbor_discovery_and_listener_type_takes_its_own_rfc_2466_coun
         size_t msg = build_icmp6_msg(g_frame, off, table[i].type, g_remote_ip6, dst, table[i].len);
         if (table[i].type == (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT)
         {
-            memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+            EMBED_CALL(proxim.read, ProximusCfg, .dst = g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, .at = g_local_ip6,
+                       .size = IDEMIP_IP6_ADDR_LEN);
         }
         seal_icmp6(g_frame, msg, table[i].len, g_remote_ip6, dst);
         input(work_a, msg + table[i].len, 0u, IDEMIP_DISPATCH_DESC_NONE);
@@ -3046,7 +3100,7 @@ void test_the_remaining_icmp6_error_types_take_their_own_counters(void)
         Dispatch.clear(work_a);
         bind_all(work_a);
         if_untagged(work_a, 0u);
-        memset(g_frame, 0, sizeof g_frame);
+        mmgr_zero_buf(g_frame, sizeof g_frame);
 
         const size_t quoted = (size_t)IDEMIP_IPV6_HDR_LEN + (size_t)IDEMIP_UDP_HDR_LEN;
         const size_t msg_len = (size_t)IDEMIP_ICMP6_ERR_HDR_LEN + quoted;
@@ -3122,7 +3176,8 @@ void test_a_neighbor_solicitation_with_a_bad_checksum_is_discarded(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, g_remote_ip6, solicited,
                                  IDEMIP_ICMP6_NS_HDR_LEN);
-    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, .at = g_local_ip6,
+               .size = IDEMIP_IP6_ADDR_LEN);
     seal_icmp6(g_frame, msg, IDEMIP_ICMP6_NS_HDR_LEN, g_remote_ip6, solicited);
     g_frame[msg + IDEMIP_ICMP6_OFF_CKSUM] = (uint8_t)(g_frame[msg + IDEMIP_ICMP6_OFF_CKSUM] ^ 0xFFu);
     input(work_a, msg + IDEMIP_ICMP6_NS_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
@@ -3196,7 +3251,8 @@ void test_a_neighbor_solicitation_from_off_link_is_discarded(void)
     size_t ip = off;
     size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, g_remote_ip6, solicited,
                                  IDEMIP_ICMP6_NS_HDR_LEN);
-    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, .at = g_local_ip6,
+               .size = IDEMIP_IP6_ADDR_LEN);
     seal_icmp6(g_frame, msg, IDEMIP_ICMP6_NS_HDR_LEN, g_remote_ip6, solicited);
     // A router forwarded it, so it is not a neighbor's. The sec 2.3 checksum covers no Hop Limit, so
     // the message is otherwise exactly the one the valid case sends.
@@ -3236,7 +3292,8 @@ void test_a_neighbor_solicitation_with_a_nonzero_code_is_discarded(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, g_remote_ip6, solicited,
                                  IDEMIP_ICMP6_NS_HDR_LEN);
-    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, .at = g_local_ip6,
+               .size = IDEMIP_IP6_ADDR_LEN);
     g_frame[msg + IDEMIP_ICMP6_OFF_CODE] = 1u;
     seal_icmp6(g_frame, msg, IDEMIP_ICMP6_NS_HDR_LEN, g_remote_ip6, solicited);
     input(work_a, msg + IDEMIP_ICMP6_NS_HDR_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
@@ -3255,7 +3312,8 @@ void test_an_nd_option_of_length_zero_discards_the_packet(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     size_t msg =
         build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, g_remote_ip6, solicited, len);
-    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, .at = g_local_ip6,
+               .size = IDEMIP_IP6_ADDR_LEN);
     uint8_t *o = g_frame + msg + IDEMIP_ICMP6_NS_HDR_LEN;
     o[IDEMIP_ICMP6_ND_OPT_OFF_TYPE] = IDEMIP_ICMP6_ND_OPT_SLLA;
     o[IDEMIP_ICMP6_ND_OPT_OFF_LEN] = 0u;
@@ -3400,7 +3458,8 @@ void test_an_nd_option_running_past_the_message_discards_the_packet(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     size_t msg =
         build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT, g_remote_ip6, solicited, len);
-    memcpy(g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, g_local_ip6, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, .at = g_local_ip6,
+               .size = IDEMIP_IP6_ADDR_LEN);
     uint8_t *o = g_frame + msg + IDEMIP_ICMP6_NS_HDR_LEN;
     o[IDEMIP_ICMP6_ND_OPT_OFF_TYPE] = IDEMIP_ICMP6_ND_OPT_SLLA;
     o[IDEMIP_ICMP6_ND_OPT_OFF_LEN] = 2u; // 16 octets, and 8 arrived
@@ -3427,7 +3486,7 @@ typedef struct
     const uint8_t *dst;
     uint8_t next_hdr;
     uint16_t frag_off;
-    idemip_bool more;
+    embed_bool more;
     uint32_t ident;
     size_t data_len;
 } BuildIp6FragmentArgs;
@@ -3440,11 +3499,11 @@ static size_t build_ip6_fragment_ctx(const BuildIp6FragmentArgs *args)
         build_ip6(args->f, args->off, IDEMIP_IP6_NH_FRAGMENT, args->src, args->dst,
                   (size_t)IDEMIP_IP6_FRAG_HDR_LEN + args->data_len);
     idemip_ip6_frag_build(args->f + off, args->next_hdr, args->frag_off, args->more, args->ident);
-    memset(args->f + off + IDEMIP_IP6_FRAG_HDR_LEN, 0x5C, args->data_len);
+    fill_bytes(args->f + off + IDEMIP_IP6_FRAG_HDR_LEN, 0x5C, args->data_len);
     return off + IDEMIP_IP6_FRAG_HDR_LEN + args->data_len;
 }
 
-#define build_ip6_fragment(...) IDEMIP_CALL(build_ip6_fragment_ctx, BuildIp6FragmentArgs, __VA_ARGS__)
+#define build_ip6_fragment(...) EMBED_CALL(build_ip6_fragment_ctx, BuildIp6FragmentArgs, __VA_ARGS__)
 
 #define FRAG_DESC 3u
 #define FRAG_IDENT 0xA5A50001u
@@ -3453,8 +3512,8 @@ static size_t build_ip6_fragment_ctx(const BuildIp6FragmentArgs *args)
 void test_an_ipv6_fragment_the_reassembler_kept_pins_its_descriptor(void)
 {
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
-    size_t end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 0u, IDEMIP_TRUE,
-                                    FRAG_IDENT, 8u);
+    size_t end =
+        build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 0u, EMBED_TRUE, FRAG_IDENT, 8u);
     input(work_a, end, 0u, FRAG_DESC);
 
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
@@ -3480,14 +3539,14 @@ void test_an_ipv6_fragment_the_reassembler_kept_pins_its_descriptor(void)
 void test_the_last_ipv6_fragment_completes_the_datagram(void)
 {
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
-    size_t end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 0u, IDEMIP_TRUE,
-                                    FRAG_IDENT, 8u);
+    size_t end =
+        build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 0u, EMBED_TRUE, FRAG_IDENT, 8u);
     input(work_a, end, 0u, FRAG_DESC);
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_REASSEMBLED) == 0u);
 
     off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
-    end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 8u, IDEMIP_FALSE,
-                             FRAG_IDENT, 8u);
+    end =
+        build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 8u, EMBED_FALSE, FRAG_IDENT, 8u);
     input(work_a, end, 0u, FRAG_DESC + 1u);
 
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
@@ -3503,8 +3562,8 @@ void test_the_last_ipv6_fragment_completes_the_datagram(void)
 void test_an_ipv6_fragment_with_no_descriptor_is_discarded(void)
 {
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
-    size_t end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 0u, IDEMIP_TRUE,
-                                    FRAG_IDENT, 8u);
+    size_t end =
+        build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 0u, EMBED_TRUE, FRAG_IDENT, 8u);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
 
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NO_DESC, IDEMIP_DISPATCH_IO(work_a)->drop);
@@ -3523,14 +3582,14 @@ void test_an_ipv6_fragment_with_no_descriptor_is_discarded(void)
 void test_an_ipv6_fragment_the_reassembler_refuses_counts_a_reassembly_failure(void)
 {
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
-    size_t end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 8u, IDEMIP_FALSE,
-                                    FRAG_IDENT, 8u);
+    size_t end =
+        build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 8u, EMBED_FALSE, FRAG_IDENT, 8u);
     input(work_a, end, 0u, FRAG_DESC);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
 
     off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
-    end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 16u, IDEMIP_TRUE,
-                             FRAG_IDENT, 8u);
+    end =
+        build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 16u, EMBED_TRUE, FRAG_IDENT, 8u);
     input(work_a, end, 0u, FRAG_DESC + 1u);
 
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_REASS, IDEMIP_DISPATCH_IO(work_a)->drop);
@@ -3552,7 +3611,7 @@ static uint16_t listen_on(uint16_t port)
 {
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
     uint8_t local[IDEMIP_TCP_PCB_ADDR_BYTES];
-    memset(local, 0, sizeof local);
+    mmgr_zero_buf(local, sizeof local);
     idemip_wr32(local, LOCAL_IP4);
     tp->listen_args.ip = local;
     tp->listen_args.port = port;
@@ -3572,7 +3631,7 @@ static size_t build_tcp4(uint8_t *f, uint16_t sport, uint16_t dport, uint32_t se
     size_t ip = off;
     off = build_ip4(f, off, IDEMIP_IP4_PROTO_TCP, REMOTE_IP4, LOCAL_IP4, IDEMIP_TCP_HDR_LEN + data_len, 0u);
     uint8_t *seg = f + off;
-    memset(seg, 0, IDEMIP_TCP_HDR_LEN);
+    mmgr_zero_buf(seg, IDEMIP_TCP_HDR_LEN);
     idemip_wr16(seg + IDEMIP_TCP_OFF_SRC_PORT, sport);
     idemip_wr16(seg + IDEMIP_TCP_OFF_DST_PORT, dport);
     idemip_wr32(seg + IDEMIP_TCP_OFF_SEQ, seq);
@@ -3580,7 +3639,7 @@ static size_t build_tcp4(uint8_t *f, uint16_t sport, uint16_t dport, uint32_t se
     idemip_wr16(seg + IDEMIP_TCP_OFF_OFFS_FLAGS,
                 (uint16_t)(((uint16_t)IDEMIP_TCP_DOFF_MIN << IDEMIP_TCP_DOFF_SHIFT) | flags));
     idemip_wr16(seg + IDEMIP_TCP_OFF_WINDOW, (uint16_t)IDEMIP_TCP_WND);
-    memset(seg + IDEMIP_TCP_HDR_LEN, 0x5A, data_len);
+    fill_bytes(seg + IDEMIP_TCP_HDR_LEN, 0x5A, data_len);
     idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM, 0u);
     idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM,
                 idemip_tcp_cksum_compute(seg, IDEMIP_TCP_HDR_LEN + data_len, REMOTE_IP4, LOCAL_IP4));
@@ -3773,7 +3832,7 @@ void test_tcp_in_segs_counts_a_segment_shorter_than_the_header(void)
 {
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     off = build_ip4(g_frame, off, IDEMIP_IP4_PROTO_TCP, REMOTE_IP4, LOCAL_IP4, 12u, 0u);
-    memset(g_frame + off, 0, 12u);
+    mmgr_zero_buf(g_frame + off, 12u);
     input(work_a, off + 12u, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_TCP_IN_ERRS));
@@ -3886,8 +3945,8 @@ static uint16_t active_open(uint16_t local_port, uint16_t remote_port)
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
     uint8_t local[IDEMIP_TCP_PCB_ADDR_BYTES];
     uint8_t remote[IDEMIP_TCP_PCB_ADDR_BYTES];
-    memset(local, 0, sizeof local);
-    memset(remote, 0, sizeof remote);
+    mmgr_zero_buf(local, sizeof local);
+    mmgr_zero_buf(remote, sizeof remote);
     idemip_wr32(local, LOCAL_IP4);
     idemip_wr32(remote, REMOTE_IP4);
 
@@ -4307,7 +4366,7 @@ static size_t build_tcp6(uint8_t *f, uint16_t sport, uint16_t dport, uint32_t se
     off = build_ip6(f, off, IDEMIP_IP6_NH_TCP, g_remote_ip6, g_local_ip6, IDEMIP_TCP_HDR_LEN + data_len);
     uint8_t *seg = f + off;
     const size_t len = (size_t)IDEMIP_TCP_HDR_LEN + data_len;
-    memset(seg, 0, IDEMIP_TCP_HDR_LEN);
+    mmgr_zero_buf(seg, IDEMIP_TCP_HDR_LEN);
     idemip_wr16(seg + IDEMIP_TCP_OFF_SRC_PORT, sport);
     idemip_wr16(seg + IDEMIP_TCP_OFF_DST_PORT, dport);
     idemip_wr32(seg + IDEMIP_TCP_OFF_SEQ, seq);
@@ -4315,7 +4374,7 @@ static size_t build_tcp6(uint8_t *f, uint16_t sport, uint16_t dport, uint32_t se
     idemip_wr16(seg + IDEMIP_TCP_OFF_OFFS_FLAGS,
                 (uint16_t)(((uint16_t)IDEMIP_TCP_DOFF_MIN << IDEMIP_TCP_DOFF_SHIFT) | flags));
     idemip_wr16(seg + IDEMIP_TCP_OFF_WINDOW, (uint16_t)IDEMIP_TCP_WND);
-    memset(seg + IDEMIP_TCP_HDR_LEN, 0x5A, data_len);
+    fill_bytes(seg + IDEMIP_TCP_HDR_LEN, 0x5A, data_len);
     idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM, 0u);
     uint32_t sum = idemip_ip6_pseudo_accum(0u, g_remote_ip6, g_local_ip6, (uint32_t)len, IDEMIP_IP6_NH_TCP);
     idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM, idemip_cksum_final(idemip_cksum_accum(sum, seg, len)));
@@ -4375,7 +4434,7 @@ void test_a_udp_lite_datagram_reaches_a_lite_binding(void)
 {
     UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
     up->open_args.ip_version = 4u;
-    up->open_args.lite = IDEMIP_TRUE;
+    up->open_args.lite = EMBED_TRUE;
     UdpPcb.open(udp_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
     uint16_t pcb = up->index;
@@ -4402,7 +4461,7 @@ void test_a_udp_lite_datagram_reaches_a_lite_binding(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     size_t ip = off;
     off = build_ip4(g_frame, off, (uint8_t)IDEMIP_UDPLITE_PROTO, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
-    memset(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
+    fill_bytes(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
     UdpLiteIo *ul = IDEMIP_UDPLITE_IO(udplite_mem);
     ul->build_args.dgram = g_frame + off;
     ul->build_args.src = g_frame + ip + IDEMIP_IP4_OFF_SRC;
@@ -4446,7 +4505,7 @@ void test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     off = build_ip4(g_frame, off, (uint8_t)IDEMIP_UDPLITE_PROTO, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
     idemip_udp_build(g_frame + off, 4000u, 4001u, 4u); // a coverage of 4, which sec 3.1 forbids
-    memset(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
+    fill_bytes(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
     input(work_a, off + IDEMIP_UDP_HDR_LEN + 4u, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
     TEST_ASSERT_EQUAL_UINT32(1u, ctr(IDEMIP_STAT_UDP_IN_ERRORS));
@@ -4462,7 +4521,7 @@ void test_a_udp_lite_coverage_of_zero_is_the_whole_packet(void)
 {
     UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
     up->open_args.ip_version = 4u;
-    up->open_args.lite = IDEMIP_TRUE;
+    up->open_args.lite = EMBED_TRUE;
     UdpPcb.open(udp_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
     const uint16_t pcb = up->index;
@@ -4479,7 +4538,7 @@ void test_a_udp_lite_coverage_of_zero_is_the_whole_packet(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     size_t ip = off;
     off = build_ip4(g_frame, off, (uint8_t)IDEMIP_UDPLITE_PROTO, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
-    memset(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
+    fill_bytes(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
 
     UdpLiteIo *ul = IDEMIP_UDPLITE_IO(udplite_mem);
     ul->build_args.dgram = g_frame + off;
@@ -4508,7 +4567,7 @@ void test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     size_t ip = off;
     off = build_ip4(g_frame, off, (uint8_t)IDEMIP_UDPLITE_PROTO, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
-    memset(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
+    fill_bytes(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
 
     UdpLiteIo *ul = IDEMIP_UDPLITE_IO(udplite_mem);
     ul->build_args.dgram = g_frame + off;
@@ -4543,7 +4602,7 @@ void test_a_udp_lite_datagram_over_ipv6_reaches_a_lite_binding(void)
 {
     UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
     up->open_args.ip_version = 6u;
-    up->open_args.lite = IDEMIP_TRUE;
+    up->open_args.lite = EMBED_TRUE;
     UdpPcb.open(udp_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, up->status);
     const uint16_t pcb = up->index;
@@ -4568,7 +4627,7 @@ void test_a_udp_lite_datagram_over_ipv6_reaches_a_lite_binding(void)
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     size_t ip = off;
     off = build_ip6(g_frame, off, (uint8_t)IDEMIP_UDPLITE_PROTO, g_remote_ip6, g_local_ip6, IDEMIP_UDP_HDR_LEN + 4u);
-    memset(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
+    fill_bytes(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
 
     UdpLiteIo *ul = IDEMIP_UDPLITE_IO(udplite_mem);
     ul->build_args.dgram = g_frame + off;
@@ -4980,7 +5039,7 @@ void test_an_802_3_length_field_with_no_snap_header_counts_unknown_protos(void)
 {
     // A type field of 46, which is inside 802.3's Length range, and payload that is not LLC/SNAP.
     size_t off = build_eth(g_frame, g_local_mac, 46u);
-    memset(g_frame + off, 0xEE, 46u);
+    fill_bytes(g_frame + off, 0xEE, 46u);
     input(work_a, off + 46u, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_ETHERTYPE, IDEMIP_DISPATCH_IO(work_a)->drop,
                                   "an 802.3 frame was reported as a malformed one");
@@ -5105,8 +5164,8 @@ void test_an_ipv6_frame_with_an_unbound_unit_is_refused(void)
     BIND_WITHOUT(work_a, ip6_reass);
     if_untagged(work_a, 0u);
     off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
-    size_t end = build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 0u, IDEMIP_TRUE,
-                                    FRAG_IDENT, 8u);
+    size_t end =
+        build_ip6_fragment(g_frame, off, g_remote_ip6, g_local_ip6, IDEMIP_IP6_NH_UDP, 0u, EMBED_TRUE, FRAG_IDENT, 8u);
     input(work_a, end, 0u, FRAG_DESC);
     ASSERT_UNBOUND(work_a, "ip6_reass");
 }
@@ -5136,7 +5195,7 @@ void test_a_udp_datagram_with_an_unbound_unit_is_refused(void)
     off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     off = build_ip4(g_frame, off, (uint8_t)IDEMIP_UDPLITE_PROTO, REMOTE_IP4, LOCAL_IP4, IDEMIP_UDP_HDR_LEN + 4u, 0u);
     idemip_udp_build(g_frame + off, 4000u, 4001u, 0u); // coverage 0, the whole datagram
-    memset(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
+    fill_bytes(g_frame + off + IDEMIP_UDP_HDR_LEN, 0xC3, 4u);
     input(work_a, off + IDEMIP_UDP_HDR_LEN + 4u, 0u, IDEMIP_DISPATCH_DESC_NONE);
     ASSERT_UNBOUND(work_a, "udplite");
 }

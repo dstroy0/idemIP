@@ -23,7 +23,7 @@
 
 #if IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief Octets an address operand and an address in an entry span.
@@ -152,7 +152,7 @@ typedef struct
     uint8_t ttl;
     uint8_t flags;
     uint8_t ip_version;
-    idemip_bool connected;
+    embed_bool connected;
 } RawPcbInfo;
 
 /**
@@ -272,17 +272,16 @@ void idemip_raw_pcb_find(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const RawPcbNs RawPcb IDEMIP_UNUSED = {
-    .clear = idemip_raw_pcb_clear,
-    .open = idemip_raw_pcb_open,
-    .close = idemip_raw_pcb_close,
-    .bind = idemip_raw_pcb_bind,
-    .connect = idemip_raw_pcb_connect,
-    .disconnect = idemip_raw_pcb_disconnect,
-    .set_opts = idemip_raw_pcb_set_opts,
-    .load = idemip_raw_pcb_load,
-    .find = idemip_raw_pcb_find};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE RawPcbNs RawPcb EMBED_UNUSED = {.clear = idemip_raw_pcb_clear,
+                                                    .open = idemip_raw_pcb_open,
+                                                    .close = idemip_raw_pcb_close,
+                                                    .bind = idemip_raw_pcb_bind,
+                                                    .connect = idemip_raw_pcb_connect,
+                                                    .disconnect = idemip_raw_pcb_disconnect,
+                                                    .set_opts = idemip_raw_pcb_set_opts,
+                                                    .load = idemip_raw_pcb_load,
+                                                    .find = idemip_raw_pcb_find};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6
 

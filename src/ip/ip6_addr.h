@@ -25,7 +25,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
 // Address type identification (RFC 4291 sec 2.4)
@@ -73,17 +73,16 @@ IDEMIP_BEGIN_DECLS
  * these addresses; they are therefore included in the procedures in this specification". A caller
  * that routes treats SITE_LOCAL as global.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IP6_TYPE_UNSPECIFIED = 0, ///< ::/128 (sec 2.5.2)
-    IDEMIP_IP6_TYPE_LOOPBACK,        ///< ::1/128 (sec 2.5.3)
-    IDEMIP_IP6_TYPE_V4_COMPAT,       ///< ::a.b.c.d, deprecated (sec 2.5.5.1)
-    IDEMIP_IP6_TYPE_V4_MAPPED,       ///< ::FFFF:a.b.c.d (sec 2.5.5.2)
-    IDEMIP_IP6_TYPE_LINK_LOCAL,      ///< FE80::/10 (sec 2.5.6)
-    IDEMIP_IP6_TYPE_SITE_LOCAL,      ///< FEC0::/10, deprecated (sec 2.5.7)
-    IDEMIP_IP6_TYPE_MULTICAST,       ///< FF00::/8 (sec 2.7)
-    IDEMIP_IP6_TYPE_GLOBAL,          ///< everything else (sec 2.4)
-} IdemIpIp6Type;
+EMBED_ENUM_BYTE(IdemIpIp6Type,
+                IDEMIP_IP6_TYPE_UNSPECIFIED = 0, ///< ::/128 (sec 2.5.2)
+                IDEMIP_IP6_TYPE_LOOPBACK,        ///< ::1/128 (sec 2.5.3)
+                IDEMIP_IP6_TYPE_V4_COMPAT,       ///< ::a.b.c.d, deprecated (sec 2.5.5.1)
+                IDEMIP_IP6_TYPE_V4_MAPPED,       ///< ::FFFF:a.b.c.d (sec 2.5.5.2)
+                IDEMIP_IP6_TYPE_LINK_LOCAL,      ///< FE80::/10 (sec 2.5.6)
+                IDEMIP_IP6_TYPE_SITE_LOCAL,      ///< FEC0::/10, deprecated (sec 2.5.7)
+                IDEMIP_IP6_TYPE_MULTICAST,       ///< FF00::/8 (sec 2.7)
+                IDEMIP_IP6_TYPE_GLOBAL,          ///< everything else (sec 2.4)
+);
 
 // ---------------------------------------------------------------------------
 // Multicast flags and scope (RFC 4291 sec 2.7)
@@ -109,17 +108,14 @@ typedef enum IDEMIP_ENUM_PACKED
  * rest: "We map unicast link-local to multicast link-local, unicast site-local to multicast
  * site-local, and unicast global scope to multicast global scope."
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IP6_SCOPE_RESERVED = 0x0, ///< "0 reserved"
-    IDEMIP_IP6_SCOPE_INTERFACE_LOCAL = 0x1,
-    IDEMIP_IP6_SCOPE_LINK_LOCAL = 0x2,
-    IDEMIP_IP6_SCOPE_ADMIN_LOCAL = 0x4,
-    IDEMIP_IP6_SCOPE_SITE_LOCAL = 0x5,
-    IDEMIP_IP6_SCOPE_ORG_LOCAL = 0x8,  ///< "8 Organization-Local scope"
-    IDEMIP_IP6_SCOPE_GLOBAL = 0xE,
-    IDEMIP_IP6_SCOPE_RESERVED_F = 0xF, ///< "F reserved"
-} IdemIpIp6Scope;
+EMBED_ENUM_BYTE(IdemIpIp6Scope,
+                IDEMIP_IP6_SCOPE_RESERVED = 0x0, ///< "0 reserved"
+                IDEMIP_IP6_SCOPE_INTERFACE_LOCAL = 0x1, IDEMIP_IP6_SCOPE_LINK_LOCAL = 0x2,
+                IDEMIP_IP6_SCOPE_ADMIN_LOCAL = 0x4, IDEMIP_IP6_SCOPE_SITE_LOCAL = 0x5,
+                IDEMIP_IP6_SCOPE_ORG_LOCAL = 0x8, ///< "8 Organization-Local scope"
+                IDEMIP_IP6_SCOPE_GLOBAL = 0xE,
+                IDEMIP_IP6_SCOPE_RESERVED_F = 0xF, ///< "F reserved"
+);
 
 // ---------------------------------------------------------------------------
 // The solicited-node address (RFC 4291 sec 2.7.1)
@@ -153,7 +149,7 @@ typedef enum IDEMIP_ENUM_PACKED
 // through a borrow; nothing implements one of them twice.
 
 /** @brief True when the leading @p n octets are zero, which sec 2.5.2, 2.5.3 and 2.5.5 all key on. */
-IDEMIP_INLINE idemip_bool idemip_ip6_addr_leading_zero(const uint8_t *addr, size_t n)
+EMBED_INLINE embed_bool idemip_ip6_addr_leading_zero(const uint8_t *addr, size_t n)
 {
     return idemip_bytes_zero(addr, n);
 }
@@ -166,7 +162,7 @@ IDEMIP_INLINE idemip_bool idemip_ip6_addr_leading_zero(const uint8_t *addr, size
  * sec 2.5.2's all-zero address and sec 2.5.3's ::1 both also match sec 2.5.5.1's shape and are taken
  * before it.
  */
-IDEMIP_INLINE IdemIpIp6Type idemip_ip6_addr_type(const uint8_t *addr)
+EMBED_INLINE IdemIpIp6Type idemip_ip6_addr_type(const uint8_t *addr)
 {
     if (addr[0] == IDEMIP_IP6_MULTICAST_TAG)
     {
@@ -212,7 +208,7 @@ IDEMIP_INLINE IdemIpIp6Type idemip_ip6_addr_type(const uint8_t *addr)
  * maps unicast site-local onto multicast site-local. The unspecified address "does not have any
  * scope" (RFC 4007 sec 4), which is the reserved value here.
  */
-IDEMIP_INLINE IdemIpIp6Scope idemip_ip6_addr_scope_of(const uint8_t *addr, IdemIpIp6Type type)
+EMBED_INLINE IdemIpIp6Scope idemip_ip6_addr_scope_of(const uint8_t *addr, IdemIpIp6Type type)
 {
     switch (type)
     {
@@ -237,13 +233,13 @@ IDEMIP_INLINE IdemIpIp6Scope idemip_ip6_addr_scope_of(const uint8_t *addr, IdemI
 }
 
 /** @brief The scope of an address, its type derived first. */
-IDEMIP_INLINE IdemIpIp6Scope idemip_ip6_addr_scope(const uint8_t *addr)
+EMBED_INLINE IdemIpIp6Scope idemip_ip6_addr_scope(const uint8_t *addr)
 {
     return idemip_ip6_addr_scope_of(addr, idemip_ip6_addr_type(addr));
 }
 
 /** @brief The sec 2.7 flgs nibble of a multicast address, and zero for anything else. */
-IDEMIP_INLINE uint8_t idemip_ip6_addr_mcast_flags(const uint8_t *addr)
+EMBED_INLINE uint8_t idemip_ip6_addr_mcast_flags(const uint8_t *addr)
 {
     return (addr[0] == IDEMIP_IP6_MULTICAST_TAG)
                ? (uint8_t)((addr[1] >> IDEMIP_IP6_MCAST_FLAGS_SHIFT) & IDEMIP_IP6_MCAST_FLAGS_MASK)
@@ -256,23 +252,23 @@ IDEMIP_INLINE uint8_t idemip_ip6_addr_mcast_flags(const uint8_t *addr)
  * (len >> 3) whole octets compare exactly, and the remaining (len & 7) bits compare under a mask of
  * that many leading bits, which is the longest prefix match RFC 4291 sec 2.3 writes.
  */
-IDEMIP_INLINE idemip_bool idemip_ip6_addr_prefix_eq(const uint8_t *a, const uint8_t *b, uint8_t len)
+EMBED_INLINE embed_bool idemip_ip6_addr_prefix_eq(const uint8_t *a, const uint8_t *b, uint8_t len)
 {
     size_t whole = (size_t)(len >> 3);
     uint8_t bits = (uint8_t)(len & 7u);
     if (whole != 0u && !idemip_bytes_eq(a, b, whole))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (bits != 0u)
     {
         uint8_t mask = (uint8_t)(0xFFu << (8u - bits));
         if ((uint8_t)((a[whole] ^ b[whole]) & mask) != 0u)
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
     }
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 /**
@@ -281,9 +277,9 @@ IDEMIP_INLINE idemip_bool idemip_ip6_addr_prefix_eq(const uint8_t *a, const uint
  * The prefix FF02:0:0:0:0:1:FF00::/104 is thirteen octets, and the low-order 24 bits of @p addr are
  * the three that follow.
  */
-IDEMIP_INLINE void idemip_ip6_addr_solicited(uint8_t *out, const uint8_t *addr)
+EMBED_INLINE void idemip_ip6_addr_solicited(uint8_t *out, const uint8_t *addr)
 {
-    memset(out, 0, IDEMIP_IP6_ADDR_LEN);
+    mmgr_zero_buf(out, IDEMIP_IP6_ADDR_LEN);
     out[0] = 0xFFu;
     out[1] = 0x02u;
     out[11] = 0x01u;
@@ -301,21 +297,21 @@ IDEMIP_INLINE void idemip_ip6_addr_solicited(uint8_t *out, const uint8_t *addr)
  * on the list "a host is required to recognize ... as identifying itself", so neither needs a group
  * table entry to be this host's, the way a solicited-node address does not.
  */
-IDEMIP_INLINE idemip_bool idemip_ip6_addr_is_all_nodes(const uint8_t *addr)
+EMBED_INLINE embed_bool idemip_ip6_addr_is_all_nodes(const uint8_t *addr)
 {
     if (addr[0] != IDEMIP_IP6_MULTICAST_TAG || idemip_ip6_addr_mcast_flags(addr) != 0u)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     uint8_t scope = addr[1] & IDEMIP_IP6_MCAST_SCOP_MASK;
     if (scope != IDEMIP_IP6_SCOPE_INTERFACE_LOCAL && scope != IDEMIP_IP6_SCOPE_LINK_LOCAL)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     return (idemip_ip6_addr_leading_zero(addr + 2u, IDEMIP_IP6_ADDR_LEN - 3u) &&
             addr[IDEMIP_IP6_ADDR_LEN - 1u] == 0x01u)
-               ? IDEMIP_TRUE
-               : IDEMIP_FALSE;
+               ? EMBED_TRUE
+               : EMBED_FALSE;
 }
 
 // ---------------------------------------------------------------------------
@@ -401,9 +397,9 @@ typedef struct
     IdemIpIp6Type type;
     IdemIpIp6Scope scope;
     uint8_t flags;
-    idemip_bool equal;
-    idemip_bool prefix_equal;
-    idemip_bool zone_derived;
+    embed_bool equal;
+    embed_bool prefix_equal;
+    embed_bool zone_derived;
 } Ip6AddrIo;
 
 // ---------------------------------------------------------------------------
@@ -474,36 +470,36 @@ void idemip_ip6_addr_match(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Ip6AddrNs Ip6Addr IDEMIP_UNUSED = {
-    .clear = idemip_ip6_addr_clear,
-    .classify = idemip_ip6_addr_classify,
-    .solicited = idemip_ip6_addr_solicited_io,
-    .zone = idemip_ip6_addr_zone,
-    .match = idemip_ip6_addr_match};
+EMBED_TABLE_STORAGE Ip6AddrNs Ip6Addr EMBED_UNUSED = {.clear = idemip_ip6_addr_clear,
+                                                      .classify = idemip_ip6_addr_classify,
+                                                      .solicited = idemip_ip6_addr_solicited_io,
+                                                      .zone = idemip_ip6_addr_zone,
+                                                      .match = idemip_ip6_addr_match};
 // RFC 4291 sec 2.7.1 appends 24 bits to a 104-bit prefix, and the two fill an address.
-static_assert(IDEMIP_IP6_SOLICITED_PREFIX_BYTES + IDEMIP_IP6_SOLICITED_SUFFIX_BYTES == IDEMIP_IP6_ADDR_LEN,
-              "the RFC 4291 sec 2.7.1 prefix and its 24 bits must fill an address");
-static_assert(IDEMIP_IP6_SOLICITED_PREFIX_LEN == (IDEMIP_IP6_SOLICITED_PREFIX_BYTES << 3),
-              "FF02:0:0:0:0:1:FF00::/104 is thirteen whole octets (RFC 4291 sec 2.7.1)");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_SOLICITED_PREFIX_BYTES + IDEMIP_IP6_SOLICITED_SUFFIX_BYTES == IDEMIP_IP6_ADDR_LEN,
+                    "the RFC 4291 sec 2.7.1 prefix and its 24 bits must fill an address");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_SOLICITED_PREFIX_LEN == (IDEMIP_IP6_SOLICITED_PREFIX_BYTES << 3),
+                    "FF02:0:0:0:0:1:FF00::/104 is thirteen whole octets (RFC 4291 sec 2.7.1)");
 
 // sec 2.7 splits the second octet into flgs and scop, and the two fill it.
-static_assert(((IDEMIP_IP6_MCAST_FLAGS_MASK << IDEMIP_IP6_MCAST_FLAGS_SHIFT) | IDEMIP_IP6_MCAST_SCOP_MASK) == 0xFFu,
-              "flgs and scop must fill the octet below the FF tag (RFC 4291 sec 2.7)");
-static_assert((IDEMIP_IP6_MCAST_FLAG_T | IDEMIP_IP6_MCAST_FLAG_P | IDEMIP_IP6_MCAST_FLAG_R |
-               IDEMIP_IP6_MCAST_FLAG_RESERVED) == IDEMIP_IP6_MCAST_FLAGS_MASK,
-              "the four sec 2.7 flags must fill flgs");
+EMBED_STATIC_ASSERT(((IDEMIP_IP6_MCAST_FLAGS_MASK << IDEMIP_IP6_MCAST_FLAGS_SHIFT) | IDEMIP_IP6_MCAST_SCOP_MASK) ==
+                        0xFFu,
+                    "flgs and scop must fill the octet below the FF tag (RFC 4291 sec 2.7)");
+EMBED_STATIC_ASSERT((IDEMIP_IP6_MCAST_FLAG_T | IDEMIP_IP6_MCAST_FLAG_P | IDEMIP_IP6_MCAST_FLAG_R |
+                     IDEMIP_IP6_MCAST_FLAG_RESERVED) == IDEMIP_IP6_MCAST_FLAGS_MASK,
+                    "the four sec 2.7 flags must fill flgs");
 
 // sec 2.5.6 and sec 2.5.7 share ten bits, differing in the tenth.
-static_assert(IDEMIP_IP6_LINK_LOCAL_TAG0 == IDEMIP_IP6_SITE_LOCAL_TAG0 &&
-                  IDEMIP_IP6_LINK_LOCAL_TAG1 != IDEMIP_IP6_SITE_LOCAL_TAG1,
-              "FE80::/10 and FEC0::/10 differ only in the tenth bit (RFC 4291 sec 2.5.6, sec 2.5.7)");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_LINK_LOCAL_TAG0 == IDEMIP_IP6_SITE_LOCAL_TAG0 &&
+                        IDEMIP_IP6_LINK_LOCAL_TAG1 != IDEMIP_IP6_SITE_LOCAL_TAG1,
+                    "FE80::/10 and FEC0::/10 differ only in the tenth bit (RFC 4291 sec 2.5.6, sec 2.5.7)");
 
 // sec 2.5.5 puts the embedded IPv4 address in "the low-order 32 bits of the address".
-static_assert(IDEMIP_IP6_V4_EMBED_OFF + 4u == IDEMIP_IP6_ADDR_LEN,
-              "an embedded IPv4 address is the low-order 32 bits (RFC 4291 sec 2.5.5)");
-static_assert(IDEMIP_IP6_ADDR_BITS == (IDEMIP_IP6_ADDR_LEN << 3), "an address is 128 bits (RFC 4291 sec 2)");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_V4_EMBED_OFF + 4u == IDEMIP_IP6_ADDR_LEN,
+                    "an embedded IPv4 address is the low-order 32 bits (RFC 4291 sec 2.5.5)");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_ADDR_BITS == (IDEMIP_IP6_ADDR_LEN << 3), "an address is 128 bits (RFC 4291 sec 2)");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

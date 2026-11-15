@@ -3,7 +3,7 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/pmtu/pmtu4.h"
-#include <string.h>
+#include "support/borrows.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);
@@ -102,39 +102,39 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/pmtu/test_pmtu4/test_pmtu4.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 115);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 126);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 142);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 159);
-  run_test(test_every_row_of_table_7_1_is_searched, "test_every_row_of_table_7_1_is_searched", 182);
-  run_test(test_a_length_on_a_row_steps_to_the_row_below, "test_a_length_on_a_row_steps_to_the_row_below", 196);
-  run_test(test_no_plateau_lies_below_the_last_row, "test_no_plateau_lies_below_the_last_row", 208);
-  run_test(test_fddi_reaches_ethernet_in_two_searches, "test_fddi_reaches_ethernet_in_two_searches", 223);
-  run_test(test_the_raise_steps_up_the_table, "test_the_raise_steps_up_the_table", 236);
-  run_test(test_the_raise_stops_at_the_first_hop_mtu, "test_the_raise_stops_at_the_first_hop_mtu", 251);
-  run_test(test_no_plateau_lies_above_the_first_row, "test_no_plateau_lies_above_the_first_row", 274);
-  run_test(test_the_next_hop_mtu_is_the_estimate, "test_the_next_hop_mtu_is_the_estimate", 287);
-  run_test(test_only_the_low_half_of_the_unused_word_is_read, "test_only_the_low_half_of_the_unused_word_is_read", 303);
-  run_test(test_the_path_comes_from_the_quoted_header, "test_the_path_comes_from_the_quoted_header", 316);
-  run_test(test_a_next_hop_mtu_below_68_is_refused, "test_a_next_hop_mtu_below_68_is_refused", 332);
-  run_test(test_another_type_or_code_is_refused, "test_another_type_or_code_is_refused", 351);
-  run_test(test_a_message_without_a_whole_quoted_header_is_refused, "test_a_message_without_a_whole_quoted_header_is_refused", 368);
-  run_test(test_an_old_style_message_searches_the_plateau_table, "test_an_old_style_message_searches_the_plateau_table", 397);
-  run_test(test_the_returned_total_length_is_corrected, "test_the_returned_total_length_is_corrected", 415);
-  run_test(test_a_message_never_raises_the_estimate, "test_a_message_never_raises_the_estimate", 437);
-  run_test(test_a_path_with_no_estimate_takes_the_first_message, "test_a_path_with_no_estimate_takes_the_first_message", 460);
-  run_test(test_a_path_with_no_estimate_is_still_bounded_by_the_first_hop, "test_a_path_with_no_estimate_is_still_bounded_by_the_first_hop", 478);
-  run_test(test_a_row_that_was_never_decreased_is_busy, "test_a_row_that_was_never_decreased_is_busy", 508);
-  run_test(test_the_raise_waits_out_the_interval, "test_the_raise_waits_out_the_interval", 523);
-  run_test(test_the_raise_climbs_to_the_first_hop_mtu, "test_the_raise_climbs_to_the_first_hop_mtu", 542);
-  run_test(test_a_second_raise_inside_the_interval_is_refused, "test_a_second_raise_inside_the_interval_is_refused", 572);
-  run_test(test_a_first_hop_below_68_is_refused, "test_a_first_hop_below_68_is_refused", 601);
-  run_test(test_the_interval_survives_a_clock_wrap, "test_the_interval_survives_a_clock_wrap", 614);
-  run_test(test_the_same_message_repeats, "test_the_same_message_repeats", 627);
-  run_test(test_a_message_is_read_against_the_estimate_already_held, "test_a_message_is_read_against_the_estimate_already_held", 648);
-  run_test(test_a_caller_naming_no_estimate_and_no_first_hop_takes_what_the_message_names, "test_a_caller_naming_no_estimate_and_no_first_hop_takes_what_the_message_names", 683);
-  run_test(test_an_old_style_message_is_read_against_the_estimate_too, "test_an_old_style_message_is_read_against_the_estimate_too", 713);
-  run_test(test_a_size_above_the_last_plateau_is_held_to_the_first_hop, "test_a_size_above_the_last_plateau_is_held_to_the_first_hop", 748);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 120);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 131);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 147);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 164);
+  run_test(test_every_row_of_table_7_1_is_searched, "test_every_row_of_table_7_1_is_searched", 187);
+  run_test(test_a_length_on_a_row_steps_to_the_row_below, "test_a_length_on_a_row_steps_to_the_row_below", 201);
+  run_test(test_no_plateau_lies_below_the_last_row, "test_no_plateau_lies_below_the_last_row", 213);
+  run_test(test_fddi_reaches_ethernet_in_two_searches, "test_fddi_reaches_ethernet_in_two_searches", 228);
+  run_test(test_the_raise_steps_up_the_table, "test_the_raise_steps_up_the_table", 241);
+  run_test(test_the_raise_stops_at_the_first_hop_mtu, "test_the_raise_stops_at_the_first_hop_mtu", 256);
+  run_test(test_no_plateau_lies_above_the_first_row, "test_no_plateau_lies_above_the_first_row", 279);
+  run_test(test_the_next_hop_mtu_is_the_estimate, "test_the_next_hop_mtu_is_the_estimate", 292);
+  run_test(test_only_the_low_half_of_the_unused_word_is_read, "test_only_the_low_half_of_the_unused_word_is_read", 308);
+  run_test(test_the_path_comes_from_the_quoted_header, "test_the_path_comes_from_the_quoted_header", 321);
+  run_test(test_a_next_hop_mtu_below_68_is_refused, "test_a_next_hop_mtu_below_68_is_refused", 337);
+  run_test(test_another_type_or_code_is_refused, "test_another_type_or_code_is_refused", 356);
+  run_test(test_a_message_without_a_whole_quoted_header_is_refused, "test_a_message_without_a_whole_quoted_header_is_refused", 373);
+  run_test(test_an_old_style_message_searches_the_plateau_table, "test_an_old_style_message_searches_the_plateau_table", 402);
+  run_test(test_the_returned_total_length_is_corrected, "test_the_returned_total_length_is_corrected", 420);
+  run_test(test_a_message_never_raises_the_estimate, "test_a_message_never_raises_the_estimate", 442);
+  run_test(test_a_path_with_no_estimate_takes_the_first_message, "test_a_path_with_no_estimate_takes_the_first_message", 465);
+  run_test(test_a_path_with_no_estimate_is_still_bounded_by_the_first_hop, "test_a_path_with_no_estimate_is_still_bounded_by_the_first_hop", 483);
+  run_test(test_a_row_that_was_never_decreased_is_busy, "test_a_row_that_was_never_decreased_is_busy", 513);
+  run_test(test_the_raise_waits_out_the_interval, "test_the_raise_waits_out_the_interval", 528);
+  run_test(test_the_raise_climbs_to_the_first_hop_mtu, "test_the_raise_climbs_to_the_first_hop_mtu", 547);
+  run_test(test_a_second_raise_inside_the_interval_is_refused, "test_a_second_raise_inside_the_interval_is_refused", 577);
+  run_test(test_a_first_hop_below_68_is_refused, "test_a_first_hop_below_68_is_refused", 606);
+  run_test(test_the_interval_survives_a_clock_wrap, "test_the_interval_survives_a_clock_wrap", 619);
+  run_test(test_the_same_message_repeats, "test_the_same_message_repeats", 632);
+  run_test(test_a_message_is_read_against_the_estimate_already_held, "test_a_message_is_read_against_the_estimate_already_held", 653);
+  run_test(test_a_caller_naming_no_estimate_and_no_first_hop_takes_what_the_message_names, "test_a_caller_naming_no_estimate_and_no_first_hop_takes_what_the_message_names", 688);
+  run_test(test_an_old_style_message_is_read_against_the_estimate_too, "test_an_old_style_message_is_read_against_the_estimate_too", 718);
+  run_test(test_a_size_above_the_last_plateau_is_held_to_the_first_hop, "test_a_size_above_the_last_plateau_is_held_to_the_first_hop", 753);
 
   return UNITY_END();
 }

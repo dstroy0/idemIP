@@ -21,14 +21,16 @@
 
 #include "src/dhcp/dhcp4.h"
 
-#include <string.h>
+#include "support/borrows.h"
 #include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_DHCP4_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_DHCP4_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_DHCP4_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_DHCP4_BORROW + 16))
+static uint8_t *work_b;
 
 static const uint8_t g_mac_a[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x0A};
 static const uint8_t g_mac_b[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x0B};
@@ -36,14 +38,15 @@ static const uint8_t g_mac_b[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x0B};
 // RFC 2131 sec 2, Table 1: 'htype' is an ARP hardware type, '1' = 10mb ethernet, and 'hlen' is 6 for
 // it.
 static const IdemIpDhcp4Cfg g_cfg_a = {
-    .chaddr = g_mac_a, .lease_s = 7200u, .netif = 0u, .htype = 1u, .hlen = 6u, .broadcast = IDEMIP_TRUE};
+    .chaddr = g_mac_a, .lease_s = 7200u, .netif = 0u, .htype = 1u, .hlen = 6u, .broadcast = EMBED_TRUE};
 static const IdemIpDhcp4Cfg g_cfg_b = {
-    .chaddr = g_mac_b, .lease_s = 3600u, .netif = 1u, .htype = 1u, .hlen = 6u, .broadcast = IDEMIP_FALSE};
+    .chaddr = g_mac_b, .lease_s = 3600u, .netif = 1u, .htype = 1u, .hlen = 6u, .broadcast = EMBED_FALSE};
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_DHCP4_BORROW, CANARY, cap - IDEMIP_DHCP4_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_DHCP4_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_DHCP4_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -56,14 +59,16 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_dhcp4);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_dhcp4);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void bind_ok(uint8_t *w, const IdemIpDhcp4Cfg *cfg)
@@ -111,7 +116,7 @@ void test_the_io_macro_lands_on_the_published_offset(void)
 // clear zeroes the whole borrow, so a machine restarts from the INIT of RFC 2131 sec 4.4.1.
 void test_clear_zeroes_the_regions(void)
 {
-    memset(work_a, 0xA5, IDEMIP_DHCP4_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xA5, .bytes = IDEMIP_DHCP4_BORROW);
     Dhcp4.clear(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP4_IO(work_a)->status);
 
@@ -131,8 +136,8 @@ void test_clear_zeroes_the_regions(void)
 // Clearing one machine does not touch the other's bytes.
 void test_clear_touches_one_borrow_only(void)
 {
-    memset(work_a, 0xA5, IDEMIP_DHCP4_BORROW);
-    memset(work_b, 0xA5, IDEMIP_DHCP4_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xA5, .bytes = IDEMIP_DHCP4_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b, .val = 0xA5, .bytes = IDEMIP_DHCP4_BORROW);
     Dhcp4.clear(work_a);
 
     for (size_t i = 0; i < IDEMIP_DHCP4_BORROW; i++)
@@ -329,13 +334,13 @@ static uint16_t get16(const uint8_t *p)
 // The fixed part of a reply, then the RFC 2132 sec 9.6 message type option.
 static void msg_begin(uint32_t xid, uint32_t yiaddr, uint8_t type, const uint8_t *chaddr)
 {
-    memset(g_msg, 0, sizeof g_msg);
+    mmgr_zero_buf(g_msg, sizeof g_msg);
     g_msg[IDEMIP_DHCP4_MSG_OFF_OP] = IDEMIP_DHCP4_OP_BOOTREPLY;
     g_msg[IDEMIP_DHCP4_MSG_OFF_HTYPE] = 1u;
     g_msg[IDEMIP_DHCP4_MSG_OFF_HLEN] = 6u;
     put32(g_msg + IDEMIP_DHCP4_MSG_OFF_XID, xid);
     put32(g_msg + IDEMIP_DHCP4_MSG_OFF_YIADDR, yiaddr);
-    memcpy(g_msg + IDEMIP_DHCP4_MSG_OFF_CHADDR, chaddr, 6);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_msg + IDEMIP_DHCP4_MSG_OFF_CHADDR, .at = chaddr, .size = 6);
     put32(g_msg + IDEMIP_DHCP4_MSG_OFF_COOKIE, IDEMIP_DHCP4_MAGIC_COOKIE);
     g_msg_at = IDEMIP_DHCP4_MSG_OFF_OPTIONS;
     g_msg[g_msg_at++] = IDEMIP_DHCP4_OPT_MSG_TYPE;
@@ -349,7 +354,7 @@ static void msg_opt(uint8_t code, uint8_t len, const uint8_t *v)
 {
     g_msg[g_msg_at++] = code;
     g_msg[g_msg_at++] = len;
-    memcpy(g_msg + g_msg_at, v, len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_msg + g_msg_at, .at = v, .size = len);
     g_msg_at += len;
 }
 
@@ -418,7 +423,7 @@ static void tick_at(uint8_t *w, uint32_t now, uint32_t rand)
 
 static void build_ok(uint8_t *w)
 {
-    memset(g_out, 0, sizeof g_out);
+    mmgr_zero_buf(g_out, sizeof g_out);
     IDEMIP_DHCP4_IO(w)->build_args.out = g_out;
     IDEMIP_DHCP4_IO(w)->build_args.cap = sizeof g_out;
     Dhcp4.build(w);
@@ -513,7 +518,7 @@ void test_an_option_of_the_wrong_length_discards_the_message(void)
     for (size_t r = 0; r < sizeof rows / sizeof rows[0]; r++)
     {
         uint8_t v[8];
-        memset(v, 0, sizeof v);
+        mmgr_zero_buf(v, sizeof v);
         if (rows[r].code == IDEMIP_DHCP4_OPT_OVERLOAD && rows[r].len == 1u)
         {
             v[0] = 0u; // sec 9.3's legal values are 1, 2 and 3
@@ -619,7 +624,7 @@ void test_an_option_area_that_ends_without_an_end_option_is_still_read(void)
 // message is not a configuration.
 void test_an_option_running_off_the_end_of_the_area_discards_the_message(void)
 {
-    const size_t span = (size_t)IDEMIP_DHCP4_MSG_BOOTP_MIN - (size_t)IDEMIP_DHCP4_MSG_OFF_OPTIONS;
+    const size_t option_bytes = (size_t)IDEMIP_DHCP4_MSG_BOOTP_MIN - (size_t)IDEMIP_DHCP4_MSG_OFF_OPTIONS;
     static const struct
     {
         size_t back;
@@ -639,7 +644,7 @@ void test_an_option_running_off_the_end_of_the_area_discards_the_message(void)
         msg_opt32(IDEMIP_DHCP4_OPT_SERVER_ID, IP_SERVER);
         // A router option at the very edge: with one octet left it is a tag alone, and with two the
         // length it names runs past the area.
-        const size_t at = (size_t)IDEMIP_DHCP4_MSG_OFF_OPTIONS + span - rows[r].back;
+        const size_t at = (size_t)IDEMIP_DHCP4_MSG_OFF_OPTIONS + option_bytes - rows[r].back;
         g_msg[at] = IDEMIP_DHCP4_OPT_ROUTER;
         if (rows[r].back == 2u)
         {
@@ -1026,7 +1031,7 @@ void test_the_start_delay_lands_between_one_and_ten_seconds(void)
     for (uint32_t i = 0; i < 64u; i++)
     {
         uint32_t rand = (i * 0x9E3779B9u) ^ (i << 17);
-        arm(work_a, sizeof work_a);
+        arm(work_a, WORK_A_BYTES);
         bind_ok(work_a, &g_cfg_a);
         start_at(work_a, 0u, rand);
         tick_at(work_a, IDEMIP_DHCP4_START_DELAY_MIN_MS - 1u, 0u);
@@ -1707,12 +1712,12 @@ void test_an_illegal_overload_value_is_discarded(void)
 void test_a_message_with_no_message_type_option_is_discarded(void)
 {
     to_selecting(work_a);
-    memset(g_msg, 0, sizeof g_msg);
+    mmgr_zero_buf(g_msg, sizeof g_msg);
     g_msg[IDEMIP_DHCP4_MSG_OFF_OP] = IDEMIP_DHCP4_OP_BOOTREPLY;
     g_msg[IDEMIP_DHCP4_MSG_OFF_HTYPE] = 1u;
     g_msg[IDEMIP_DHCP4_MSG_OFF_HLEN] = 6u;
     put32(g_msg + IDEMIP_DHCP4_MSG_OFF_XID, XID_A);
-    memcpy(g_msg + IDEMIP_DHCP4_MSG_OFF_CHADDR, g_mac_a, 6);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_msg + IDEMIP_DHCP4_MSG_OFF_CHADDR, .at = g_mac_a, .size = 6);
     put32(g_msg + IDEMIP_DHCP4_MSG_OFF_COOKIE, IDEMIP_DHCP4_MAGIC_COOKIE);
     g_msg[IDEMIP_DHCP4_MSG_OFF_OPTIONS] = IDEMIP_DHCP4_OPT_END;
     g_msg_len = IDEMIP_DHCP4_MSG_BOOTP_MIN;

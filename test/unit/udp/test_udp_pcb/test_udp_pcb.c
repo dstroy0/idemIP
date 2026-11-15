@@ -21,15 +21,17 @@
 
 #include "src/udp/udp_pcb.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/udp/udp_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each so
 // a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_UDP_PCB_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_UDP_PCB_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_UDP_PCB_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_UDP_PCB_BORROW + 16))
+static uint8_t *work_b;
 
 #define TAB_BYTES ((size_t)IDEMIP_UDP_PCBS << IDEMIP_UDP_PCB_ENTRY_SHIFT)
 
@@ -38,8 +40,9 @@ static const uint8_t g_remote[IDEMIP_UDP_PCB_ADDR_BYTES] = {192u, 0u, 2u, 9u};
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_UDP_PCB_BORROW, CANARY, cap - IDEMIP_UDP_PCB_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_UDP_PCB_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_UDP_PCB_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -52,14 +55,16 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_udp_pcb);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_udp_pcb);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void call_every_entry(uint8_t *w)
@@ -129,7 +134,8 @@ void test_an_uncleared_borrow_is_refused(void)
 
 void test_clear_zeroes_the_table(void)
 {
-    memset(work_a + IDEMIP_UDP_PCB_OFF_CTX, 0xEE, (size_t)IDEMIP_UDP_PCB_BORROW - IDEMIP_UDP_PCB_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a + IDEMIP_UDP_PCB_OFF_CTX, .val = 0xEE,
+               .bytes = (size_t)IDEMIP_UDP_PCB_BORROW - IDEMIP_UDP_PCB_OFF_CTX);
     UdpPcb.clear(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_UDP_PCB_IO(work_a)->status);
     for (size_t i = 0; i < TAB_BYTES; i++)
@@ -190,7 +196,7 @@ void test_two_borrows_share_no_byte(void)
 // A clear on one borrow reaches no byte of the other's table.
 void test_a_clear_on_one_borrow_leaves_the_other_table_untouched(void)
 {
-    memset(work_b + IDEMIP_UDP_PCB_OFF_TAB, 0xC3, TAB_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b + IDEMIP_UDP_PCB_OFF_TAB, .val = 0xC3, .bytes = TAB_BYTES);
     UdpPcb.clear(work_a);
     for (size_t i = 0; i < TAB_BYTES; i++)
     {
@@ -288,7 +294,7 @@ static const uint8_t g_v6_b[IDEMIP_UDP_PCB_ADDR_BYTES] = {0x20u, 0x01u, 0x0Du, 0
 static const uint8_t g_v6_r[IDEMIP_UDP_PCB_ADDR_BYTES] = {0x20u, 0x01u, 0x0Du, 0xB8u, 0u, 0u, 0u, 0u,
                                                           0u,    0u,    0u,    0u,    0u, 0u, 0u, 0x09u};
 
-static uint16_t open_binding(uint8_t *w, uint8_t version, idemip_bool lite)
+static uint16_t open_binding(uint8_t *w, uint8_t version, embed_bool lite)
 {
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(w);
     io->open_args.ip_version = version;
@@ -366,7 +372,7 @@ static void set_datagram_ctx(const SetDatagramArgs *args)
     io->find_args.netif = args->netif;
 }
 
-#define set_datagram(...) IDEMIP_CALL(set_datagram_ctx, SetDatagramArgs, __VA_ARGS__)
+#define set_datagram(...) EMBED_CALL(set_datagram_ctx, SetDatagramArgs, __VA_ARGS__)
 
 // --- open and close ----------------------------------------------------------
 
@@ -375,8 +381,8 @@ static void set_datagram_ctx(const SetDatagramArgs *args)
 void test_open_takes_a_free_entry_and_reports_it(void)
 {
     UdpPcb.clear(work_a);
-    uint16_t a = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t b = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t a = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t b = open_binding(work_a, 4u, EMBED_FALSE);
     TEST_ASSERT_NOT_EQUAL_UINT16(a, b);
     TEST_ASSERT_TRUE(a < (uint16_t)IDEMIP_UDP_PCBS);
     TEST_ASSERT_TRUE(b < (uint16_t)IDEMIP_UDP_PCBS);
@@ -395,7 +401,7 @@ void test_open_refuses_a_version_that_is_not_4_or_6(void)
             continue;
         }
         io->open_args.ip_version = v;
-        io->open_args.lite = IDEMIP_FALSE;
+        io->open_args.lite = EMBED_FALSE;
         UdpPcb.open(work_a);
         TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "a version that is neither 4 nor 6 was opened");
         TEST_ASSERT_EQUAL_UINT16(IDEMIP_UDP_PCB_NONE, io->index);
@@ -408,7 +414,7 @@ void test_open_refuses_a_version_that_is_not_4_or_6(void)
 void test_open_stamps_the_rfc1112_multicast_ttl_default_of_one(void)
 {
     UdpPcb.clear(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_TRUE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_TRUE);
     load_ok(work_a, i);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
     TEST_ASSERT_EQUAL_UINT8(1u, io->info.mcast_ttl);
@@ -429,7 +435,7 @@ void test_a_full_table_is_busy_and_a_close_makes_the_retry_succeed(void)
     uint16_t last = IDEMIP_UDP_PCB_NONE;
     for (uint16_t n = 0u; n < (uint16_t)IDEMIP_UDP_PCBS; n++)
     {
-        last = open_binding(work_a, 4u, IDEMIP_FALSE);
+        last = open_binding(work_a, 4u, EMBED_FALSE);
     }
     io->open_args.ip_version = 4u;
     UdpPcb.open(work_a);
@@ -450,7 +456,7 @@ void test_close_frees_the_entry_and_a_load_then_refuses_it(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, i, g_local, 53u, 0u, 0u);
 
     io->pcb_args.index = i;
@@ -501,7 +507,7 @@ void test_bind_reports_the_port_it_was_given(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, i, g_local, 69u, 0u, 3u);
     TEST_ASSERT_EQUAL_UINT16(69u, io->port);
 
@@ -517,7 +523,7 @@ void test_bind_of_port_any_settles_in_the_rfc6335_dynamic_range(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, i, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u);
     TEST_ASSERT_GREATER_OR_EQUAL_UINT16((uint16_t)IDEMIP_UDP_PCB_PORT_FIRST, io->port);
     TEST_ASSERT_LESS_OR_EQUAL_UINT16((uint16_t)IDEMIP_UDP_PCB_PORT_LAST, io->port);
@@ -531,8 +537,8 @@ void test_two_binds_of_port_any_settle_on_different_ports(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t a = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t b = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t a = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t b = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, a, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u);
     uint16_t first = io->port;
     bind_ok(work_a, b, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u);
@@ -549,7 +555,7 @@ void test_the_ephemeral_draw_follows_the_callers_random_word(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_rand(work_a, i, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u, 0x0F0F0F0Fu);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
     const uint16_t first = io->port;
@@ -557,7 +563,7 @@ void test_the_ephemeral_draw_follows_the_callers_random_word(void)
 
     // The same empty table, a different word: a counter would hand out the same port either way.
     UdpPcb.clear(work_a);
-    i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_rand(work_a, i, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u, 0xF0F0F0F0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
     const uint16_t second = io->port;
@@ -566,7 +572,7 @@ void test_the_ephemeral_draw_follows_the_callers_random_word(void)
     // And the same word on the same empty table places it the same way, so the draw is a function of
     // the word rather than of a cursor the last call moved.
     UdpPcb.clear(work_a);
-    i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_rand(work_a, i, g_any, IDEMIP_UDP_PCB_PORT_ANY, 0u, 0u, 0x0F0F0F0Fu);
     TEST_ASSERT_EQUAL_UINT16(first, io->port);
 }
@@ -577,8 +583,8 @@ void test_bind_refuses_an_endpoint_another_binding_carries(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t a = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t b = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t a = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t b = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, a, g_local, 161u, 0u, 0u);
 
     io->bind_args.index = b;
@@ -596,8 +602,8 @@ void test_bind_refuses_an_endpoint_another_binding_carries(void)
 void test_bind_admits_the_same_port_on_two_different_addresses(void)
 {
     UdpPcb.clear(work_a);
-    uint16_t a = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t b = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t a = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t b = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, a, g_local, 161u, 0u, 0u);
     bind_ok(work_a, b, g_local2, 161u, 0u, 0u);
 }
@@ -607,8 +613,8 @@ void test_bind_admits_the_same_port_on_two_different_addresses(void)
 void test_a_wildcard_and_a_named_address_are_two_bindings_of_one_port(void)
 {
     UdpPcb.clear(work_a);
-    uint16_t a = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t b = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t a = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t b = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, a, g_any, 514u, 0u, 0u);
     bind_ok(work_a, b, g_local, 514u, 0u, 0u);
 }
@@ -618,8 +624,8 @@ void test_two_wildcard_binds_of_one_port_are_refused(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t a = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t b = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t a = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t b = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, a, g_any, 514u, 0u, 0u);
 
     io->bind_args.index = b;
@@ -636,9 +642,9 @@ void test_one_endpoint_on_two_interfaces_is_two_bindings(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t a = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t b = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t c = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t a = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t b = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t c = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, a, g_any, 68u, 0u, 1u);
     bind_ok(work_a, b, g_any, 68u, 0u, 2u);
 
@@ -657,14 +663,14 @@ void test_two_connects_off_one_local_endpoint_are_two_bindings(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t a = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t b = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t a = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t b = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, a, g_local, 4444u, 0u, 0u);
     connect_ok(work_a, a, g_remote, 53u);
     bind_ok(work_a, b, g_local, 4444u, 0u, 0u);
     connect_ok(work_a, b, g_remote2, 53u);
 
-    uint16_t c = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t c = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, c, g_local, 4444u, 0u, 0u);
     io->connect_args.index = c;
     io->connect_args.ip = g_remote;
@@ -679,8 +685,8 @@ void test_two_connects_off_one_local_endpoint_are_two_bindings(void)
 void test_two_versions_do_not_conflict_on_one_port(void)
 {
     UdpPcb.clear(work_a);
-    uint16_t a = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t b = open_binding(work_a, 6u, IDEMIP_FALSE);
+    uint16_t a = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t b = open_binding(work_a, 6u, EMBED_FALSE);
     bind_ok(work_a, a, g_local, 546u, 0u, 0u);
     bind_ok(work_a, b, g_v6_a, 546u, 0u, 0u);
 }
@@ -691,7 +697,7 @@ void test_connect_sets_the_remote_pair(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, i, g_local, 1024u, 0u, 0u);
     connect_ok(work_a, i, g_remote, 53u);
 
@@ -708,7 +714,7 @@ void test_connect_refuses_a_destination_port_of_zero(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     io->connect_args.index = i;
     io->connect_args.ip = g_remote;
     io->connect_args.port = IDEMIP_UDP_PCB_PORT_ANY;
@@ -725,7 +731,7 @@ void test_connect_refuses_an_unspecified_destination_address(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     io->connect_args.index = i;
     io->connect_args.ip = g_any;
     io->connect_args.port = 53u;
@@ -740,7 +746,7 @@ void test_disconnect_clears_the_remote_pair_and_keeps_the_local_one(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, i, g_local, 1025u, 0u, 7u);
     connect_ok(work_a, i, g_remote, 53u);
 
@@ -764,7 +770,7 @@ void test_set_opts_stores_the_rfc1122_mechanisms(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     io->opt_args.index = i;
     io->opt_args.tos = 0xB8u;
     io->opt_args.ttl = 64u;
@@ -789,7 +795,7 @@ void test_set_opts_refuses_a_time_to_live_of_zero(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     io->opt_args.index = i;
     io->opt_args.ttl = 0u;
     io->opt_args.tos = 0u;
@@ -831,7 +837,7 @@ void test_set_opts_refuses_a_coverage_of_one_through_seven(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_TRUE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_TRUE);
     for (uint16_t cov = 1u; cov < 8u; cov++)
     {
         io->opt_args.index = i;
@@ -857,7 +863,7 @@ void test_set_opts_admits_a_coverage_of_zero_and_eight_on_a_lite_binding(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_TRUE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_TRUE);
     io->opt_args.index = i;
     io->opt_args.ttl = 64u;
     io->opt_args.mcast_ttl = 1u;
@@ -880,7 +886,7 @@ void test_set_opts_refuses_a_coverage_on_a_binding_that_is_not_lite(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     io->opt_args.index = i;
     io->opt_args.ttl = 64u;
     io->opt_args.mcast_ttl = 1u;
@@ -899,7 +905,7 @@ void test_find_delivers_to_the_only_binding(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, i, g_local, 69u, 0u, 0u);
 
     set_datagram(work_a, 4u, g_local, 69u, g_remote, 32000u, 0u, 1u);
@@ -914,8 +920,8 @@ void test_find_prefers_a_specific_local_address_over_the_wildcard(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t wild = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t spec = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t wild = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t spec = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, wild, g_any, 123u, 0u, 0u);
     bind_ok(work_a, spec, g_local, 123u, 0u, 0u);
 
@@ -937,8 +943,8 @@ void test_find_prefers_a_connected_binding_over_an_unconnected_one(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t open_pcb = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t conn_pcb = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t open_pcb = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t conn_pcb = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, conn_pcb, g_local, 500u, 0u, 0u);
     connect_ok(work_a, conn_pcb, g_remote, 4500u);
     bind_ok(work_a, open_pcb, g_local, 500u, 0u, 0u);
@@ -955,8 +961,8 @@ void test_find_passes_over_a_connected_binding_whose_remote_pair_differs(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t open_pcb = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t conn_pcb = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t open_pcb = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t conn_pcb = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, conn_pcb, g_local, 500u, 0u, 0u);
     connect_ok(work_a, conn_pcb, g_remote, 4500u);
     bind_ok(work_a, open_pcb, g_local, 500u, 0u, 0u);
@@ -980,7 +986,7 @@ void test_find_reports_no_binding_when_the_port_is_unbound(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, i, g_local, 69u, 0u, 0u);
 
     set_datagram(work_a, 4u, g_local, 70u, g_remote, 32000u, 0u, 1u);
@@ -995,7 +1001,7 @@ void test_find_passes_over_an_open_entry_that_was_never_bound(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    (void)open_binding(work_a, 4u, IDEMIP_FALSE);
+    (void)open_binding(work_a, 4u, EMBED_FALSE);
 
     set_datagram(work_a, 4u, g_local, IDEMIP_UDP_PCB_PORT_ANY, g_remote, 32000u, 0u, 1u);
     UdpPcb.find(work_a);
@@ -1008,7 +1014,7 @@ void test_find_honors_the_interface_a_binding_is_pinned_to(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, i, g_any, 68u, 0u, 2u);
 
     set_datagram(work_a, 4u, g_local, 68u, g_remote, 67u, 0u, 1u);
@@ -1027,7 +1033,7 @@ void test_find_discards_a_coverage_of_one_through_seven(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_TRUE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_TRUE);
     bind_ok(work_a, i, g_any, 5004u, 0u, 0u);
 
     for (uint16_t cov = 1u; cov < 8u; cov++)
@@ -1080,7 +1086,7 @@ void test_find_blocks_a_coverage_under_the_bindings_minimum(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_TRUE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_TRUE);
     bind_ok(work_a, i, g_any, 5006u, 0u, 0u);
     io->opt_args.index = i;
     io->opt_args.ttl = 64u;
@@ -1113,7 +1119,7 @@ void test_find_keeps_a_partial_coverage_off_a_binding_that_is_not_lite(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, i, g_any, 5008u, 0u, 0u);
 
     set_datagram(work_a, 4u, g_local, 5008u, g_remote, 40000u, 8u, 1u);
@@ -1132,7 +1138,7 @@ void test_find_compares_four_octets_for_version_4(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, i, g_local_tail, 7u, 0u, 0u);
 
     load_ok(work_a, i);
@@ -1153,7 +1159,7 @@ void test_find_compares_sixteen_octets_for_version_6(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 6u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 6u, EMBED_FALSE);
     bind_ok(work_a, i, g_v6_a, 546u, 0u, 0u);
 
     set_datagram(work_a, 6u, g_v6_a, 546u, g_v6_r, 547u, 0u, 1u);
@@ -1172,8 +1178,8 @@ void test_find_separates_two_zones_of_one_address(void)
 {
     UdpPcb.clear(work_a);
     UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t one = open_binding(work_a, 6u, IDEMIP_FALSE);
-    uint16_t two = open_binding(work_a, 6u, IDEMIP_FALSE);
+    uint16_t one = open_binding(work_a, 6u, EMBED_FALSE);
+    uint16_t two = open_binding(work_a, 6u, EMBED_FALSE);
     bind_ok(work_a, one, g_v6_a, 5353u, 1u, 0u);
     bind_ok(work_a, two, g_v6_a, 5353u, 2u, 0u);
 
@@ -1198,7 +1204,7 @@ void test_find_refuses_a_version_the_binding_does_not_carry(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, i, g_any, 5060u, 0u, 0u);
 
     set_datagram(work_a, 6u, g_v6_a, 5060u, g_v6_r, 5060u, 0u, 1u);
@@ -1217,7 +1223,7 @@ void test_find_repeats(void)
 {
     UdpPcb.clear(work_a);
     const UdpPcbIo *io = IDEMIP_UDP_PCB_IO(work_a);
-    uint16_t i = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t i = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, i, g_local, 161u, 0u, 0u);
 
     set_datagram(work_a, 4u, g_local, 161u, g_remote, 40000u, 0u, 1u);
@@ -1234,10 +1240,10 @@ void test_a_find_is_a_function_of_its_borrow_alone(void)
 {
     UdpPcb.clear(work_a);
     UdpPcb.clear(work_b);
-    uint16_t a = open_binding(work_a, 4u, IDEMIP_FALSE);
+    uint16_t a = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, a, g_local, 161u, 0u, 0u);
-    uint16_t b0 = open_binding(work_b, 4u, IDEMIP_FALSE);
-    uint16_t b1 = open_binding(work_b, 4u, IDEMIP_FALSE);
+    uint16_t b0 = open_binding(work_b, 4u, EMBED_FALSE);
+    uint16_t b1 = open_binding(work_b, 4u, EMBED_FALSE);
     bind_ok(work_b, b1, g_local, 161u, 0u, 0u);
     (void)b0;
 
@@ -1260,8 +1266,8 @@ void test_two_tables_do_not_share_a_port(void)
 {
     UdpPcb.clear(work_a);
     UdpPcb.clear(work_b);
-    uint16_t a = open_binding(work_a, 4u, IDEMIP_FALSE);
-    uint16_t b = open_binding(work_b, 4u, IDEMIP_FALSE);
+    uint16_t a = open_binding(work_a, 4u, EMBED_FALSE);
+    uint16_t b = open_binding(work_b, 4u, EMBED_FALSE);
     bind_ok(work_a, a, g_local, 161u, 0u, 0u);
     bind_ok(work_b, b, g_local, 161u, 0u, 0u);
 }
@@ -1277,13 +1283,13 @@ void test_a_connect_claims_the_whole_five_tuple_and_not_a_part_of_it(void)
     UdpPcb.clear(work_a);
 
     // Bound and connected: 192.0.2.1:5000 to 192.0.2.9:53.
-    const uint16_t first = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t first = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, first, g_local, 5000u, 0u, 0u);
     connect_ok(work_a, first, g_remote, 53u);
 
     // The same local port to another remote port stands beside it, and so does the same remote
     // socket from another local address.
-    const uint16_t second = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t second = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, second, g_local, 5000u, 0u, 0u);
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = second;
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_remote;
@@ -1294,7 +1300,7 @@ void test_a_connect_claims_the_whole_five_tuple_and_not_a_part_of_it(void)
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_UDP_PCB_IO(work_a)->status,
                                   "a connect to another remote port was taken for the same five-tuple");
 
-    const uint16_t third = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t third = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, third, g_local2, 5000u, 0u, 0u);
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = third;
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_remote;
@@ -1306,7 +1312,7 @@ void test_a_connect_claims_the_whole_five_tuple_and_not_a_part_of_it(void)
                                   "a connect from another local address was taken for the same five-tuple");
 
     // The one that repeats all of it is refused.
-    const uint16_t fourth = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t fourth = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, fourth, g_local, 5000u, 0u, 0u);
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = fourth;
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_remote;
@@ -1318,7 +1324,7 @@ void test_a_connect_claims_the_whole_five_tuple_and_not_a_part_of_it(void)
                                   "two bindings took the same five-tuple");
 
     // A binding nobody bound has no local port to claim the tuple with.
-    const uint16_t loose = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t loose = open_binding(work_a, 4u, EMBED_FALSE);
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = loose;
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_remote;
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.port = 53u;
@@ -1341,7 +1347,7 @@ void test_a_connect_claims_the_whole_five_tuple_and_not_a_part_of_it(void)
 void test_a_connect_pins_the_interface_the_caller_names(void)
 {
     UdpPcb.clear(work_a);
-    const uint16_t first = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t first = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, first, g_local, 5000u, 0u, 1u);
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = first;
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_remote;
@@ -1355,7 +1361,7 @@ void test_a_connect_pins_the_interface_the_caller_names(void)
                                     "the connect did not pin the interface it was given");
 
     // The same five-tuple on a third interface: no datagram reaches both, so both bindings stand.
-    const uint16_t second = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t second = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, second, g_local, 5000u, 0u, 3u);
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = second;
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_remote;
@@ -1376,7 +1382,7 @@ void test_a_connect_pins_the_interface_the_caller_names(void)
 void test_a_zone_is_part_of_the_endpoint_a_connect_names(void)
 {
     UdpPcb.clear(work_a);
-    const uint16_t first = open_binding(work_a, 6u, IDEMIP_FALSE);
+    const uint16_t first = open_binding(work_a, 6u, EMBED_FALSE);
     bind_ok(work_a, first, g_v6_a, 5000u, 1u, 0u);
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = first;
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_v6_r;
@@ -1411,9 +1417,9 @@ void test_the_most_specific_binding_takes_a_datagram_whatever_order_the_table_ho
 
     // The specific one first, so a walk that kept the last match would hand the datagram to the
     // wildcard standing behind it.
-    const uint16_t specific = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t specific = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, specific, g_local, 5000u, 0u, 0u);
-    const uint16_t wildcard = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t wildcard = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, wildcard, g_any, 5000u, 0u, 0u);
 
     set_datagram(.w = work_a, .version = 4u, .local_ip = g_local, .local_port = 5000u, .remote_ip = g_remote,
@@ -1429,7 +1435,7 @@ void test_the_most_specific_binding_takes_a_datagram_whatever_order_the_table_ho
 void test_a_lookup_with_no_source_address_is_refused(void)
 {
     UdpPcb.clear(work_a);
-    const uint16_t idx = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t idx = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, idx, g_local, 5000u, 0u, 0u);
 
     set_datagram(.w = work_a, .version = 4u, .local_ip = g_local, .local_port = 5000u, .remote_ip = g_remote,
@@ -1446,7 +1452,7 @@ void test_a_lookup_with_no_source_address_is_refused(void)
 void test_a_binding_that_is_not_udp_lite_takes_no_partial_coverage_at_either_end(void)
 {
     UdpPcb.clear(work_a);
-    const uint16_t idx = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t idx = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, idx, g_local, 5000u, 0u, 0u);
 
     for (unsigned k = 0; k < 2u; k++)
@@ -1472,17 +1478,17 @@ void test_a_binding_that_is_not_udp_lite_takes_no_partial_coverage_at_either_end
 void test_a_rebind_of_a_connected_binding_is_refused_only_where_the_whole_tuple_would_repeat(void)
 {
     UdpPcb.clear(work_a);
-    const uint16_t first = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t first = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, first, g_local, 5000u, 0u, 0u);
     connect_ok(work_a, first, g_remote, 53u);
 
     // A second binding on the same local endpoint, to another remote port.
-    const uint16_t second = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t second = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, second, g_local, 5000u, 0u, 0u);
     connect_ok(work_a, second, g_remote, 54u);
 
     // A third on that endpoint too, to another remote address altogether.
-    const uint16_t other = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t other = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, other, g_local, 5000u, 0u, 0u);
     connect_ok(work_a, other, g_remote2, 53u);
 
@@ -1492,7 +1498,7 @@ void test_a_rebind_of_a_connected_binding_is_refused_only_where_the_whole_tuple_
     bind_ok(work_a, first, g_local, 5000u, 0u, 0u);
 
     // A third on another local address, to the remote socket the first holds.
-    const uint16_t third = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t third = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, third, g_local2, 5000u, 0u, 0u);
     connect_ok(work_a, third, g_remote, 53u);
 
@@ -1512,7 +1518,7 @@ void test_the_connect_scan_passes_over_what_cannot_be_the_same_tuple(void)
     UdpPcb.clear(work_a);
 
     // The other version, on the same port and the same numbers as far as they go.
-    const uint16_t sixer = open_binding(work_a, 6u, IDEMIP_FALSE);
+    const uint16_t sixer = open_binding(work_a, 6u, EMBED_FALSE);
     bind_ok(work_a, sixer, g_v6_a, 5000u, 0u, 0u);
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.index = sixer;
     IDEMIP_UDP_PCB_IO(work_a)->connect_args.ip = g_v6_r;
@@ -1525,20 +1531,20 @@ void test_the_connect_scan_passes_over_what_cannot_be_the_same_tuple(void)
     // A binding on the same local port that nobody connected. Its address is another of this
     // host's: two unconnected bindings on one endpoint rank the same in a find, so the table does
     // not carry both, and it is the port the scan below walks past it on.
-    const uint16_t listening = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t listening = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, listening, g_local2, 5000u, 0u, 0u);
 
     // The connect that walks past both of them.
-    const uint16_t talker = open_binding(work_a, 4u, IDEMIP_FALSE);
+    const uint16_t talker = open_binding(work_a, 4u, EMBED_FALSE);
     bind_ok(work_a, talker, g_local, 5000u, 0u, 0u);
     connect_ok(work_a, talker, g_remote, 53u);
 
     // Two bindings pinned to one interface do share the endpoint, so the second is refused.
     UdpPcb.clear(work_b);
-    const uint16_t pinned = open_binding(work_b, 4u, IDEMIP_FALSE);
+    const uint16_t pinned = open_binding(work_b, 4u, EMBED_FALSE);
     bind_ok(work_b, pinned, g_local, 5000u, 0u, 2u);
     connect_ok(work_b, pinned, g_remote, 53u);
-    const uint16_t same_pin = open_binding(work_b, 4u, IDEMIP_FALSE);
+    const uint16_t same_pin = open_binding(work_b, 4u, EMBED_FALSE);
     bind_ok(work_b, same_pin, g_local, 5000u, 0u, 2u);
     IDEMIP_UDP_PCB_IO(work_b)->connect_args.index = same_pin;
     IDEMIP_UDP_PCB_IO(work_b)->connect_args.ip = g_remote;

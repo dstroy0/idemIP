@@ -58,9 +58,9 @@
  * @brief RFC 8200 sec 8.3: over IPv6 "the MSS must be computed as the maximum packet size minus 60
  * octets", the minimum IPv6 header plus the minimum TCP header.
  */
-static_assert(IDEMIP_IPV6_MIN_MTU - IDEMIP_IPV6_HDR_LEN - IDEMIP_TCP_HDR_LEN == IDEMIP_IPV6_DEFAULT_SEND_MSS,
-              "RFC 9293 sec 3.7.1 MUST-15's IPv6 default of 1220 is the minimum link MTU less 60");
-static_assert(IDEMIP_IPV4_MIN_MTU - IDEMIP_IPV4_HDR_LEN - IDEMIP_TCP_HDR_LEN == IDEMIP_IPV4_DEFAULT_SEND_MSS,
-              "RFC 9293 sec 3.7.1 MUST-15's IPv4 default of 536 is EMTU_R less 40");
+EMBED_STATIC_ASSERT(IDEMIP_IPV6_MIN_MTU - IDEMIP_IPV6_HDR_LEN - IDEMIP_TCP_HDR_LEN == IDEMIP_IPV6_DEFAULT_SEND_MSS,
+                    "RFC 9293 sec 3.7.1 MUST-15's IPv6 default of 1220 is the minimum link MTU less 60");
+EMBED_STATIC_ASSERT(IDEMIP_IPV4_MIN_MTU - IDEMIP_IPV4_HDR_LEN - IDEMIP_TCP_HDR_LEN == IDEMIP_IPV4_DEFAULT_SEND_MSS,
+                    "RFC 9293 sec 3.7.1 MUST-15's IPv4 default of 536 is EMTU_R less 40");
 
 #endif // IDEMIP_COMMON_DEFINES_H

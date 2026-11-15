@@ -26,7 +26,7 @@
 
 #if IDEMIP_ENABLE_ETHERNET
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief The IPv4 loopback network, and the mask that selects it.
@@ -110,7 +110,7 @@ typedef struct
     size_t len;
     uint8_t slot;
     uint8_t held;
-    idemip_bool owned;
+    embed_bool owned;
 } LoopifIo;
 
 // ---------------------------------------------------------------------------
@@ -201,7 +201,7 @@ void idemip_loopif_owns6(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const LoopifNs Loopif IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE LoopifNs Loopif EMBED_UNUSED = {
     .clear = idemip_loopif_clear,
     .bind = idemip_loopif_bind,
     .output = idemip_loopif_output,
@@ -212,7 +212,7 @@ static const LoopifNs Loopif IDEMIP_UNUSED = {
     .owns6 = idemip_loopif_owns6,
 #endif
 };
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET
 

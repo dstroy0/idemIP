@@ -15,14 +15,16 @@
 
 #include "src/tcp/tcp_in.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
 #include "src/tcp/tcp_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_TCP_IN_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_TCP_IN_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_TCP_IN_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_TCP_IN_BORROW + 16))
+static uint8_t *work_b;
 
 #define IO(w) IDEMIP_TCP_IN_IO(w)
 
@@ -31,8 +33,9 @@ static const uint8_t g_remote[IDEMIP_TCP_PCB_ADDR_BYTES] = {192u, 0u, 2u, 9u};
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_TCP_IN_BORROW, CANARY, cap - IDEMIP_TCP_IN_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_TCP_IN_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_TCP_IN_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -45,14 +48,16 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_tcp_in);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_tcp_in);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void call_every_entry(uint8_t *w)
@@ -87,9 +92,9 @@ static void every_entry_refuses(uint8_t *w)
 static void conn(uint8_t *w, IdemIpTcpState st, uint32_t una, uint32_t nxt, uint32_t rcv_nxt, uint32_t rcv_wnd)
 {
     TcpIn.clear(w);
-    memset(&IO(w)->vars, 0, sizeof IO(w)->vars);
-    memset(&IO(w)->ctl, 0, sizeof IO(w)->ctl);
-    memset(&IO(w)->seg, 0, sizeof IO(w)->seg);
+    IO(w)->vars = (IdemIpTcpVars){0};
+    IO(w)->ctl = (TcpPcbCtl){0};
+    IO(w)->seg = (TcpInSegArgs){0};
     IO(w)->vars.snd_una = una;
     IO(w)->vars.snd_nxt = nxt;
     IO(w)->vars.snd_wnd = 4096u;
@@ -130,7 +135,7 @@ typedef struct
 
 static uint16_t wire_ctx(const WireArgs *args)
 {
-    memset(g_wire, 0, sizeof g_wire);
+    mmgr_zero_buf(g_wire, sizeof g_wire);
     uint16_t hdr = (uint16_t)(IDEMIP_TCP_HDR_LEN + args->opts_len);
     idemip_wr16(g_wire + IDEMIP_TCP_OFF_SRC_PORT, 40000u);
     idemip_wr16(g_wire + IDEMIP_TCP_OFF_DST_PORT, 80u);
@@ -143,11 +148,12 @@ static uint16_t wire_ctx(const WireArgs *args)
     idemip_wr16(g_wire + IDEMIP_TCP_OFF_URGENT, 0u);
     if (args->opts_len != 0)
     {
-        memcpy(g_wire + IDEMIP_TCP_OFF_OPTIONS, args->opts, args->opts_len);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = g_wire + IDEMIP_TCP_OFF_OPTIONS, .at = args->opts,
+                   .size = args->opts_len);
     }
     if (args->data_len != 0)
     {
-        memcpy(g_wire + hdr, args->data, args->data_len);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = g_wire + hdr, .at = args->data, .size = args->data_len);
     }
     uint16_t total = (uint16_t)(hdr + args->data_len);
     idemip_wr16(g_wire + IDEMIP_TCP_OFF_CKSUM,
@@ -155,7 +161,7 @@ static uint16_t wire_ctx(const WireArgs *args)
     return total;
 }
 
-#define wire(...) IDEMIP_CALL(wire_ctx, WireArgs, __VA_ARGS__)
+#define wire(...) EMBED_CALL(wire_ctx, WireArgs, __VA_ARGS__)
 
 static void aim_parse(uint8_t *w, uint16_t total, uint8_t scale)
 {
@@ -208,7 +214,7 @@ void test_clear_repeats(void)
     TcpIn.clear(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     uint8_t first[IDEMIP_TCP_IN_BORROW];
-    memcpy(first, work_a, sizeof first);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = first, .at = work_a, .size = sizeof first);
     TcpIn.clear(work_a);
     TEST_ASSERT_EQUAL_MEMORY(first, work_a, sizeof first);
 }
@@ -218,7 +224,7 @@ void test_two_borrows_share_no_byte(void)
 {
     TcpIn.clear(work_a);
     uint8_t before[IDEMIP_TCP_IN_BORROW];
-    memcpy(before, work_b, sizeof before);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = before, .at = work_b, .size = sizeof before);
     conn(work_a, IDEMIP_TCP_STATE_ESTABLISHED, 100u, 100u, 300u, 4096u);
     seg(work_a, 300u, 100u, 0u, 0u, (uint8_t)IDEMIP_TCP_ACK);
     TcpIn.segment(work_a);
@@ -1179,7 +1185,7 @@ void test_the_time_wait_assassination_of_rfc_1337_figure_1(void)
 void test_the_closed_state_answers_the_segment_of_figure_10_with_a_reset(void)
 {
     TcpIn.clear(work_a);
-    memset(&IO(work_a)->seg, 0, sizeof IO(work_a)->seg);
+    IO(work_a)->seg = (TcpInSegArgs){0};
     seg(work_a, 300u, 100u, 10u, 10u, (uint8_t)IDEMIP_TCP_ACK);
     TcpIn.closed(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);

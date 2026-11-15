@@ -17,12 +17,15 @@
 
 #include "src/dns/dns.h"
 
-#include <string.h>
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
 #include <unity.h>
 
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_DNS_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_DNS_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_DNS_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_DNS_BORROW + 16))
+static uint8_t *work_b;
 
 static const IdemIpDnsCfg g_cfg = {.netif = 0u, .retries = 3u};
 static const IdemIpDnsCfg g_cfg_b = {.netif = 1u, .retries = 2u};
@@ -33,8 +36,8 @@ static const uint8_t g_v6[IDEMIP_DNS_ADDR_LEN] = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_DNS_BORROW, CANARY, cap - IDEMIP_DNS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_DNS_BORROW, .val = CANARY, .bytes = cap - IDEMIP_DNS_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -53,15 +56,17 @@ static uint32_t g_now_ms;
 
 void setUp(void)
 {
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_dns);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_dns);
     g_now_ms = 0u;
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void bind_ok(uint8_t *w, const IdemIpDnsCfg *cfg)
@@ -134,7 +139,7 @@ void test_the_io_macro_lands_on_the_published_offset(void)
 // clear zeroes the whole borrow, so every question and every cached answer is free again.
 void test_clear_zeroes_the_regions(void)
 {
-    memset(work_a, 0xA5, IDEMIP_DNS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xA5, .bytes = IDEMIP_DNS_BORROW);
     Dns.clear(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
 
@@ -150,8 +155,8 @@ void test_clear_zeroes_the_regions(void)
 
 void test_clear_touches_one_borrow_only(void)
 {
-    memset(work_a, 0xA5, IDEMIP_DNS_BORROW);
-    memset(work_b, 0xA5, IDEMIP_DNS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xA5, .bytes = IDEMIP_DNS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b, .val = 0xA5, .bytes = IDEMIP_DNS_BORROW);
     Dns.clear(work_a);
 
     for (size_t i = 0; i < IDEMIP_DNS_BORROW; i++)
@@ -170,13 +175,13 @@ void test_two_borrows_share_no_byte(void)
     TEST_ASSERT_EQUAL_PTR(&g_cfg_b, IDEMIP_DNS_IO(work_b)->bind_args.cfg);
 
     // b is armed to zero and never handed to an entry.
-    arm(work_b, sizeof work_b);
+    arm(work_b, WORK_B_BYTES);
 
     Dns.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     IDEMIP_DNS_IO(work_a)->server_args.index = 0u;
     IDEMIP_DNS_IO(work_a)->server_args.addr = g_v4;
-    IDEMIP_DNS_IO(work_a)->server_args.ipv6 = IDEMIP_FALSE;
+    IDEMIP_DNS_IO(work_a)->server_args.ipv6 = EMBED_FALSE;
     Dns.set_server(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     Dns.flush(work_a);
@@ -285,14 +290,14 @@ void test_set_server_takes_both_families(void)
 
     IDEMIP_DNS_IO(work_a)->server_args.index = 0u;
     IDEMIP_DNS_IO(work_a)->server_args.addr = g_v4;
-    IDEMIP_DNS_IO(work_a)->server_args.ipv6 = IDEMIP_FALSE;
+    IDEMIP_DNS_IO(work_a)->server_args.ipv6 = EMBED_FALSE;
     IDEMIP_DNS_IO(work_a)->server_args.port = 0u;
     Dns.set_server(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
 
     IDEMIP_DNS_IO(work_a)->server_args.index = (uint8_t)(IDEMIP_DNS_SERVERS - 1u);
     IDEMIP_DNS_IO(work_a)->server_args.addr = g_v6;
-    IDEMIP_DNS_IO(work_a)->server_args.ipv6 = IDEMIP_TRUE;
+    IDEMIP_DNS_IO(work_a)->server_args.ipv6 = EMBED_TRUE;
     IDEMIP_DNS_IO(work_a)->server_args.zone = 1u;
     Dns.set_server(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
@@ -304,11 +309,11 @@ void test_set_server_writes_inside_its_own_slot(void)
     bind_ok(work_a, &g_cfg);
     const size_t stride = (size_t)1u << IDEMIP_DNS_SERVER_ENTRY_SHIFT;
     uint8_t *table = work_a + IDEMIP_DNS_OFF_SERVERS;
-    memset(table, 0xC3, (size_t)IDEMIP_DNS_SERVERS << IDEMIP_DNS_SERVER_ENTRY_SHIFT);
+    fill_bytes(table, 0xC3, (size_t)IDEMIP_DNS_SERVERS << IDEMIP_DNS_SERVER_ENTRY_SHIFT);
 
     IDEMIP_DNS_IO(work_a)->server_args.index = 0u;
     IDEMIP_DNS_IO(work_a)->server_args.addr = g_v6;
-    IDEMIP_DNS_IO(work_a)->server_args.ipv6 = IDEMIP_TRUE;
+    IDEMIP_DNS_IO(work_a)->server_args.ipv6 = EMBED_TRUE;
     Dns.set_server(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
 
@@ -350,10 +355,11 @@ void test_flush_empties_the_cache_alone(void)
     const size_t query_names = (size_t)IDEMIP_DNS_QUERIES << IDEMIP_DNS_NAME_SHIFT;
     const size_t answer_names = (size_t)IDEMIP_DNS_ENTRIES << IDEMIP_DNS_NAME_SHIFT;
 
-    memset(work_a + IDEMIP_DNS_OFF_QUERIES, 0xC3, queries);
-    memset(work_a + IDEMIP_DNS_OFF_ENTRIES, 0xC3, entries);
-    memset(work_a + IDEMIP_DNS_OFF_NAMES, 0xC3, query_names + answer_names);
-    memset(work_a + IDEMIP_DNS_OFF_SERVERS, 0xC3, servers);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a + IDEMIP_DNS_OFF_QUERIES, .val = 0xC3, .bytes = queries);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a + IDEMIP_DNS_OFF_ENTRIES, .val = 0xC3, .bytes = entries);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a + IDEMIP_DNS_OFF_NAMES, .val = 0xC3,
+               .bytes = query_names + answer_names);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a + IDEMIP_DNS_OFF_SERVERS, .val = 0xC3, .bytes = servers);
 
     Dns.flush(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
@@ -482,7 +488,7 @@ static size_t wname(uint8_t *p, size_t at, const char *dotted)
             n++;
         }
         p[at++] = (uint8_t)n;
-        memcpy(p + at, dotted + k, n);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = p + at, .at = dotted + k, .size = n);
         at += n;
         k += n;
         if (dotted[k] == '.')
@@ -511,14 +517,14 @@ static size_t wrr(uint8_t *p, size_t at, uint16_t type, uint16_t cls, uint32_t t
     at = w16(p, at, (uint16_t)rdlen);
     if (rdlen != 0u)
     {
-        memcpy(p + at, rd, rdlen);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = p + at, .at = rd, .size = rdlen);
     }
     return at + rdlen;
 }
 
 static void mhdr(uint16_t id, uint16_t flags, uint16_t qd, uint16_t an)
 {
-    memset(g_msg, 0, sizeof g_msg);
+    mmgr_zero_buf(g_msg, sizeof g_msg);
     (void)w16(g_msg, IDEMIP_DNS_HDR_OFF_ID, id);
     (void)w16(g_msg, IDEMIP_DNS_HDR_OFF_FLAGS, flags);
     (void)w16(g_msg, IDEMIP_DNS_HDR_OFF_QDCOUNT, qd);
@@ -551,7 +557,7 @@ static void deliver_to(uint8_t *w, size_t len, const uint8_t *src, uint16_t spor
     IDEMIP_DNS_IO(w)->input_args.dst = dst;
     IDEMIP_DNS_IO(w)->input_args.src_port = sport;
     IDEMIP_DNS_IO(w)->input_args.dst_port = dport;
-    IDEMIP_DNS_IO(w)->input_args.ipv6 = IDEMIP_FALSE;
+    IDEMIP_DNS_IO(w)->input_args.ipv6 = EMBED_FALSE;
     IDEMIP_DNS_IO(w)->now_ms = g_now_ms;
     Dns.input(w);
 }
@@ -570,7 +576,7 @@ static void server_at(uint8_t *w, uint8_t index, const uint8_t *addr)
 {
     IDEMIP_DNS_IO(w)->server_args.index = index;
     IDEMIP_DNS_IO(w)->server_args.addr = addr;
-    IDEMIP_DNS_IO(w)->server_args.ipv6 = IDEMIP_FALSE;
+    IDEMIP_DNS_IO(w)->server_args.ipv6 = EMBED_FALSE;
     IDEMIP_DNS_IO(w)->server_args.port = 0u;
     IDEMIP_DNS_IO(w)->server_args.zone = 0u;
     Dns.set_server(w);
@@ -595,7 +601,7 @@ static uint8_t g_out[IDEMIP_DNS_MSG_MAX];
 
 static void put_on_the_wire_from(uint8_t *w, uint8_t slot, const uint8_t *src)
 {
-    memset(g_out, 0, sizeof g_out);
+    mmgr_zero_buf(g_out, sizeof g_out);
     IDEMIP_DNS_IO(w)->build_args.out = g_out;
     IDEMIP_DNS_IO(w)->build_args.cap = sizeof g_out;
     IDEMIP_DNS_IO(w)->build_args.query = slot;
@@ -681,9 +687,9 @@ void test_query_takes_any_id_in_the_full_range(void)
 void test_query_refuses_a_label_past_sixty_three_octets(void)
 {
     static char big[80];
-    memset(big, 'a', 64);
+    fill_bytes(big, 'a', 64);
     big[64] = '.';
-    memcpy(big + 65, "com", 4);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = big + 65, .at = "com", .size = 4);
 
     bind_ok(work_a, &g_cfg);
     server_at(work_a, 0u, g_v4);
@@ -696,7 +702,7 @@ void test_query_refuses_a_label_past_sixty_three_octets(void)
 
     // 63 is the limit itself, so it is taken.
     big[63] = '.';
-    memcpy(big + 64, "com", 4);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = big + 64, .at = "com", .size = 4);
     Dns.query(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
 }
@@ -715,7 +721,7 @@ void test_query_refuses_a_name_past_the_wire_limit(void)
     IDEMIP_DNS_IO(work_a)->query_args.xid = (uint16_t)XID;
     IDEMIP_DNS_IO(work_a)->query_args.src_port = (uint16_t)SPORT;
 
-    memset(big, 'a', sizeof big);
+    fill_bytes(big, 'a', sizeof big);
     big[63] = '.';
     big[127] = '.';
     big[191] = '.';
@@ -1234,7 +1240,7 @@ void test_a_label_sequence_ending_in_a_pointer_concatenates(void)
     at = w16(g_msg, at, IDEMIP_DNS_CLASS_IN);
 
     g_msg[at++] = 3u;
-    memcpy(g_msg + at, "www", 3);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_msg + at, .at = "www", .size = 3);
     at += 3u;
     at = wptr(g_msg, at, 16u);
     at = wrr(g_msg, at, IDEMIP_DNS_TYPE_A, IDEMIP_DNS_CLASS_IN, 120u, g_ans4, 4u);
@@ -1433,7 +1439,7 @@ void test_an_owner_longer_than_the_wire_bound_is_refused(void)
     for (int label = 0; label < 5; label++) // 5 * 64 = 320 octets, past sec 3.1's 255
     {
         g_msg[at++] = (uint8_t)IDEMIP_DNS_LABEL_MAX;
-        memset(g_msg + at, (int)'a', (size_t)IDEMIP_DNS_LABEL_MAX);
+        fill_bytes(g_msg + at, (int)'a', (size_t)IDEMIP_DNS_LABEL_MAX);
         at += (size_t)IDEMIP_DNS_LABEL_MAX;
     }
     g_msg[at++] = 0u;
@@ -2071,12 +2077,12 @@ void test_a_question_name_at_the_wire_bound_is_built_and_one_past_it_is_not(void
         fits[at++] = (char)('a' + (i % 26));
     }
     fits[at] = '\0';
-    memcpy(over, fits, at + 1u);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = over, .at = fits, .size = at + 1u);
     over[at] = 'a'; // one octet more, and the wire form is 256
     over[at + 1u] = '\0';
 
     uint8_t slot = ask(work_a, fits, IDEMIP_DNS_TYPE_A);
-    memset(g_out, 0, sizeof g_out);
+    mmgr_zero_buf(g_out, sizeof g_out);
     IDEMIP_DNS_IO(work_a)->build_args.query = slot;
     IDEMIP_DNS_IO(work_a)->build_args.out = g_out;
     IDEMIP_DNS_IO(work_a)->build_args.cap = sizeof g_out;
@@ -2107,7 +2113,7 @@ void test_a_question_name_at_the_wire_bound_is_built_and_one_past_it_is_not(void
 void test_a_build_with_no_room_for_the_question_writes_nothing(void)
 {
     uint8_t slot = ask(work_a, NAME, IDEMIP_DNS_TYPE_A);
-    memset(g_out, 0xEE, sizeof g_out);
+    fill_bytes(g_out, 0xEE, sizeof g_out);
     IDEMIP_DNS_IO(work_a)->build_args.query = slot;
     IDEMIP_DNS_IO(work_a)->build_args.out = g_out;
     IDEMIP_DNS_IO(work_a)->build_args.cap = (size_t)IDEMIP_DNS_HDR_LEN;
@@ -2125,7 +2131,7 @@ void test_a_build_with_no_room_for_the_question_writes_nothing(void)
 void test_a_name_written_with_its_root_separator_builds_the_same_question(void)
 {
     uint8_t slot = ask(work_a, NAME ".", IDEMIP_DNS_TYPE_A);
-    memset(g_out, 0, sizeof g_out);
+    mmgr_zero_buf(g_out, sizeof g_out);
     IDEMIP_DNS_IO(work_a)->build_args.query = slot;
     IDEMIP_DNS_IO(work_a)->build_args.out = g_out;
     IDEMIP_DNS_IO(work_a)->build_args.cap = sizeof g_out;
@@ -2229,7 +2235,7 @@ void test_a_full_cache_gives_up_the_answer_closest_to_expiry(void)
     for (unsigned int i = 0u; i <= (unsigned int)IDEMIP_DNS_ENTRIES; i++)
     {
         names[i][0] = (char)('a' + (int)i);
-        memcpy(names[i] + 1, ".test", 6);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = names[i] + 1, .at = ".test", .size = 6);
 
         IDEMIP_DNS_IO(work_a)->query_args.name = names[i];
         IDEMIP_DNS_IO(work_a)->query_args.type = IDEMIP_DNS_TYPE_A;
@@ -2359,14 +2365,14 @@ void test_a_response_is_matched_on_the_family_it_arrived_by(void)
     IDEMIP_DNS_IO(work_a)->input_args.dst = g_local_a;
     IDEMIP_DNS_IO(work_a)->input_args.src_port = IDEMIP_DNS_PORT;
     IDEMIP_DNS_IO(work_a)->input_args.dst_port = (uint16_t)SPORT;
-    IDEMIP_DNS_IO(work_a)->input_args.ipv6 = IDEMIP_FALSE;
+    IDEMIP_DNS_IO(work_a)->input_args.ipv6 = EMBED_FALSE;
     IDEMIP_DNS_IO(work_a)->now_ms = g_now_ms;
     Dns.input(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status, "a call with no message was taken");
 
     // The server was set over IPv4, so a datagram announced as IPv6 is from somewhere else.
     IDEMIP_DNS_IO(work_a)->input_args.msg = g_msg;
-    IDEMIP_DNS_IO(work_a)->input_args.ipv6 = IDEMIP_TRUE;
+    IDEMIP_DNS_IO(work_a)->input_args.ipv6 = EMBED_TRUE;
     IDEMIP_DNS_IO(work_a)->now_ms = g_now_ms;
     Dns.input(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status,
@@ -2678,7 +2684,7 @@ void test_a_query_reaches_an_ipv6_server_on_the_port_it_was_given(void)
     bind_ok(work_a, &g_cfg);
     IDEMIP_DNS_IO(work_a)->server_args.index = 0u;
     IDEMIP_DNS_IO(work_a)->server_args.addr = g_v6;
-    IDEMIP_DNS_IO(work_a)->server_args.ipv6 = IDEMIP_TRUE;
+    IDEMIP_DNS_IO(work_a)->server_args.ipv6 = EMBED_TRUE;
     IDEMIP_DNS_IO(work_a)->server_args.port = 5353u;
     IDEMIP_DNS_IO(work_a)->server_args.zone = 0u;
     Dns.set_server(work_a);
@@ -2693,7 +2699,7 @@ void test_a_query_reaches_an_ipv6_server_on_the_port_it_was_given(void)
     const uint8_t slot = IDEMIP_DNS_IO(work_a)->query;
 
     // The datagram goes out over IPv6, to the port the caller named, from an address of this host's.
-    memset(g_out, 0, sizeof g_out);
+    mmgr_zero_buf(g_out, sizeof g_out);
     IDEMIP_DNS_IO(work_a)->build_args.query = slot;
     IDEMIP_DNS_IO(work_a)->build_args.out = g_out;
     IDEMIP_DNS_IO(work_a)->build_args.cap = sizeof g_out;
@@ -2713,7 +2719,7 @@ void test_a_query_reaches_an_ipv6_server_on_the_port_it_was_given(void)
     IDEMIP_DNS_IO(work_a)->input_args.dst = g_ans6;
     IDEMIP_DNS_IO(work_a)->input_args.src_port = 5353u;
     IDEMIP_DNS_IO(work_a)->input_args.dst_port = (uint16_t)SPORT;
-    IDEMIP_DNS_IO(work_a)->input_args.ipv6 = IDEMIP_TRUE;
+    IDEMIP_DNS_IO(work_a)->input_args.ipv6 = EMBED_TRUE;
     IDEMIP_DNS_IO(work_a)->now_ms = g_now_ms;
     Dns.input(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
@@ -2750,7 +2756,7 @@ void test_the_entries_refuse_what_no_later_call_supplies(void)
     IDEMIP_DNS_IO(work_a)->input_args.dst = NULL;
     IDEMIP_DNS_IO(work_a)->input_args.src_port = IDEMIP_DNS_PORT;
     IDEMIP_DNS_IO(work_a)->input_args.dst_port = (uint16_t)SPORT;
-    IDEMIP_DNS_IO(work_a)->input_args.ipv6 = IDEMIP_FALSE;
+    IDEMIP_DNS_IO(work_a)->input_args.ipv6 = EMBED_FALSE;
     IDEMIP_DNS_IO(work_a)->now_ms = g_now_ms;
     Dns.input(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DNS_IO(work_a)->status,
@@ -2892,7 +2898,7 @@ void test_input_on_the_same_bytes_repeats(void)
     deliver_ok(work_a, len);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DNS_IO(work_a)->status);
     uint8_t first[IDEMIP_DNS_ADDR_LEN];
-    memcpy(first, IDEMIP_DNS_IO(work_a)->addr, sizeof first);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = first, .at = IDEMIP_DNS_IO(work_a)->addr, .size = sizeof first);
     uint32_t first_ttl = IDEMIP_DNS_IO(work_a)->ttl_s;
 
     // The question is answered now, so the same bytes no longer match one that is on the wire.

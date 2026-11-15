@@ -23,7 +23,7 @@
 
 #if IDEMIP_ENABLE_TCP
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief Octets an address operand spans.
@@ -41,8 +41,8 @@ IDEMIP_BEGIN_DECLS
  */
 #define IDEMIP_TCP_ISN_TICKS_PER_MS 250u
 
-static_assert(IDEMIP_TCP_ISN_TICKS_PER_MS * 4u == 1000u,
-              "RFC 6528 sec 3's M advances once per 4 microseconds, so a millisecond is 250 ticks");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_ISN_TICKS_PER_MS * 4u == 1000u,
+                    "RFC 6528 sec 3's M advances once per 4 microseconds, so a millisecond is 250 ticks");
 
 /**
  * @brief What a seed takes.
@@ -197,11 +197,9 @@ void idemip_tcp_isn_generate(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const TcpIsnNs TcpIsn IDEMIP_UNUSED = {
-    .reset = idemip_tcp_isn_reset,
-    .seed = idemip_tcp_isn_seed,
-    .generate = idemip_tcp_isn_generate};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE TcpIsnNs TcpIsn EMBED_UNUSED = {
+    .reset = idemip_tcp_isn_reset, .seed = idemip_tcp_isn_seed, .generate = idemip_tcp_isn_generate};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_TCP
 

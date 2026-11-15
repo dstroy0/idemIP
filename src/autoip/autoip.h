@@ -24,7 +24,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief The mask a link-local address is configured with.
@@ -49,12 +49,11 @@ IDEMIP_BEGIN_DECLS
  * IPv4 Link-Local address is already in use before beginning to use it", and sec 2.4, after which
  * "the host MUST then announce its claimed address" and may use it.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_AUTOIP_STATE_OFF = 0,  ///< no address selected, which is what clear leaves
-    IDEMIP_AUTOIP_STATE_CHECKING, ///< sec 2.2, the selected address is being claimed through acd
-    IDEMIP_AUTOIP_STATE_BOUND,    ///< sec 2.4, the address is announced and in use
-} IdemIpAutoIpState;
+EMBED_ENUM_BYTE(IdemIpAutoIpState,
+                IDEMIP_AUTOIP_STATE_OFF = 0,  ///< no address selected, which is what clear leaves
+                IDEMIP_AUTOIP_STATE_CHECKING, ///< sec 2.2, the selected address is being claimed through acd
+                IDEMIP_AUTOIP_STATE_BOUND,    ///< sec 2.4, the address is announced and in use
+);
 
 /**
  * @brief What start takes: what the address is drawn from, and when.
@@ -130,7 +129,7 @@ typedef struct
     IdemIpStatus status;
     IdemIpAutoIpState state;
     uint8_t tried;
-    idemip_bool claim;
+    embed_bool claim;
 } AutoIpIo;
 
 // ---------------------------------------------------------------------------
@@ -211,34 +210,33 @@ void idemip_autoip_tick(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const AutoIpNs AutoIp IDEMIP_UNUSED = {
-    .clear = idemip_autoip_clear,
-    .start = idemip_autoip_start,
-    .conflict = idemip_autoip_conflict,
-    .bound = idemip_autoip_bound,
-    .stop = idemip_autoip_stop,
-    .tick = idemip_autoip_tick};
+EMBED_TABLE_STORAGE AutoIpNs AutoIp EMBED_UNUSED = {.clear = idemip_autoip_clear,
+                                                    .start = idemip_autoip_start,
+                                                    .conflict = idemip_autoip_conflict,
+                                                    .bound = idemip_autoip_bound,
+                                                    .stop = idemip_autoip_stop,
+                                                    .tick = idemip_autoip_tick};
 // RFC 3927 sec 2.1: "a uniform distribution in the range from 169.254.1.0 to 169.254.254.255
 // inclusive", and "The first 256 and last 256 addresses in the 169.254/16 prefix are reserved for
 // future use and MUST NOT be selected by a host using this dynamic configuration mechanism."
-static_assert(IDEMIP_AUTOIP_FIRST == IDEMIP_AUTOIP_PREFIX + 256u,
-              "RFC 3927 sec 2.1 reserves the first 256 addresses of 169.254/16");
-static_assert(IDEMIP_AUTOIP_LAST == IDEMIP_AUTOIP_PREFIX + 0xFFFFu - 256u,
-              "RFC 3927 sec 2.1 reserves the last 256 addresses of 169.254/16");
-static_assert(IDEMIP_AUTOIP_LAST - IDEMIP_AUTOIP_FIRST + 1u == 254u * 256u,
-              "RFC 3927 sec 2.1: 169.254.1.0 through 169.254.254.255 is 254 * 256 addresses");
+EMBED_STATIC_ASSERT(IDEMIP_AUTOIP_FIRST == IDEMIP_AUTOIP_PREFIX + 256u,
+                    "RFC 3927 sec 2.1 reserves the first 256 addresses of 169.254/16");
+EMBED_STATIC_ASSERT(IDEMIP_AUTOIP_LAST == IDEMIP_AUTOIP_PREFIX + 0xFFFFu - 256u,
+                    "RFC 3927 sec 2.1 reserves the last 256 addresses of 169.254/16");
+EMBED_STATIC_ASSERT(IDEMIP_AUTOIP_LAST - IDEMIP_AUTOIP_FIRST + 1u == 254u * 256u,
+                    "RFC 3927 sec 2.1: 169.254.1.0 through 169.254.254.255 is 254 * 256 addresses");
 
 // sec 2.8 forbids subnetting the prefix, so the mask covers exactly the 16 prefix bits and the prefix
 // itself has no host bits set.
-static_assert((IDEMIP_AUTOIP_PREFIX & IDEMIP_AUTOIP_NETMASK) == IDEMIP_AUTOIP_PREFIX,
-              "IDEMIP_AUTOIP_NETMASK must cover the whole 169.254/16 prefix (RFC 3927 sec 2.8)");
-static_assert(IDEMIP_AUTOIP_BROADCAST == (IDEMIP_AUTOIP_PREFIX | ~IDEMIP_AUTOIP_NETMASK),
-              "RFC 3927 sec 2.6.2: 169.254.255.255 is the broadcast address of the link-local prefix");
+EMBED_STATIC_ASSERT((IDEMIP_AUTOIP_PREFIX & IDEMIP_AUTOIP_NETMASK) == IDEMIP_AUTOIP_PREFIX,
+                    "IDEMIP_AUTOIP_NETMASK must cover the whole 169.254/16 prefix (RFC 3927 sec 2.8)");
+EMBED_STATIC_ASSERT(IDEMIP_AUTOIP_BROADCAST == (IDEMIP_AUTOIP_PREFIX | ~IDEMIP_AUTOIP_NETMASK),
+                    "RFC 3927 sec 2.6.2: 169.254.255.255 is the broadcast address of the link-local prefix");
 
 // sec 2.2.1 counts conflicts against MAX_CONFLICTS, and the count of addresses drawn is one octet.
-static_assert(IDEMIP_ACD_MAX_CONFLICTS <= 0xFFu, "the count of drawn addresses is one octet");
+EMBED_STATIC_ASSERT(IDEMIP_ACD_MAX_CONFLICTS <= 0xFFu, "the count of drawn addresses is one octet");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

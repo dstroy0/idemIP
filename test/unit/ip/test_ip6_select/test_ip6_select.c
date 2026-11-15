@@ -24,9 +24,9 @@
 
 #include "src/ip/ip6_select.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // A pool of addresses, so each vector reads as the RFC prints it and nothing is reused by accident.
 #define POOL 16
@@ -60,7 +60,7 @@ static uint8_t *a6_ctx(const A6Groups *a)
     return out;
 }
 
-#define A(...) IDEMIP_CALL(a6_ctx, A6Groups, __VA_ARGS__)
+#define A(...) EMBED_CALL(a6_ctx, A6Groups, __VA_ARGS__)
 
 // RFC 6724 sec 3.2: "IPv4 addresses MUST be represented as IPv4-mapped addresses", which is
 // RFC 4291 sec 2.5.5.2's ::FFFF:a.b.c.d.
@@ -72,13 +72,16 @@ static uint8_t *V4(uint8_t a, uint8_t b, uint8_t c, uint8_t d)
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_IP6_SELECT_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_IP6_SELECT_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_IP6_SELECT_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_IP6_SELECT_BORROW + 16))
+static uint8_t *work_b;
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_IP6_SELECT_BORROW, CANARY, cap - IDEMIP_IP6_SELECT_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_IP6_SELECT_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_IP6_SELECT_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -91,16 +94,18 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_ip6_select);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_ip6_select);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
     pool_n = 0;
-    memset(pool, 0, sizeof pool);
+    mmgr_zero_buf(pool, sizeof pool);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // --- adding, in the shape the operand block takes ----------------------------
@@ -123,16 +128,16 @@ static void src_add_ctx(const SrcAddArgs *a)
     s->addr = a->addr;
     s->zone = 0u;
     s->netif = a->netif;
-    s->deprecated = (idemip_bool)(a->deprecated ? 1 : 0);
-    s->temporary = (idemip_bool)(a->temporary ? 1 : 0);
-    s->home = (idemip_bool)(a->home ? 1 : 0);
-    s->care_of = (idemip_bool)(a->care_of ? 1 : 0);
-    s->next_hop = (idemip_bool)(a->next_hop ? 1 : 0);
+    s->deprecated = (embed_bool)(a->deprecated ? 1 : 0);
+    s->temporary = (embed_bool)(a->temporary ? 1 : 0);
+    s->home = (embed_bool)(a->home ? 1 : 0);
+    s->care_of = (embed_bool)(a->care_of ? 1 : 0);
+    s->next_hop = (embed_bool)(a->next_hop ? 1 : 0);
     Ip6Select.source_add(a->w);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(a->w)->status);
 }
 
-#define src_add(...) IDEMIP_CALL(src_add_ctx, SrcAddArgs, __VA_ARGS__)
+#define src_add(...) EMBED_CALL(src_add_ctx, SrcAddArgs, __VA_ARGS__)
 
 static void src(uint8_t *w, const uint8_t *addr)
 {
@@ -145,8 +150,8 @@ static void dst_add(uint8_t *w, const uint8_t *addr, uint8_t netif, int unreacha
     d->addr = addr;
     d->zone = 0u;
     d->netif = netif;
-    d->unreachable = (idemip_bool)(unreachable ? 1 : 0);
-    d->encapsulated = (idemip_bool)(encapsulated ? 1 : 0);
+    d->unreachable = (embed_bool)(unreachable ? 1 : 0);
+    d->encapsulated = (embed_bool)(encapsulated ? 1 : 0);
     Ip6Select.dest_add(w);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(w)->status);
 }
@@ -262,7 +267,8 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
 
     Ip6Select.source_select(work_a);
     uint8_t first[IDEMIP_IP6_ADDR_LEN];
-    memcpy(first, IDEMIP_IP6_SELECT_IO(work_a)->source, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = first, .at = IDEMIP_IP6_SELECT_IO(work_a)->source,
+               .size = IDEMIP_IP6_ADDR_LEN);
     Ip6Select.source_select(work_b);
     Ip6Select.source_select(work_a);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(first, IDEMIP_IP6_SELECT_IO(work_a)->source, IDEMIP_IP6_ADDR_LEN);
@@ -1115,11 +1121,11 @@ void test_sec4_a_site_local_destination_only_takes_a_source_from_its_own_site(vo
     s->addr = far_site;
     s->zone = 9u; // a different site
     s->netif = 0u;
-    s->deprecated = IDEMIP_FALSE;
-    s->temporary = IDEMIP_FALSE;
-    s->home = IDEMIP_FALSE;
-    s->care_of = IDEMIP_FALSE;
-    s->next_hop = IDEMIP_FALSE;
+    s->deprecated = EMBED_FALSE;
+    s->temporary = EMBED_FALSE;
+    s->home = EMBED_FALSE;
+    s->care_of = EMBED_FALSE;
+    s->next_hop = EMBED_FALSE;
     Ip6Select.source_add(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
 
@@ -1144,11 +1150,11 @@ void test_sec4_a_site_local_destination_only_takes_a_source_from_its_own_site(vo
     s->addr = far_site;
     s->zone = 9u;
     s->netif = 0u;
-    s->deprecated = IDEMIP_FALSE;
-    s->temporary = IDEMIP_FALSE;
-    s->home = IDEMIP_FALSE;
-    s->care_of = IDEMIP_FALSE;
-    s->next_hop = IDEMIP_FALSE;
+    s->deprecated = EMBED_FALSE;
+    s->temporary = EMBED_FALSE;
+    s->home = EMBED_FALSE;
+    s->care_of = EMBED_FALSE;
+    s->next_hop = EMBED_FALSE;
     Ip6Select.source_add(work_a);
     IDEMIP_IP6_SELECT_IO(work_a)->query_args.addr = A(0xFEC0u, 0, 0, 0, 0, 0, 0, 9u);
     IDEMIP_IP6_SELECT_IO(work_a)->query_args.zone = 4u;
@@ -1574,11 +1580,11 @@ void test_rule1_reads_the_zone_of_a_non_global_address(void)
     sa->addr = same;
     sa->zone = 2u;
     sa->netif = 0u;
-    sa->deprecated = IDEMIP_FALSE;
-    sa->temporary = IDEMIP_FALSE;
-    sa->home = IDEMIP_FALSE;
-    sa->care_of = IDEMIP_FALSE;
-    sa->next_hop = IDEMIP_FALSE;
+    sa->deprecated = EMBED_FALSE;
+    sa->temporary = EMBED_FALSE;
+    sa->home = EMBED_FALSE;
+    sa->care_of = EMBED_FALSE;
+    sa->next_hop = EMBED_FALSE;
     Ip6Select.source_add(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
     sa->addr = other;
@@ -1620,11 +1626,11 @@ void test_a_site_local_destination_takes_a_candidate_of_its_own_site(void)
     sa->addr = site_s;
     sa->zone = 5u;
     sa->netif = 0u;
-    sa->deprecated = IDEMIP_FALSE;
-    sa->temporary = IDEMIP_FALSE;
-    sa->home = IDEMIP_FALSE;
-    sa->care_of = IDEMIP_FALSE;
-    sa->next_hop = IDEMIP_FALSE;
+    sa->deprecated = EMBED_FALSE;
+    sa->temporary = EMBED_FALSE;
+    sa->home = EMBED_FALSE;
+    sa->care_of = EMBED_FALSE;
+    sa->next_hop = EMBED_FALSE;
     Ip6Select.source_add(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
 
@@ -1667,11 +1673,11 @@ void test_the_default_zone_index_matches_whatever_zone_the_other_names(void)
         sa->addr = ll;
         sa->zone = rows[r].src_zone;
         sa->netif = 0u;
-        sa->deprecated = IDEMIP_FALSE;
-        sa->temporary = IDEMIP_FALSE;
-        sa->home = IDEMIP_FALSE;
-        sa->care_of = IDEMIP_FALSE;
-        sa->next_hop = IDEMIP_FALSE;
+        sa->deprecated = EMBED_FALSE;
+        sa->temporary = EMBED_FALSE;
+        sa->home = EMBED_FALSE;
+        sa->care_of = EMBED_FALSE;
+        sa->next_hop = EMBED_FALSE;
         Ip6Select.source_add(work_a);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
         sa->addr = A(0xFE80u, 0, 0, 0, 0, 0, 0, 2u);
@@ -1710,11 +1716,11 @@ void test_a_site_local_destination_admits_a_candidate_at_the_default_zone(void)
         sa->addr = site_s;
         sa->zone = rows[r].src_zone;
         sa->netif = 0u;
-        sa->deprecated = IDEMIP_FALSE;
-        sa->temporary = IDEMIP_FALSE;
-        sa->home = IDEMIP_FALSE;
-        sa->care_of = IDEMIP_FALSE;
-        sa->next_hop = IDEMIP_FALSE;
+        sa->deprecated = EMBED_FALSE;
+        sa->temporary = EMBED_FALSE;
+        sa->home = EMBED_FALSE;
+        sa->care_of = EMBED_FALSE;
+        sa->next_hop = EMBED_FALSE;
         Ip6Select.source_add(work_a);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IP6_SELECT_IO(work_a)->status);
 
@@ -1807,8 +1813,8 @@ void test_the_entries_refuse_what_no_retry_fixes(void)
     io->dest_args.addr = A(0x2001u, 0x0DB8u, 1u, 0, 0, 0, 0, 0x99u);
     io->dest_args.netif = 0u;
     io->dest_args.zone = 0u;
-    io->dest_args.unreachable = IDEMIP_FALSE;
-    io->dest_args.encapsulated = IDEMIP_FALSE;
+    io->dest_args.unreachable = EMBED_FALSE;
+    io->dest_args.encapsulated = EMBED_FALSE;
     Ip6Select.dest_add(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, io->status, "a full destination list took another one");
 }

@@ -24,7 +24,7 @@
 
 #if IDEMIP_ENABLE_UDP
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief Which rule a refused call broke. Diagnostic: no control flow here branches on it.
@@ -54,16 +54,9 @@ IDEMIP_BEGIN_DECLS
  *                                                               the sec 3.2 pseudo-header did not
  *                                                               come out zero (RFC 1071 sec 1)
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_UDPLITE_REASON_NONE = 0,
-    IDEMIP_UDPLITE_REASON_ARG,
-    IDEMIP_UDPLITE_REASON_SHORT,
-    IDEMIP_UDPLITE_REASON_COV_ILLEGAL,
-    IDEMIP_UDPLITE_REASON_COV_PAST_LEN,
-    IDEMIP_UDPLITE_REASON_CKSUM_ZERO,
-    IDEMIP_UDPLITE_REASON_CKSUM_BAD,
-} IdemIpUdpLiteReason;
+EMBED_ENUM_BYTE(IdemIpUdpLiteReason, IDEMIP_UDPLITE_REASON_NONE = 0, IDEMIP_UDPLITE_REASON_ARG,
+                IDEMIP_UDPLITE_REASON_SHORT, IDEMIP_UDPLITE_REASON_COV_ILLEGAL, IDEMIP_UDPLITE_REASON_COV_PAST_LEN,
+                IDEMIP_UDPLITE_REASON_CKSUM_ZERO, IDEMIP_UDPLITE_REASON_CKSUM_BAD, );
 
 /**
  * @brief What a cover and a check take: one received datagram and what the IP module supplies.
@@ -148,7 +141,7 @@ typedef struct
     uint32_t cov_bytes;
     uint16_t cov;
     uint16_t cksum;
-    idemip_bool covered;
+    embed_bool covered;
 } UdpLiteResult;
 
 /**
@@ -249,12 +242,11 @@ void idemip_udplite_build_io(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const UdpLiteNs UdpLite IDEMIP_UNUSED = {
-    .clear = idemip_udplite_clear,
-    .cover = idemip_udplite_cover,
-    .check = idemip_udplite_check,
-    .build = idemip_udplite_build_io};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE UdpLiteNs UdpLite EMBED_UNUSED = {.clear = idemip_udplite_clear,
+                                                      .cover = idemip_udplite_cover,
+                                                      .check = idemip_udplite_check,
+                                                      .build = idemip_udplite_build_io};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_UDP
 

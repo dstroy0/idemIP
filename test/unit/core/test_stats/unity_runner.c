@@ -3,7 +3,7 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/core/stats.h"
-#include <string.h>
+#include "support/borrows.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);
@@ -121,58 +121,58 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/core/test_stats/test_stats.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 83);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 97);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 120);
-  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 139);
-  run_test(test_the_counter_ids_are_the_mib_group_field_sets, "test_the_counter_ids_are_the_mib_group_field_sets", 165);
-  run_test(test_the_ipv6_ip_ids_are_the_rfc_2465_entry_numbers, "test_the_ipv6_ip_ids_are_the_rfc_2465_entry_numbers", 187);
-  run_test(test_the_icmpv6_ids_are_the_rfc_2466_entry_numbers, "test_the_icmpv6_ids_are_the_rfc_2466_entry_numbers", 217);
-  run_test(test_clear_zeroes_the_counter_and_interface_regions, "test_clear_zeroes_the_counter_and_interface_regions", 249);
-  run_test(test_clear_is_repeatable, "test_clear_is_repeatable", 258);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 272);
-  run_test(test_a_dirty_borrow_is_refused, "test_a_dirty_borrow_is_refused", 290);
-  run_test(test_a_counter_id_the_map_does_not_carry_is_refused, "test_a_counter_id_the_map_does_not_carry_is_refused", 302);
-  run_test(test_an_interface_counter_id_the_map_does_not_carry_is_refused, "test_an_interface_counter_id_the_map_does_not_carry_is_refused", 315);
-  run_test(test_an_interface_this_build_does_not_carry_is_refused, "test_an_interface_this_build_does_not_carry_is_refused", 329);
-  run_test(test_every_entry_stays_inside_the_borrow, "test_every_entry_stays_inside_the_borrow", 346);
-  run_test(test_bump_accumulates_and_read_reports_the_total, "test_bump_accumulates_and_read_reports_the_total", 438);
-  run_test(test_a_counter_increases_monotonically, "test_a_counter_increases_monotonically", 454);
-  run_test(test_a_bump_of_zero_leaves_the_counter_unchanged, "test_a_bump_of_zero_leaves_the_counter_unchanged", 470);
-  run_test(test_read_is_repeatable_and_does_not_disturb_the_counter, "test_read_is_repeatable_and_does_not_disturb_the_counter", 481);
-  run_test(test_a_counter_reaches_the_rfc_1155_ceiling_exactly, "test_a_counter_reaches_the_rfc_1155_ceiling_exactly", 494);
-  run_test(test_a_counter_one_below_the_ceiling_does_not_wrap, "test_a_counter_one_below_the_ceiling_does_not_wrap", 504);
-  run_test(test_a_counter_at_the_ceiling_wraps_to_zero_as_rfc_1155_states, "test_a_counter_at_the_ceiling_wraps_to_zero_as_rfc_1155_states", 520);
-  run_test(test_a_wrap_carries_the_remainder_and_keeps_counting, "test_a_wrap_carries_the_remainder_and_keeps_counting", 533);
-  run_test(test_every_group_counter_wraps_at_the_ceiling, "test_every_group_counter_wraps_at_the_ceiling", 545);
-  run_test(test_an_interface_counter_wraps_at_the_ceiling, "test_an_interface_counter_wraps_at_the_ceiling", 564);
-  run_test(test_a_group_gauge_rises_and_falls, "test_a_group_gauge_rises_and_falls", 579);
-  run_test(test_a_gauge_at_the_ceiling_is_not_stuck_there, "test_a_gauge_at_the_ceiling_is_not_stuck_there", 600);
-  run_test(test_the_interface_gauges_rise_and_fall, "test_the_interface_gauges_rise_and_fall", 626);
-  run_test(test_an_interface_gauge_at_the_ceiling_is_not_stuck_there, "test_an_interface_gauge_at_the_ceiling_is_not_stuck_there", 642);
-  run_test(test_bump_refuses_the_group_gauge, "test_bump_refuses_the_group_gauge", 661);
-  run_test(test_set_refuses_a_group_counter, "test_set_refuses_a_group_counter", 672);
-  run_test(test_bump_and_set_split_the_group_ids_by_syntax, "test_bump_and_set_split_the_group_ids_by_syntax", 682);
-  run_test(test_if_bump_and_if_set_split_the_interface_ids_by_syntax, "test_if_bump_and_if_set_split_the_interface_ids_by_syntax", 707);
-  run_test(test_every_group_object_is_its_own_cell, "test_every_group_object_is_its_own_cell", 734);
-  run_test(test_every_interface_object_is_its_own_cell, "test_every_interface_object_is_its_own_cell", 757);
-  run_test(test_the_interface_rows_do_not_alias, "test_the_interface_rows_do_not_alias", 790);
-  run_test(test_the_group_block_and_the_interface_table_do_not_alias, "test_the_group_block_and_the_interface_table_do_not_alias", 804);
-  run_test(test_the_ipv4_and_ipv6_groups_are_separate_sets, "test_the_ipv4_and_ipv6_groups_are_separate_sets", 818);
-  run_test(test_a_group_object_lands_at_its_published_offset, "test_a_group_object_lands_at_its_published_offset", 848);
-  run_test(test_ip_in_receives_is_the_first_four_octets_of_the_block, "test_ip_in_receives_is_the_first_four_octets_of_the_block", 873);
-  run_test(test_an_interface_object_lands_at_its_published_offset, "test_an_interface_object_lands_at_its_published_offset", 888);
-  run_test(test_counting_never_reaches_the_context, "test_counting_never_reaches_the_context", 921);
-  run_test(test_the_ip_group_ids_follow_the_rfc_1213_oid_order, "test_the_ip_group_ids_follow_the_rfc_1213_oid_order", 943);
-  run_test(test_the_tcp_group_ids_follow_the_rfc_1213_oid_order, "test_the_tcp_group_ids_follow_the_rfc_1213_oid_order", 971);
-  run_test(test_clear_zeroes_counters_that_were_bumped, "test_clear_zeroes_counters_that_were_bumped", 989);
-  run_test(test_counts_on_two_borrows_are_independent, "test_counts_on_two_borrows_are_independent", 1011);
-  run_test(test_a_count_is_a_function_of_its_borrow_alone_at_the_ceiling, "test_a_count_is_a_function_of_its_borrow_alone_at_the_ceiling", 1033);
-  run_test(test_an_id_far_past_the_count_is_refused, "test_an_id_far_past_the_count_is_refused", 1052);
-  run_test(test_an_interface_id_far_past_the_count_is_refused, "test_an_interface_id_far_past_the_count_is_refused", 1071);
-  run_test(test_an_interface_far_past_the_count_is_refused, "test_an_interface_far_past_the_count_is_refused", 1089);
-  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 1108);
-  run_test(test_a_refused_read_reports_zero, "test_a_refused_read_reports_zero", 1140);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 88);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 102);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 125);
+  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 144);
+  run_test(test_the_counter_ids_are_the_mib_group_field_sets, "test_the_counter_ids_are_the_mib_group_field_sets", 170);
+  run_test(test_the_ipv6_ip_ids_are_the_rfc_2465_entry_numbers, "test_the_ipv6_ip_ids_are_the_rfc_2465_entry_numbers", 192);
+  run_test(test_the_icmpv6_ids_are_the_rfc_2466_entry_numbers, "test_the_icmpv6_ids_are_the_rfc_2466_entry_numbers", 222);
+  run_test(test_clear_zeroes_the_counter_and_interface_regions, "test_clear_zeroes_the_counter_and_interface_regions", 254);
+  run_test(test_clear_is_repeatable, "test_clear_is_repeatable", 263);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 277);
+  run_test(test_a_dirty_borrow_is_refused, "test_a_dirty_borrow_is_refused", 295);
+  run_test(test_a_counter_id_the_map_does_not_carry_is_refused, "test_a_counter_id_the_map_does_not_carry_is_refused", 307);
+  run_test(test_an_interface_counter_id_the_map_does_not_carry_is_refused, "test_an_interface_counter_id_the_map_does_not_carry_is_refused", 320);
+  run_test(test_an_interface_this_build_does_not_carry_is_refused, "test_an_interface_this_build_does_not_carry_is_refused", 334);
+  run_test(test_every_entry_stays_inside_the_borrow, "test_every_entry_stays_inside_the_borrow", 351);
+  run_test(test_bump_accumulates_and_read_reports_the_total, "test_bump_accumulates_and_read_reports_the_total", 443);
+  run_test(test_a_counter_increases_monotonically, "test_a_counter_increases_monotonically", 459);
+  run_test(test_a_bump_of_zero_leaves_the_counter_unchanged, "test_a_bump_of_zero_leaves_the_counter_unchanged", 475);
+  run_test(test_read_is_repeatable_and_does_not_disturb_the_counter, "test_read_is_repeatable_and_does_not_disturb_the_counter", 486);
+  run_test(test_a_counter_reaches_the_rfc_1155_ceiling_exactly, "test_a_counter_reaches_the_rfc_1155_ceiling_exactly", 499);
+  run_test(test_a_counter_one_below_the_ceiling_does_not_wrap, "test_a_counter_one_below_the_ceiling_does_not_wrap", 509);
+  run_test(test_a_counter_at_the_ceiling_wraps_to_zero_as_rfc_1155_states, "test_a_counter_at_the_ceiling_wraps_to_zero_as_rfc_1155_states", 525);
+  run_test(test_a_wrap_carries_the_remainder_and_keeps_counting, "test_a_wrap_carries_the_remainder_and_keeps_counting", 538);
+  run_test(test_every_group_counter_wraps_at_the_ceiling, "test_every_group_counter_wraps_at_the_ceiling", 550);
+  run_test(test_an_interface_counter_wraps_at_the_ceiling, "test_an_interface_counter_wraps_at_the_ceiling", 569);
+  run_test(test_a_group_gauge_rises_and_falls, "test_a_group_gauge_rises_and_falls", 584);
+  run_test(test_a_gauge_at_the_ceiling_is_not_stuck_there, "test_a_gauge_at_the_ceiling_is_not_stuck_there", 605);
+  run_test(test_the_interface_gauges_rise_and_fall, "test_the_interface_gauges_rise_and_fall", 631);
+  run_test(test_an_interface_gauge_at_the_ceiling_is_not_stuck_there, "test_an_interface_gauge_at_the_ceiling_is_not_stuck_there", 647);
+  run_test(test_bump_refuses_the_group_gauge, "test_bump_refuses_the_group_gauge", 666);
+  run_test(test_set_refuses_a_group_counter, "test_set_refuses_a_group_counter", 677);
+  run_test(test_bump_and_set_split_the_group_ids_by_syntax, "test_bump_and_set_split_the_group_ids_by_syntax", 687);
+  run_test(test_if_bump_and_if_set_split_the_interface_ids_by_syntax, "test_if_bump_and_if_set_split_the_interface_ids_by_syntax", 712);
+  run_test(test_every_group_object_is_its_own_cell, "test_every_group_object_is_its_own_cell", 739);
+  run_test(test_every_interface_object_is_its_own_cell, "test_every_interface_object_is_its_own_cell", 762);
+  run_test(test_the_interface_rows_do_not_alias, "test_the_interface_rows_do_not_alias", 795);
+  run_test(test_the_group_block_and_the_interface_table_do_not_alias, "test_the_group_block_and_the_interface_table_do_not_alias", 809);
+  run_test(test_the_ipv4_and_ipv6_groups_are_separate_sets, "test_the_ipv4_and_ipv6_groups_are_separate_sets", 823);
+  run_test(test_a_group_object_lands_at_its_published_offset, "test_a_group_object_lands_at_its_published_offset", 851);
+  run_test(test_ip_in_receives_is_the_first_four_octets_of_the_block, "test_ip_in_receives_is_the_first_four_octets_of_the_block", 876);
+  run_test(test_an_interface_object_lands_at_its_published_offset, "test_an_interface_object_lands_at_its_published_offset", 891);
+  run_test(test_counting_never_reaches_the_context, "test_counting_never_reaches_the_context", 924);
+  run_test(test_the_ip_group_ids_follow_the_rfc_1213_oid_order, "test_the_ip_group_ids_follow_the_rfc_1213_oid_order", 946);
+  run_test(test_the_tcp_group_ids_follow_the_rfc_1213_oid_order, "test_the_tcp_group_ids_follow_the_rfc_1213_oid_order", 974);
+  run_test(test_clear_zeroes_counters_that_were_bumped, "test_clear_zeroes_counters_that_were_bumped", 992);
+  run_test(test_counts_on_two_borrows_are_independent, "test_counts_on_two_borrows_are_independent", 1014);
+  run_test(test_a_count_is_a_function_of_its_borrow_alone_at_the_ceiling, "test_a_count_is_a_function_of_its_borrow_alone_at_the_ceiling", 1036);
+  run_test(test_an_id_far_past_the_count_is_refused, "test_an_id_far_past_the_count_is_refused", 1055);
+  run_test(test_an_interface_id_far_past_the_count_is_refused, "test_an_interface_id_far_past_the_count_is_refused", 1074);
+  run_test(test_an_interface_far_past_the_count_is_refused, "test_an_interface_far_past_the_count_is_refused", 1092);
+  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 1111);
+  run_test(test_a_refused_read_reports_zero, "test_a_refused_read_reports_zero", 1143);
 
   return UNITY_END();
 }

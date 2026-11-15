@@ -15,7 +15,7 @@
 #include "src/ip/ip4_route.h"
 #include "src/ip/ipv4_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads zero here and every
 // entry refuses it.
@@ -61,26 +61,28 @@ typedef struct
 IDEMIP_ASSERT_REGION(IDEMIP_IP4_ROUTE_OFF_CTX, sizeof(Ip4RouteCtx), IDEMIP_IP4_ROUTE_OFF_TAB, "ip4_route's context");
 
 // Row i is at (i << SHIFT), so the width has to be exactly the shift.
-static_assert(sizeof(Ip4RouteEntry) == (1u << IDEMIP_IP4_ROUTE_ENTRY_SHIFT),
-              "an Ip4RouteEntry must be exactly 1 << IDEMIP_IP4_ROUTE_ENTRY_SHIFT wide - pad it, or raise the shift");
+EMBED_STATIC_ASSERT(
+    sizeof(Ip4RouteEntry) == (1u << IDEMIP_IP4_ROUTE_ENTRY_SHIFT),
+    "an Ip4RouteEntry must be exactly 1 << IDEMIP_IP4_ROUTE_ENTRY_SHIFT wide - pad it, or raise the shift");
 
 // The head region carries the operand block and the context, both outside the table.
-static_assert(IDEMIP_IP4_ROUTE_OFF_CTX + sizeof(Ip4RouteCtx) <= IDEMIP_IP4_ROUTE_CTX_BYTES,
-              "IDEMIP_IP4_ROUTE_CTX_BYTES is short of the operand block and the context - raise it in "
-              "idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_ROUTE_OFF_CTX + sizeof(Ip4RouteCtx) <= IDEMIP_IP4_ROUTE_CTX_BYTES,
+                    "IDEMIP_IP4_ROUTE_CTX_BYTES is short of the operand block and the context - raise it in "
+                    "idemip_config.h");
 
 // The caller's borrow, split: the head region, then the rows. ip4_route.h publishes the offsets; the
 // assert proves the span covers them before anything runs.
-static_assert(IDEMIP_IP4_ROUTE_OFF_TAB + (IDEMIP_IP4_ROUTES << IDEMIP_IP4_ROUTE_ENTRY_SHIFT) <=
-                  IDEMIP_IP4_ROUTE_BORROW,
-              "IDEMIP_IP4_ROUTE_BORROW is short of the head region and the table - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_ROUTE_OFF_TAB + (IDEMIP_IP4_ROUTES << IDEMIP_IP4_ROUTE_ENTRY_SHIFT) <=
+                        IDEMIP_IP4_ROUTE_BORROW,
+                    "IDEMIP_IP4_ROUTE_BORROW is short of the head region and the table - raise it in idemip_config.h");
 
 // clear zeroes the table, so the empty row is the zero state.
-static_assert(IDEMIP_IP4_ROUTE_FREE == 0, "IDEMIP_IP4_ROUTE_FREE must be zero: clear zeroes the table");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_ROUTE_FREE == 0, "IDEMIP_IP4_ROUTE_FREE must be zero: clear zeroes the table");
 
 // A pmtu of zero is RFC 1191 sec 6.3's "reserved" timestamp value, "indicating that the PMTU has
 // never been changed", and every legal estimate is at or above the RFC 791 sec 3.2 minimum.
-static_assert(IDEMIP_IP4_MIN_FORWARD_MTU > 0u, "a pmtu of zero must not be a legal estimate: it marks an unset row");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_MIN_FORWARD_MTU > 0u,
+                    "a pmtu of zero must not be a legal estimate: it marks an unset row");
 
 // The regions, at their offsets in the caller's borrow.
 #define IP4_ROUTE_IO(w) IDEMIP_IP4_ROUTE_IO(w)
@@ -89,9 +91,9 @@ static_assert(IDEMIP_IP4_MIN_FORWARD_MTU > 0u, "a pmtu of zero must not be a leg
     ((Ip4RouteEntry *)(void *)((w) + IDEMIP_IP4_ROUTE_OFF_TAB + ((size_t)(i) << IDEMIP_IP4_ROUTE_ENTRY_SHIFT)))
 
 // A borrow clear has not run on carries no table, so every entry but clear refuses it.
-static idemip_bool ip4_route_ready(uint8_t *work)
+static embed_bool ip4_route_ready(uint8_t *work)
 {
-    return (idemip_bool)(IP4_ROUTE_CTX(work)->ready == IP4_ROUTE_READY);
+    return (embed_bool)(IP4_ROUTE_CTX(work)->ready == IP4_ROUTE_READY);
 }
 
 // --- the row helpers -------------------------------------------------------
@@ -101,7 +103,7 @@ static idemip_bool ip4_route_ready(uint8_t *work)
 // from bit 31 down with no gap. A route whose mask has a hole has no route.length to match on and is
 // refused. ipv4.h holds the test, and held it while this unit carried its own copy of the same
 // arithmetic.
-static idemip_bool ip4_route_mask_ok(uint32_t mask)
+static embed_bool ip4_route_mask_ok(uint32_t mask)
 {
     return idemip_ip4_addr_mask_contiguous(mask);
 }
@@ -146,17 +148,17 @@ static uint8_t ip4_route_find_free(uint8_t *work)
 
 // RFC 1812 sec 5.2.4.3 rule 1, Basic Match: the row keeps the destination when "the most significant
 // route.length bits of route.dest and ip.dest are equal", which the stored mask extracts.
-static idemip_bool ip4_route_basic_match(const Ip4RouteEntry *e, uint32_t dst)
+static embed_bool ip4_route_basic_match(const Ip4RouteEntry *e, uint32_t dst)
 {
-    return (idemip_bool)(e->state == IDEMIP_IP4_ROUTE_USED && (dst & e->mask) == e->dst);
+    return (embed_bool)(e->state == IDEMIP_IP4_ROUTE_USED && (dst & e->mask) == e->dst);
 }
 
 // What rule 2 left, for RFC 1812 sec 4.3.3.1's split between Code 0 and Codes 11 and 12: whether any
 // row basic-matched the destination at all, and whether any of those transmits directly.
 typedef struct
 {
-    idemip_bool matched;
-    idemip_bool direct;
+    embed_bool matched;
+    embed_bool direct;
 } Ip4RouteBest;
 
 // The four pruning rules of RFC 1812 sec 5.2.4.3, in the order the section prints them, over the
@@ -167,7 +169,7 @@ static uint8_t ip4_route_best(uint8_t *work, uint32_t dst, uint8_t tos, Ip4Route
 {
     // Rules 1 and 2: the largest route.length among the rows that basic-match.
     uint8_t best_len = 0;
-    idemip_bool matched = IDEMIP_FALSE;
+    embed_bool matched = EMBED_FALSE;
     for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP4_ROUTES; i++)
     {
         const Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
@@ -179,13 +181,13 @@ static uint8_t ip4_route_best(uint8_t *work, uint32_t dst, uint8_t tos, Ip4Route
         if (!matched || len > best_len)
         {
             best_len = len;
-            matched = IDEMIP_TRUE;
+            matched = EMBED_TRUE;
         }
     }
     if (out)
     {
         out->matched = matched;
-        out->direct = IDEMIP_FALSE;
+        out->direct = EMBED_FALSE;
     }
     if (!matched)
     {
@@ -195,13 +197,13 @@ static uint8_t ip4_route_best(uint8_t *work, uint32_t dst, uint8_t tos, Ip4Route
     // Rule 3: "if it contains any routes for which route.tos = ip.tos ... all routes except those
     // for which route.tos = ip.tos are discarded. If not, all routes except those for which
     // route.tos = 0000 are discarded", applied to what rule 2 left.
-    idemip_bool exact = IDEMIP_FALSE;
+    embed_bool exact = EMBED_FALSE;
     for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP4_ROUTES; i++)
     {
         const Ip4RouteEntry *e = IP4_ROUTE_AT(work, i);
         if (ip4_route_basic_match(e, dst) && e->plen == best_len && e->tos == tos)
         {
-            exact = IDEMIP_TRUE;
+            exact = EMBED_TRUE;
         }
     }
     uint8_t want = exact ? tos : (uint8_t)IP4_ROUTE_TOS_DEFAULT;
@@ -233,7 +235,7 @@ static uint8_t ip4_route_best(uint8_t *work, uint32_t dst, uint8_t tos, Ip4Route
             if (ip4_route_basic_match(e, dst) && e->plen == best_len &&
                 (e->flags & (uint8_t)IDEMIP_IP4_ROUTE_F_GATEWAY) == 0u)
             {
-                out->direct = IDEMIP_TRUE;
+                out->direct = EMBED_TRUE;
             }
         }
     }
@@ -268,8 +270,8 @@ void idemip_ip4_route_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IP4_ROUTE_OFF_CTX, 0,
-           (size_t)IDEMIP_IP4_ROUTE_BORROW - IDEMIP_IP4_ROUTE_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_IP4_ROUTE_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_IP4_ROUTE_BORROW - IDEMIP_IP4_ROUTE_OFF_CTX);
     IP4_ROUTE_CTX(work)->ready = IP4_ROUTE_READY;
     IP4_ROUTE_IO(work)->status = IDEMIP_OK;
 }
@@ -364,7 +366,7 @@ void idemip_ip4_route_remove(uint8_t *work)
         {
             continue;
         }
-        memset(e, 0, sizeof *e);
+        *e = (Ip4RouteEntry){0};
         if (io->index == (uint8_t)IDEMIP_IP4_ROUTE_INDEX_NONE)
         {
             io->index = i;
@@ -389,14 +391,14 @@ void idemip_ip4_route_lookup(uint8_t *work)
     io->next_hop = 0;
     io->pmtu = 0;
     io->netif = 0;
-    io->direct = IDEMIP_FALSE;
-    io->tos_blocked = IDEMIP_FALSE;
+    io->direct = EMBED_FALSE;
+    io->tos_blocked = EMBED_FALSE;
     io->index = (uint8_t)IDEMIP_IP4_ROUTE_INDEX_NONE;
     if (!ip4_route_ready(work))
     {
         return;
     }
-    Ip4RouteBest best = {IDEMIP_FALSE, IDEMIP_FALSE};
+    Ip4RouteBest best = {EMBED_FALSE, EMBED_FALSE};
     uint8_t i = ip4_route_best(work, io->lookup_args.dst, io->lookup_args.tos, &best);
     if (i == (uint8_t)IDEMIP_IP4_ROUTE_INDEX_NONE)
     {
@@ -413,7 +415,7 @@ void idemip_ip4_route_lookup(uint8_t *work)
     io->index = i;
     io->netif = e->netif;
     io->pmtu = e->pmtu;
-    io->direct = (idemip_bool)((e->flags & (uint8_t)IDEMIP_IP4_ROUTE_F_GATEWAY) == 0u);
+    io->direct = (embed_bool)((e->flags & (uint8_t)IDEMIP_IP4_ROUTE_F_GATEWAY) == 0u);
     io->next_hop = io->direct ? io->lookup_args.dst : e->gw;
     io->status = IDEMIP_OK;
 }
@@ -600,4 +602,4 @@ void idemip_ip4_route_tick(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

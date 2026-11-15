@@ -16,120 +16,40 @@
 #ifndef IDEMIP_CONFIG_H
 #define IDEMIP_CONFIG_H
 
-#include <assert.h> // static_assert
 #include <stddef.h> // size_t, NULL, offsetof
 #include <stdint.h> // the fixed widths every wire field is read into
-// memcpy, memset, memcmp and memmove, and the one place this tree names them. CMakeLists.txt's
-// IDEMIP_MMGR swaps libc's for MMgr's, which mmgr_string_shim.h aliases under the same spellings, so
-// every call site below is written once and reads the same either way. libc is the oracle: the suite
-// is expected to pass against both, and libc is what settles a disagreement.
-#if defined(IDEMIP_MMGR) && IDEMIP_MMGR
-#include "mmgr_string_shim.h"
-#else
-#include <string.h>
+
+/**
+ * @brief Bytes in a data cache line.
+ *
+ * A DMA buffer starts on a line boundary and occupies whole lines, because an invalidate of a partial
+ * line discards whatever else shares it. Every receive buffer stride rounds up to this.
+ *
+ * @note Ahead of the MMgr includes, because MMGR_ALIGN_BYTES below takes it as its default.
+ */
+#ifndef IDEMIP_CACHE_LINE_BYTES
+#define IDEMIP_CACHE_LINE_BYTES 32u
 #endif
 
-// ---------------------------------------------------------------------------
-// Dispatch tables
-// ---------------------------------------------------------------------------
-
-// The dispatch table a module's header exports, and the asserts that pin its layout. A
-// `<Mod>Ns` is a run of function pointers this tree addresses by offset, so the run is
-// stated once here and every module's table is checked against it.
-
-/** @brief Paste two tokens after expanding both. */
-#define IDEMIP_CAT_(a, b) a##b
-#define IDEMIP_CAT(a, b) IDEMIP_CAT_(a, b)
-
-/** @brief Count variadic arguments, up to 24. */
-#define IDEMIP_NARG(...)                                                                                               \
-    IDEMIP_NARG_(__VA_ARGS__, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
-#define IDEMIP_NARG_(...) IDEMIP_ARG_N(__VA_ARGS__)
-#define IDEMIP_ARG_N(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, N, ...)\
-    N
-
 /**
- * @brief Size of a function pointer. Not void *, which is the wrong ruler where code and data
- *        pointers differ in width.
- */
-#define IDEMIP_FP_SIZE (sizeof(void (*)(void)))
-
-/** @brief Assert one member sits at one dispatch loculus. */
-#define IDEMIP_NS_LOCULUS(T, member, loculus)                                                                          \
-    static_assert(offsetof(T, member) == (size_t)(loculus) * IDEMIP_FP_SIZE,                                           \
-                  #T "." #member " is not at dispatch loculus " #loculus)
-
-/*
- * Unrolled rather than recursive, because a failed assert should name the member and the loculus and
- * nothing else. One line per arity.
- */
-#define IDEMIP_NS_L1(T, a) IDEMIP_NS_LOCULUS(T, a, 0);
-#define IDEMIP_NS_L2(T, a, b) IDEMIP_NS_L1(T, a) IDEMIP_NS_LOCULUS(T, b, 1);
-#define IDEMIP_NS_L3(T, a, b, c) IDEMIP_NS_L2(T, a, b) IDEMIP_NS_LOCULUS(T, c, 2);
-#define IDEMIP_NS_L4(T, a, b, c, d) IDEMIP_NS_L3(T, a, b, c) IDEMIP_NS_LOCULUS(T, d, 3);
-#define IDEMIP_NS_L5(T, a, b, c, d, e) IDEMIP_NS_L4(T, a, b, c, d) IDEMIP_NS_LOCULUS(T, e, 4);
-#define IDEMIP_NS_L6(T, a, b, c, d, e, f) IDEMIP_NS_L5(T, a, b, c, d, e) IDEMIP_NS_LOCULUS(T, f, 5);
-#define IDEMIP_NS_L7(T, a, b, c, d, e, f, g) IDEMIP_NS_L6(T, a, b, c, d, e, f) IDEMIP_NS_LOCULUS(T, g, 6);
-#define IDEMIP_NS_L8(T, a, b, c, d, e, f, g, h) IDEMIP_NS_L7(T, a, b, c, d, e, f, g) IDEMIP_NS_LOCULUS(T, h, 7);
-#define IDEMIP_NS_L9(T, a, b, c, d, e, f, g, h, i) IDEMIP_NS_L8(T, a, b, c, d, e, f, g, h) IDEMIP_NS_LOCULUS(T, i, 8);
-#define IDEMIP_NS_L10(T, a, b, c, d, e, f, g, h, i, j)                                                                 \
-    IDEMIP_NS_L9(T, a, b, c, d, e, f, g, h, i) IDEMIP_NS_LOCULUS(T, j, 9);
-#define IDEMIP_NS_L11(T, a, b, c, d, e, f, g, h, i, j, k)                                                              \
-    IDEMIP_NS_L10(T, a, b, c, d, e, f, g, h, i, j) IDEMIP_NS_LOCULUS(T, k, 10);
-#define IDEMIP_NS_L12(T, a, b, c, d, e, f, g, h, i, j, k, l)                                                           \
-    IDEMIP_NS_L11(T, a, b, c, d, e, f, g, h, i, j, k) IDEMIP_NS_LOCULUS(T, l, 11);
-#define IDEMIP_NS_L13(T, a, b, c, d, e, f, g, h, i, j, k, l, m)                                                        \
-    IDEMIP_NS_L12(T, a, b, c, d, e, f, g, h, i, j, k, l) IDEMIP_NS_LOCULUS(T, m, 12);
-#define IDEMIP_NS_L14(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n)                                                     \
-    IDEMIP_NS_L13(T, a, b, c, d, e, f, g, h, i, j, k, l, m) IDEMIP_NS_LOCULUS(T, n, 13);
-#define IDEMIP_NS_L15(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o)                                                  \
-    IDEMIP_NS_L14(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n) IDEMIP_NS_LOCULUS(T, o, 14);
-#define IDEMIP_NS_L16(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)                                               \
-    IDEMIP_NS_L15(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) IDEMIP_NS_LOCULUS(T, p, 15);
-#define IDEMIP_NS_L17(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q)                                            \
-    IDEMIP_NS_L16(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p) IDEMIP_NS_LOCULUS(T, q, 16);
-#define IDEMIP_NS_L18(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r)                                         \
-    IDEMIP_NS_L17(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q) IDEMIP_NS_LOCULUS(T, r, 17);
-#define IDEMIP_NS_L19(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s)                                      \
-    IDEMIP_NS_L18(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r) IDEMIP_NS_LOCULUS(T, s, 18);
-#define IDEMIP_NS_L20(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t)                                   \
-    IDEMIP_NS_L19(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s) IDEMIP_NS_LOCULUS(T, t, 19);
-#define IDEMIP_NS_L21(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u)                                \
-    IDEMIP_NS_L20(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t) IDEMIP_NS_LOCULUS(T, u, 20);
-#define IDEMIP_NS_L22(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v)                             \
-    IDEMIP_NS_L21(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u) IDEMIP_NS_LOCULUS(T, v, 21);
-#define IDEMIP_NS_L23(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w)                          \
-    IDEMIP_NS_L22(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v) IDEMIP_NS_LOCULUS(T, w, 22);
-#define IDEMIP_NS_L24(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x)                       \
-    IDEMIP_NS_L23(T, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w) IDEMIP_NS_LOCULUS(T, x, 23);
-
-/**
- * @brief Pin every dispatch loculus of a table that is nothing but function pointers.
+ * @brief The alignment of every MMgr pool in the program: one cache line.
  *
- *     IDEMIP_NS_LAYOUT(PseudoNs, accum, accum4, accum6);
- *
- * A `<Mod>Ns` is a run of function pointers this tree addresses by offset, and a positional
- * initializer mis-wires silently when a member is inserted, removed or moved. This asserts each
- * named member is at its own loculus, in the order given, and that sizeof is exactly that many
- * pointers - so a member added and not listed, a member reordered, or padding appearing between
- * them all fail the build at the declaration rather than at a wrong call.
- *
- * Costs nothing at run time.
+ * @note A DMA buffer set is its own ParsMemoriaeInternae pool, and MMgr puts each pool on
+ *       MMGR_ALIGN_BYTES. So that knob is at least a cache line, and the assertion below holds it.
+ * @note Set before mmgr.h reads it. A program that includes an MMgr header ahead of this one gets
+ *       MMgr's default, and the assertion then names the line.
  */
-#define IDEMIP_NS_LAYOUT(T, ...)                                                                                       \
-    IDEMIP_CAT(IDEMIP_NS_L, IDEMIP_NARG(__VA_ARGS__))(T, __VA_ARGS__)                                                  \
-        static_assert(sizeof(T) == (size_t)IDEMIP_NARG(__VA_ARGS__) * IDEMIP_FP_SIZE,                                  \
-                      #T " has a member that is not in its dispatch list, or is padded")
+#ifndef MMGR_ALIGN_BYTES
+#define MMGR_ALIGN_BYTES IDEMIP_CACHE_LINE_BYTES
+#endif
 
-/**
- * @brief Storage for a dispatch table. The const is load bearing.
- *
- * Measured: gcc devirtualizes a call through a static const `<Mod>Ns` down to the inlined body,
- * identical instructions to calling the entry directly, and does not devirtualize the same call
- * through a non-const one - that becomes a real call with an 88 byte frame. clang devirtualizes
- * both, so const is what makes the two agree.
- */
-#define IDEMIP_NS static const
+// The memory entries in this tree are MMgr's, called by their own names. memor works on memory on
+// the grain of a word. proxim moves bytes at any address. locus_carcerum gives the borrows and
+// mmgr_zero_buf. Through mmgr.h they also bring the embedded_types names: the dispatch tables, the
+// call shape, the truth value and the word.
+#include "locus_carcerum/locus_carcerum.h"
+#include "memoria_operor/memoria_operor.h"
+#include "proximus_operor/proximus_operor.h"
 
 // ---------------------------------------------------------------------------
 // Version
@@ -158,48 +78,19 @@
 // Vocabulary
 // ---------------------------------------------------------------------------
 
-#ifdef __cplusplus
-#define IDEMIP_BEGIN_DECLS extern "C" {
-#define IDEMIP_END_DECLS }
-#else
-#define IDEMIP_BEGIN_DECLS
-#define IDEMIP_END_DECLS
-#endif
-
-/** @brief Definition emitted in every translation unit that reads it, and folded by the compiler. */
-#define IDEMIP_INLINE static inline
-
 /**
- * @brief Narrow an enum to the smallest type that holds it.
+ * @brief Narrows an enum to the smallest type that holds its values.
  *
- * An enum here names a wire value, and the wire fixes its width. Where the attribute is
- * unavailable the enum keeps the implementation's default width, which costs space and changes
- * nothing else: no enum is ever read or written through a pointer to a frame.
+ * @note EMBED_ENUM_BYTE makes an enum one byte wide. Use this attribute in its place on an enum
+ *       that has a value above 255.
+ * @note Where the compiler has no packed attribute, the enum has the default width of the
+ *       compiler. That costs space and changes nothing else.
  */
-#if defined(__GNUC__) || defined(__clang__)
-#define IDEMIP_ENUM_PACKED __attribute__((__packed__))
+#if EMBED_HAS_ATTRIBUTE(packed)
+#define IDEMIP_ENUM_PACKED __attribute__((packed))
 #else
 #define IDEMIP_ENUM_PACKED
 #endif
-
-/**
- * @brief A definition a translation unit may never read, without the compiler saying so.
- *
- * A namespace table is defined in its header so every caller sees the initializer, which is what
- * makes @c Ns.entry(work) a direct call. A translation unit that includes the header for a type and
- * calls no entry still gets the definition, and that is the one the diagnostic fires on. Where the
- * attribute is unavailable the definition stays and only the diagnostic returns.
- */
-#if defined(__GNUC__) || defined(__clang__)
-#define IDEMIP_UNUSED __attribute__((__unused__))
-#else
-#define IDEMIP_UNUSED
-#endif
-
-/** @brief A truth value. Named rather than `bool` so the width is the same on every target. */
-typedef uint8_t idemip_bool;
-#define IDEMIP_TRUE ((idemip_bool)1)
-#define IDEMIP_FALSE ((idemip_bool)0)
 
 /**
  * @brief What a call reports. No entry in this tree blocks, so every one of them answers with this.
@@ -213,12 +104,11 @@ typedef uint8_t idemip_bool;
  * A ring with nothing in it, a ring with no room, and a management transaction still on the wire
  * are all BUSY, since the caller does the same thing for each.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_OK = 0, ///< the call finished, and any result member is set
-    IDEMIP_BUSY,   ///< no progress now: nothing waiting, no room, or still in flight. Call again.
-    IDEMIP_ERR,    ///< refused: a null borrow, a bad argument, or the wrong state. Do not retry.
-} IdemIpStatus;
+EMBED_ENUM_BYTE(IdemIpStatus,
+                IDEMIP_OK = 0, ///< the call finished, and any result member is set
+                IDEMIP_BUSY,   ///< no progress now: nothing waiting, no room, or still in flight. Call again.
+                IDEMIP_ERR,    ///< refused: a null borrow, a bad argument, or the wrong state. Do not retry.
+);
 
 // ---------------------------------------------------------------------------
 // Capability gates
@@ -230,15 +120,8 @@ typedef enum IDEMIP_ENUM_PACKED
 // Platform
 // ---------------------------------------------------------------------------
 
-/**
- * @brief Bytes in a data cache line.
- *
- * A DMA buffer starts on a line boundary and occupies whole lines, because invalidating a partial
- * line discards whatever else shares it. Every receive buffer stride rounds up to this.
- */
-#ifndef IDEMIP_CACHE_LINE_BYTES
-#define IDEMIP_CACHE_LINE_BYTES 32u
-#endif
+EMBED_STATIC_ASSERT((MMGR_ALIGN_BYTES % IDEMIP_CACHE_LINE_BYTES) == 0u,
+                    "MMGR_ALIGN_BYTES must be a whole number of IDEMIP_CACHE_LINE_BYTES: a DMA pool starts on a line");
 
 /** @brief Alignment every borrow that holds no DMA buffer is taken at. */
 #ifndef IDEMIP_ALIGN
@@ -247,35 +130,6 @@ typedef enum IDEMIP_ENUM_PACKED
 
 /** @brief Round @p n up to the next multiple of @p a, which must be a power of two. */
 #define IDEMIP_ROUND_UP(n, a) (((size_t)(n) + ((size_t)(a) - 1u)) & ~((size_t)(a) - 1u))
-
-// ---------------------------------------------------------------------------
-// Aggregate calls
-// ---------------------------------------------------------------------------
-
-/**
- * @brief Call an entry with a compound literal, so the aggregate never appears at the call site.
- *
- *     typedef struct { uint8_t *w; const uint8_t *addr; uint8_t netif; } SrcAddArgs;
- *     static void src_add_ctx(const SrcAddArgs *a);
- *     #define src_add(...) IDEMIP_CALL(src_add_ctx, SrcAddArgs, __VA_ARGS__)
- *
- *     src_add(work, addr, 1u);              // positional, what the call site already wrote
- *     src_add(.w = work, .addr = addr);     // designated, and netif is zero without saying so
- *
- * A long argument list is passed in as many registers as it has, and spills the rest to the stack
- * at every call; one pointer to a block the caller already laid out is one register, whatever the
- * arity. That is the reason to prefer this shape, not the line length.
- *
- * Two properties come from the standard rather than from a compiler, so they hold on every target
- * this tree builds for: a field the initialiser does not name is zero initialised, which is how a
- * default costs nothing and is never spelled; and a compound literal in argument position lives
- * until the end of the enclosing block, so the entry may hold the pointer for the whole call.
- *
- * The entry takes a pointer-to-const, so what the caller laid out is an operand block and not a
- * return path. An entry that has to report something takes the borrow and writes its @c Io block,
- * which is the same way every other result in this tree is returned.
- */
-#define IDEMIP_CALL(entry, ArgsType, ...) entry(&(ArgsType){__VA_ARGS__})
 
 // ---------------------------------------------------------------------------
 // Link
@@ -443,11 +297,11 @@ typedef enum IDEMIP_ENUM_PACKED
  * @param WHAT  a string naming the region, for the message
  */
 #define IDEMIP_ASSERT_REGION(OFF, BYTES, END, WHAT)                                                                    \
-    static_assert(((size_t)(OFF) & (size_t)(IDEMIP_ALIGN - 1u)) == 0u,                                                 \
-                  WHAT " must start on IDEMIP_ALIGN: a region off the word makes every access to it "                  \
-                       "a split load, and a fault where a split load is not permitted");                               \
-    static_assert((size_t)(OFF) + (size_t)(BYTES) <= (size_t)(END),                                                    \
-                  WHAT " runs past what holds it - raise it in idemip_config.h")
+    EMBED_STATIC_ASSERT(((size_t)(OFF) & (size_t)(IDEMIP_ALIGN - 1u)) == 0u,                                           \
+                        WHAT " must start on IDEMIP_ALIGN: a region off the word makes every access to it "            \
+                             "a split load, and a fault where a split load is not permitted");                         \
+    EMBED_STATIC_ASSERT((size_t)(OFF) + (size_t)(BYTES) <= (size_t)(END),                                              \
+                        WHAT " runs past what holds it - raise it in idemip_config.h")
 
 // ---------------------------------------------------------------------------
 // The determinism pad's window (clock.h)
@@ -840,10 +694,11 @@ typedef enum IDEMIP_ENUM_PACKED
 #define IDEMIP_ICMP6_ERR_TOKEN_MS 100u
 #endif
 
-static_assert(IDEMIP_ICMP6_ERR_RATE_PER_S != 0u && (1000u / IDEMIP_ICMP6_ERR_RATE_PER_S) == IDEMIP_ICMP6_ERR_TOKEN_MS,
-              "IDEMIP_ICMP6_ERR_TOKEN_MS must be the millisecond gap RFC 4443 sec 2.4 (f)'s N implies");
-static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
-              "RFC 4443 sec 2.4 (f) allows a burst of B messages: a bucket of zero originates none");
+EMBED_STATIC_ASSERT(IDEMIP_ICMP6_ERR_RATE_PER_S != 0u &&
+                        (1000u / IDEMIP_ICMP6_ERR_RATE_PER_S) == IDEMIP_ICMP6_ERR_TOKEN_MS,
+                    "IDEMIP_ICMP6_ERR_TOKEN_MS must be the millisecond gap RFC 4443 sec 2.4 (f)'s N implies");
+EMBED_STATIC_ASSERT(IDEMIP_ICMP6_ERR_BUCKET != 0u,
+                    "RFC 4443 sec 2.4 (f) allows a burst of B messages: a bucket of zero originates none");
 
 // ---------------------------------------------------------------------------
 // Transport
@@ -1143,7 +998,7 @@ static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
  *
  *   IDEMIP_<UNIT>_CTX_BYTES        the running context, the region a unit keeps outside any table.
  *                                  A guess, kept generous. The unit's .c carries
- *                                  static_assert(sizeof(<Unit>Ctx) <= IDEMIP_<UNIT>_CTX_BYTES), so a
+ *                                  EMBED_STATIC_ASSERT(sizeof(<Unit>Ctx) <= IDEMIP_<UNIT>_CTX_BYTES), so a
  *                                  context that outgrows it fails the build naming this macro.
  *   IDEMIP_<UNIT>_<T>_ENTRY_SHIFT  the width of one entry in table T, as a shift. THE ENTRY STRUCT
  *                                  IN THE .c MUST BE PADDED TO 1 << SHIFT, and the .c must assert
@@ -1517,9 +1372,10 @@ static_assert(IDEMIP_ICMP6_ERR_BUCKET != 0u,
 
 // Each of the three tables above starts at the end of its context, so a context that is not a
 // multiple of IDEMIP_ALIGN would misalign one.
-static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX_BYTES) & (IDEMIP_ALIGN - 1u)) == 0u,
-              "IDEMIP_DAD_CTX_BYTES, IDEMIP_SLAAC_CTX_BYTES and IDEMIP_RDNSS_CTX_BYTES must be multiples of "
-              "IDEMIP_ALIGN: a table starts at the end of its context");
+EMBED_STATIC_ASSERT(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX_BYTES) & (IDEMIP_ALIGN - 1u)) ==
+                        0u,
+                    "IDEMIP_DAD_CTX_BYTES, IDEMIP_SLAAC_CTX_BYTES and IDEMIP_RDNSS_CTX_BYTES must be multiples of "
+                    "IDEMIP_ALIGN: a table starts at the end of its context");
 
 // --- mld6: RFC 2710 ------------------------------------------------------------------------------
 // One table across interfaces, as lwIP MEMP_NUM_MLD6_GROUP counts them. An entry holds the 16-octet
@@ -1881,10 +1737,12 @@ static_assert(((IDEMIP_DAD_CTX_BYTES | IDEMIP_SLAAC_CTX_BYTES | IDEMIP_RDNSS_CTX
 #endif
 #define IDEMIP_PMTU4_BORROW (IDEMIP_PMTU4_CTX_BYTES)
 
-static_assert(IDEMIP_PMTU4_INCREASE_MS >= 300000u,
-              "RFC 1191 sec 3: an increase attempt MUST NOT be made less than 5 minutes after a Datagram Too Big");
-static_assert(IDEMIP_PMTU4_RAISE_MS >= 60000u,
-              "RFC 1191 sec 3: an increase attempt MUST NOT be made less than 1 minute after a previous increase");
+EMBED_STATIC_ASSERT(
+    IDEMIP_PMTU4_INCREASE_MS >= 300000u,
+    "RFC 1191 sec 3: an increase attempt MUST NOT be made less than 5 minutes after a Datagram Too Big");
+EMBED_STATIC_ASSERT(
+    IDEMIP_PMTU4_RAISE_MS >= 60000u,
+    "RFC 1191 sec 3: an increase attempt MUST NOT be made less than 1 minute after a previous increase");
 
 // --- pmtu6: RFC 8201, PER INTERFACE --------------------------------------------------------------
 // The estimate is the nd6 Destination Cache's, RFC 8201 sec 5.2 storing "a PMTU value ... with the
@@ -1918,15 +1776,15 @@ static_assert(IDEMIP_PMTU4_RAISE_MS >= 60000u,
 #endif
 #define IDEMIP_PMTU6_BORROW (IDEMIP_PMTU6_CTX_BYTES + (IDEMIP_PMTU6_PATHS << IDEMIP_PMTU6_ENTRY_SHIFT))
 
-static_assert(IDEMIP_PMTU6_PROBE_MS >= 300000u,
-              "RFC 8201 sec 4: a probe must not be made less than 5 minutes after a Packet Too Big");
+EMBED_STATIC_ASSERT(IDEMIP_PMTU6_PROBE_MS >= 300000u,
+                    "RFC 8201 sec 4: a probe must not be made less than 5 minutes after a Packet Too Big");
 
 // The stamp table starts at the end of the head region, so that region is a whole number of
 // alignments, and stamp i sits at (i << SHIFT), so one stamp is IDEMIP_ALIGN or wider.
-static_assert(((IDEMIP_PMTU4_CTX_BYTES | IDEMIP_PMTU6_CTX_BYTES) & (IDEMIP_ALIGN - 1u)) == 0u,
-              "IDEMIP_PMTU4_CTX_BYTES and IDEMIP_PMTU6_CTX_BYTES must be multiples of IDEMIP_ALIGN");
-static_assert((1u << IDEMIP_PMTU6_ENTRY_SHIFT) >= IDEMIP_ALIGN,
-              "a pmtu6 stamp must be IDEMIP_ALIGN or wider: stamp i sits at (i << IDEMIP_PMTU6_ENTRY_SHIFT)");
+EMBED_STATIC_ASSERT(((IDEMIP_PMTU4_CTX_BYTES | IDEMIP_PMTU6_CTX_BYTES) & (IDEMIP_ALIGN - 1u)) == 0u,
+                    "IDEMIP_PMTU4_CTX_BYTES and IDEMIP_PMTU6_CTX_BYTES must be multiples of IDEMIP_ALIGN");
+EMBED_STATIC_ASSERT((1u << IDEMIP_PMTU6_ENTRY_SHIFT) >= IDEMIP_ALIGN,
+                    "a pmtu6 stamp must be IDEMIP_ALIGN or wider: stamp i sits at (i << IDEMIP_PMTU6_ENTRY_SHIFT)");
 
 // --- the whole footprint -------------------------------------------------------------------------
 
@@ -2005,89 +1863,89 @@ static_assert((1u << IDEMIP_PMTU6_ENTRY_SHIFT) >= IDEMIP_ALIGN,
     (IDEMIP_IP4_REASS_FRAGS + IDEMIP_IP6_REASS_FRAGS + (IDEMIP_TCP_PCBS * IDEMIP_TCP_OOSEQ_SEGS) +                     \
      IDEMIP_ARP_PENDING + IDEMIP_ND6_PENDING)
 
-static_assert(IDEMIP_RX_DESCRIPTORS > IDEMIP_MAX_PINNED_FRAMES,
-              "the receive ring starves when every retaining unit is full: raise IDEMIP_RX_DESCRIPTORS above "
-              "IDEMIP_MAX_PINNED_FRAMES, or lower a retention count");
+EMBED_STATIC_ASSERT(IDEMIP_RX_DESCRIPTORS > IDEMIP_MAX_PINNED_FRAMES,
+                    "the receive ring starves when every retaining unit is full: raise IDEMIP_RX_DESCRIPTORS above "
+                    "IDEMIP_MAX_PINNED_FRAMES, or lower a retention count");
 
-static_assert((IDEMIP_CACHE_LINE_BYTES & (IDEMIP_CACHE_LINE_BYTES - 1u)) == 0u,
-              "IDEMIP_CACHE_LINE_BYTES must be a power of two: a buffer stride rounds up to it with a mask");
+EMBED_STATIC_ASSERT((IDEMIP_CACHE_LINE_BYTES & (IDEMIP_CACHE_LINE_BYTES - 1u)) == 0u,
+                    "IDEMIP_CACHE_LINE_BYTES must be a power of two: a buffer stride rounds up to it with a mask");
 
-static_assert((IDEMIP_ALIGN & (IDEMIP_ALIGN - 1u)) == 0u, "IDEMIP_ALIGN must be a power of two");
+EMBED_STATIC_ASSERT((IDEMIP_ALIGN & (IDEMIP_ALIGN - 1u)) == 0u, "IDEMIP_ALIGN must be a power of two");
 
-static_assert((IDEMIP_RX_DESCRIPTORS & (IDEMIP_RX_DESCRIPTORS - 1u)) == 0u,
-              "IDEMIP_RX_DESCRIPTORS must be a power of two: the ring index is a mask");
+EMBED_STATIC_ASSERT((IDEMIP_RX_DESCRIPTORS & (IDEMIP_RX_DESCRIPTORS - 1u)) == 0u,
+                    "IDEMIP_RX_DESCRIPTORS must be a power of two: the ring index is a mask");
 
-static_assert((IDEMIP_TX_DESCRIPTORS & (IDEMIP_TX_DESCRIPTORS - 1u)) == 0u,
-              "IDEMIP_TX_DESCRIPTORS must be a power of two: the ring index is a mask");
+EMBED_STATIC_ASSERT((IDEMIP_TX_DESCRIPTORS & (IDEMIP_TX_DESCRIPTORS - 1u)) == 0u,
+                    "IDEMIP_TX_DESCRIPTORS must be a power of two: the ring index is a mask");
 
 // ---------------------------------------------------------------------------
 // The borrow map holds together
 // ---------------------------------------------------------------------------
 
-static_assert(IDEMIP_NETIF_COUNT >= 1u,
-              "IDEMIP_NETIF_COUNT must be at least one: every borrow above is an interface's");
+EMBED_STATIC_ASSERT(IDEMIP_NETIF_COUNT >= 1u,
+                    "IDEMIP_NETIF_COUNT must be at least one: every borrow above is an interface's");
 
 // Every table starts right after its context and every entry after the one before it, so a context
 // that is not a multiple of IDEMIP_ALIGN, or an entry narrower than it, misaligns the table.
-static_assert(((IDEMIP_NETIF_CTX_BYTES | IDEMIP_LOOPIF_CTX_BYTES | IDEMIP_DMA_CTX_BYTES | IDEMIP_ARP_CTX_BYTES |
-                IDEMIP_IP4_ROUTE_CTX_BYTES | IDEMIP_IP4_REASS_CTX_BYTES | IDEMIP_ACD_CTX_BYTES |
-                IDEMIP_AUTOIP_CTX_BYTES | IDEMIP_IGMP_CTX_BYTES | IDEMIP_IP6_REASS_CTX_BYTES | IDEMIP_ND6_CTX_BYTES |
-                IDEMIP_MLD6_CTX_BYTES | IDEMIP_RAW_PCB_CTX_BYTES | IDEMIP_UDP_PCB_CTX_BYTES |
-                IDEMIP_UDPLITE_CTX_BYTES |
-                IDEMIP_TCP_PCB_CTX_BYTES | IDEMIP_TCP_IN_CTX_BYTES | IDEMIP_TCP_OUT_CTX_BYTES |
-                IDEMIP_TCP_ISN_CTX_BYTES | IDEMIP_DHCP4_CTX_BYTES |
-                IDEMIP_DHCP6_CTX_BYTES | IDEMIP_DNS_CTX_BYTES | IDEMIP_TIMEOUTS_CTX_BYTES |
-                IDEMIP_TICK_CTX_BYTES | IDEMIP_DISPATCH_CTX_BYTES | IDEMIP_STATS_CTX_BYTES) &
-               (IDEMIP_ALIGN - 1u)) == 0u,
-              "every IDEMIP_*_CTX_BYTES must be a multiple of IDEMIP_ALIGN: a table starts at the end of its context");
+EMBED_STATIC_ASSERT(
+    ((IDEMIP_NETIF_CTX_BYTES | IDEMIP_LOOPIF_CTX_BYTES | IDEMIP_DMA_CTX_BYTES | IDEMIP_ARP_CTX_BYTES |
+      IDEMIP_IP4_ROUTE_CTX_BYTES | IDEMIP_IP4_REASS_CTX_BYTES | IDEMIP_ACD_CTX_BYTES | IDEMIP_AUTOIP_CTX_BYTES |
+      IDEMIP_IGMP_CTX_BYTES | IDEMIP_IP6_REASS_CTX_BYTES | IDEMIP_ND6_CTX_BYTES | IDEMIP_MLD6_CTX_BYTES |
+      IDEMIP_RAW_PCB_CTX_BYTES | IDEMIP_UDP_PCB_CTX_BYTES | IDEMIP_UDPLITE_CTX_BYTES | IDEMIP_TCP_PCB_CTX_BYTES |
+      IDEMIP_TCP_IN_CTX_BYTES | IDEMIP_TCP_OUT_CTX_BYTES | IDEMIP_TCP_ISN_CTX_BYTES | IDEMIP_DHCP4_CTX_BYTES |
+      IDEMIP_DHCP6_CTX_BYTES | IDEMIP_DNS_CTX_BYTES | IDEMIP_TIMEOUTS_CTX_BYTES | IDEMIP_TICK_CTX_BYTES |
+      IDEMIP_DISPATCH_CTX_BYTES | IDEMIP_STATS_CTX_BYTES) &
+     (IDEMIP_ALIGN - 1u)) == 0u,
+    "every IDEMIP_*_CTX_BYTES must be a multiple of IDEMIP_ALIGN: a table starts at the end of its context");
 
-static_assert((1u << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT) >= IDEMIP_ALIGN &&
-                  (1u << IDEMIP_ND6_ROUTER_ENTRY_SHIFT) >= IDEMIP_ALIGN &&
-                  (1u << IDEMIP_TIMEOUT_ENTRY_SHIFT) >= IDEMIP_ALIGN,
-              "the narrowest entry width must still be IDEMIP_ALIGN or wider: entry i sits at (i << SHIFT)");
+EMBED_STATIC_ASSERT((1u << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT) >= IDEMIP_ALIGN &&
+                        (1u << IDEMIP_ND6_ROUTER_ENTRY_SHIFT) >= IDEMIP_ALIGN &&
+                        (1u << IDEMIP_TIMEOUT_ENTRY_SHIFT) >= IDEMIP_ALIGN,
+                    "the narrowest entry width must still be IDEMIP_ALIGN or wider: entry i sits at (i << SHIFT)");
 
 // RFC 815 sizes the hole descriptor itself: two octets for hole.first, two for hole.last, two to
 // thread the list, and two spare.
-static_assert((1u << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT) >= 8u && (1u << IDEMIP_IP6_REASS_HOLE_ENTRY_SHIFT) >= 8u,
-              "a hole descriptor is eight octets (RFC 815): raise IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT");
+EMBED_STATIC_ASSERT((1u << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT) >= 8u && (1u << IDEMIP_IP6_REASS_HOLE_ENTRY_SHIFT) >= 8u,
+                    "a hole descriptor is eight octets (RFC 815): raise IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT");
 
 // RFC 815 opens a datagram with one hole and each fragment adds at most one.
-static_assert(IDEMIP_IP4_REASS_HOLES >= IDEMIP_IP4_REASS_DATAGRAMS + IDEMIP_IP4_REASS_FRAGS &&
-                  IDEMIP_IP6_REASS_HOLES >= IDEMIP_IP6_REASS_DATAGRAMS + IDEMIP_IP6_REASS_FRAGS,
-              "the hole list is short of one hole per datagram plus one per fragment (RFC 815)");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_REASS_HOLES >= IDEMIP_IP4_REASS_DATAGRAMS + IDEMIP_IP4_REASS_FRAGS &&
+                        IDEMIP_IP6_REASS_HOLES >= IDEMIP_IP6_REASS_DATAGRAMS + IDEMIP_IP6_REASS_FRAGS,
+                    "the hole list is short of one hole per datagram plus one per fragment (RFC 815)");
 
 // RFC 1035 sec 2.3.4: "names 255 octets or less", and the terminator makes 256.
-static_assert(IDEMIP_DNS_NAME_MAX >= 256u, "IDEMIP_DNS_NAME_MAX is short of RFC 1035 sec 2.3.4's 255 octets");
-static_assert((1u << IDEMIP_DNS_NAME_SHIFT) >= IDEMIP_DNS_NAME_MAX,
-              "the name region is narrower than IDEMIP_DNS_NAME_MAX: raise IDEMIP_DNS_NAME_SHIFT");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_NAME_MAX >= 256u, "IDEMIP_DNS_NAME_MAX is short of RFC 1035 sec 2.3.4's 255 octets");
+EMBED_STATIC_ASSERT((1u << IDEMIP_DNS_NAME_SHIFT) >= IDEMIP_DNS_NAME_MAX,
+                    "the name region is narrower than IDEMIP_DNS_NAME_MAX: raise IDEMIP_DNS_NAME_SHIFT");
 
 // RFC 8415 sec 11.1: at most 128 octets, behind a 2-octet type code.
-static_assert(IDEMIP_DHCP6_DUID_MAX >= 130u, "IDEMIP_DHCP6_DUID_MAX is short of RFC 8415 sec 11.1's 128 octets");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP6_DUID_MAX >= 130u, "IDEMIP_DHCP6_DUID_MAX is short of RFC 8415 sec 11.1's 128 octets");
 
 // RFC 6528 sec 3 feeds the PRF localip, localport, remoteip, remoteport and the key: 16, 2, 16, 2.
-static_assert(IDEMIP_TCP_ISN_SECRET_BYTES >= 16u, "RFC 6528 sec 3: \"Key lengths of 128 bits should be adequate\"");
-static_assert(IDEMIP_TCP_ISN_BLOCK_BYTES >= 36u + IDEMIP_TCP_ISN_SECRET_BYTES,
-              "the connection-id block is short of RFC 6528 sec 3's inputs and the key");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_ISN_SECRET_BYTES >= 16u,
+                    "RFC 6528 sec 3: \"Key lengths of 128 bits should be adequate\"");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_ISN_BLOCK_BYTES >= 36u + IDEMIP_TCP_ISN_SECRET_BYTES,
+                    "the connection-id block is short of RFC 6528 sec 3's inputs and the key");
 
 // A looped frame is held in the borrow, so its region carries a whole one.
-static_assert((1u << IDEMIP_LOOPIF_FRAME_SHIFT) >= IDEMIP_DMA_FRAME_MAX,
-              "a loopback frame region is narrower than a frame: raise IDEMIP_LOOPIF_FRAME_SHIFT");
+EMBED_STATIC_ASSERT((1u << IDEMIP_LOOPIF_FRAME_SHIFT) >= IDEMIP_DMA_FRAME_MAX,
+                    "a loopback frame region is narrower than a frame: raise IDEMIP_LOOPIF_FRAME_SHIFT");
 
 // A partial cache line invalidate discards whatever shares the line, so a buffer spans whole ones.
-static_assert((IDEMIP_DMA_BUF_STRIDE & (IDEMIP_CACHE_LINE_BYTES - 1u)) == 0u,
-              "IDEMIP_DMA_BUF_STRIDE must span whole cache lines");
+EMBED_STATIC_ASSERT((IDEMIP_DMA_BUF_STRIDE & (IDEMIP_CACHE_LINE_BYTES - 1u)) == 0u,
+                    "IDEMIP_DMA_BUF_STRIDE must span whole cache lines");
 
 // RFC 5227 sec 2.1.1 draws each probe delay from PROBE_MIN through PROBE_MAX.
-static_assert(IDEMIP_ACD_PROBE_MAX_MS > IDEMIP_ACD_PROBE_MIN_MS,
-              "RFC 5227 sec 1.1 puts PROBE_MAX above PROBE_MIN: the delay is drawn between them");
+EMBED_STATIC_ASSERT(IDEMIP_ACD_PROBE_MAX_MS > IDEMIP_ACD_PROBE_MIN_MS,
+                    "RFC 5227 sec 1.1 puts PROBE_MAX above PROBE_MIN: the delay is drawn between them");
 
 // One deadline per service, and every interface runs four of them.
-static_assert(IDEMIP_TIMEOUTS >= (IDEMIP_NETIF_COUNT * 4u),
-              "IDEMIP_TIMEOUTS is short of four deadlines per interface: ACD, AutoIP, DHCPv4 and DHCPv6");
+EMBED_STATIC_ASSERT(IDEMIP_TIMEOUTS >= (IDEMIP_NETIF_COUNT * 4u),
+                    "IDEMIP_TIMEOUTS is short of four deadlines per interface: ACD, AutoIP, DHCPv4 and DHCPv6");
 
 // The two ICMP borrows carry an operand block and a context and no table, so each is its context
 // width alone and that width stays a multiple of IDEMIP_ALIGN.
-static_assert(((IDEMIP_ICMP_IN_CTX_BYTES | IDEMIP_ICMP6_IN_CTX_BYTES) & (IDEMIP_ALIGN - 1u)) == 0u,
-              "IDEMIP_ICMP_IN_CTX_BYTES and IDEMIP_ICMP6_IN_CTX_BYTES must be multiples of IDEMIP_ALIGN");
+EMBED_STATIC_ASSERT(((IDEMIP_ICMP_IN_CTX_BYTES | IDEMIP_ICMP6_IN_CTX_BYTES) & (IDEMIP_ALIGN - 1u)) == 0u,
+                    "IDEMIP_ICMP_IN_CTX_BYTES and IDEMIP_ICMP6_IN_CTX_BYTES must be multiples of IDEMIP_ALIGN");
 
 #endif // IDEMIP_CONFIG_H

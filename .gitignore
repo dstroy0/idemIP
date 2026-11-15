@@ -28,6 +28,11 @@ build-bench/
 # rule to a path it already tracks, so the gitlink stays and only loose files under it are ignored.
 include/MMgr/
 
+# Fetched dependencies. deps/CMakeLists.txt is the declaration and the only tracked file here. Each
+# other path under deps/ is a checkout of another repository and belongs to that repository.
+deps/*
+!deps/CMakeLists.txt
+
 # The RFC text cache. docs/learn/RFC is the vendored law and is tracked; this is only what
 # tools/dev_env/rfc.py had to fetch because no path carried it, and the RFC Editor is where it
 # came from.

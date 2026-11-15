@@ -21,7 +21,7 @@
 #include "src/endian.h"
 #include "src/ip/ipv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The one definition, private to this TU. The sec 15 retransmission variables RT and the retry count
 // sit beside the sec 21.4 T1 and T2 and the sec 21.6 lifetimes, all as millisecond deadlines against
@@ -35,7 +35,7 @@ typedef struct
     uint8_t retries;
     uint8_t pref;             ///< sec 21.8 pref-value of the recorded server, 0 when none was sent
     uint8_t inf;              ///< which lifetimes came in as sec 7.7 infinity
-    idemip_bool have_adv;     ///< a sec 18.2.9 usable Advertise is recorded
+    embed_bool have_adv;      ///< a sec 18.2.9 usable Advertise is recorded
     uint16_t server_duid_len; ///< octets of the region at IDEMIP_DHCP6_OFF_SERVER_DUID
     uint16_t status_code;     ///< sec 21.13, what the last Reply carried
     uint32_t xid;             ///< sec 8, the low 24 bits
@@ -51,7 +51,7 @@ typedef struct
     IdemIpMs valid_ms;        ///< the deadline the address stops being valid at
     uint32_t max_rt_ms;       ///< the sec 21.24 or sec 21.25 MRT this client runs with
     uint32_t max_rt_seen_s;   ///< the first value this exchange carried, 0 when none has
-    idemip_bool max_rt_split; ///< two of them disagreed, so sec 18.2.9 holds the default
+    embed_bool max_rt_split;  ///< two of them disagreed, so sec 18.2.9 holds the default
     uint32_t t1_s;
     uint32_t t2_s;
     uint32_t preferred_s;
@@ -74,13 +74,14 @@ IDEMIP_ASSERT_REGION(IDEMIP_DHCP6_OFF_CTX, sizeof(Dhcp6Ctx), IDEMIP_DHCP6_BORROW
 // The caller's borrow, split: the operand block and the context in the first IDEMIP_DHCP6_CTX_BYTES
 // octets, then the server's DUID. dhcp6.h publishes the offsets; the asserts below prove the span
 // covers them before anything runs.
-static_assert(IDEMIP_DHCP6_OFF_CTX + sizeof(Dhcp6Ctx) <= IDEMIP_DHCP6_CTX_BYTES,
-              "IDEMIP_DHCP6_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_DHCP6_OFF_SERVER_DUID + IDEMIP_DHCP6_SERVER_DUID_BYTES <= IDEMIP_DHCP6_BORROW,
-              "IDEMIP_DHCP6_BORROW is short of the context region and the server DUID");
-static_assert((IDEMIP_DHCP6_OFF_CTX & (IDEMIP_ALIGN - 1u)) == 0u &&
-                  (IDEMIP_DHCP6_OFF_SERVER_DUID & (IDEMIP_ALIGN - 1u)) == 0u,
-              "every region starts on IDEMIP_ALIGN");
+EMBED_STATIC_ASSERT(
+    IDEMIP_DHCP6_OFF_CTX + sizeof(Dhcp6Ctx) <= IDEMIP_DHCP6_CTX_BYTES,
+    "IDEMIP_DHCP6_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP6_OFF_SERVER_DUID + IDEMIP_DHCP6_SERVER_DUID_BYTES <= IDEMIP_DHCP6_BORROW,
+                    "IDEMIP_DHCP6_BORROW is short of the context region and the server DUID");
+EMBED_STATIC_ASSERT((IDEMIP_DHCP6_OFF_CTX & (IDEMIP_ALIGN - 1u)) == 0u &&
+                        (IDEMIP_DHCP6_OFF_SERVER_DUID & (IDEMIP_ALIGN - 1u)) == 0u,
+                    "every region starts on IDEMIP_ALIGN");
 
 // The regions, at their offsets in the caller's borrow.
 #define DHCP6_CTX(w) ((Dhcp6Ctx *)(void *)((w) + IDEMIP_DHCP6_OFF_CTX))
@@ -163,7 +164,7 @@ static uint32_t dhcp6_rand_apply(uint32_t base, uint32_t mag, uint32_t rand)
 // sec 15: RT for the first transmission is IRT + RAND*IRT. @p positive forces a magnitude of at least
 // one and the additive side, which is sec 18.2.1's "the first RT MUST be selected to be strictly
 // greater than IRT by choosing RAND to be strictly greater than 0".
-static uint32_t dhcp6_first_rt(uint32_t irt_ms, uint32_t rand, idemip_bool positive)
+static uint32_t dhcp6_first_rt(uint32_t irt_ms, uint32_t rand, embed_bool positive)
 {
     uint32_t mag = dhcp6_rand_mag(irt_ms, rand);
     if (positive)
@@ -190,12 +191,12 @@ static uint32_t dhcp6_next_rt(uint32_t prev_ms, uint32_t mrt_ms, uint32_t rand)
 // represented". floor(ms/100) is the reciprocal multiply and shift below over that whole range.
 static uint16_t dhcp6_elapsed_cs(IdemIpMs now, IdemIpMs started)
 {
-    IdemIpMs ms = now - started;
-    if (ms >= (IdemIpMs)IDEMIP_DHCP6_ELAPSED_MAX_MS)
+    IdemIpMs elapsed = now - started;
+    if (elapsed >= (IdemIpMs)IDEMIP_DHCP6_ELAPSED_MAX_MS)
     {
         return 0xFFFFu;
     }
-    return (uint16_t)(((uint64_t)ms * (uint64_t)IDEMIP_DHCP6_CS_RECIP) >> IDEMIP_DHCP6_CS_SHIFT);
+    return (uint16_t)(((uint64_t)elapsed * (uint64_t)IDEMIP_DHCP6_CS_RECIP) >> IDEMIP_DHCP6_CS_SHIFT);
 }
 
 // A sec 7.7 lifetime in seconds as a millisecond deadline on the 64-bit clock, so the whole 32-bit
@@ -207,15 +208,15 @@ static IdemIpMs dhcp6_deadline(IdemIpMs now, uint32_t seconds)
 }
 
 // The millisecond clock wraps, so a deadline is reached when the signed difference is not negative.
-static idemip_bool dhcp6_reached(IdemIpMs now, IdemIpMs deadline)
+static embed_bool dhcp6_reached(IdemIpMs now, IdemIpMs deadline)
 {
-    return (now >= deadline) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (now >= deadline) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 8415 sec 7.1: "All_DHCP_Relay_Agents_and_Servers (ff02::1:2)".
 static void dhcp6_all_agents(uint8_t *dst)
 {
-    memset(dst, 0, IDEMIP_IP6_ADDR_LEN);
+    mmgr_zero_buf(dst, IDEMIP_IP6_ADDR_LEN);
     dst[0] = 0xffu;
     dst[1] = 0x02u;
     dst[13] = 0x01u;
@@ -369,7 +370,7 @@ static const uint8_t *dhcp6_find(const uint8_t *buf, size_t len, uint16_t code, 
 
 // Every option-len in the region stays inside it. sec 16 keeps a client from discarding a message over
 // an option it does not know, so only a length that runs off the end fails here.
-static idemip_bool dhcp6_opts_ok(const uint8_t *buf, size_t len)
+static embed_bool dhcp6_opts_ok(const uint8_t *buf, size_t len)
 {
     size_t at = 0u;
     while (at + IDEMIP_DHCP6_OPT_HDR_LEN <= len)
@@ -377,11 +378,11 @@ static idemip_bool dhcp6_opts_ok(const uint8_t *buf, size_t len)
         size_t next = at + IDEMIP_DHCP6_OPT_HDR_LEN + (size_t)idemip_rd16(buf + at + IDEMIP_DHCP6_OPT_OFF_LEN);
         if (next > len)
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         at = next;
     }
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // One option written at @p at, with @p len octets reserved for its data and @p data copied in when it
@@ -397,7 +398,7 @@ static size_t dhcp6_put(uint8_t *out, size_t cap, size_t at, uint16_t code, cons
     idemip_wr16(out + at + IDEMIP_DHCP6_OPT_OFF_LEN, len);
     if (len != 0u && data != NULL)
     {
-        memcpy(out + at + IDEMIP_DHCP6_OPT_OFF_DATA, data, len);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = out + at + IDEMIP_DHCP6_OPT_OFF_DATA, .at = data, .size = len);
     }
     return at + IDEMIP_DHCP6_OPT_HDR_LEN + (size_t)len;
 }
@@ -405,7 +406,7 @@ static size_t dhcp6_put(uint8_t *out, size_t cap, size_t at, uint16_t code, cons
 // sec 21.4, Figure 15: IAID, T1, T2, then IA_NA-options. sec 21.4 has a client send T1 and T2 as 0,
 // and sec 21.6 has it send both lifetimes as 0, so the held address rides in an IAADDR of zeroed
 // lifetimes when @p with_addr asks for it.
-static size_t dhcp6_put_ia_na(uint8_t *work, uint8_t *out, size_t cap, size_t at, idemip_bool with_addr)
+static size_t dhcp6_put_ia_na(uint8_t *work, uint8_t *out, size_t cap, size_t at, embed_bool with_addr)
 {
     const Dhcp6Ctx *ctx = DHCP6_CTX(work);
     uint16_t body = IDEMIP_DHCP6_IA_NA_FIXED_LEN;
@@ -428,7 +429,7 @@ static size_t dhcp6_put_ia_na(uint8_t *work, uint8_t *out, size_t cap, size_t at
         idemip_wr16(sub + IDEMIP_DHCP6_OPT_OFF_CODE, IDEMIP_DHCP6_OPT_IAADDR);
         idemip_wr16(sub + IDEMIP_DHCP6_OPT_OFF_LEN, IDEMIP_DHCP6_IAADDR_FIXED_LEN);
         uint8_t *a = sub + IDEMIP_DHCP6_OPT_OFF_DATA;
-        memcpy(a, ctx->addr, IDEMIP_IP6_ADDR_LEN);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = a, .at = ctx->addr, .size = IDEMIP_IP6_ADDR_LEN);
         idemip_wr32(a + IDEMIP_IP6_ADDR_LEN, 0u);
         idemip_wr32(a + IDEMIP_IP6_ADDR_LEN + 4u, 0u);
     }
@@ -436,9 +437,9 @@ static size_t dhcp6_put_ia_na(uint8_t *work, uint8_t *out, size_t cap, size_t at
 }
 
 // A lease is held once the sec 21.6 IPv6-address is not the unspecified address.
-static idemip_bool dhcp6_has_addr(const Dhcp6Ctx *ctx)
+static embed_bool dhcp6_has_addr(const Dhcp6Ctx *ctx)
 {
-    return (idemip_bool)!idemip_bytes_zero(ctx->addr, IDEMIP_IP6_ADDR_LEN);
+    return (embed_bool)!idemip_bytes_zero(ctx->addr, IDEMIP_IP6_ADDR_LEN);
 }
 
 // --- building ------------------------------------------------------------
@@ -459,8 +460,8 @@ static size_t dhcp6_write(uint8_t *work, uint8_t type, uint8_t *out, size_t cap)
     // sec 21.3. sec 18.2.2, sec 18.2.4, sec 18.2.7 and sec 18.2.8 each make the Server Identifier a
     // MUST; sec 16.2, sec 16.5, sec 16.7 and sec 16.12 have a server discard the message when the
     // other exchanges carry one.
-    idemip_bool wants_server = (type == (uint8_t)IDEMIP_DHCP6_REQUEST) || (type == (uint8_t)IDEMIP_DHCP6_RENEW) ||
-                               (type == (uint8_t)IDEMIP_DHCP6_RELEASE) || (type == (uint8_t)IDEMIP_DHCP6_DECLINE);
+    embed_bool wants_server = (type == (uint8_t)IDEMIP_DHCP6_REQUEST) || (type == (uint8_t)IDEMIP_DHCP6_RENEW) ||
+                              (type == (uint8_t)IDEMIP_DHCP6_RELEASE) || (type == (uint8_t)IDEMIP_DHCP6_DECLINE);
     if (wants_server)
     {
         // sec 18.2.2 and sec 18.2.4 reach REQUESTING and RENEWING only through an Advertise or a Reply
@@ -495,8 +496,8 @@ static size_t dhcp6_write(uint8_t *work, uint8_t type, uint8_t *out, size_t cap)
         // IA Address was recorded - the NoBinding Request of sec 18.2.10.1 included, which keeps the
         // lease it is recovering. It is written because sec 18.2.1 leaves the Solicit's IA_NA empty
         // and the same option is built for both.
-        idemip_bool with_addr = (type != (uint8_t)IDEMIP_DHCP6_SOLICIT) && // GCOVR_EXCL_BR_LINE
-                                dhcp6_has_addr(ctx);
+        embed_bool with_addr = (type != (uint8_t)IDEMIP_DHCP6_SOLICIT) && // GCOVR_EXCL_BR_LINE
+                               dhcp6_has_addr(ctx);
         at = dhcp6_put_ia_na(work, out, cap, at, with_addr);
     }
 
@@ -504,12 +505,12 @@ static size_t dhcp6_write(uint8_t *work, uint8_t type, uint8_t *out, size_t cap)
     // sec 18.2.4 ask for it too; sec 21.25 makes INF_MAX_RT and sec 21.23 the Information Refresh Time
     // a MUST in an Information-request's, and sec 21.23 forbids that code anywhere else. RFC 3646
     // sec 3 and sec 4 are the two this client reads back out of a Reply.
-    idemip_bool wants_oro = (type == (uint8_t)IDEMIP_DHCP6_SOLICIT) || (type == (uint8_t)IDEMIP_DHCP6_REQUEST) ||
-                            (type == (uint8_t)IDEMIP_DHCP6_RENEW) || (type == (uint8_t)IDEMIP_DHCP6_REBIND) ||
-                            (type == (uint8_t)IDEMIP_DHCP6_INFORMATION_REQUEST);
+    embed_bool wants_oro = (type == (uint8_t)IDEMIP_DHCP6_SOLICIT) || (type == (uint8_t)IDEMIP_DHCP6_REQUEST) ||
+                           (type == (uint8_t)IDEMIP_DHCP6_RENEW) || (type == (uint8_t)IDEMIP_DHCP6_REBIND) ||
+                           (type == (uint8_t)IDEMIP_DHCP6_INFORMATION_REQUEST);
     if (wants_oro)
     {
-        idemip_bool info = (type == (uint8_t)IDEMIP_DHCP6_INFORMATION_REQUEST);
+        embed_bool info = (type == (uint8_t)IDEMIP_DHCP6_INFORMATION_REQUEST);
         uint16_t codes = info ? 4u : 3u;
         uint16_t olen = (uint16_t)(codes << 1u);
         at = dhcp6_put(out, cap, at, IDEMIP_DHCP6_OPT_ORO, NULL, olen);
@@ -557,15 +558,15 @@ static void dhcp6_publish(uint8_t *work)
     io->valid_s = ctx->valid_s;
     io->t1_s = ctx->t1_s;
     io->t2_s = ctx->t2_s;
-    memcpy(io->addr, ctx->addr, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = io->addr, .at = ctx->addr, .size = IDEMIP_IP6_ADDR_LEN);
 }
 
 // The lease and the server it came from, dropped.
 static void dhcp6_forget_lease(uint8_t *work)
 {
     Dhcp6Ctx *ctx = DHCP6_CTX(work);
-    memset(ctx->addr, 0, IDEMIP_IP6_ADDR_LEN);
-    memset(DHCP6_SERVER_DUID(work), 0, IDEMIP_DHCP6_DUID_MAX);
+    mmgr_zero_buf(ctx->addr, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = DHCP6_SERVER_DUID(work), .val = 0, .bytes = IDEMIP_DHCP6_DUID_MAX);
     ctx->server_duid_len = 0u;
     ctx->preferred_s = 0u;
     ctx->valid_s = 0u;
@@ -576,7 +577,7 @@ static void dhcp6_forget_lease(uint8_t *work)
     ctx->valid_ms = 0;
     ctx->inf = 0u;
     ctx->pref = 0u;
-    ctx->have_adv = IDEMIP_FALSE;
+    ctx->have_adv = EMBED_FALSE;
 }
 
 // A fresh exchange. rt_ms of 0 and phase NEW are what the arming tick reads as "no transaction-id and
@@ -654,7 +655,7 @@ static void dhcp6_take_max_rt(Dhcp6Ctx *ctx, const uint8_t *opts, size_t olen)
     }
     if (ctx->max_rt_seen_s != 0u && ctx->max_rt_seen_s != s)
     {
-        ctx->max_rt_split = IDEMIP_TRUE;
+        ctx->max_rt_split = EMBED_TRUE;
         ctx->max_rt_ms = ctx->cfg->stateless ? IDEMIP_DHCP6_INF_MAX_RT_MS : IDEMIP_DHCP6_SOL_MAX_RT_MS;
         return;
     }
@@ -664,7 +665,7 @@ static void dhcp6_take_max_rt(Dhcp6Ctx *ctx, const uint8_t *opts, size_t olen)
 
 // sec 21.3, the server's DUID out of the message and into its own region. sec 11.1 bounds it at
 // "at least 1 octet and at most 128 octets" behind a 2-octet type code.
-static idemip_bool dhcp6_take_server_duid(uint8_t *work, const uint8_t *opts, size_t olen)
+static embed_bool dhcp6_take_server_duid(uint8_t *work, const uint8_t *opts, size_t olen)
 {
     Dhcp6Ctx *ctx = DHCP6_CTX(work);
     uint16_t dlen = 0u;
@@ -676,24 +677,24 @@ static idemip_bool dhcp6_take_server_duid(uint8_t *work, const uint8_t *opts, si
     // rather than the finding that it exists.
     if (d == NULL || dlen < 3u || dlen > IDEMIP_DHCP6_DUID_MAX) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    memcpy(DHCP6_SERVER_DUID(work), d, dlen);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = DHCP6_SERVER_DUID(work), .at = d, .size = dlen);
     ctx->server_duid_len = dlen;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // sec 16.3 and sec 16.10: a client discards a message whose Client Identifier does not carry its own
 // DUID. sec 11.1 has DUIDs compared for equality and nothing else.
-static idemip_bool dhcp6_client_id_matches(const Dhcp6Ctx *ctx, const uint8_t *opts, size_t olen)
+static embed_bool dhcp6_client_id_matches(const Dhcp6Ctx *ctx, const uint8_t *opts, size_t olen)
 {
     uint16_t dlen = 0u;
     const uint8_t *d = dhcp6_find(opts, olen, IDEMIP_DHCP6_OPT_CLIENTID, &dlen);
     if (d == NULL || dlen != ctx->cfg->duid_len)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    return (idemip_bytes_eq(d, ctx->cfg->duid, dlen)) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (idemip_bytes_eq(d, ctx->cfg->duid, dlen)) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // sec 21.13: "If the Status Code option does not appear in a message in which the option could appear,
@@ -751,24 +752,24 @@ static uint32_t dhcp6_take_info_refresh(const uint8_t *opts, size_t olen)
 // IA_NA whose T1 is past T2 with both nonzero; sec 18.2.10.1 discards a lease of valid lifetime 0; and
 // sec 21.6 discards an address "for which the preferred lifetime is greater than the valid lifetime".
 // sec 14.2 has the client pick T1 and T2 itself when the server sent 0.
-static idemip_bool dhcp6_take_lease(uint8_t *work, const uint8_t *opts, size_t olen)
+static embed_bool dhcp6_take_lease(uint8_t *work, const uint8_t *opts, size_t olen)
 {
     Dhcp6Ctx *ctx = DHCP6_CTX(work);
     uint16_t dlen = 0u;
     const uint8_t *ia = dhcp6_find(opts, olen, IDEMIP_DHCP6_OPT_IA_NA, &dlen);
     if (ia == NULL || dlen < IDEMIP_DHCP6_IA_NA_FIXED_LEN)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (idemip_rd32(ia) != ctx->iaid)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     uint32_t t1 = idemip_rd32(ia + 4u);
     uint32_t t2 = idemip_rd32(ia + 8u);
     if (t1 != 0u && t2 != 0u && t1 > t2)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
 
     const uint8_t *sub = ia + IDEMIP_DHCP6_IA_NA_FIXED_LEN;
@@ -779,23 +780,23 @@ static idemip_bool dhcp6_take_lease(uint8_t *work, const uint8_t *opts, size_t o
     if (ia_status != (uint16_t)IDEMIP_DHCP6_STATUS_SUCCESS)
     {
         ctx->status_code = ia_status;
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
 
     uint16_t alen = 0u;
     const uint8_t *a = dhcp6_find(sub, sublen, IDEMIP_DHCP6_OPT_IAADDR, &alen);
     if (a == NULL || alen < IDEMIP_DHCP6_IAADDR_FIXED_LEN)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     uint32_t preferred = idemip_rd32(a + IDEMIP_IP6_ADDR_LEN);
     uint32_t valid = idemip_rd32(a + IDEMIP_IP6_ADDR_LEN + 4u);
     if (valid == 0u || preferred > valid)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
 
-    memcpy(ctx->addr, a, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = ctx->addr, .at = a, .size = IDEMIP_IP6_ADDR_LEN);
     ctx->preferred_s = preferred;
     ctx->valid_s = valid;
     // sec 14.2: T1 or T2 of 0 leaves the time to the client, which "MUST NOT transmit immediately".
@@ -840,13 +841,13 @@ static idemip_bool dhcp6_take_lease(uint8_t *work, const uint8_t *opts, size_t o
     ctx->t1_s = t1;
     ctx->t2_s = t2;
     dhcp6_arm_lease(ctx);
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // sec 18.2.9: an Advertise is recorded when it carries an address, "Those Advertise messages with the
 // highest server preference value SHOULD be preferred over all other Advertise messages", and sec 21.8
 // gives an Advertise with no Preference option a preference of 0.
-static idemip_bool dhcp6_take_advertise(uint8_t *work, const uint8_t *opts, size_t olen)
+static embed_bool dhcp6_take_advertise(uint8_t *work, const uint8_t *opts, size_t olen)
 {
     Dhcp6Ctx *ctx = DHCP6_CTX(work);
     uint16_t plen = 0u;
@@ -854,7 +855,7 @@ static idemip_bool dhcp6_take_advertise(uint8_t *work, const uint8_t *opts, size
     uint8_t pref = (p != NULL && plen >= IDEMIP_DHCP6_PREFERENCE_LEN) ? p[0] : 0u;
     if (ctx->have_adv && pref <= ctx->pref)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     // The recorded server survives a worse Advertise, so nothing is written until both the sec 21.3
     // DUID and the sec 21.4 IA_NA of this one have passed.
@@ -863,17 +864,17 @@ static idemip_bool dhcp6_take_advertise(uint8_t *work, const uint8_t *opts, size
     // Not measured on the first, for the reason written at dhcp6_take_server_duid.
     if (sid == NULL || slen < 3u || slen > IDEMIP_DHCP6_DUID_MAX) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (!dhcp6_take_lease(work, opts, olen))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    memcpy(DHCP6_SERVER_DUID(work), sid, slen);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = DHCP6_SERVER_DUID(work), .at = sid, .size = slen);
     ctx->server_duid_len = slen;
     ctx->pref = pref;
-    ctx->have_adv = IDEMIP_TRUE;
-    return IDEMIP_TRUE;
+    ctx->have_adv = EMBED_TRUE;
+    return EMBED_TRUE;
 }
 
 // --- the entries -----------------------------------------------------------
@@ -886,7 +887,7 @@ void idemip_dhcp6_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work, 0, IDEMIP_DHCP6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work, .val = 0, .bytes = IDEMIP_DHCP6_BORROW);
     DHCP6_IO(work)->status = IDEMIP_OK;
 }
 
@@ -977,7 +978,7 @@ void idemip_dhcp6_stop(uint8_t *work)
     ctx->rt_ms = 0u;
     ctx->status_code = 0u;
     ctx->max_rt_seen_s = 0u;
-    ctx->max_rt_split = IDEMIP_FALSE;
+    ctx->max_rt_split = EMBED_FALSE;
     ctx->max_rt_ms = ctx->cfg->stateless ? IDEMIP_DHCP6_INF_MAX_RT_MS : IDEMIP_DHCP6_SOL_MAX_RT_MS;
     io->msg_type = 0u;
     io->len = 0u;
@@ -1275,7 +1276,7 @@ void idemip_dhcp6_build(uint8_t *work)
 // IRT". sec 21.9 counts elapsed-time from here, so the exchange clock starts here too.
 static void dhcp6_arm_first(Dhcp6Ctx *ctx, uint32_t rand)
 {
-    idemip_bool solicit = (ctx->state == IDEMIP_DHCP6_SOLICITING) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    embed_bool solicit = (ctx->state == IDEMIP_DHCP6_SOLICITING) ? EMBED_TRUE : EMBED_FALSE;
     ctx->started_ms = ctx->now_ms;
     ctx->rt_ms = dhcp6_first_rt(dhcp6_irt_ms((uint8_t)ctx->state), rand, solicit);
     ctx->retry_ms = ctx->now_ms + ctx->rt_ms;
@@ -1298,18 +1299,18 @@ static void dhcp6_arm_again(Dhcp6Ctx *ctx, uint32_t rand)
 
 // sec 15's MRD, which sec 18.2.3, sec 18.2.4 and sec 18.2.5 each state as a running deadline rather
 // than a span. TRUE once the exchange has run out of time.
-static idemip_bool dhcp6_mrd_spent(const Dhcp6Ctx *ctx)
+static embed_bool dhcp6_mrd_spent(const Dhcp6Ctx *ctx)
 {
     switch (ctx->state)
     {
     case IDEMIP_DHCP6_CONFIRMING:
         return dhcp6_reached(ctx->now_ms, ctx->started_ms + IDEMIP_DHCP6_CNF_MAX_RD_MS);
     case IDEMIP_DHCP6_RENEWING:
-        return ((ctx->inf & DHCP6_INF_T2) != 0u) ? IDEMIP_FALSE : dhcp6_reached(ctx->now_ms, ctx->t2_ms);
+        return ((ctx->inf & DHCP6_INF_T2) != 0u) ? EMBED_FALSE : dhcp6_reached(ctx->now_ms, ctx->t2_ms);
     case IDEMIP_DHCP6_REBINDING:
-        return ((ctx->inf & DHCP6_INF_VALID) != 0u) ? IDEMIP_FALSE : dhcp6_reached(ctx->now_ms, ctx->valid_ms);
+        return ((ctx->inf & DHCP6_INF_VALID) != 0u) ? EMBED_FALSE : dhcp6_reached(ctx->now_ms, ctx->valid_ms);
     default:
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
 }
 
@@ -1549,4 +1550,4 @@ void idemip_dhcp6_decline(uint8_t *work)
     dhcp6_publish(work);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

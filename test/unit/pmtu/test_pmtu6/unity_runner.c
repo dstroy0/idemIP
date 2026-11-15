@@ -5,7 +5,7 @@
 #include "src/pmtu/pmtu6.h"
 #include "src/common_defines.h"
 #include "src/ip/ipv6_defines.h"
-#include <string.h>
+#include "support/borrows.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);
@@ -98,33 +98,33 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/pmtu/test_pmtu6/test_pmtu6.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 132);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 141);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 158);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 175);
-  run_test(test_the_mtu_field_is_the_estimate, "test_the_mtu_field_is_the_estimate", 192);
-  run_test(test_the_code_is_ignored, "test_the_code_is_ignored", 204);
-  run_test(test_another_type_is_refused, "test_another_type_is_refused", 217);
-  run_test(test_a_message_without_the_invoking_header_is_refused, "test_a_message_without_the_invoking_header_is_refused", 229);
-  run_test(test_an_mtu_below_the_minimum_link_mtu_is_discarded, "test_an_mtu_below_the_minimum_link_mtu_is_discarded", 250);
-  run_test(test_a_message_never_raises_the_estimate, "test_a_message_never_raises_the_estimate", 270);
-  run_test(test_an_mtu_wider_than_the_row_is_carried_at_its_ceiling, "test_an_mtu_wider_than_the_row_is_carried_at_its_ceiling", 292);
-  run_test(test_an_empty_cache_row_is_still_bounded_by_the_first_hop, "test_an_empty_cache_row_is_still_bounded_by_the_first_hop", 304);
-  run_test(test_a_routing_header_with_segments_left_names_the_path, "test_a_routing_header_with_segments_left_names_the_path", 329);
-  run_test(test_a_routing_header_without_segments_left_leaves_the_path_alone, "test_a_routing_header_without_segments_left_leaves_the_path_alone", 344);
-  run_test(test_the_walk_steps_over_a_fragment_header, "test_the_walk_steps_over_a_fragment_header", 359);
-  run_test(test_a_truncated_routing_header_leaves_the_path_alone, "test_a_truncated_routing_header_leaves_the_path_alone", 377);
-  run_test(test_the_probe_waits_out_the_interval, "test_the_probe_waits_out_the_interval", 396);
-  run_test(test_a_later_decrease_restarts_the_clock, "test_a_later_decrease_restarts_the_clock", 421);
-  run_test(test_a_link_mtu_below_the_minimum_is_refused, "test_a_link_mtu_below_the_minimum_is_refused", 440);
-  run_test(test_an_empty_table_is_busy, "test_an_empty_table_is_busy", 451);
-  run_test(test_forget_drops_one_stamp, "test_forget_drops_one_stamp", 463);
-  run_test(test_a_second_decrease_reuses_the_same_stamp, "test_a_second_decrease_reuses_the_same_stamp", 484);
-  run_test(test_a_full_table_takes_the_longest_running_clock, "test_a_full_table_takes_the_longest_running_clock", 501);
-  run_test(test_the_interval_survives_a_clock_wrap, "test_the_interval_survives_a_clock_wrap", 532);
-  run_test(test_the_same_message_repeats, "test_the_same_message_repeats", 547);
-  run_test(test_the_entries_refuse_a_call_that_names_nothing, "test_the_entries_refuse_a_call_that_names_nothing", 562);
-  run_test(test_a_quoted_packet_too_short_for_the_header_it_claims_keys_on_the_fixed_destination, "test_a_quoted_packet_too_short_for_the_header_it_claims_keys_on_the_fixed_destination", 581);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 137);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 146);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 163);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 180);
+  run_test(test_the_mtu_field_is_the_estimate, "test_the_mtu_field_is_the_estimate", 197);
+  run_test(test_the_code_is_ignored, "test_the_code_is_ignored", 209);
+  run_test(test_another_type_is_refused, "test_another_type_is_refused", 222);
+  run_test(test_a_message_without_the_invoking_header_is_refused, "test_a_message_without_the_invoking_header_is_refused", 234);
+  run_test(test_an_mtu_below_the_minimum_link_mtu_is_discarded, "test_an_mtu_below_the_minimum_link_mtu_is_discarded", 255);
+  run_test(test_a_message_never_raises_the_estimate, "test_a_message_never_raises_the_estimate", 275);
+  run_test(test_an_mtu_wider_than_the_row_is_carried_at_its_ceiling, "test_an_mtu_wider_than_the_row_is_carried_at_its_ceiling", 297);
+  run_test(test_an_empty_cache_row_is_still_bounded_by_the_first_hop, "test_an_empty_cache_row_is_still_bounded_by_the_first_hop", 309);
+  run_test(test_a_routing_header_with_segments_left_names_the_path, "test_a_routing_header_with_segments_left_names_the_path", 334);
+  run_test(test_a_routing_header_without_segments_left_leaves_the_path_alone, "test_a_routing_header_without_segments_left_leaves_the_path_alone", 349);
+  run_test(test_the_walk_steps_over_a_fragment_header, "test_the_walk_steps_over_a_fragment_header", 364);
+  run_test(test_a_truncated_routing_header_leaves_the_path_alone, "test_a_truncated_routing_header_leaves_the_path_alone", 382);
+  run_test(test_the_probe_waits_out_the_interval, "test_the_probe_waits_out_the_interval", 401);
+  run_test(test_a_later_decrease_restarts_the_clock, "test_a_later_decrease_restarts_the_clock", 426);
+  run_test(test_a_link_mtu_below_the_minimum_is_refused, "test_a_link_mtu_below_the_minimum_is_refused", 445);
+  run_test(test_an_empty_table_is_busy, "test_an_empty_table_is_busy", 456);
+  run_test(test_forget_drops_one_stamp, "test_forget_drops_one_stamp", 468);
+  run_test(test_a_second_decrease_reuses_the_same_stamp, "test_a_second_decrease_reuses_the_same_stamp", 489);
+  run_test(test_a_full_table_takes_the_longest_running_clock, "test_a_full_table_takes_the_longest_running_clock", 506);
+  run_test(test_the_interval_survives_a_clock_wrap, "test_the_interval_survives_a_clock_wrap", 537);
+  run_test(test_the_same_message_repeats, "test_the_same_message_repeats", 552);
+  run_test(test_the_entries_refuse_a_call_that_names_nothing, "test_the_entries_refuse_a_call_that_names_nothing", 567);
+  run_test(test_a_quoted_packet_too_short_for_the_header_it_claims_keys_on_the_fixed_destination, "test_a_quoted_packet_too_short_for_the_header_it_claims_keys_on_the_fixed_destination", 586);
 
   return UNITY_END();
 }

@@ -18,7 +18,7 @@
 #include "src/ip/ip6_select.h"
 #include "src/ip/ipv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // RFC 6724 sec 4's candidate set, one entry per address the caller offered. The four flags sec 5
 // cannot derive from the address itself arrive with it: RFC 4862's preferred or deprecated state,
@@ -29,12 +29,12 @@ typedef struct
     uint32_t zone;
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     uint8_t netif;
-    idemip_bool deprecated;
-    idemip_bool temporary;
-    idemip_bool home;
-    idemip_bool care_of;
-    idemip_bool next_hop;
-    idemip_bool used;
+    embed_bool deprecated;
+    embed_bool temporary;
+    embed_bool home;
+    embed_bool care_of;
+    embed_bool next_hop;
+    embed_bool used;
     uint8_t pad[5];
 } Ip6SelectSource;
 
@@ -45,9 +45,9 @@ typedef struct
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     uint8_t netif;
     uint8_t source;
-    idemip_bool unreachable;
-    idemip_bool encapsulated;
-    idemip_bool used;
+    embed_bool unreachable;
+    embed_bool encapsulated;
+    embed_bool used;
     uint8_t pad[7];
 } Ip6SelectDest;
 
@@ -61,7 +61,7 @@ typedef struct
     uint8_t prefix_len;
     uint8_t precedence;
     uint8_t label;
-    idemip_bool used;
+    embed_bool used;
     uint8_t pad[8];
 } Ip6SelectPolicy;
 
@@ -71,8 +71,8 @@ typedef struct
     uint8_t sources;
     uint8_t dests;
     uint8_t policies;
-    idemip_bool sorted;
-    idemip_bool ready;
+    embed_bool sorted;
+    embed_bool ready;
 } Ip6SelectCtx;
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
@@ -80,32 +80,32 @@ typedef struct
 IDEMIP_ASSERT_REGION(IDEMIP_IP6_SELECT_OFF_CTX, sizeof(Ip6SelectCtx), IDEMIP_IP6_SELECT_OFF_END, "ip6_select's context");
 
 // An index is (i << SHIFT), so each entry is exactly its width.
-static_assert(sizeof(Ip6SelectSource) == (1u << IDEMIP_IP6_SELECT_SOURCE_ENTRY_SHIFT),
-              "a candidate entry must be 1 << IDEMIP_IP6_SELECT_SOURCE_ENTRY_SHIFT wide");
-static_assert(sizeof(Ip6SelectDest) == (1u << IDEMIP_IP6_SELECT_DEST_ENTRY_SHIFT),
-              "a destination entry must be 1 << IDEMIP_IP6_SELECT_DEST_ENTRY_SHIFT wide");
-static_assert(sizeof(Ip6SelectPolicy) == (1u << IDEMIP_IP6_SELECT_POLICY_ENTRY_SHIFT),
-              "a policy entry must be 1 << IDEMIP_IP6_SELECT_POLICY_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(Ip6SelectSource) == (1u << IDEMIP_IP6_SELECT_SOURCE_ENTRY_SHIFT),
+                    "a candidate entry must be 1 << IDEMIP_IP6_SELECT_SOURCE_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(Ip6SelectDest) == (1u << IDEMIP_IP6_SELECT_DEST_ENTRY_SHIFT),
+                    "a destination entry must be 1 << IDEMIP_IP6_SELECT_DEST_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(Ip6SelectPolicy) == (1u << IDEMIP_IP6_SELECT_POLICY_ENTRY_SHIFT),
+                    "a policy entry must be 1 << IDEMIP_IP6_SELECT_POLICY_ENTRY_SHIFT wide");
 
 // The caller's borrow, split: the operand block, the context, then the four regions. ip6_select.h
 // publishes the offsets; these two asserts prove the span covers them before anything runs. The
 // first keeps the context inside the region ahead of the candidate set, the second the whole map
 // inside the borrow.
-static_assert(IDEMIP_IP6_SELECT_OFF_CTX + sizeof(Ip6SelectCtx) <= IDEMIP_IP6_SELECT_OFF_SOURCES,
-              "IDEMIP_IP6_SELECT_CTX_BYTES is short of the operand block and the context - raise it in "
-              "idemip_config.h");
-static_assert(IDEMIP_IP6_SELECT_OFF_END <= IDEMIP_IP6_SELECT_BORROW,
-              "IDEMIP_IP6_SELECT_BORROW is short of the map - raise IDEMIP_IP6_SELECT_CTX_BYTES in "
-              "idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_SELECT_OFF_CTX + sizeof(Ip6SelectCtx) <= IDEMIP_IP6_SELECT_OFF_SOURCES,
+                    "IDEMIP_IP6_SELECT_CTX_BYTES is short of the operand block and the context - raise it in "
+                    "idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_SELECT_OFF_END <= IDEMIP_IP6_SELECT_BORROW,
+                    "IDEMIP_IP6_SELECT_BORROW is short of the map - raise IDEMIP_IP6_SELECT_CTX_BYTES in "
+                    "idemip_config.h");
 
 // Each region starts at the end of the one before it, so a context that is not a multiple of
 // IDEMIP_ALIGN, or an entry narrower than it, misaligns a table.
-static_assert((IDEMIP_IP6_SELECT_CTX_BYTES & (IDEMIP_ALIGN - 1u)) == 0u,
-              "IDEMIP_IP6_SELECT_CTX_BYTES must be a multiple of IDEMIP_ALIGN: a table starts at its end");
-static_assert((1u << IDEMIP_IP6_SELECT_SOURCE_ENTRY_SHIFT) >= IDEMIP_ALIGN &&
-                  (1u << IDEMIP_IP6_SELECT_DEST_ENTRY_SHIFT) >= IDEMIP_ALIGN &&
-                  (1u << IDEMIP_IP6_SELECT_POLICY_ENTRY_SHIFT) >= IDEMIP_ALIGN,
-              "each entry width must be IDEMIP_ALIGN or wider: entry i sits at (i << SHIFT)");
+EMBED_STATIC_ASSERT((IDEMIP_IP6_SELECT_CTX_BYTES & (IDEMIP_ALIGN - 1u)) == 0u,
+                    "IDEMIP_IP6_SELECT_CTX_BYTES must be a multiple of IDEMIP_ALIGN: a table starts at its end");
+EMBED_STATIC_ASSERT((1u << IDEMIP_IP6_SELECT_SOURCE_ENTRY_SHIFT) >= IDEMIP_ALIGN &&
+                        (1u << IDEMIP_IP6_SELECT_DEST_ENTRY_SHIFT) >= IDEMIP_ALIGN &&
+                        (1u << IDEMIP_IP6_SELECT_POLICY_ENTRY_SHIFT) >= IDEMIP_ALIGN,
+                    "each entry width must be IDEMIP_ALIGN or wider: entry i sits at (i << SHIFT)");
 
 // The regions, at their offsets in the caller's borrow.
 #define IP6_SELECT_IO(w) IDEMIP_IP6_SELECT_IO(w)
@@ -187,9 +187,9 @@ static IdemIpIp6Scope ip6_select_scope(const uint8_t *addr)
 
 // RFC 6724 sec 6 Rule 9 compares two destinations only "When DA and DB belong to the same address
 // family (both are IPv6 or both are IPv4)", and sec 3.2 makes an IPv4 address an IPv4-mapped one.
-static idemip_bool ip6_select_is_v4(const uint8_t *addr)
+static embed_bool ip6_select_is_v4(const uint8_t *addr)
 {
-    return (idemip_ip6_addr_type(addr) == IDEMIP_IP6_TYPE_V4_MAPPED) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (idemip_ip6_addr_type(addr) == IDEMIP_IP6_TYPE_V4_MAPPED) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 /**
@@ -278,19 +278,18 @@ static uint8_t ip6_select_label(uint8_t *work, const uint8_t *addr, uint32_t zon
 // RFC 4007 sec 5 re-uses a non-global address in different zones, so two equal addresses name the
 // same interface only when their zones agree; sec 6 reserves index zero to "use the default zone",
 // which matches whatever zone the other names.
-static idemip_bool ip6_select_same_addr(const uint8_t *a, uint32_t a_zone, const uint8_t *b, uint32_t b_zone)
+static embed_bool ip6_select_same_addr(const uint8_t *a, uint32_t a_zone, const uint8_t *b, uint32_t b_zone)
 {
     if (!idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (ip6_select_scope(a) == IDEMIP_IP6_SCOPE_GLOBAL)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
-    return (a_zone == b_zone || a_zone == IDEMIP_IP6_ZONE_DEFAULT || b_zone == IDEMIP_IP6_ZONE_DEFAULT)
-               ? IDEMIP_TRUE
-               : IDEMIP_FALSE;
+    return (a_zone == b_zone || a_zone == IDEMIP_IP6_ZONE_DEFAULT || b_zone == IDEMIP_IP6_ZONE_DEFAULT) ? EMBED_TRUE
+                                                                                                        : EMBED_FALSE;
 }
 
 /**
@@ -310,25 +309,25 @@ static idemip_bool ip6_select_same_addr(const uint8_t *a, uint32_t a_zone, const
  * first example requires when it pairs 198.51.100.121 with 169.254.13.78 while a global IPv6
  * candidate is present; sec 3.2 makes both of them IPv4-mapped addresses here.
  */
-static idemip_bool ip6_select_candidate_ok(const Ip6SelectSource *src, const uint8_t *d, uint32_t d_zone,
-                                           uint8_t d_netif)
+static embed_bool ip6_select_candidate_ok(const Ip6SelectSource *src, const uint8_t *d, uint32_t d_zone,
+                                          uint8_t d_netif)
 {
     if (ip6_select_is_v4(src->addr) != ip6_select_is_v4(d))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     IdemIpIp6Type dtype = idemip_ip6_addr_type(d);
     if (dtype == IDEMIP_IP6_TYPE_MULTICAST || dtype == IDEMIP_IP6_TYPE_LINK_LOCAL)
     {
-        return (src->netif == d_netif) ? IDEMIP_TRUE : IDEMIP_FALSE;
+        return (src->netif == d_netif) ? EMBED_TRUE : EMBED_FALSE;
     }
     if (dtype == IDEMIP_IP6_TYPE_SITE_LOCAL)
     {
         return (d_zone == IDEMIP_IP6_ZONE_DEFAULT || src->zone == IDEMIP_IP6_ZONE_DEFAULT || src->zone == d_zone)
-                   ? IDEMIP_TRUE
-                   : IDEMIP_FALSE;
+                   ? EMBED_TRUE
+                   : EMBED_FALSE;
     }
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // --- RFC 6724 sec 5, the source rules --------------------------------------
@@ -348,8 +347,8 @@ static int ip6_select_cmp_source(uint8_t *work, uint8_t ia, uint8_t ib, const ui
 
     // Rule 1: "If SA = D, then prefer SA. Similarly, if SB = D, then prefer SB."
     *rule = 1u;
-    idemip_bool a_is_d = ip6_select_same_addr(sa->addr, sa->zone, d, d_zone);
-    idemip_bool b_is_d = ip6_select_same_addr(sb->addr, sb->zone, d, d_zone);
+    embed_bool a_is_d = ip6_select_same_addr(sa->addr, sa->zone, d, d_zone);
+    embed_bool b_is_d = ip6_select_same_addr(sb->addr, sb->zone, d, d_zone);
     if (a_is_d != b_is_d)
     {
         return a_is_d ? 1 : -1;
@@ -381,8 +380,8 @@ static int ip6_select_cmp_source(uint8_t *work, uint8_t ia, uint8_t ib, const ui
     // Rule 4: "If SA is simultaneously a home address and care-of address and SB is not, then prefer
     // SA ... If SA is just a home address and SB is just a care-of address, then prefer SA."
     *rule = 4u;
-    idemip_bool a_both = (sa->home && sa->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE;
-    idemip_bool b_both = (sb->home && sb->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    embed_bool a_both = (sa->home && sa->care_of) ? EMBED_TRUE : EMBED_FALSE;
+    embed_bool b_both = (sb->home && sb->care_of) ? EMBED_TRUE : EMBED_FALSE;
     if (a_both != b_both)
     {
         return a_both ? 1 : -1;
@@ -393,10 +392,10 @@ static int ip6_select_cmp_source(uint8_t *work, uint8_t ia, uint8_t ib, const ui
         // say, and the second half of each pair is not measured: this arm is reached only when
         // neither side is both, so an address that is a home address here is not also a care-of one
         // and the test cannot come out false. a_both and b_both are equal by the return above.
-        idemip_bool a_home = (sa->home && !sa->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
-        idemip_bool b_home = (sb->home && !sb->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
-        idemip_bool a_care = (sa->care_of && !sa->home) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
-        idemip_bool b_care = (sb->care_of && !sb->home) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
+        embed_bool a_home = (sa->home && !sa->care_of) ? EMBED_TRUE : EMBED_FALSE; // GCOVR_EXCL_BR_LINE
+        embed_bool b_home = (sb->home && !sb->care_of) ? EMBED_TRUE : EMBED_FALSE; // GCOVR_EXCL_BR_LINE
+        embed_bool a_care = (sa->care_of && !sa->home) ? EMBED_TRUE : EMBED_FALSE; // GCOVR_EXCL_BR_LINE
+        embed_bool b_care = (sb->care_of && !sb->home) ? EMBED_TRUE : EMBED_FALSE; // GCOVR_EXCL_BR_LINE
         if (a_home && b_care)
         {
             return 1;
@@ -410,8 +409,8 @@ static int ip6_select_cmp_source(uint8_t *work, uint8_t ia, uint8_t ib, const ui
     // Rule 5: "If SA is assigned to the interface that will be used to send to D and SB is assigned
     // to a different interface, then prefer SA."
     *rule = 5u;
-    idemip_bool a_out = (sa->netif == d_netif) ? IDEMIP_TRUE : IDEMIP_FALSE;
-    idemip_bool b_out = (sb->netif == d_netif) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    embed_bool a_out = (sa->netif == d_netif) ? EMBED_TRUE : EMBED_FALSE;
+    embed_bool b_out = (sb->netif == d_netif) ? EMBED_TRUE : EMBED_FALSE;
     if (a_out != b_out)
     {
         return a_out ? 1 : -1;
@@ -430,8 +429,8 @@ static int ip6_select_cmp_source(uint8_t *work, uint8_t ia, uint8_t ib, const ui
     // Rule 6: "If Label(SA) = Label(D) and Label(SB) <> Label(D), then prefer SA."
     *rule = 6u;
     uint8_t dl = ip6_select_label(work, d, d_zone);
-    idemip_bool a_label = (ip6_select_label(work, sa->addr, sa->zone) == dl) ? IDEMIP_TRUE : IDEMIP_FALSE;
-    idemip_bool b_label = (ip6_select_label(work, sb->addr, sb->zone) == dl) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    embed_bool a_label = (ip6_select_label(work, sa->addr, sa->zone) == dl) ? EMBED_TRUE : EMBED_FALSE;
+    embed_bool b_label = (ip6_select_label(work, sb->addr, sb->zone) == dl) ? EMBED_TRUE : EMBED_FALSE;
     if (a_label != b_label)
     {
         return a_label ? 1 : -1;
@@ -512,8 +511,8 @@ static int ip6_select_cmp_dest(uint8_t *work, uint8_t ia, uint8_t ib, uint8_t *r
 
     // Rule 1: "If DB is known to be unreachable or if Source(DB) is undefined, then prefer DA."
     *rule = 1u;
-    idemip_bool a_bad = (da->unreachable || da->source == IDEMIP_IP6_SELECT_NONE) ? IDEMIP_TRUE : IDEMIP_FALSE;
-    idemip_bool b_bad = (db->unreachable || db->source == IDEMIP_IP6_SELECT_NONE) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    embed_bool a_bad = (da->unreachable || da->source == IDEMIP_IP6_SELECT_NONE) ? EMBED_TRUE : EMBED_FALSE;
+    embed_bool b_bad = (db->unreachable || db->source == IDEMIP_IP6_SELECT_NONE) ? EMBED_TRUE : EMBED_FALSE;
     if (a_bad != b_bad)
     {
         return a_bad ? -1 : 1;
@@ -526,10 +525,10 @@ static int ip6_select_cmp_dest(uint8_t *work, uint8_t ia, uint8_t ib, uint8_t *r
     // Not measured on the second half: rule 1 above returns when one of the two has a source and the
     // other does not, so by here they either both have one or neither does, and the first test
     // decides it. Both are written because the pair is what sec 6 makes the rules inapplicable for.
-    idemip_bool sourced = (da->source != IDEMIP_IP6_SELECT_NONE && // GCOVR_EXCL_BR_LINE
-                           db->source != IDEMIP_IP6_SELECT_NONE)   // GCOVR_EXCL_BR_LINE
-                              ? IDEMIP_TRUE
-                              : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
+    embed_bool sourced = (da->source != IDEMIP_IP6_SELECT_NONE && // GCOVR_EXCL_BR_LINE
+                          db->source != IDEMIP_IP6_SELECT_NONE)   // GCOVR_EXCL_BR_LINE
+                             ? EMBED_TRUE
+                             : EMBED_FALSE; // GCOVR_EXCL_BR_LINE
     if (sourced)
     {
         const Ip6SelectSource *sa = IP6_SELECT_SOURCE_AT(work, da->source);
@@ -538,8 +537,8 @@ static int ip6_select_cmp_dest(uint8_t *work, uint8_t ia, uint8_t ib, uint8_t *r
         // Rule 2: "If Scope(DA) = Scope(Source(DA)) and Scope(DB) <> Scope(Source(DB)), then prefer
         // DA."
         *rule = 2u;
-        idemip_bool a_match = (ip6_select_scope(da->addr) == ip6_select_scope(sa->addr)) ? IDEMIP_TRUE : IDEMIP_FALSE;
-        idemip_bool b_match = (ip6_select_scope(db->addr) == ip6_select_scope(sb->addr)) ? IDEMIP_TRUE : IDEMIP_FALSE;
+        embed_bool a_match = (ip6_select_scope(da->addr) == ip6_select_scope(sa->addr)) ? EMBED_TRUE : EMBED_FALSE;
+        embed_bool b_match = (ip6_select_scope(db->addr) == ip6_select_scope(sb->addr)) ? EMBED_TRUE : EMBED_FALSE;
         if (a_match != b_match)
         {
             return a_match ? 1 : -1;
@@ -556,8 +555,8 @@ static int ip6_select_cmp_dest(uint8_t *work, uint8_t ia, uint8_t ib, uint8_t *r
         // is not, then prefer DA ... If Source(DA) is just a home address and Source(DB) is just a
         // care-of address, then prefer DA."
         *rule = 4u;
-        idemip_bool a_both = (sa->home && sa->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE;
-        idemip_bool b_both = (sb->home && sb->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE;
+        embed_bool a_both = (sa->home && sa->care_of) ? EMBED_TRUE : EMBED_FALSE;
+        embed_bool b_both = (sb->home && sb->care_of) ? EMBED_TRUE : EMBED_FALSE;
         if (a_both != b_both)
         {
             return a_both ? 1 : -1;
@@ -568,10 +567,10 @@ static int ip6_select_cmp_dest(uint8_t *work, uint8_t ia, uint8_t ib, uint8_t *r
             // say, and the second half of each pair is not measured: this arm is reached only when
             // neither side is both, so an address that is a home address here is not also a care-of one
             // and the test cannot come out false. a_both and b_both are equal by the return above.
-            idemip_bool a_home = (sa->home && !sa->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
-            idemip_bool b_home = (sb->home && !sb->care_of) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
-            idemip_bool a_care = (sa->care_of && !sa->home) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
-            idemip_bool b_care = (sb->care_of && !sb->home) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
+            embed_bool a_home = (sa->home && !sa->care_of) ? EMBED_TRUE : EMBED_FALSE; // GCOVR_EXCL_BR_LINE
+            embed_bool b_home = (sb->home && !sb->care_of) ? EMBED_TRUE : EMBED_FALSE; // GCOVR_EXCL_BR_LINE
+            embed_bool a_care = (sa->care_of && !sa->home) ? EMBED_TRUE : EMBED_FALSE; // GCOVR_EXCL_BR_LINE
+            embed_bool b_care = (sb->care_of && !sb->home) ? EMBED_TRUE : EMBED_FALSE; // GCOVR_EXCL_BR_LINE
             if (a_home && b_care)
             {
                 return 1;
@@ -585,14 +584,12 @@ static int ip6_select_cmp_dest(uint8_t *work, uint8_t ia, uint8_t ib, uint8_t *r
         // Rule 5: "If Label(Source(DA)) = Label(DA) and Label(Source(DB)) <> Label(DB), then prefer
         // DA."
         *rule = 5u;
-        idemip_bool a_label = (ip6_select_label(work, sa->addr, sa->zone) ==
-                               ip6_select_label(work, da->addr, da->zone))
-                                  ? IDEMIP_TRUE
-                                  : IDEMIP_FALSE;
-        idemip_bool b_label = (ip6_select_label(work, sb->addr, sb->zone) ==
-                               ip6_select_label(work, db->addr, db->zone))
-                                  ? IDEMIP_TRUE
-                                  : IDEMIP_FALSE;
+        embed_bool a_label = (ip6_select_label(work, sa->addr, sa->zone) == ip6_select_label(work, da->addr, da->zone))
+                                 ? EMBED_TRUE
+                                 : EMBED_FALSE;
+        embed_bool b_label = (ip6_select_label(work, sb->addr, sb->zone) == ip6_select_label(work, db->addr, db->zone))
+                                 ? EMBED_TRUE
+                                 : EMBED_FALSE;
         if (a_label != b_label)
         {
             return a_label ? 1 : -1;
@@ -659,26 +656,28 @@ void idemip_ip6_select_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IP6_SELECT_OFF_CTX, 0, IP6_SELECT_STATE_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_IP6_SELECT_OFF_CTX, .val = 0,
+               .bytes = IP6_SELECT_STATE_BYTES);
     Ip6SelectCtx *ctx = IP6_SELECT_CTX(work);
     for (uint8_t i = 0u; i < (uint8_t)IDEMIP_IP6_SELECT_DEFAULT_POLICIES; i++)
     {
         Ip6SelectPolicy *row = IP6_SELECT_POLICY_AT(work, i);
-        memcpy(row->prefix, ip6_select_default_policy[i].prefix, IDEMIP_IP6_ADDR_LEN);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = row->prefix, .at = ip6_select_default_policy[i].prefix,
+                   .size = IDEMIP_IP6_ADDR_LEN);
         row->zone = IDEMIP_IP6_ZONE_DEFAULT;
         row->prefix_len = ip6_select_default_policy[i].prefix_len;
         row->precedence = ip6_select_default_policy[i].precedence;
         row->label = ip6_select_default_policy[i].label;
-        row->used = IDEMIP_TRUE;
+        row->used = EMBED_TRUE;
     }
     ctx->policies = (uint8_t)IDEMIP_IP6_SELECT_DEFAULT_POLICIES;
-    ctx->ready = IDEMIP_TRUE;
+    ctx->ready = EMBED_TRUE;
     Ip6SelectIo *io = IP6_SELECT_IO(work);
     io->status = IDEMIP_OK;
     io->policies = ctx->policies;
     io->sources = 0u;
     io->dests = 0u;
-    io->sorted = IDEMIP_FALSE;
+    io->sorted = EMBED_FALSE;
 }
 
 // A row whose prefix and length already sit in the table is overwritten, so a caller reconfigures
@@ -723,12 +722,12 @@ void idemip_ip6_select_policy_set(uint8_t *work)
     {
         ctx->policies = (uint8_t)(ctx->policies + 1u);
     }
-    memcpy(row->prefix, prefix, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = row->prefix, .at = prefix, .size = IDEMIP_IP6_ADDR_LEN);
     row->zone = io->policy_args.zone;
     row->prefix_len = io->policy_args.prefix_len;
     row->precedence = io->policy_args.precedence;
     row->label = io->policy_args.label;
-    row->used = IDEMIP_TRUE;
+    row->used = EMBED_TRUE;
     io->index = slot;
     io->policies = ctx->policies;
     io->status = IDEMIP_OK;
@@ -742,7 +741,7 @@ void idemip_ip6_select_policy_lookup(uint8_t *work)
     }
     Ip6SelectIo *io = IP6_SELECT_IO(work);
     io->status = IDEMIP_ERR;
-    io->found = IDEMIP_FALSE;
+    io->found = EMBED_FALSE;
     io->index = IDEMIP_IP6_SELECT_NONE;
     io->precedence = 0u;
     io->label = IDEMIP_IP6_SELECT_NONE;
@@ -758,7 +757,7 @@ void idemip_ip6_select_policy_lookup(uint8_t *work)
     if (row != IDEMIP_IP6_SELECT_NONE) // GCOVR_EXCL_BR_LINE
     {
         const Ip6SelectPolicy *p = IP6_SELECT_POLICY_AT(work, row);
-        io->found = IDEMIP_TRUE;
+        io->found = EMBED_TRUE;
         io->index = row;
         io->precedence = p->precedence;
         io->label = p->label;
@@ -826,7 +825,7 @@ void idemip_ip6_select_source_add(uint8_t *work)
         return;
     }
     Ip6SelectSource *src = IP6_SELECT_SOURCE_AT(work, ctx->sources);
-    memcpy(src->addr, addr, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = src->addr, .at = addr, .size = IDEMIP_IP6_ADDR_LEN);
     src->zone = io->source_args.zone;
     src->netif = io->source_args.netif;
     src->deprecated = io->source_args.deprecated;
@@ -834,12 +833,12 @@ void idemip_ip6_select_source_add(uint8_t *work)
     src->home = io->source_args.home;
     src->care_of = io->source_args.care_of;
     src->next_hop = io->source_args.next_hop;
-    src->used = IDEMIP_TRUE;
+    src->used = EMBED_TRUE;
     io->index = ctx->sources;
     ctx->sources = (uint8_t)(ctx->sources + 1u);
-    ctx->sorted = IDEMIP_FALSE;
+    ctx->sorted = EMBED_FALSE;
     io->sources = ctx->sources;
-    io->sorted = IDEMIP_FALSE;
+    io->sorted = EMBED_FALSE;
     io->status = IDEMIP_OK;
 }
 
@@ -861,18 +860,18 @@ void idemip_ip6_select_dest_add(uint8_t *work)
         return;
     }
     Ip6SelectDest *dst = IP6_SELECT_DEST_AT(work, ctx->dests);
-    memcpy(dst->addr, addr, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = dst->addr, .at = addr, .size = IDEMIP_IP6_ADDR_LEN);
     dst->zone = io->dest_args.zone;
     dst->netif = io->dest_args.netif;
     dst->source = IDEMIP_IP6_SELECT_NONE;
     dst->unreachable = io->dest_args.unreachable;
     dst->encapsulated = io->dest_args.encapsulated;
-    dst->used = IDEMIP_TRUE;
+    dst->used = EMBED_TRUE;
     io->index = ctx->dests;
     ctx->dests = (uint8_t)(ctx->dests + 1u);
-    ctx->sorted = IDEMIP_FALSE;
+    ctx->sorted = EMBED_FALSE;
     io->dests = ctx->dests;
-    io->sorted = IDEMIP_FALSE;
+    io->sorted = EMBED_FALSE;
     io->status = IDEMIP_OK;
 }
 
@@ -886,7 +885,7 @@ void idemip_ip6_select_source_select(uint8_t *work)
     }
     Ip6SelectIo *io = IP6_SELECT_IO(work);
     io->status = IDEMIP_ERR;
-    io->found = IDEMIP_FALSE;
+    io->found = EMBED_FALSE;
     io->source = NULL;
     io->source_zone = IDEMIP_IP6_ZONE_DEFAULT;
     io->index = IDEMIP_IP6_SELECT_NONE;
@@ -902,7 +901,7 @@ void idemip_ip6_select_source_select(uint8_t *work)
     if (best != IDEMIP_IP6_SELECT_NONE)
     {
         const Ip6SelectSource *src = IP6_SELECT_SOURCE_AT(work, best);
-        io->found = IDEMIP_TRUE;
+        io->found = EMBED_TRUE;
         io->index = best;
         io->source = src->addr;
         io->source_zone = src->zone;
@@ -924,7 +923,7 @@ void idemip_ip6_select_dest_sort(uint8_t *work)
     Ip6SelectIo *io = IP6_SELECT_IO(work);
     Ip6SelectCtx *ctx = IP6_SELECT_CTX(work);
     io->status = IDEMIP_ERR;
-    io->sorted = IDEMIP_FALSE;
+    io->sorted = EMBED_FALSE;
     if (!ctx->ready)
     {
         return;
@@ -952,9 +951,9 @@ void idemip_ip6_select_dest_sort(uint8_t *work)
         order[i] = order[best];
         order[best] = swap;
     }
-    ctx->sorted = IDEMIP_TRUE;
+    ctx->sorted = EMBED_TRUE;
     io->dests = ctx->dests;
-    io->sorted = IDEMIP_TRUE;
+    io->sorted = EMBED_TRUE;
     io->status = IDEMIP_OK;
 }
 
@@ -974,7 +973,7 @@ void idemip_ip6_select_dest_at(uint8_t *work)
     io->dest_zone = IDEMIP_IP6_ZONE_DEFAULT;
     io->source_zone = IDEMIP_IP6_ZONE_DEFAULT;
     io->index = IDEMIP_IP6_SELECT_NONE;
-    io->found = IDEMIP_FALSE;
+    io->found = EMBED_FALSE;
     if (!ctx->ready || !ctx->sorted || io->query_args.index >= ctx->dests)
     {
         return;
@@ -990,9 +989,9 @@ void idemip_ip6_select_dest_at(uint8_t *work)
         const Ip6SelectSource *src = IP6_SELECT_SOURCE_AT(work, dst->source);
         io->source = src->addr;
         io->source_zone = src->zone;
-        io->found = IDEMIP_TRUE;
+        io->found = EMBED_TRUE;
     }
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

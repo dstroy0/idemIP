@@ -24,7 +24,7 @@
 
 #if IDEMIP_ENABLE_TCP
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
 // Which options a build carries (RFC 9293 sec 3.2, RFC 7323, RFC 2018)
@@ -109,9 +109,9 @@ typedef struct
     uint32_t queued;
     uint32_t eff_snd_mss;
     uint32_t now_ms;
-    idemip_bool push;
-    idemip_bool nodelay;
-    idemip_bool force;
+    embed_bool push;
+    embed_bool nodelay;
+    embed_bool force;
 } TcpOutSendArgs;
 
 /**
@@ -134,7 +134,7 @@ typedef struct
     uint32_t flight;
     uint32_t acked;
     uint32_t smss;
-    idemip_bool resent;
+    embed_bool resent;
 } TcpOutTimerArgs;
 
 /**
@@ -187,8 +187,8 @@ typedef struct
     uint16_t hdr_len;
     uint32_t usable;
     uint32_t send_len;
-    idemip_bool send_now;
-    idemip_bool r2;
+    embed_bool send_now;
+    embed_bool r2;
 } TcpOutResult;
 
 /**
@@ -328,22 +328,21 @@ void idemip_tcp_out_cc_recover(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const TcpOutNs TcpOut IDEMIP_UNUSED = {
-    .clear = idemip_tcp_out_clear,
-    .build = idemip_tcp_out_build,
-    .send = idemip_tcp_out_send,
-    .ack = idemip_tcp_out_ack,
-    .rst = idemip_tcp_out_rst,
-    .rtt = idemip_tcp_out_rtt,
-    .rtx_arm = idemip_tcp_out_rtx_arm,
-    .rtx_stop = idemip_tcp_out_rtx_stop,
-    .rtx_restart = idemip_tcp_out_rtx_restart,
-    .rtx_expire = idemip_tcp_out_rtx_expire,
-    .cc_init = idemip_tcp_out_cc_init,
-    .cc_ack = idemip_tcp_out_cc_ack,
-    .cc_dupack = idemip_tcp_out_cc_dupack,
-    .cc_recover = idemip_tcp_out_cc_recover};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE TcpOutNs TcpOut EMBED_UNUSED = {.clear = idemip_tcp_out_clear,
+                                                    .build = idemip_tcp_out_build,
+                                                    .send = idemip_tcp_out_send,
+                                                    .ack = idemip_tcp_out_ack,
+                                                    .rst = idemip_tcp_out_rst,
+                                                    .rtt = idemip_tcp_out_rtt,
+                                                    .rtx_arm = idemip_tcp_out_rtx_arm,
+                                                    .rtx_stop = idemip_tcp_out_rtx_stop,
+                                                    .rtx_restart = idemip_tcp_out_rtx_restart,
+                                                    .rtx_expire = idemip_tcp_out_rtx_expire,
+                                                    .cc_init = idemip_tcp_out_cc_init,
+                                                    .cc_ack = idemip_tcp_out_cc_ack,
+                                                    .cc_dupack = idemip_tcp_out_cc_dupack,
+                                                    .cc_recover = idemip_tcp_out_cc_recover};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_TCP
 

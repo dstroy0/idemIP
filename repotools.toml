@@ -34,8 +34,8 @@ extensions = [".c", ".h"]
 # reading it reports the generator's shape as this tree's.
 skip_files = ["unity_runner.c"]
 # Extends the defaults rather than replacing them. Four this tree has that the defaults do not name:
-# the RFC text cache, the editor and agent directories, and ctest's scratch.
-exclude = [".rfc-cache", ".claude", ".vscode", "Testing"]
+# the RFC text cache, the editor directory, ctest's scratch, and the checkouts deps/ fetches.
+exclude = [".rfc-cache", ".vscode", "Testing", "deps"]
 
 [prose]
 # The two files in this tree that are prose. docs/ is deliberately not a root: everything under

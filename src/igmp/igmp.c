@@ -16,7 +16,7 @@
 
 #include "src/igmp/igmp.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads something else here and
 // every entry but clear refuses it.
@@ -31,8 +31,8 @@ typedef struct
     uint32_t group;
     IdemIpIgmpState state;
     uint8_t netif;
-    idemip_bool last_reporter;
-    idemip_bool used;
+    embed_bool last_reporter;
+    embed_bool used;
     // RFC 1112 sec 7.2: "Each membership should have an associated reference count or similar
     // mechanism to handle multiple requests to join and leave the same group", sec 7.1 adding that
     // "LeaveHostGroup may succeed, but the membership persist, if more than one upper-layer protocol
@@ -49,7 +49,7 @@ typedef struct
 {
     uint32_t ready;
     uint32_t v1_deadline_ms[IDEMIP_NETIF_COUNT];
-    idemip_bool v1_present[IDEMIP_NETIF_COUNT];
+    embed_bool v1_present[IDEMIP_NETIF_COUNT];
 } IgmpCtx;
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
@@ -57,20 +57,21 @@ typedef struct
 IDEMIP_ASSERT_REGION(IDEMIP_IGMP_OFF_CTX, sizeof(IgmpCtx), IDEMIP_IGMP_OFF_END, "igmp's context");
 
 // An index is (i << SHIFT), so each entry is exactly its width.
-static_assert(sizeof(IgmpGroup) == (1u << IDEMIP_IGMP_ENTRY_SHIFT),
-              "an IgmpGroup must be exactly 1 << IDEMIP_IGMP_ENTRY_SHIFT wide - pad it, or raise the shift");
+EMBED_STATIC_ASSERT(sizeof(IgmpGroup) == (1u << IDEMIP_IGMP_ENTRY_SHIFT),
+                    "an IgmpGroup must be exactly 1 << IDEMIP_IGMP_ENTRY_SHIFT wide - pad it, or raise the shift");
 
 // The caller's borrow, split: the operand block, the context, then the table. igmp.h publishes the
 // offsets; these two asserts prove the span covers them before anything runs. The first keeps the
 // context inside the region ahead of the group table, the second the whole map inside the borrow.
-static_assert(IDEMIP_IGMP_OFF_CTX + sizeof(IgmpCtx) <= IDEMIP_IGMP_OFF_GROUPS,
-              "IDEMIP_IGMP_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_IGMP_OFF_END <= IDEMIP_IGMP_BORROW,
-              "IDEMIP_IGMP_BORROW is short of the map - raise IDEMIP_IGMP_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_IGMP_OFF_CTX + sizeof(IgmpCtx) <= IDEMIP_IGMP_OFF_GROUPS,
+    "IDEMIP_IGMP_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IGMP_OFF_END <= IDEMIP_IGMP_BORROW,
+                    "IDEMIP_IGMP_BORROW is short of the map - raise IDEMIP_IGMP_CTX_BYTES in idemip_config.h");
 
 // clear zeroes the table, so the sec 6 Non-Member state, which "requires no storage in the host", is
 // the zero state.
-static_assert(IDEMIP_IGMP_NON_MEMBER == 0, "IDEMIP_IGMP_NON_MEMBER must be zero: clear zeroes the table");
+EMBED_STATIC_ASSERT(IDEMIP_IGMP_NON_MEMBER == 0, "IDEMIP_IGMP_NON_MEMBER must be zero: clear zeroes the table");
 
 // The widest Max Response Time RFC 2236 sec 2.2 can carry: an 8-bit field "in units of 1/10 second".
 #define IGMP_MAX_RESP_MS_MAX (255u * IDEMIP_IGMP_MAX_RESP_UNIT_MS)
@@ -79,9 +80,9 @@ static_assert(IDEMIP_IGMP_NON_MEMBER == 0, "IDEMIP_IGMP_NON_MEMBER must be zero:
 #define IGMP_V1_MAX_RESP_MS (IDEMIP_IGMP_V1_MAX_RESP * IDEMIP_IGMP_MAX_RESP_UNIT_MS)
 
 // igmp_draw scales a bound by a 16-bit word in 32 bits, so every bound it is handed fits 16 bits.
-static_assert(IGMP_MAX_RESP_MS_MAX <= 0xFFFFu && IDEMIP_IGMP_UNSOLICITED_REPORT_MS <= 0xFFFFu &&
-                  IGMP_V1_MAX_RESP_MS <= 0xFFFFu,
-              "a delay bound must fit 16 bits: igmp_draw scales it by a 16-bit word in 32 bits");
+EMBED_STATIC_ASSERT(IGMP_MAX_RESP_MS_MAX <= 0xFFFFu && IDEMIP_IGMP_UNSOLICITED_REPORT_MS <= 0xFFFFu &&
+                        IGMP_V1_MAX_RESP_MS <= 0xFFFFu,
+                    "a delay bound must fit 16 bits: igmp_draw scales it by a 16-bit word in 32 bits");
 
 // The regions, at their offsets in the caller's borrow.
 #define IGMP_IO(w) IDEMIP_IGMP_IO(w)
@@ -93,26 +94,26 @@ static_assert(IGMP_MAX_RESP_MS_MAX <= 0xFFFFu && IDEMIP_IGMP_UNSOLICITED_REPORT_
 #define IGMP_STATE_BYTES ((size_t)IDEMIP_IGMP_OFF_END - (size_t)IDEMIP_IGMP_OFF_CTX)
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool igmp_ready(uint8_t *work)
+static embed_bool igmp_ready(uint8_t *work)
 {
-    return (idemip_bool)(IGMP_CTX(work)->ready == IGMP_READY);
+    return (embed_bool)(IGMP_CTX(work)->ready == IGMP_READY);
 }
 
 // RFC 1112 sec 4: "Host groups are identified by class D IP addresses, i.e., those with '1110' as
 // their high-order four bits." RFC 2236 sec 3 excludes the all-systems group from the memberships a
 // host reports.
-static idemip_bool igmp_group_ok(uint32_t group)
+static embed_bool igmp_group_ok(uint32_t group)
 {
-    return (idemip_bool)((group & 0xF0000000u) == 0xE0000000u && group != IDEMIP_IGMP_ALL_SYSTEMS);
+    return (embed_bool)((group & 0xF0000000u) == 0xE0000000u && group != IDEMIP_IGMP_ALL_SYSTEMS);
 }
 
 // --- time and the draw -----------------------------------------------------
 
 // True when deadline_ms is at or before now_ms. The difference is taken in the unsigned width and
 // tested against the half range, so a clock that wrapped past 0xFFFFFFFF still compares.
-static idemip_bool igmp_passed(uint32_t now_ms, uint32_t deadline_ms)
+static embed_bool igmp_passed(uint32_t now_ms, uint32_t deadline_ms)
 {
-    return (idemip_bool)((now_ms - deadline_ms) < 0x80000000u);
+    return (embed_bool)((now_ms - deadline_ms) < 0x80000000u);
 }
 
 // Milliseconds left on a running timer, zero once it has passed.
@@ -226,14 +227,14 @@ static void igmp_do_join(uint8_t *work)
     IgmpGroup *entry = IGMP_GROUP_AT(work, index);
     entry->group = group;
     entry->netif = netif;
-    entry->used = IDEMIP_TRUE;
+    entry->used = EMBED_TRUE;
     entry->refs = 1u;
     entry->state = IDEMIP_IGMP_DELAYING_MEMBER;
-    entry->last_reporter = IDEMIP_TRUE;
+    entry->last_reporter = EMBED_TRUE;
     entry->deadline_ms =
         io->group_args.now_ms + igmp_draw(io->group_args.rand, IDEMIP_IGMP_UNSOLICITED_REPORT_MS);
     igmp_report_entry(io, entry, index);
-    io->send_report = IDEMIP_TRUE;
+    io->send_report = EMBED_TRUE;
     io->report_v1 = ctx->v1_present[netif];
     io->status = IDEMIP_OK;
 }
@@ -261,9 +262,9 @@ static void igmp_do_leave(uint8_t *work)
         io->status = IDEMIP_OK;
         return;
     }
-    io->send_leave = (idemip_bool)(entry->last_reporter && !ctx->v1_present[entry->netif]);
+    io->send_leave = (embed_bool)(entry->last_reporter && !ctx->v1_present[entry->netif]);
     igmp_report_entry(io, entry, index);
-    memset(entry, 0, sizeof *entry);
+    *entry = (IgmpGroup){0};
     io->state = IDEMIP_IGMP_NON_MEMBER;
     io->deadline_ms = 0u;
     io->status = IDEMIP_OK;
@@ -297,11 +298,11 @@ static void igmp_do_query_in(uint8_t *work)
     IgmpCtx *ctx = IGMP_CTX(work);
     const uint8_t netif = io->query_args.netif;
     const uint32_t now_ms = io->query_args.now_ms;
-    const idemip_bool v1 = (idemip_bool)(io->query_args.v1 || io->query_args.max_resp_ms == 0u);
+    const embed_bool v1 = (embed_bool)(io->query_args.v1 || io->query_args.max_resp_ms == 0u);
     const uint32_t max_resp_ms = v1 ? IGMP_V1_MAX_RESP_MS : io->query_args.max_resp_ms;
     if (v1)
     {
-        ctx->v1_present[netif] = IDEMIP_TRUE;
+        ctx->v1_present[netif] = EMBED_TRUE;
         ctx->v1_deadline_ms[netif] = now_ms + IDEMIP_IGMP_V1_ROUTER_PRESENT_MS;
     }
     uint32_t seed = io->query_args.rand;
@@ -359,7 +360,7 @@ static void igmp_do_report_in(uint8_t *work)
     {
         entry->state = IDEMIP_IGMP_IDLE_MEMBER;
         entry->deadline_ms = 0u;
-        entry->last_reporter = IDEMIP_FALSE;
+        entry->last_reporter = EMBED_FALSE;
     }
     igmp_report_entry(io, entry, index);
     io->status = IDEMIP_OK;
@@ -381,7 +382,7 @@ static void igmp_do_tick(uint8_t *work)
     {
         if (ctx->v1_present[n] && igmp_passed(now_ms, ctx->v1_deadline_ms[n]))
         {
-            ctx->v1_present[n] = IDEMIP_FALSE;
+            ctx->v1_present[n] = EMBED_FALSE;
         }
     }
     for (uint32_t i = 0u; i < IDEMIP_IGMP_GROUPS; i++)
@@ -398,10 +399,10 @@ static void igmp_do_tick(uint8_t *work)
             continue;
         }
         entry->state = IDEMIP_IGMP_IDLE_MEMBER;
-        entry->last_reporter = IDEMIP_TRUE;
+        entry->last_reporter = EMBED_TRUE;
         entry->deadline_ms = 0u;
         igmp_report_entry(io, entry, (uint8_t)i);
-        io->send_report = IDEMIP_TRUE;
+        io->send_report = EMBED_TRUE;
         io->report_v1 = ctx->v1_present[entry->netif];
     }
     io->status = IDEMIP_OK;
@@ -417,7 +418,7 @@ void idemip_igmp_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IGMP_OFF_CTX, 0, IGMP_STATE_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_IGMP_OFF_CTX, .val = 0, .bytes = IGMP_STATE_BYTES);
     IGMP_CTX(work)->ready = IGMP_READY;
     IGMP_IO(work)->status = IDEMIP_OK;
 }
@@ -435,10 +436,10 @@ static void igmp_result_clear(IgmpIo *io)
     io->state = IDEMIP_IGMP_NON_MEMBER;
     io->deadline_ms = 0u;
     io->expired = 0u;
-    io->last_reporter = IDEMIP_FALSE;
-    io->send_report = IDEMIP_FALSE;
-    io->send_leave = IDEMIP_FALSE;
-    io->report_v1 = IDEMIP_FALSE;
+    io->last_reporter = EMBED_FALSE;
+    io->send_report = EMBED_FALSE;
+    io->send_leave = EMBED_FALSE;
+    io->report_v1 = EMBED_FALSE;
 }
 
 // A full table is BUSY: leave frees an entry, so the retry succeeds once a membership is dropped. A
@@ -544,8 +545,8 @@ void idemip_igmp_tick(uint8_t *work)
     io->status = IDEMIP_ERR;
     igmp_result_clear(io);
     io->expired = 0u;
-    io->send_report = IDEMIP_FALSE;
-    io->report_v1 = IDEMIP_FALSE;
+    io->send_report = EMBED_FALSE;
+    io->report_v1 = EMBED_FALSE;
     if (!igmp_ready(work))
     {
         return;
@@ -553,4 +554,4 @@ void idemip_igmp_tick(uint8_t *work)
     igmp_do_tick(work);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

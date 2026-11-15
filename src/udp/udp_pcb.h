@@ -26,7 +26,7 @@
 
 #if IDEMIP_ENABLE_UDP
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief Octets an address operand and an address in an entry span.
@@ -67,7 +67,7 @@ IDEMIP_BEGIN_DECLS
 typedef struct
 {
     uint8_t ip_version;
-    idemip_bool lite;
+    embed_bool lite;
 } UdpPcbOpenArgs;
 
 /**
@@ -212,8 +212,8 @@ typedef struct
     uint8_t mcast_netif;
     uint8_t flags;
     uint8_t ip_version;
-    idemip_bool lite;
-    idemip_bool connected;
+    embed_bool lite;
+    embed_bool connected;
 } UdpPcbInfo;
 
 /**
@@ -339,17 +339,16 @@ void idemip_udp_pcb_find(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const UdpPcbNs UdpPcb IDEMIP_UNUSED = {
-    .clear = idemip_udp_pcb_clear,
-    .open = idemip_udp_pcb_open,
-    .close = idemip_udp_pcb_close,
-    .bind = idemip_udp_pcb_bind,
-    .connect = idemip_udp_pcb_connect,
-    .disconnect = idemip_udp_pcb_disconnect,
-    .set_opts = idemip_udp_pcb_set_opts,
-    .load = idemip_udp_pcb_load,
-    .find = idemip_udp_pcb_find};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE UdpPcbNs UdpPcb EMBED_UNUSED = {.clear = idemip_udp_pcb_clear,
+                                                    .open = idemip_udp_pcb_open,
+                                                    .close = idemip_udp_pcb_close,
+                                                    .bind = idemip_udp_pcb_bind,
+                                                    .connect = idemip_udp_pcb_connect,
+                                                    .disconnect = idemip_udp_pcb_disconnect,
+                                                    .set_opts = idemip_udp_pcb_set_opts,
+                                                    .load = idemip_udp_pcb_load,
+                                                    .find = idemip_udp_pcb_find};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_UDP
 

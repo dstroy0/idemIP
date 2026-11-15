@@ -18,7 +18,7 @@
 #include "src/ip/ipv6_defines.h"
 #include "src/icmp/icmpv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The one definition, private to this TU. A borrow that was never cleared carries no mark, so every
 // entry refuses it. The two counters behind it are RFC 4443 sec 2.4 (f)'s token bucket: what is left
@@ -39,8 +39,9 @@ IDEMIP_ASSERT_REGION(IDEMIP_ICMP6_IN_OFF_CTX, sizeof(Icmp6InCtx), IDEMIP_ICMP6_I
 
 // The caller's borrow, split: the operand block, then the context. icmp6_in.h publishes the offsets;
 // the assert below proves the span covers them before anything runs.
-static_assert(IDEMIP_ICMP6_IN_OFF_CTX + sizeof(Icmp6InCtx) <= IDEMIP_ICMP6_IN_BORROW,
-              "IDEMIP_ICMP6_IN_BORROW is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_ICMP6_IN_OFF_CTX + sizeof(Icmp6InCtx) <= IDEMIP_ICMP6_IN_BORROW,
+    "IDEMIP_ICMP6_IN_BORROW is short of the operand block and the context - raise it in idemip_config.h");
 
 // The regions, at their offsets in the caller's borrow.
 #define ICMP6_IN_CTX(w) ((Icmp6InCtx *)(void *)((w) + IDEMIP_ICMP6_IN_OFF_CTX))
@@ -52,13 +53,13 @@ static_assert(IDEMIP_ICMP6_IN_OFF_CTX + sizeof(Icmp6InCtx) <= IDEMIP_ICMP6_IN_BO
 // multicast address."
 #define ICMP6_IN_MULTICAST_TAG 0xFFu
 
-static idemip_bool icmp6_in_is_multicast(const uint8_t *addr)
+static embed_bool icmp6_in_is_multicast(const uint8_t *addr)
 {
-    return (addr[0] == ICMP6_IN_MULTICAST_TAG) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (addr[0] == ICMP6_IN_MULTICAST_TAG) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 4291 sec 2.5.2: "The address 0:0:0:0:0:0:0:0 is called the unspecified address."
-static idemip_bool icmp6_in_is_unspecified(const uint8_t *addr)
+static embed_bool icmp6_in_is_unspecified(const uint8_t *addr)
 {
     return idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN);
 }
@@ -67,11 +68,11 @@ static idemip_bool icmp6_in_is_unspecified(const uint8_t *addr)
 
 // RFC 4443 sec 2.3 sums the message and the RFC 8200 sec 8.1 pseudo-header, and RFC 1071 sec 1 makes
 // a span carrying its own checksum sum to all ones, so the verify is that sum against zero.
-static idemip_bool icmp6_in_cksum_ok(const uint8_t *p, const uint8_t *m, size_t len)
+static embed_bool icmp6_in_cksum_ok(const uint8_t *p, const uint8_t *m, size_t len)
 {
     uint32_t sum =
         idemip_ip6_pseudo_accum(0u, idemip_ip6_src(p), idemip_ip6_dst(p), (uint32_t)len, IDEMIP_IP6_NH_ICMPV6);
-    return (idemip_cksum_final(idemip_cksum_accum(sum, m, len)) == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (idemip_cksum_final(idemip_cksum_accum(sum, m, len)) == 0u) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // --- RFC 4443 sec 2.4 (f), the token bucket --------------------------------
@@ -110,12 +111,12 @@ static void icmp6_in_refill(Icmp6InCtx *ctx, uint32_t now_ms)
 
 // The type at the head of the invoking packet's own ICMPv6 message, which (e.1) and (e.2) test. Only
 // the first fragment carries that head (RFC 8200 sec 4.5), so a later one reports none.
-static idemip_bool icmp6_in_invoking_type(const uint8_t *p, size_t len, uint8_t *type)
+static embed_bool icmp6_in_invoking_type(const uint8_t *p, size_t len, uint8_t *type)
 {
     const IdemIpIp6Chain c = idemip_ip6_walk(p, len);
     if (!c.ok || c.next_hdr != IDEMIP_IP6_NH_ICMPV6)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     // Not measured on the offset: idemip_ip6_walk stops at a Fragment header whose offset is not
     // zero and leaves the Fragment header itself as the next one, so the test above has already
@@ -123,14 +124,14 @@ static idemip_bool icmp6_in_invoking_type(const uint8_t *p, size_t len, uint8_t 
     // "in the first fragment" alone, and the type read below is out of that header.
     if (c.fragmented && idemip_ip6_frag_offset_bytes(p + c.frag_hdr) != 0u) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+        return EMBED_FALSE; // GCOVR_EXCL_LINE
     }
     if (c.offset + IDEMIP_ICMP6_HDR_LEN > len)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     *type = idemip_icmp6_type(p + c.offset);
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // "(There are two exceptions to this rule: (1) the Packet Too Big Message (Section 3.2) to allow Path
@@ -139,18 +140,18 @@ static idemip_bool icmp6_in_invoking_type(const uint8_t *p, size_t len, uint8_t 
 // highest-order two bits set to 10)." The sec 3.4 Pointer "Identifies the octet offset within the
 // invoking packet where the error was detected", which for Code 2 is that Option Type octet. The
 // exceptions carry from (e.3) to (e.4) and (e.5).
-static idemip_bool icmp6_in_mcast_exception(const Icmp6InErrArgs *a, size_t avail)
+static embed_bool icmp6_in_mcast_exception(const Icmp6InErrArgs *a, size_t avail)
 {
     if (a->type == (uint8_t)IDEMIP_ICMP6_PACKET_TOO_BIG)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     if (a->type == (uint8_t)IDEMIP_ICMP6_PARAMETER_PROBLEM && a->code == IDEMIP_ICMP6_PP_UNREC_OPTION &&
         (size_t)a->word < avail && (a->invoking[a->word] & IDEMIP_IP6_OPT_ACT_MASK) == IDEMIP_IP6_OPT_ACT_DISCARD_ICMP)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 // The six rules of sec 2.4 (e), in the order it lists them. "NOTE: THE RESTRICTIONS UNDER (e) AND (f)
@@ -172,7 +173,7 @@ static uint8_t icmp6_in_suppressed(const Icmp6InErrArgs *a, size_t avail)
             return IDEMIP_ICMP6_IN_SUPPRESS_REDIRECT;
         }
     }
-    const idemip_bool exception = icmp6_in_mcast_exception(a, avail);
+    const embed_bool exception = icmp6_in_mcast_exception(a, avail);
     // (e.3) "A packet destined to an IPv6 multicast address."
     if (icmp6_in_is_multicast(idemip_ip6_dst(a->invoking)) && !exception)
     {
@@ -218,9 +219,9 @@ static void icmp6_in_result_clear(Icmp6InIo *io)
     io->code = 0u;
     io->proto = 0u;
     io->suppress = IDEMIP_ICMP6_IN_SUPPRESS_NONE;
-    io->cksum_ok = IDEMIP_FALSE;
-    io->bad_len = IDEMIP_FALSE;
-    io->truncated = IDEMIP_FALSE;
+    io->cksum_ok = EMBED_FALSE;
+    io->bad_len = EMBED_FALSE;
+    io->truncated = EMBED_FALSE;
 }
 
 // RFC 4443 sec 2.4 (d): "the upper-layer protocol type is extracted from the original packet
@@ -230,7 +231,7 @@ static void icmp6_in_error_arrived(Icmp6InIo *io, const uint8_t *msg, size_t msg
 {
     if (msg_len < (size_t)IDEMIP_ICMP6_ERR_HDR_LEN)
     {
-        io->bad_len = IDEMIP_TRUE;
+        io->bad_len = EMBED_TRUE;
         io->act = (uint8_t)(io->act | IDEMIP_ICMP6_IN_ACT_DISCARD);
         return;
     }
@@ -255,14 +256,14 @@ static void icmp6_in_error_arrived(Icmp6InIo *io, const uint8_t *msg, size_t msg
     // received message.
     if (body_len < (size_t)IDEMIP_IP6_OFF_PAYLOAD)
     {
-        io->bad_len = IDEMIP_TRUE;
+        io->bad_len = EMBED_TRUE;
         io->act = (uint8_t)(io->act | IDEMIP_ICMP6_IN_ACT_DISCARD);
         return;
     }
     const IdemIpIp6Chain c = idemip_ip6_walk(body, body_len);
     if (!c.ok || c.next_hdr == IDEMIP_IP6_NH_NONE)
     {
-        io->truncated = IDEMIP_TRUE;
+        io->truncated = EMBED_TRUE;
         io->act = (uint8_t)(io->act | IDEMIP_ICMP6_IN_ACT_DISCARD);
         return;
     }
@@ -293,7 +294,7 @@ void idemip_icmp6_in_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work, 0, (size_t)IDEMIP_ICMP6_IN_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work, .val = 0, .bytes = (size_t)IDEMIP_ICMP6_IN_BORROW);
     Icmp6InCtx *ctx = ICMP6_IN_CTX(work);
     ctx->ready = ICMP6_IN_READY;
     ctx->tokens = (uint8_t)IDEMIP_ICMP6_ERR_BUCKET; // sec 2.4 (f): a full bucket allows the first burst
@@ -351,7 +352,7 @@ void idemip_icmp6_in_recv(uint8_t *work)
 
     if (msg_len < (size_t)IDEMIP_ICMP6_HDR_LEN)
     {
-        io->bad_len = IDEMIP_TRUE;
+        io->bad_len = EMBED_TRUE;
         io->act = IDEMIP_ICMP6_IN_ACT_DISCARD;
         return;
     }
@@ -377,7 +378,7 @@ void idemip_icmp6_in_recv(uint8_t *work)
     }
     if (msg_len < (size_t)IDEMIP_ICMP6_ECHO_HDR_LEN)
     {
-        io->bad_len = IDEMIP_TRUE;
+        io->bad_len = EMBED_TRUE;
         io->act = IDEMIP_ICMP6_IN_ACT_DISCARD;
         return;
     }
@@ -474,4 +475,4 @@ void idemip_icmp6_in_error(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

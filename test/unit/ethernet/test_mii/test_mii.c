@@ -19,7 +19,6 @@
 #include "src/ethernet/mii.h"
 #include "src/ethernet/phy.h"
 
-#include <string.h>
 #include <unity.h>
 #include "src/ethernet/mii_defines.h"
 

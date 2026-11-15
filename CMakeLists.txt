@@ -1,7 +1,7 @@
 # idemIP v0.1.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.25)
 project(idemIP VERSION 0.1.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
@@ -36,30 +36,6 @@ option(IDEMIP_LTO "Link-time optimization, which is what folds the namespace ind
 
 if(IDEMIP_COVERAGE)
     set(IDEMIP_LTO OFF)
-endif()
-
-# --- the mem entries ---------------------------------------------------------
-# src/ calls memcpy, memmove, memset and memcmp in 241 places and names them nowhere else: one
-# #include in src/idemip_config.h decides whose they are. libc's is the default and the oracle -
-# entries that have shipped for decades have been beaten on harder than anything written here - and
-# this option points them at include/MMgr instead, whose mmgr_string_shim.h aliases them under the
-# same spellings. Not one call site changes either way.
-#
-# So the suite is meant to be run twice, and a case that passes both ways is testing the contract
-# rather than one implementation of it. A case that passes against MMgr and fails against libc is
-# either encoding a quirk of ours or has found a real disagreement, and libc is what settles it.
-option(IDEMIP_MMGR "Build against MMgr's mem entries instead of libc <string.h>" OFF)
-
-if(IDEMIP_MMGR)
-    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/include/MMgr/CMakeLists.txt")
-        message(FATAL_ERROR "IDEMIP_MMGR needs the include/MMgr submodule: git submodule update --init")
-    endif()
-    # MMgr's own suites and benches are MMgr's business, and CMP0077 lets a normal variable set here
-    # win over the option() inside it.
-    set(MMGR_BUILD_TESTS OFF)
-    set(MMGR_BUILD_BENCH OFF)
-    add_subdirectory(include/MMgr EXCLUDE_FROM_ALL)
-    message(STATUS "idemIP: MMGR build - the mem entries are MMgr's. libc is the oracle, build it that way too")
 endif()
 
 # --- capabilities ------------------------------------------------------------
@@ -127,6 +103,32 @@ if(IDEMIP_FUZZ)
     add_link_options(-fsanitize=fuzzer-no-link,address,undefined)
 endif()
 
+# --- dependencies ------------------------------------------------------------
+# embedded_types gives the vocabulary, and deps/ fetches it. MMgr gives the memory entries that src/
+# calls by their own names, and the cells a program takes its borrows from. deps/ comes first, so
+# MMgr uses the same embedded_types checkout.
+#
+# This block comes after the coverage and fuzz options. Their compile options then reach MMgr too,
+# because the mem entries are code that the sanitizers and the coverage counters must see.
+add_subdirectory(deps)
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/include/MMgr/CMakeLists.txt")
+    message(FATAL_ERROR "idemIP needs the include/MMgr submodule: git submodule update --init")
+endif()
+# The suites and benches of MMgr are for that repository. CMP0077 lets a normal variable here take
+# precedence over the option() in MMgr. MMgr takes link-time optimization only where idemIP does,
+# because a coverage or fuzz build turns it off for the whole program.
+set(MMGR_BUILD_TESTS OFF)
+set(MMGR_BUILD_BENCH OFF)
+set(MMGR_LTO ${IDEMIP_LTO})
+# MMgr's own sources take MMgr's warning policy, which MMGR_WERROR sets, and not the -Werror a build
+# of idemIP puts in CMAKE_C_FLAGS. Inside include/MMgr the flags drop -Werror, and every other
+# directory keeps them as they came.
+set(IDEMIP_C_FLAGS "${CMAKE_C_FLAGS}")
+string(REGEX REPLACE "(^| )-Werror( |$)" " " CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+add_subdirectory(include/MMgr EXCLUDE_FROM_ALL SYSTEM)
+set(CMAKE_C_FLAGS "${IDEMIP_C_FLAGS}")
+
 # --- the translation units each capability is ---------------------------------
 # One list per capability, and a file appears in exactly one of them. An option that is off leaves
 # its files out of the target, so a disabled capability reaches the compiler as no file at all.
@@ -135,7 +137,6 @@ set(IDEMIP_SOURCES "")
 # The base modules every build carries: the wire-integer accessors, the RFC 1071 checksum taken
 # over them, the epoch, and the readings taken onto it. None of these sits behind a capability.
 list(APPEND IDEMIP_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/endian.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/common.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/checksum.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ms.c"
@@ -232,13 +233,31 @@ add_library(idemip STATIC ${IDEMIP_SOURCES})
 # The tree includes itself as "src/...", so the repo root is the one include path.
 target_include_directories(idemip PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
-# PUBLIC on both: a suite compiles src/idemip_config.h itself, so the definition that picks the shim
-# and the include path that finds it have to reach the suite as well as the library. mmgr_host is
-# MMgr's aggregate for this machine's word, which is the environment idemIP builds for.
-if(IDEMIP_MMGR)
-    target_compile_definitions(idemip PUBLIC IDEMIP_MMGR=1)
-    target_link_libraries(idemip PUBLIC mmgr_host)
+# idemIP takes every machine word whose width is a power of two, as MMgr and embedded_types do: 16, 32
+# or 64 bits. IDEMIP_WORD_BITS picks the word for the whole build, and the build links the MMgr
+# aggregate built at that word. The default is 32 bits, the word of the ESP32 that idemIP is for.
+#
+# PUBLIC on all three, because a suite compiles src/idemip_config.h too. The include paths and the
+# word must get to the suite as well as to the library.
+set(IDEMIP_WORD_BITS "32" CACHE STRING "The machine word idemIP builds at, in bits: 16, 32 or 64")
+set_property(CACHE IDEMIP_WORD_BITS PROPERTY STRINGS 16 32 64)
+if(IDEMIP_WORD_BITS STREQUAL "16")
+    target_compile_definitions(idemip PUBLIC EMBED_WORD_BITS=16)
+    target_link_libraries(idemip PUBLIC embedded_types::embedded_types mmgr_word16)
+elseif(IDEMIP_WORD_BITS STREQUAL "32")
+    target_compile_definitions(idemip PUBLIC EMBED_WORD_BITS=32)
+    target_link_libraries(idemip PUBLIC embedded_types::embedded_types mmgr_word32)
+elseif(IDEMIP_WORD_BITS STREQUAL "64")
+    # mmgr_host is MMgr's aggregate at the word this host's pointer width gives, which embed_types.h
+    # derives. So a 64-bit word needs a host with 64-bit pointers.
+    if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+        message(FATAL_ERROR "IDEMIP_WORD_BITS=64 needs a host with 64-bit pointers")
+    endif()
+    target_link_libraries(idemip PUBLIC embedded_types::embedded_types mmgr_host)
+else()
+    message(FATAL_ERROR "IDEMIP_WORD_BITS is '${IDEMIP_WORD_BITS}': it must be 16, 32 or 64")
 endif()
+message(STATUS "idemIP: a ${IDEMIP_WORD_BITS}-bit machine word")
 
 foreach(cap ${IDEMIP_CAPABILITIES})
     if(IDEMIP_ENABLE_${cap})
@@ -293,11 +312,31 @@ if(IDEMIP_LTO)
     endif()
 endif()
 
+# --- the program around idemIP on this host -----------------------------------
+# The sizes tool, a suite, a bench and the fuzz harness are each a program on this host. A program
+# defines the three hooks locus_carcerum's turnstiles wait, wake and read the clock through:
+# embed_word_wait, embed_word_wake and embed_clock_ns. idemip_host_hooks holds the host definitions
+# MMgr's own suites link, from include/MMgr/test/support/host_wait.c, compiled at idemIP's word. That
+# file sets the GNU feature set itself, ahead of its first include.
+#
+# A suite, a bench and the fuzz harness also take their borrows as cells. idemip_test_program holds
+# their memory: support/borrows.c, with the pool, the LocusCarcerum site over it and the owner table.
+add_library(idemip_host_hooks OBJECT "${CMAKE_CURRENT_SOURCE_DIR}/include/MMgr/test/support/host_wait.c")
+target_link_libraries(idemip_host_hooks PUBLIC idemip)
+if(WIN32)
+    # WaitOnAddress and WakeByAddressAll are in the synchronization library.
+    target_link_libraries(idemip_host_hooks PUBLIC synchronization)
+endif()
+
+add_library(idemip_test_program OBJECT "${CMAKE_CURRENT_SOURCE_DIR}/test/support/borrows.c")
+target_include_directories(idemip_test_program PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/test")
+target_link_libraries(idemip_test_program PUBLIC idemip)
+
 # --- tools -------------------------------------------------------------------
 # The footprint is the compiler's arithmetic over idemip_config.h, not a figure kept by hand.
 
 add_executable(idemip_sizes "${CMAKE_CURRENT_SOURCE_DIR}/tools/idemip_sizes.c")
-target_link_libraries(idemip_sizes PRIVATE idemip idemip_warnings)
+target_link_libraries(idemip_sizes PRIVATE idemip idemip_warnings idemip_host_hooks)
 
 # --- benches -----------------------------------------------------------------
 # Measurement, not test: nothing here asserts, so ctest never sees these and BUILD_TESTING does not
@@ -307,7 +346,9 @@ target_link_libraries(idemip_sizes PRIVATE idemip idemip_warnings)
 if(IDEMIP_BENCH)
     foreach(b bench_words bench_entries)
         add_executable(${b} "${CMAKE_CURRENT_SOURCE_DIR}/test/bench/${b}.c")
-        target_link_libraries(${b} PRIVATE idemip idemip_warnings)
+        # The benches take the suites' support headers, by the path a suite writes them.
+        target_include_directories(${b} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/test")
+        target_link_libraries(${b} PRIVATE idemip idemip_warnings idemip_test_program idemip_host_hooks)
         # The bench takes the library's own optimisation, so the two sides of a comparison are
         # compiled the same way. A bench built at a different level than the code it links measures
         # the difference between the two builds and calls it a result.
@@ -335,7 +376,9 @@ endif()
 
 if(IDEMIP_FUZZ)
     add_executable(fuzz_dispatch "${CMAKE_CURRENT_SOURCE_DIR}/test/fuzz/fuzz_dispatch.c")
-    target_link_libraries(fuzz_dispatch PRIVATE idemip idemip_warnings)
+    # The harness takes the suites' support headers, by the path a suite writes them.
+    target_include_directories(fuzz_dispatch PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/test")
+    target_link_libraries(fuzz_dispatch PRIVATE idemip idemip_warnings idemip_test_program idemip_host_hooks)
     target_compile_options(fuzz_dispatch PRIVATE -fsanitize=fuzzer)
     target_link_options(fuzz_dispatch PRIVATE -fsanitize=fuzzer)
 endif()

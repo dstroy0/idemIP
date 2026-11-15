@@ -13,9 +13,9 @@
 
 #include "src/ethernet/ethernet.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/ethernet/ethernet_defines.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // A frame, and a canary past the longest one RFC 894 allows so a write off the end is visible.
 #define CANARY 0x5Au
@@ -32,8 +32,8 @@ static const uint8_t vec_ip4_header[IDEMIP_ETH_HDR_LEN] = {0x02, 0x00, 0x00, 0x0
 
 void setUp(void)
 {
-    memset(frame, 0, FRAME_CAP);
-    memset(frame + FRAME_CAP, CANARY, sizeof frame - FRAME_CAP);
+    mmgr_zero_buf(frame, FRAME_CAP);
+    fill_bytes(frame + FRAME_CAP, CANARY, sizeof frame - FRAME_CAP);
 }
 
 void tearDown(void)
@@ -108,7 +108,7 @@ void test_header_is_two_addresses_then_a_type_code(void)
 // copied out of the DMA buffer.
 void test_addresses_are_read_in_place(void)
 {
-    memcpy(frame, vec_ip4_header, sizeof vec_ip4_header);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = frame, .at = vec_ip4_header, .size = sizeof vec_ip4_header);
     TEST_ASSERT_EQUAL_PTR(frame + 0, idemip_eth_dst(frame));
     TEST_ASSERT_EQUAL_PTR(frame + 6, idemip_eth_src(frame));
     TEST_ASSERT_EQUAL_PTR(frame + 14, idemip_eth_payload(frame));
@@ -123,8 +123,8 @@ void test_type_code_reads_the_same_at_any_frame_address(void)
 {
     for (size_t off = 0; off < 4; off++)
     {
-        memset(frame, 0, FRAME_CAP);
-        memcpy(frame + off, vec_ip4_header, sizeof vec_ip4_header);
+        mmgr_zero_buf(frame, FRAME_CAP);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = frame + off, .at = vec_ip4_header, .size = sizeof vec_ip4_header);
         TEST_ASSERT_EQUAL_HEX16(0x0800u, idemip_eth_type(frame + off));
         TEST_ASSERT_EQUAL_UINT8_ARRAY(vec_src, idemip_eth_src(frame + off), IDEMIP_MAC_LEN);
     }
@@ -134,7 +134,7 @@ void test_type_code_reads_the_same_at_any_frame_address(void)
 
 void test_build_writes_exactly_the_header(void)
 {
-    memset(frame, 0xC3, FRAME_CAP);
+    fill_bytes(frame, 0xC3, FRAME_CAP);
     idemip_eth_build(frame, vec_dst, vec_src, IDEMIP_ETHERTYPE_IPV4);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(vec_ip4_header, frame, IDEMIP_ETH_HDR_LEN);
     // The data field is the caller's, so build did not touch the first octet of it.
@@ -162,7 +162,7 @@ void test_broadcast_address_is_all_ones(void)
     for (size_t i = 0; i < IDEMIP_MAC_LEN; i++)
     {
         uint8_t mac[IDEMIP_MAC_LEN];
-        memcpy(mac, vec_broadcast, sizeof mac);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = mac, .at = vec_broadcast, .size = sizeof mac);
         mac[i] = 0xFEu;
         TEST_ASSERT_FALSE_MESSAGE(idemip_eth_is_broadcast(mac), "an address with one clear bit read as broadcast");
     }
@@ -207,9 +207,9 @@ void test_max_payload_is_1500_octets(void)
 // Ethernet minimum frame size."
 void test_pad_zeroes_the_shortfall(void)
 {
-    memset(frame, 0xFF, FRAME_CAP);
+    fill_bytes(frame, 0xFF, FRAME_CAP);
     idemip_eth_build(frame, vec_dst, vec_src, IDEMIP_ETHERTYPE_IPV4);
-    memset(frame + IDEMIP_ETH_OFF_PAYLOAD, 0xAA, 4u);
+    fill_bytes(frame + IDEMIP_ETH_OFF_PAYLOAD, 0xAA, 4u);
 
     TEST_ASSERT_EQUAL_size_t(46u, idemip_eth_pad(frame, 4u));
 
@@ -228,7 +228,7 @@ void test_pad_zeroes_the_shortfall(void)
 // A data field already at or past 46 octets needs no pad, so nothing is written.
 void test_a_full_length_payload_is_not_padded(void)
 {
-    memset(frame, 0xC3, FRAME_CAP);
+    fill_bytes(frame, 0xC3, FRAME_CAP);
     idemip_eth_build(frame, vec_dst, vec_src, IDEMIP_ETHERTYPE_IPV4);
 
     TEST_ASSERT_EQUAL_size_t(46u, idemip_eth_pad(frame, 46u));
@@ -258,7 +258,7 @@ void test_the_snap_header_is_read_octet_by_octet(void)
 {
     uint8_t llc[8];
     static const uint8_t good[8] = {0xAAu, 0xAAu, 0x03u, 0u, 0u, 0u, 0x08u, 0x00u};
-    memcpy(llc, good, sizeof llc);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = llc, .at = good, .size = sizeof llc);
     TEST_ASSERT_TRUE_MESSAGE(idemip_llc_is_snap(llc), "the header RFC 1042 gives was not read as one");
 
     // One octet at a time, each of the six the test reads.
@@ -266,7 +266,7 @@ void test_the_snap_header_is_read_octet_by_octet(void)
                                   IDEMIP_LLC_OFF_ORG,  IDEMIP_LLC_OFF_ORG + 1u, IDEMIP_LLC_OFF_ORG + 2u};
     for (unsigned k = 0; k < 6u; k++)
     {
-        memcpy(llc, good, sizeof llc);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = llc, .at = good, .size = sizeof llc);
         llc[at[k]] = (uint8_t)(llc[at[k]] + 1u);
         TEST_ASSERT_FALSE_MESSAGE(idemip_llc_is_snap(llc), "a header differing from RFC 1042's was read as one");
     }

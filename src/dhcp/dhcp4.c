@@ -16,7 +16,7 @@
 #include "src/dhcp/dhcp4.h"
 #include "src/endian.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The one definition, private to this TU. RFC 2131 sec 4.4.5 ages the lease off T1, T2 and the
 // expiry, held here as millisecond deadlines, beside the sec 4.1 retransmission deadline and the
@@ -53,12 +53,13 @@ IDEMIP_ASSERT_REGION(IDEMIP_DHCP4_OFF_CTX, sizeof(Dhcp4Ctx), IDEMIP_DHCP4_BORROW
 
 // The caller's borrow, split: the operand block, then the context. dhcp4.h publishes the offsets;
 // the asserts below prove the span covers them before anything runs.
-static_assert(IDEMIP_DHCP4_OFF_CTX + sizeof(Dhcp4Ctx) <= IDEMIP_DHCP4_CTX_BYTES,
-              "IDEMIP_DHCP4_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_DHCP4_OFF_CTX + sizeof(Dhcp4Ctx) <= IDEMIP_DHCP4_BORROW,
-              "IDEMIP_DHCP4_BORROW is short of the operand block and the context - raise IDEMIP_DHCP4_CTX_BYTES");
-static_assert((IDEMIP_DHCP4_OFF_CTX & (IDEMIP_ALIGN - 1u)) == 0u,
-              "the context does not start on IDEMIP_ALIGN: the operand block is rounded up to it");
+EMBED_STATIC_ASSERT(
+    IDEMIP_DHCP4_OFF_CTX + sizeof(Dhcp4Ctx) <= IDEMIP_DHCP4_CTX_BYTES,
+    "IDEMIP_DHCP4_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_OFF_CTX + sizeof(Dhcp4Ctx) <= IDEMIP_DHCP4_BORROW,
+                    "IDEMIP_DHCP4_BORROW is short of the operand block and the context - raise IDEMIP_DHCP4_CTX_BYTES");
+EMBED_STATIC_ASSERT((IDEMIP_DHCP4_OFF_CTX & (IDEMIP_ALIGN - 1u)) == 0u,
+                    "the context does not start on IDEMIP_ALIGN: the operand block is rounded up to it");
 
 // The regions, at their offsets in the caller's borrow.
 #define DHCP4_CTX(w) ((Dhcp4Ctx *)(void *)((w) + IDEMIP_DHCP4_OFF_CTX))
@@ -113,47 +114,47 @@ typedef struct
 // sec 9.1 the requested address, sec 9.7 the server, sec 9.2 the lease, sec 9.8 the request list, and
 // sec 3.2 the end.
 #define DHCP4_OPTS_MAX (3u + 4u + 6u + 6u + 6u + (2u + DHCP4_PARAM_COUNT) + 1u)
-static_assert(IDEMIP_DHCP4_FIXED_LEN + DHCP4_OPTS_MAX <= IDEMIP_DHCP4_MSG_BOOTP_MIN,
-              "every option a client message carries fits the 300-octet minimal BOOTP header (RFC 1542 sec 2.1)");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_FIXED_LEN + DHCP4_OPTS_MAX <= IDEMIP_DHCP4_MSG_BOOTP_MIN,
+                    "every option a client message carries fits the 300-octet minimal BOOTP header (RFC 1542 sec 2.1)");
 
 // --- the clock -------------------------------------------------------------
 
 // Whether @p now has reached @p deadline. Both sit on the same 64-bit millisecond clock, so this is
 // one comparison and nothing wraps under it.
-static idemip_bool dhcp4_due(IdemIpMs now, IdemIpMs deadline)
+static embed_bool dhcp4_due(IdemIpMs now, IdemIpMs deadline)
 {
-    return (now >= deadline) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (now >= deadline) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // A draw over [0, span] from one word: PLAN sec 3.4 masks to the power of two above the span and
 // rejects an out-of-range draw. A second field of the same word is taken before falling back to the
 // midpoint, so the draw is bounded and no divide appears. @p mask is 16 bits or fewer.
-static uint32_t dhcp4_draw(uint32_t rand, uint32_t span, uint32_t mask)
+static uint32_t dhcp4_draw(uint32_t rand, uint32_t range, uint32_t mask)
 {
     uint32_t v = rand & mask;
-    if (v <= span)
+    if (v <= range)
     {
         return v;
     }
     v = (rand >> 16) & mask;
-    if (v <= span)
+    if (v <= range)
     {
         return v;
     }
-    return span >> 1;
+    return range >> 1;
 }
 
 // Whether a sec 3.3 time value runs a deadline at all: zero names no duration and 0xffffffff is
 // infinity, and neither ages the lease.
-static idemip_bool dhcp4_timed(uint32_t seconds)
+static embed_bool dhcp4_timed(uint32_t seconds)
 {
-    return ((seconds != 0u) && (seconds != IDEMIP_DHCP4_TIME_INFINITE)) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((seconds != 0u) && (seconds != IDEMIP_DHCP4_TIME_INFINITE)) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // Half the time left to a deadline, floored at the sec 4.4.5 minimum of 60 seconds: "the client
 // SHOULD wait one-half of the remaining time until T2 (in RENEWING state) and one-half of the
 // remaining lease time (in REBINDING state), down to a minimum of 60 seconds".
-static uint32_t dhcp4_half_left(IdemIpMs now, IdemIpMs deadline, idemip_bool timed)
+static uint32_t dhcp4_half_left(IdemIpMs now, IdemIpMs deadline, embed_bool timed)
 {
     // The two readings that leave no time are written because the caller passes whatever the machine
     // holds, and neither is measured: this is called only out of the RENEWING and REBINDING backoff,
@@ -259,29 +260,29 @@ static void dhcp4_halt(uint8_t *work)
 // variable-length with a length octet following the tag octet", and only sec 3.1's pad and sec 3.2's
 // end are the tag alone. False when an option's length runs past the region, or when a fixed-length
 // option carries the wrong length, both of which make the message one to discard.
-static idemip_bool dhcp4_walk(const uint8_t *base, size_t span, Dhcp4Opts *o)
+static embed_bool dhcp4_walk(const uint8_t *base, size_t bytes, Dhcp4Opts *o)
 {
     size_t i = 0;
-    while (i < span)
+    while (i < bytes)
     {
         uint8_t code = base[i];
         if (code == IDEMIP_DHCP4_OPT_END)
         {
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         if (code == IDEMIP_DHCP4_OPT_PAD)
         {
             i++;
             continue;
         }
-        if ((i + 2u) > span)
+        if ((i + 2u) > bytes)
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         size_t olen = (size_t)base[i + 1u];
-        if ((i + 2u + olen) > span)
+        if ((i + 2u + olen) > bytes)
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         const uint8_t *v = base + i + 2u;
         switch (code)
@@ -289,7 +290,7 @@ static idemip_bool dhcp4_walk(const uint8_t *base, size_t span, Dhcp4Opts *o)
         case IDEMIP_DHCP4_OPT_SUBNET_MASK: // sec 3.3, "its length is 4 octets"
             if (olen != 4u)
             {
-                return IDEMIP_FALSE;
+                return EMBED_FALSE;
             }
             if ((o->has & DHCP4_HAS_MASK) == 0u)
             {
@@ -300,7 +301,7 @@ static idemip_bool dhcp4_walk(const uint8_t *base, size_t span, Dhcp4Opts *o)
         case IDEMIP_DHCP4_OPT_ROUTER: // sec 3.5, "the length MUST always be a multiple of 4"
             if ((olen < 4u) || ((olen & 3u) != 0u))
             {
-                return IDEMIP_FALSE;
+                return EMBED_FALSE;
             }
             if ((o->has & DHCP4_HAS_ROUTER) == 0u)
             {
@@ -311,7 +312,7 @@ static idemip_bool dhcp4_walk(const uint8_t *base, size_t span, Dhcp4Opts *o)
         case IDEMIP_DHCP4_OPT_DNS_SERVER: // sec 3.8, a multiple of 4, in order of preference
             if ((olen < 4u) || ((olen & 3u) != 0u))
             {
-                return IDEMIP_FALSE;
+                return EMBED_FALSE;
             }
             if ((o->has & DHCP4_HAS_DNS) == 0u)
             {
@@ -323,7 +324,7 @@ static idemip_bool dhcp4_walk(const uint8_t *base, size_t span, Dhcp4Opts *o)
         case IDEMIP_DHCP4_OPT_LEASE_TIME: // sec 9.2, length 4, seconds
             if (olen != 4u)
             {
-                return IDEMIP_FALSE;
+                return EMBED_FALSE;
             }
             if ((o->has & DHCP4_HAS_LEASE) == 0u)
             {
@@ -334,7 +335,7 @@ static idemip_bool dhcp4_walk(const uint8_t *base, size_t span, Dhcp4Opts *o)
         case IDEMIP_DHCP4_OPT_OVERLOAD: // sec 9.3, length 1, values 1, 2 and 3
             if ((olen != 1u) || (v[0] == 0u) || (v[0] > (DHCP4_OVERLOAD_FILE | DHCP4_OVERLOAD_SNAME)))
             {
-                return IDEMIP_FALSE;
+                return EMBED_FALSE;
             }
             if ((o->has & DHCP4_HAS_OVERLOAD) == 0u)
             {
@@ -345,7 +346,7 @@ static idemip_bool dhcp4_walk(const uint8_t *base, size_t span, Dhcp4Opts *o)
         case IDEMIP_DHCP4_OPT_MSG_TYPE: // sec 9.6, length 1
             if (olen != 1u)
             {
-                return IDEMIP_FALSE;
+                return EMBED_FALSE;
             }
             if ((o->has & DHCP4_HAS_MSG_TYPE) == 0u)
             {
@@ -356,7 +357,7 @@ static idemip_bool dhcp4_walk(const uint8_t *base, size_t span, Dhcp4Opts *o)
         case IDEMIP_DHCP4_OPT_SERVER_ID: // sec 9.7, length 4
             if (olen != 4u)
             {
-                return IDEMIP_FALSE;
+                return EMBED_FALSE;
             }
             if ((o->has & DHCP4_HAS_SERVER_ID) == 0u)
             {
@@ -367,7 +368,7 @@ static idemip_bool dhcp4_walk(const uint8_t *base, size_t span, Dhcp4Opts *o)
         case IDEMIP_DHCP4_OPT_T1: // sec 9.11, length 4, seconds
             if (olen != 4u)
             {
-                return IDEMIP_FALSE;
+                return EMBED_FALSE;
             }
             if ((o->has & DHCP4_HAS_T1) == 0u)
             {
@@ -378,7 +379,7 @@ static idemip_bool dhcp4_walk(const uint8_t *base, size_t span, Dhcp4Opts *o)
         case IDEMIP_DHCP4_OPT_T2: // sec 9.12, length 4, seconds
             if (olen != 4u)
             {
-                return IDEMIP_FALSE;
+                return EMBED_FALSE;
             }
             if ((o->has & DHCP4_HAS_T2) == 0u)
             {
@@ -391,28 +392,28 @@ static idemip_bool dhcp4_walk(const uint8_t *base, size_t span, Dhcp4Opts *o)
         }
         i += 2u + olen;
     }
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // RFC 2131 sec 4.1: "The options in the 'options' field MUST be interpreted first, so that any
 // 'option overload' options may be interpreted. The 'file' field MUST be interpreted next (if the
 // 'option overload' option indicates that the 'file' field contains DHCP options), followed by the
 // 'sname' field."
-static idemip_bool dhcp4_parse(const uint8_t *msg, size_t len, Dhcp4Opts *o)
+static embed_bool dhcp4_parse(const uint8_t *msg, size_t len, Dhcp4Opts *o)
 {
-    memset(o, 0, sizeof *o);
+    *o = (Dhcp4Opts){0};
     if (!dhcp4_walk(msg + IDEMIP_DHCP4_MSG_OFF_OPTIONS, len - IDEMIP_DHCP4_MSG_OFF_OPTIONS, o))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if ((o->has & DHCP4_HAS_OVERLOAD) == 0u)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     if (((o->overload & DHCP4_OVERLOAD_FILE) != 0u) &&
         !dhcp4_walk(msg + IDEMIP_DHCP4_MSG_OFF_FILE, DHCP4_FILE_LEN, o))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     // The bit is read on this line and the walk behind it is what the case beside this drives; the
     // arm gcov counts here is the pair where the bit is set and the file field's walk already
@@ -420,9 +421,9 @@ static idemip_bool dhcp4_parse(const uint8_t *msg, size_t len, Dhcp4Opts *o)
     if (((o->overload & DHCP4_OVERLOAD_SNAME) != 0u) && // GCOVR_EXCL_BR_LINE
         !dhcp4_walk(msg + IDEMIP_DHCP4_MSG_OFF_SNAME, DHCP4_SNAME_LEN, o))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // --- what a received message changes ---------------------------------------
@@ -509,16 +510,16 @@ static void dhcp4_lease(uint8_t *work, const Dhcp4Opts *o, const uint8_t *msg)
 // sec 4.4.1: an offer is collected in SELECTING, and the selected one supplies the 'server identifier'
 // that sec 3.1 makes the DHCPREQUEST carry, so an offer without option 54 cannot be selected. The
 // first acceptable offer is taken, which sec 4.4.1 permits: "e.g., the first DHCPOFFER message".
-static idemip_bool dhcp4_offer(uint8_t *work, const Dhcp4Opts *o, const uint8_t *msg)
+static embed_bool dhcp4_offer(uint8_t *work, const Dhcp4Opts *o, const uint8_t *msg)
 {
     Dhcp4Ctx *ctx = DHCP4_CTX(work);
     if (ctx->state != IDEMIP_DHCP4_SELECTING)
     {
-        return IDEMIP_FALSE; // Figure 5 discards an offer in every other state
+        return EMBED_FALSE; // Figure 5 discards an offer in every other state
     }
     if ((o->has & DHCP4_HAS_SERVER_ID) == 0u)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     dhcp4_adopt(work, o);
     if ((o->has & DHCP4_HAS_LEASE) != 0u)
@@ -531,14 +532,14 @@ static idemip_bool dhcp4_offer(uint8_t *work, const Dhcp4Opts *o, const uint8_t 
     ctx->retries = 0u;
     ctx->sent = 0u;
     ctx->owed = (uint8_t)IDEMIP_DHCP4_REQUEST;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // Figure 5: a DHCPACK records the lease and sets T1 and T2 out of REQUESTING, REBOOTING, RENEWING and
 // REBINDING. sec 4.4.3's DHCPACK answering a DHCPINFORM carries no lease, so it sets the parameters
 // alone: "Once a DHCPACK message with an 'xid' field matching that in the client's DHCPINFORM message
 // arrives from any server, the client is initialized."
-static idemip_bool dhcp4_ack(uint8_t *work, const Dhcp4Opts *o, const uint8_t *msg)
+static embed_bool dhcp4_ack(uint8_t *work, const Dhcp4Opts *o, const uint8_t *msg)
 {
     Dhcp4Ctx *ctx = DHCP4_CTX(work);
     if (ctx->sent == (uint8_t)IDEMIP_DHCP4_INFORM)
@@ -547,7 +548,7 @@ static idemip_bool dhcp4_ack(uint8_t *work, const Dhcp4Opts *o, const uint8_t *m
         ctx->sent = 0u;
         ctx->owed = 0u;
         ctx->retries = 0u;
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     // The four states are written out because Figure 5 draws an arrow into each of them, and one of
     // the arms is not measured: the state is read left to right and a machine that is not REQUESTING
@@ -556,18 +557,18 @@ static idemip_bool dhcp4_ack(uint8_t *work, const Dhcp4Opts *o, const uint8_t *m
     if ((ctx->state != IDEMIP_DHCP4_REQUESTING) && (ctx->state != IDEMIP_DHCP4_REBOOTING) &&
         (ctx->state != IDEMIP_DHCP4_RENEWING) && (ctx->state != IDEMIP_DHCP4_REBINDING)) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE; // sec 4.4.1 discards an ACK in SELECTING, Figure 5 discards one in BOUND
+        return EMBED_FALSE; // sec 4.4.1 discards an ACK in SELECTING, Figure 5 discards one in BOUND
     }
     dhcp4_adopt(work, o);
     dhcp4_lease(work, o, msg);
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // Figure 5: a DHCPNAK restarts out of REQUESTING and REBOOTING and halts the network out of RENEWING
 // and REBINDING, both of which hold no lease afterwards. sec 3.2: a client that cannot reuse its
 // remembered address "must instead request a new address by restarting the configuration process",
 // which is start with the fresh 'xid' sec 4.4.1 requires of it.
-static idemip_bool dhcp4_nak(uint8_t *work)
+static embed_bool dhcp4_nak(uint8_t *work)
 {
     const Dhcp4Ctx *ctx = DHCP4_CTX(work);
     // Not measured on the first and last of the four, for the reason written at the DHCPACK arm above.
@@ -575,16 +576,16 @@ static idemip_bool dhcp4_nak(uint8_t *work)
         (ctx->state != IDEMIP_DHCP4_REBOOTING) &&                                        // GCOVR_EXCL_BR_LINE
         (ctx->state != IDEMIP_DHCP4_RENEWING) && (ctx->state != IDEMIP_DHCP4_REBINDING)) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     dhcp4_halt(work);
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // One received message. RFC 1542 sec 2.1 discards a message whose 'op' is neither code, sec 4.1 makes
 // 'xid' what a reply is matched on, and sec 4.2 makes 'chaddr' the client's identity when no 'client
 // identifier' was sent. A message that fails any test, or that this state discards, changes nothing.
-static idemip_bool dhcp4_take(uint8_t *work)
+static embed_bool dhcp4_take(uint8_t *work)
 {
     Dhcp4Io *io = DHCP4_IO(work);
     const Dhcp4Ctx *ctx = DHCP4_CTX(work);
@@ -596,38 +597,38 @@ static idemip_bool dhcp4_take(uint8_t *work)
     // 300 octets.
     if ((msg == NULL) || (io->input_args.len < IDEMIP_DHCP4_MSG_BOOTP_MIN))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (msg[IDEMIP_DHCP4_MSG_OFF_OP] != IDEMIP_DHCP4_OP_BOOTREPLY)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     // RFC 2132 sec 2: the cookie "identifies the mode in which the succeeding data is to be
     // interpreted", so options are read only behind it.
     if (idemip_rd32(msg + IDEMIP_DHCP4_MSG_OFF_COOKIE) != IDEMIP_DHCP4_MAGIC_COOKIE)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (idemip_rd32(msg + IDEMIP_DHCP4_MSG_OFF_XID) != ctx->xid)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if ((msg[IDEMIP_DHCP4_MSG_OFF_HTYPE] != cfg->htype) || (msg[IDEMIP_DHCP4_MSG_OFF_HLEN] != cfg->hlen))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (!idemip_bytes_eq(msg + IDEMIP_DHCP4_MSG_OFF_CHADDR, cfg->chaddr, cfg->hlen))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     Dhcp4Opts o;
     if (!dhcp4_parse(msg, io->input_args.len, &o))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if ((o.has & DHCP4_HAS_MSG_TYPE) == 0u)
     {
-        return IDEMIP_FALSE; // sec 4.1: the type is an option, and a message without one says nothing
+        return EMBED_FALSE; // sec 4.1: the type is an option, and a message without one says nothing
     }
     io->msg_type = o.msg_type;
     switch (o.msg_type)
@@ -641,7 +642,7 @@ static idemip_bool dhcp4_take(uint8_t *work)
     default:
         // sec 4.4: "A client can receive the following messages from a server:" DHCPOFFER, DHCPACK and
         // DHCPNAK. Every other type is a client's own and is discarded here.
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
 }
 
@@ -685,19 +686,19 @@ static void dhcp4_write(uint8_t *work)
 
     // Table 5 leaves 'hops', 'yiaddr', 'siaddr', 'giaddr', 'sname' and 'file' zero on every client
     // message, and every octet past the last option is a pad.
-    memset(out, 0, IDEMIP_DHCP4_MSG_BOOTP_MIN);
+    mmgr_zero_buf(out, IDEMIP_DHCP4_MSG_BOOTP_MIN);
 
     // Table 4: 'ciaddr' holds the address in RENEWING and REBINDING and is zero in INIT-REBOOT and
     // SELECTING. Table 5: it holds the address in a DHCPINFORM and a DHCPRELEASE and is zero in a
     // DHCPDECLINE.
-    idemip_bool renewing =
-        (ctx->state == IDEMIP_DHCP4_RENEWING) || (ctx->state == IDEMIP_DHCP4_REBINDING) ? IDEMIP_TRUE : IDEMIP_FALSE;
-    idemip_bool ciaddr = IDEMIP_FALSE;
-    idemip_bool want_server = IDEMIP_FALSE; // option 54
-    idemip_bool want_req_ip = IDEMIP_FALSE; // option 50
-    idemip_bool want_lease = IDEMIP_FALSE;  // option 51
-    idemip_bool want_hints = IDEMIP_FALSE;  // options 55 and 57
-    idemip_bool want_flag = IDEMIP_FALSE;   // the Figure 2 BROADCAST bit
+    embed_bool renewing =
+        (ctx->state == IDEMIP_DHCP4_RENEWING) || (ctx->state == IDEMIP_DHCP4_REBINDING) ? EMBED_TRUE : EMBED_FALSE;
+    embed_bool ciaddr = EMBED_FALSE;
+    embed_bool want_server = EMBED_FALSE; // option 54
+    embed_bool want_req_ip = EMBED_FALSE; // option 50
+    embed_bool want_lease = EMBED_FALSE;  // option 51
+    embed_bool want_hints = EMBED_FALSE;  // options 55 and 57
+    embed_bool want_flag = EMBED_FALSE;   // the Figure 2 BROADCAST bit
     uint16_t secs = ctx->secs;
     uint32_t dst = 0xFFFFFFFFu; // sec 4.4.4 broadcasts unless the message names the server
 
@@ -707,23 +708,23 @@ static void dhcp4_write(uint8_t *work)
         // Table 5: server identifier MUST NOT, requested address MAY, lease time MAY. The BROADCAST
         // bit goes with it for the sec 4.1 reason the Request case below quotes: a client that has no
         // address yet cannot receive a unicast reply.
-        want_lease = IDEMIP_TRUE;
-        want_hints = IDEMIP_TRUE;
-        want_flag = IDEMIP_TRUE;
+        want_lease = EMBED_TRUE;
+        want_hints = EMBED_TRUE;
+        want_flag = EMBED_TRUE;
         break;
     case (uint8_t)IDEMIP_DHCP4_REQUEST:
         // Table 4: the server identifier is MUST in SELECTING and MUST NOT elsewhere, and the
         // requested address is MUST in SELECTING and INIT-REBOOT and MUST NOT in RENEWING and
         // REBINDING.
-        want_server = (ctx->state == IDEMIP_DHCP4_REQUESTING) ? IDEMIP_TRUE : IDEMIP_FALSE;
-        want_req_ip = renewing ? IDEMIP_FALSE : IDEMIP_TRUE;
-        want_lease = IDEMIP_TRUE;
-        want_hints = IDEMIP_TRUE;
+        want_server = (ctx->state == IDEMIP_DHCP4_REQUESTING) ? EMBED_TRUE : EMBED_FALSE;
+        want_req_ip = renewing ? EMBED_FALSE : EMBED_TRUE;
+        want_lease = EMBED_TRUE;
+        want_hints = EMBED_TRUE;
         ciaddr = renewing;
         // sec 4.1: the BROADCAST bit is for "A client that cannot receive unicast IP datagrams until
         // its protocol software has been configured with an IP address", so a request that carries an
         // address in 'ciaddr' is past needing it.
-        want_flag = renewing ? IDEMIP_FALSE : IDEMIP_TRUE;
+        want_flag = renewing ? EMBED_FALSE : EMBED_TRUE;
         // sec 4.4.5: at T1 the client "sends (via unicast) a DHCPREQUEST message to the server", and
         // in REBINDING it "sends (via broadcast) a DHCPREQUEST message".
         if (ctx->state == IDEMIP_DHCP4_RENEWING)
@@ -734,23 +735,23 @@ static void dhcp4_write(uint8_t *work)
     case (uint8_t)IDEMIP_DHCP4_DECLINE:
         // Table 5: server identifier MUST, requested address MUST, 'ciaddr' zero, 'secs' 0, and the
         // lease time, request list and message size MUST NOT. sec 4.4.4 broadcasts it.
-        want_server = IDEMIP_TRUE;
-        want_req_ip = IDEMIP_TRUE;
+        want_server = EMBED_TRUE;
+        want_req_ip = EMBED_TRUE;
         secs = 0u;
         break;
     case (uint8_t)IDEMIP_DHCP4_RELEASE:
         // Table 5: server identifier MUST, requested address MUST NOT, 'ciaddr' the address, 'secs' 0.
         // sec 4.4.4: "The client unicasts DHCPRELEASE messages to the server."
-        want_server = IDEMIP_TRUE;
-        ciaddr = IDEMIP_TRUE;
+        want_server = EMBED_TRUE;
+        ciaddr = EMBED_TRUE;
         secs = 0u;
         dst = ctx->server_id;
         break;
     default: // IDEMIP_DHCP4_INFORM
         // sec 4.4.3: "The client places its own network address in the 'ciaddr' field. The client
         // SHOULD NOT request lease time parameters", and it unicasts to a known server.
-        ciaddr = IDEMIP_TRUE;
-        want_hints = IDEMIP_TRUE;
+        ciaddr = EMBED_TRUE;
+        want_hints = EMBED_TRUE;
         if (ctx->server_id != 0u)
         {
             dst = ctx->server_id;
@@ -773,7 +774,8 @@ static void dhcp4_write(uint8_t *work)
     {
         idemip_wr32(out + IDEMIP_DHCP4_MSG_OFF_CIADDR, ctx->offered_ip);
     }
-    memcpy(out + IDEMIP_DHCP4_MSG_OFF_CHADDR, cfg->chaddr, cfg->hlen); // sec 2, 'chaddr'
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = out + IDEMIP_DHCP4_MSG_OFF_CHADDR, .at = cfg->chaddr,
+               .size = cfg->hlen); // sec 2, 'chaddr'
     idemip_wr32(out + IDEMIP_DHCP4_MSG_OFF_COOKIE, IDEMIP_DHCP4_MAGIC_COOKIE);
 
     size_t at = IDEMIP_DHCP4_MSG_OFF_OPTIONS;
@@ -857,25 +859,25 @@ static void dhcp4_write(uint8_t *work)
 // A retransmission of the request still outstanding, or the end of the transmissions sec 3.1 allows
 // it. sec 3.1: "If the client receives neither a DHCPACK or a DHCPNAK message after employing the
 // retransmission algorithm, the client reverts to INIT state and restarts the initialization process."
-static idemip_bool dhcp4_retry(uint8_t *work, uint8_t tries)
+static embed_bool dhcp4_retry(uint8_t *work, uint8_t tries)
 {
     Dhcp4Ctx *ctx = DHCP4_CTX(work);
     if ((tries != 0u) && (ctx->retries >= tries))
     {
         dhcp4_halt(work);
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     ctx->owed = ctx->sent;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // The deadline that has passed, in the state it passed in.
-static idemip_bool dhcp4_run(uint8_t *work)
+static embed_bool dhcp4_run(uint8_t *work)
 {
     Dhcp4Ctx *ctx = DHCP4_CTX(work);
     if (ctx->owed != 0u)
     {
-        return IDEMIP_FALSE; // build has not taken the message the last deadline owed
+        return EMBED_FALSE; // build has not taken the message the last deadline owed
     }
     switch (ctx->state)
     {
@@ -884,7 +886,7 @@ static idemip_bool dhcp4_run(uint8_t *work)
         // on every sec 4.1 deadline after it. The client keeps trying, the delay capping at 64 seconds.
         if (!dhcp4_due(ctx->now_ms, ctx->retry_ms))
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         ctx->sent = (uint8_t)IDEMIP_DHCP4_DISCOVER;
         return dhcp4_retry(work, 0u);
@@ -896,18 +898,18 @@ static idemip_bool dhcp4_run(uint8_t *work)
         // INIT-REBOOT is due at the instant it is entered and the first tick after that sends.
         if (!dhcp4_due(ctx->now_ms, ctx->retry_ms)) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+            return EMBED_FALSE; // GCOVR_EXCL_LINE
         }
         ctx->state = IDEMIP_DHCP4_REBOOTING;
         ctx->sent = (uint8_t)IDEMIP_DHCP4_REQUEST;
         ctx->retries = 0u;
         ctx->owed = (uint8_t)IDEMIP_DHCP4_REQUEST;
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     case IDEMIP_DHCP4_REQUESTING:
     case IDEMIP_DHCP4_REBOOTING:
         if (!dhcp4_due(ctx->now_ms, ctx->retry_ms))
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         return dhcp4_retry(work, (uint8_t)IDEMIP_DHCP4_REQUEST_TRIES);
     case IDEMIP_DHCP4_BOUND:
@@ -918,7 +920,7 @@ static idemip_bool dhcp4_run(uint8_t *work)
         if (dhcp4_timed(ctx->lease_s) && dhcp4_due(ctx->now_ms, ctx->expire_ms))
         {
             dhcp4_halt(work);
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         // "If no DHCPACK arrives before time T2, the client moves to REBINDING state and sends (via
         // broadcast) a DHCPREQUEST message to extend its lease."
@@ -932,7 +934,7 @@ static idemip_bool dhcp4_run(uint8_t *work)
             ctx->sent = (uint8_t)IDEMIP_DHCP4_REQUEST;
             ctx->retries = 0u;
             ctx->owed = (uint8_t)IDEMIP_DHCP4_REQUEST;
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         // "At time T1 the client moves to RENEWING state and sends (via unicast) a DHCPREQUEST message
         // to the server to extend its lease."
@@ -942,15 +944,15 @@ static idemip_bool dhcp4_run(uint8_t *work)
             ctx->sent = (uint8_t)IDEMIP_DHCP4_REQUEST;
             ctx->retries = 0u;
             ctx->owed = (uint8_t)IDEMIP_DHCP4_REQUEST;
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         if (ctx->state == IDEMIP_DHCP4_BOUND)
         {
-            return IDEMIP_FALSE; // Figure 5 leaves BOUND on T1, T2 or the expiry and on nothing else
+            return EMBED_FALSE; // Figure 5 leaves BOUND on T1, T2 or the expiry and on nothing else
         }
         if (!dhcp4_due(ctx->now_ms, ctx->retry_ms))
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         return dhcp4_retry(work, 0u);
     default: // IDEMIP_DHCP4_INIT
@@ -961,16 +963,16 @@ static idemip_bool dhcp4_run(uint8_t *work)
         // the tick that finds one sent finds one due. The first test is what INIT is answered by.
         if ((ctx->sent != (uint8_t)IDEMIP_DHCP4_INFORM) || !dhcp4_due(ctx->now_ms, ctx->retry_ms)) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         if (ctx->retries >= (uint8_t)IDEMIP_DHCP4_INFORM_TRIES)
         {
             ctx->sent = 0u;
             ctx->retries = 0u;
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         ctx->owed = (uint8_t)IDEMIP_DHCP4_INFORM;
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
 }
 
@@ -984,7 +986,7 @@ void idemip_dhcp4_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work, 0, IDEMIP_DHCP4_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work, .val = 0, .bytes = IDEMIP_DHCP4_BORROW);
     DHCP4_IO(work)->status = IDEMIP_OK;
 }
 
@@ -1105,7 +1107,7 @@ void idemip_dhcp4_input(uint8_t *work)
     }
     // A message this machine discards reports ERR: sec 4.4.1 has the client discard one silently, and
     // the same octets on a later call are discarded again, so BUSY would spin the caller.
-    idemip_bool took = dhcp4_take(work);
+    embed_bool took = dhcp4_take(work);
     dhcp4_publish(work);
     io->status = took ? IDEMIP_OK : IDEMIP_ERR;
 }
@@ -1176,7 +1178,7 @@ void idemip_dhcp4_tick(uint8_t *work)
     }
     ctx->now_ms = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->tick_args.now_ms);
     // No deadline has passed, so nothing moved and a later tick may: BUSY.
-    idemip_bool moved = dhcp4_run(work);
+    embed_bool moved = dhcp4_run(work);
     dhcp4_publish(work);
     io->status = moved ? IDEMIP_OK : IDEMIP_BUSY;
 }
@@ -1278,4 +1280,4 @@ void idemip_dhcp4_inform(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

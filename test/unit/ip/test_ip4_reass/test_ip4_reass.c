@@ -15,23 +15,26 @@
 
 #include "src/ip/ip4_reass.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
 #include "src/ip/ipv4_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 #define CANARY 0x5Au
 #define DIRT 0xCCu
-static _Alignas(8) uint8_t work_a[IDEMIP_IP4_REASS_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_IP4_REASS_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_IP4_REASS_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_IP4_REASS_BORROW + 16))
+static uint8_t *work_b;
 
 // A fragment header for the operands to point at. The suite never asks the unit to read it.
 static uint8_t g_hdr[IDEMIP_IP4_HDR_MAX];
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_IP4_REASS_BORROW, CANARY, cap - IDEMIP_IP4_REASS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_IP4_REASS_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_IP4_REASS_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -45,8 +48,8 @@ static void check_canary(const uint8_t *w, size_t cap)
 // Every byte the three tables span, so a case can dirty them and see clear take them back.
 static void dirty_tables(uint8_t *w)
 {
-    memset(w + IDEMIP_IP4_REASS_OFF_DGRAM, DIRT,
-           (size_t)IDEMIP_IP4_REASS_BORROW - (size_t)IDEMIP_IP4_REASS_OFF_DGRAM);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_IP4_REASS_OFF_DGRAM, .val = DIRT,
+               .bytes = (size_t)IDEMIP_IP4_REASS_BORROW - (size_t)IDEMIP_IP4_REASS_OFF_DGRAM);
 }
 
 static void assert_tables_zero(const uint8_t *w)
@@ -59,15 +62,17 @@ static void assert_tables_zero(const uint8_t *w)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(g_hdr, 0, sizeof g_hdr);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_ip4_reass);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_ip4_reass);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(g_hdr, sizeof g_hdr);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // --- the borrow --------------------------------------------------------------
@@ -261,8 +266,8 @@ static uint8_t * frag_full_ctx(const FragFullArgs *args)
 {
     uint8_t *h = g_frags[args->slot];
     IdemIpIp4Fields f;
-    memset(h, 0, FRAG_BUF);
-    memset(&f, 0, sizeof f);
+    mmgr_zero_buf(h, FRAG_BUF);
+    f = (IdemIpIp4Fields){0};
     f.tos = 0u;
     f.total_len = (uint16_t)((uint16_t)(args->ihl * 4u) + args->data_len);
     f.id = args->id;
@@ -280,7 +285,7 @@ static uint8_t * frag_full_ctx(const FragFullArgs *args)
     return h;
 }
 
-#define frag_full(...) IDEMIP_CALL(frag_full_ctx, FragFullArgs, __VA_ARGS__)
+#define frag_full(...) EMBED_CALL(frag_full_ctx, FragFullArgs, __VA_ARGS__)
 
 // A fragment of the suite's buffer identifier, offset in RFC 791 sec 3.1's eight-octet units.
 static uint8_t *fr(int slot, uint16_t off_units, uint16_t data_len, int mf)

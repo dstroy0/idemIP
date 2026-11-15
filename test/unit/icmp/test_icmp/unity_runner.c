@@ -4,9 +4,9 @@
 #include "unity.h"
 #include "src/icmp/icmp.h"
 #include "src/common_defines.h"
-#include "src/ip/ipv4_defines.h"
 #include "src/icmp/icmp_defines.h"
-#include <string.h>
+#include "src/ip/ipv4_defines.h"
+#include "support/fill_bytes.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);

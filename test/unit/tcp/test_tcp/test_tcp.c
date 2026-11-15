@@ -14,10 +14,10 @@
 
 #include "src/tcp/tcp.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
 #include "src/tcp/tcp_defines.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // --- the caller's bytes ------------------------------------------------------
 
@@ -30,8 +30,8 @@ static uint8_t seg_b[SEG_CAP + 16u];
 
 static void arm(uint8_t *s)
 {
-    memset(s, 0, SEG_CAP);
-    memset(s + SEG_CAP, CANARY, 16u);
+    mmgr_zero_buf(s, SEG_CAP);
+    fill_bytes(s + SEG_CAP, CANARY, 16u);
 }
 
 static void check_canary(const uint8_t *s)
@@ -64,7 +64,7 @@ static void put_offs_flags(uint8_t *h, uint8_t doff, uint8_t flags)
 // 32-bit words, which is what RFC 9293 sec 3.1's "integer multiple of 32 bits" means.
 static void put_opts(uint8_t *h, const uint8_t *opts, size_t len)
 {
-    memcpy(h + IDEMIP_TCP_OFF_OPTIONS, opts, len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = h + IDEMIP_TCP_OFF_OPTIONS, .at = opts, .size = len);
     put_offs_flags(h, (uint8_t)(IDEMIP_TCP_DOFF_MIN + (len >> IDEMIP_TCP_WORD_SHIFT)), 0u);
 }
 
@@ -551,7 +551,7 @@ void test_sack_permitted_option_figure(void)
 void test_sack_option_blocks(void)
 {
     uint8_t opts[40];
-    memset(opts, IDEMIP_TCP_OPT_NOP, sizeof opts);
+    fill_bytes(opts, IDEMIP_TCP_OPT_NOP, sizeof opts);
     opts[0] = IDEMIP_TCP_OPT_SACK;
     opts[1] = 34u;
     for (uint8_t i = 0; i < 4u; i++)
@@ -649,38 +649,38 @@ void test_build_helpers_write_only_what_they_report(void)
     uint8_t *o = seg + IDEMIP_TCP_OFF_OPTIONS;
     size_t n = 0;
 
-    memset(o, 0xFFu, 16u);
+    fill_bytes(o, 0xFFu, 16u);
     n = idemip_tcp_opt_put_end(o);
     TEST_ASSERT_EQUAL_size_t(1u, n);
     TEST_ASSERT_EQUAL_HEX8(0x00u, o[0]);
     TEST_ASSERT_EQUAL_HEX8(0xFFu, o[n]);
 
-    memset(o, 0xFFu, 16u);
+    fill_bytes(o, 0xFFu, 16u);
     n = idemip_tcp_opt_put_nop(o);
     TEST_ASSERT_EQUAL_size_t(1u, n);
     TEST_ASSERT_EQUAL_HEX8(0x01u, o[0]);
     TEST_ASSERT_EQUAL_HEX8(0xFFu, o[n]);
 
-    memset(o, 0xFFu, 16u);
+    fill_bytes(o, 0xFFu, 16u);
     n = idemip_tcp_opt_put_mss(o, 536u);
     TEST_ASSERT_EQUAL_size_t(4u, n);
     TEST_ASSERT_EQUAL_UINT16(536u, idemip_tcp_opt_mss(o));
     TEST_ASSERT_EQUAL_HEX8(0xFFu, o[n]);
 
-    memset(o, 0xFFu, 16u);
+    fill_bytes(o, 0xFFu, 16u);
     n = idemip_tcp_opt_put_ws(o, 0u);
     TEST_ASSERT_EQUAL_size_t(3u, n);
     TEST_ASSERT_EQUAL_UINT8(0u, idemip_tcp_opt_ws(o));
     TEST_ASSERT_EQUAL_HEX8(0xFFu, o[n]);
 
-    memset(o, 0xFFu, 16u);
+    fill_bytes(o, 0xFFu, 16u);
     n = idemip_tcp_opt_put_sack_perm(o);
     TEST_ASSERT_EQUAL_size_t(2u, n);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_TCP_OPT_SACK_PERM, o[IDEMIP_TCP_OPT_OFF_KIND]);
     TEST_ASSERT_EQUAL_UINT8(2u, o[IDEMIP_TCP_OPT_OFF_LEN]);
     TEST_ASSERT_EQUAL_HEX8(0xFFu, o[n]);
 
-    memset(o, 0xFFu, 16u);
+    fill_bytes(o, 0xFFu, 16u);
     n = idemip_tcp_opt_put_ts(o, 0x11223344u, 0x55667788u);
     TEST_ASSERT_EQUAL_size_t(10u, n);
     TEST_ASSERT_EQUAL_HEX32(0x11223344u, idemip_tcp_opt_tsval(o));
@@ -739,7 +739,7 @@ void test_pseudo_header_checksum(void)
 {
     const uint32_t src = 0x0A000001u; // 10.0.0.1
     const uint32_t dst = 0x0A000002u; // 10.0.0.2
-    memcpy(seg, rfc9293_fig1, IDEMIP_TCP_HDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = seg, .at = rfc9293_fig1, .size = IDEMIP_TCP_HDR_LEN);
     idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM, 0u);
     seg[20] = 0xDEu;
     seg[21] = 0xADu;
@@ -765,7 +765,7 @@ void test_checksum_pads_an_odd_length(void)
 {
     const uint32_t src = 0x0A000001u;
     const uint32_t dst = 0x0A000002u;
-    memcpy(seg, rfc9293_fig1, IDEMIP_TCP_HDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = seg, .at = rfc9293_fig1, .size = IDEMIP_TCP_HDR_LEN);
     idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM, 0u);
     seg[20] = 0x41u;
     seg[21] = 0x00u; // the pad, which the sum supplies and the wire does not carry
@@ -780,7 +780,7 @@ void test_checksum_pads_an_odd_length(void)
 void test_a_sack_option_shorter_than_its_own_fixed_octets_carries_no_blocks(void)
 {
     uint8_t opt[IDEMIP_TCP_OPTS_MAX];
-    memset(opt, 0, sizeof opt);
+    mmgr_zero_buf(opt, sizeof opt);
     opt[IDEMIP_TCP_OPT_OFF_KIND] = (uint8_t)IDEMIP_TCP_OPT_SACK;
 
     for (uint8_t len = 0u; len < (uint8_t)IDEMIP_TCP_OPT_LEN_MIN; len++)

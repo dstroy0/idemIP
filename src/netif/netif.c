@@ -18,7 +18,7 @@
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ip/ipv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The stamp clear writes into the context. Every other entry refuses a borrow without it, so bytes
 // that were never cleared are refused rather than read as a table.
@@ -53,8 +53,9 @@ typedef struct
     uint8_t pad[(1u << IDEMIP_NETIF_ENTRY_SHIFT) - (sizeof(uint8_t *) + (3u * 4u) + (4u * 2u) + IDEMIP_MAC_LEN)];
 } NetifEntry;
 
-static_assert(sizeof(NetifEntry) == (1u << IDEMIP_NETIF_ENTRY_SHIFT),
-              "a NetifEntry is not 1 << IDEMIP_NETIF_ENTRY_SHIFT octets wide - raise the shift in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    sizeof(NetifEntry) == (1u << IDEMIP_NETIF_ENTRY_SHIFT),
+    "a NetifEntry is not 1 << IDEMIP_NETIF_ENTRY_SHIFT octets wide - raise the shift in idemip_config.h");
 
 #if IDEMIP_ENABLE_IPV6
 
@@ -76,27 +77,28 @@ typedef struct
                 (IDEMIP_IP6_ADDR_LEN + (2u * 4u) + (2u * sizeof(IdemIpMs)) + 1u)];
 } NetifAddr6Entry;
 
-static_assert(sizeof(NetifAddr6Entry) == (1u << IDEMIP_NETIF_ADDR6_ENTRY_SHIFT),
-              "a NetifAddr6Entry is not 1 << IDEMIP_NETIF_ADDR6_ENTRY_SHIFT octets wide - raise the shift in "
-              "idemip_config.h");
+EMBED_STATIC_ASSERT(sizeof(NetifAddr6Entry) == (1u << IDEMIP_NETIF_ADDR6_ENTRY_SHIFT),
+                    "a NetifAddr6Entry is not 1 << IDEMIP_NETIF_ADDR6_ENTRY_SHIFT octets wide - raise the shift in "
+                    "idemip_config.h");
 
 // The sweep reports how many addresses it moved in one octet, so the whole table has to fit one.
-static_assert((IDEMIP_NETIF_COUNT * IDEMIP_IP6_ADDRESSES) <= 255u,
-              "NetifIo::aged counts the addresses one sweep moved in a uint8_t - lower "
-              "IDEMIP_NETIF_COUNT or IDEMIP_IP6_ADDRESSES");
+EMBED_STATIC_ASSERT((IDEMIP_NETIF_COUNT * IDEMIP_IP6_ADDRESSES) <= 255u,
+                    "NetifIo::aged counts the addresses one sweep moved in a uint8_t - lower "
+                    "IDEMIP_NETIF_COUNT or IDEMIP_IP6_ADDRESSES");
 
 #endif // IDEMIP_ENABLE_IPV6
 
 // The caller's borrow, split: the operand block, the context, the interface table, then the IPv6
 // addresses. netif.h publishes the offsets; the asserts below prove the span covers them and that
 // each table starts aligned before anything runs.
-static_assert(IDEMIP_NETIF_OFF_CTX + sizeof(NetifCtx) <= IDEMIP_NETIF_CTX_BYTES,
-              "IDEMIP_NETIF_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_NETIF_OFF_END <= IDEMIP_NETIF_BORROW,
-              "IDEMIP_NETIF_BORROW is short of the operand block, the context and both tables - raise "
-              "IDEMIP_NETIF_CTX_BYTES in idemip_config.h");
-static_assert(((IDEMIP_NETIF_OFF_TAB | IDEMIP_NETIF_OFF_ADDR6) & (IDEMIP_ALIGN - 1u)) == 0u,
-              "a table does not start on IDEMIP_ALIGN: entry i sits at (i << SHIFT) from it");
+EMBED_STATIC_ASSERT(
+    IDEMIP_NETIF_OFF_CTX + sizeof(NetifCtx) <= IDEMIP_NETIF_CTX_BYTES,
+    "IDEMIP_NETIF_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_NETIF_OFF_END <= IDEMIP_NETIF_BORROW,
+                    "IDEMIP_NETIF_BORROW is short of the operand block, the context and both tables - raise "
+                    "IDEMIP_NETIF_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(((IDEMIP_NETIF_OFF_TAB | IDEMIP_NETIF_OFF_ADDR6) & (IDEMIP_ALIGN - 1u)) == 0u,
+                    "a table does not start on IDEMIP_ALIGN: entry i sits at (i << SHIFT) from it");
 
 // The regions, at their offsets in the caller's borrow.
 #define NETIF_IO(w) IDEMIP_NETIF_IO(w)
@@ -131,23 +133,23 @@ static_assert(((IDEMIP_NETIF_OFF_TAB | IDEMIP_NETIF_OFF_ADDR6) & (IDEMIP_ALIGN -
 // --- what a value means ----------------------------------------------------
 
 // RFC 1112 sec 4, the high-order four bits "1110".
-static idemip_bool netif_ip4_multicast(uint32_t addr)
+static embed_bool netif_ip4_multicast(uint32_t addr)
 {
-    return ((addr & NETIF_IP4_MULTICAST_PREFIX) == NETIF_IP4_MULTICAST_NET) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((addr & NETIF_IP4_MULTICAST_PREFIX) == NETIF_IP4_MULTICAST_NET) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // The high-order three bits "111": RFC 1112 sec 4's class D and the class E above it, "those with
 // '1111' as their high-order four bits, are reserved for future addressing modes". RFC 6890 Table 15
 // gives 240.0.0.0/4 Source False and Destination False, so neither block is an interface's own.
-static idemip_bool netif_ip4_reserved(uint32_t addr)
+static embed_bool netif_ip4_reserved(uint32_t addr)
 {
-    return ((addr & NETIF_IP4_MULTICAST_NET) == NETIF_IP4_MULTICAST_NET) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((addr & NETIF_IP4_MULTICAST_NET) == NETIF_IP4_MULTICAST_NET) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 1122 sec 3.2.1.3 case (g), the 127 network.
-static idemip_bool netif_ip4_loopback(uint32_t addr)
+static embed_bool netif_ip4_loopback(uint32_t addr)
 {
-    return ((addr & NETIF_IP4_LOOPBACK_PREFIX) == NETIF_IP4_LOOPBACK_NET) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((addr & NETIF_IP4_LOOPBACK_PREFIX) == NETIF_IP4_LOOPBACK_NET) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // The forms RFC 1122 sec 3.2.1.3 bars from an interface's own address: (c) the limited broadcast,
@@ -159,21 +161,21 @@ static idemip_bool netif_ip4_loopback(uint32_t addr)
 // <Host-number>, <Network-number>, or <Subnet-number> fields (except in the special cases listed
 // above)". { 0, 0 } is one of those cases, "a source address as part of an initialization procedure
 // by which the host learns its own IP address", so it is left through.
-static idemip_bool netif_addr4_barred(uint32_t addr, uint32_t mask, uint16_t flags)
+static embed_bool netif_addr4_barred(uint32_t addr, uint32_t mask, uint16_t flags)
 {
     if (addr == NETIF_IP4_LIMITED_BROADCAST || netif_ip4_reserved(addr))
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     if (netif_ip4_loopback(addr) && (flags & (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK) == 0u)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     if ((~mask) != 0u && addr != 0u)
     {
         if ((addr & ~mask) == (~mask) || (addr & ~mask) == 0u)
         {
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
     }
     // The <Network-number> half of the same sentence, which the host half above leaves. { 0, 0 } is
@@ -183,30 +185,29 @@ static idemip_bool netif_addr4_barred(uint32_t addr, uint32_t mask, uint16_t fla
     {
         if ((addr & mask) == 0u || (addr & mask) == mask)
         {
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
     }
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 #if IDEMIP_ENABLE_IPV6
 
 // RFC 4291 sec 2.5.2, the unspecified address "must never be assigned to any node".
-static idemip_bool netif_ip6_unspecified(const uint8_t *addr)
+static embed_bool netif_ip6_unspecified(const uint8_t *addr)
 {
     return idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN);
 }
 
 // RFC 4291 sec 2.5.3, the loopback address 0:0:0:0:0:0:0:1 "must not be assigned to any physical
 // interface".
-static idemip_bool netif_ip6_loopback(const uint8_t *addr)
+static embed_bool netif_ip6_loopback(const uint8_t *addr)
 {
-    return (idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN - 1u) && addr[IDEMIP_IP6_ADDR_LEN - 1u] == 1u)
-               ? IDEMIP_TRUE
-               : IDEMIP_FALSE;
+    return (idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN - 1u) && addr[IDEMIP_IP6_ADDR_LEN - 1u] == 1u) ? EMBED_TRUE
+                                                                                                       : EMBED_FALSE;
 }
 
-static idemip_bool netif_ip6_same(const uint8_t *a, const uint8_t *b)
+static embed_bool netif_ip6_same(const uint8_t *a, const uint8_t *b)
 {
     return idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN);
 }
@@ -216,14 +217,14 @@ static idemip_bool netif_ip6_same(const uint8_t *a, const uint8_t *b)
 // interface that is not the loopback. The slot carries the RFC 4862 sec 2 states, which sec 5.4
 // reaches through Duplicate Address Detection, "performed on all unicast addresses prior to
 // assigning them to an interface", so a group address has no state here to hold.
-static idemip_bool netif_addr6_barred(const uint8_t *addr, uint16_t flags)
+static embed_bool netif_addr6_barred(const uint8_t *addr, uint16_t flags)
 {
     if (netif_ip6_unspecified(addr) || addr[0] == NETIF_IP6_MULTICAST_OCTET)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
-    return (netif_ip6_loopback(addr) && (flags & (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK) == 0u) ? IDEMIP_TRUE
-                                                                                             : IDEMIP_FALSE;
+    return (netif_ip6_loopback(addr) && (flags & (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK) == 0u) ? EMBED_TRUE
+                                                                                              : EMBED_FALSE;
 }
 
 // RFC 4861 sec 4.6.2 states both lifetimes in seconds, and "A value of all one bits (0xffffffff)
@@ -241,13 +242,13 @@ static IdemIpMs netif_deadline(IdemIpMs now, uint32_t lifetime_s)
 // RFC 4862 sec 5.4.5: a duplicate address "MUST NOT be assigned to an interface". sec 5.4: a
 // tentative one "is not considered 'assigned to an interface' in the traditional sense", and only
 // the sec 5.4.3 Target Address match may see it.
-static idemip_bool netif_addr6_assigned(uint8_t state, idemip_bool tentative)
+static embed_bool netif_addr6_assigned(uint8_t state, embed_bool tentative)
 {
     if (state == (uint8_t)IDEMIP_NETIF_ADDR6_PREFERRED || state == (uint8_t)IDEMIP_NETIF_ADDR6_DEPRECATED)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
-    return (tentative && state == (uint8_t)IDEMIP_NETIF_ADDR6_TENTATIVE) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (tentative && state == (uint8_t)IDEMIP_NETIF_ADDR6_TENTATIVE) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // Zeroes one interface's run of the address table, which leaves every slot holding
@@ -256,7 +257,8 @@ static void netif_drop_addr6(uint8_t *work, uint8_t index)
 {
     for (uint8_t s = 0u; s < IDEMIP_IP6_ADDRESSES; s++)
     {
-        memset(NETIF_ADDR6_AT(work, index, s), 0, sizeof(NetifAddr6Entry));
+        EMBED_CALL(memor.set, MemoriaCfg, .dst = NETIF_ADDR6_AT(work, index, s), .val = 0,
+                   .bytes = sizeof(NetifAddr6Entry));
     }
 }
 
@@ -270,9 +272,9 @@ static void netif_bind_at(uint8_t *work, uint8_t index)
 {
     NetifIo *io = NETIF_IO(work);
     NetifEntry *entry = NETIF_AT(work, index);
-    memset(entry, 0, sizeof(*entry));
+    *entry = (NetifEntry){0};
     entry->phy = io->bind_args.phy;
-    memcpy(entry->hwaddr, io->bind_args.hwaddr, IDEMIP_MAC_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = entry->hwaddr, .at = io->bind_args.hwaddr, .size = IDEMIP_MAC_LEN);
     entry->mtu = io->bind_args.mtu;
 #if IDEMIP_ENABLE_IPV6
     netif_drop_addr6(work, index);
@@ -283,7 +285,7 @@ static void netif_bind_at(uint8_t *work, uint8_t index)
 // entry reads as unbound.
 static void netif_unbind_at(uint8_t *work, uint8_t index)
 {
-    memset(NETIF_AT(work, index), 0, sizeof(NetifEntry));
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = NETIF_AT(work, index), .val = 0, .bytes = sizeof(NetifEntry));
 #if IDEMIP_ENABLE_IPV6
     netif_drop_addr6(work, index);
 #endif
@@ -311,9 +313,9 @@ static void netif_report(uint8_t *work, uint8_t index)
 // source address as part of an initialization procedure by which the host learns its own IP
 // address." A bound interface is zeroed until set_addr4 gives it one, so 0.0.0.0 is the address it
 // does not have rather than an address it holds.
-static idemip_bool netif_has_addr4(const NetifEntry *entry)
+static embed_bool netif_has_addr4(const NetifEntry *entry)
 {
-    return (entry->phy != NULL && entry->addr != 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (entry->phy != NULL && entry->addr != 0u) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 1122 sec 3.3.1.1 (b): "If the IP destination address bits extracted by the address mask match
@@ -322,17 +324,17 @@ static idemip_bool netif_has_addr4(const NetifEntry *entry)
 // multicast address, simply pass the datagram to the link layer for the appropriate interface", are
 // on the link without extracting anything, which is the form an address this host does not have yet
 // still sends. An interface with no address extracts no bits, so nothing else is on its link.
-static idemip_bool netif_on_link(const NetifEntry *entry, uint32_t dst)
+static embed_bool netif_on_link(const NetifEntry *entry, uint32_t dst)
 {
     if (dst == NETIF_IP4_LIMITED_BROADCAST || netif_ip4_multicast(dst))
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     if (!netif_has_addr4(entry))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    return ((dst & entry->mask) == (entry->addr & entry->mask)) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((dst & entry->mask) == (entry->addr & entry->mask)) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 #if IDEMIP_ENABLE_IPV6
@@ -375,7 +377,7 @@ static uint8_t netif_age_addr6(uint8_t *work, uint32_t now_ms)
             }
             if (now >= addr6->valid_at)
             {
-                memset(addr6, 0, sizeof(*addr6));
+                *addr6 = (NetifAddr6Entry){0};
                 moved = (uint8_t)(moved + 1u);
                 continue;
             }
@@ -402,7 +404,8 @@ void idemip_netif_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_NETIF_OFF_CTX, 0, (size_t)IDEMIP_NETIF_OFF_END - IDEMIP_NETIF_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_NETIF_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_NETIF_OFF_END - IDEMIP_NETIF_OFF_CTX);
     NETIF_CTX(work)->ready = NETIF_READY;
     NETIF_IO(work)->status = IDEMIP_OK;
 }
@@ -639,7 +642,7 @@ void idemip_netif_local4(uint8_t *work)
     }
     NetifIo *io = NETIF_IO(work);
     io->status = IDEMIP_ERR;
-    io->local = IDEMIP_FALSE;
+    io->local = EMBED_FALSE;
     if (NETIF_CTX(work)->ready != NETIF_READY || io->route_args.index >= IDEMIP_NETIF_COUNT)
     {
         return;
@@ -701,7 +704,7 @@ void idemip_netif_add_addr6(uint8_t *work)
     }
 
     NetifAddr6Entry *addr6 = NETIF_ADDR6_AT(work, io->addr6_args.index, slot);
-    memcpy(addr6->addr, io->addr6_args.addr, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = addr6->addr, .at = io->addr6_args.addr, .size = IDEMIP_IP6_ADDR_LEN);
     addr6->preferred_s = io->addr6_args.preferred_s;
     addr6->valid_s = io->addr6_args.valid_s;
     // The caller's own clock, and not the one the last tick left in the context. A lifetime is
@@ -739,7 +742,7 @@ void idemip_netif_remove_addr6(uint8_t *work)
         NetifAddr6Entry *addr6 = NETIF_ADDR6_AT(work, io->addr6_args.index, s);
         if (addr6->state != (uint8_t)IDEMIP_NETIF_ADDR6_INVALID && netif_ip6_same(addr6->addr, io->addr6_args.addr))
         {
-            memset(addr6, 0, sizeof(*addr6));
+            *addr6 = (NetifAddr6Entry){0};
             io->index = io->addr6_args.index;
             io->slot = s;
             io->status = IDEMIP_OK;
@@ -839,4 +842,4 @@ void idemip_netif_tick(uint8_t *work)
 
 #endif // IDEMIP_ENABLE_IPV6
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

@@ -17,7 +17,7 @@
 #include "src/common_defines.h"
 #include "src/ip/ipv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // What a datagram entry is doing. Only HOLDING takes fragments; the other three take none and hold
 // their pinned descriptors until the caller walks them out and drops the entry. RFC 8200 sec 4.5
@@ -54,9 +54,9 @@ typedef struct
     uint8_t hole_head;
     uint8_t frag_count;
     uint8_t next_hdr;
-    idemip_bool first_seen; ///< the Fragment Offset zero fragment has arrived
-    idemip_bool last_seen;  ///< the M flag zero fragment has arrived, so frag_end stands
-    idemip_bool used;
+    embed_bool first_seen; ///< the Fragment Offset zero fragment has arrived
+    embed_bool last_seen;  ///< the M flag zero fragment has arrived, so frag_end stands
+    embed_bool used;
     uint8_t state; ///< IP6_REASS_HOLDING, COMPLETE, EXPIRED or ABANDONED
     uint8_t pad[12];
 } Ip6ReassDatagram;
@@ -69,7 +69,7 @@ typedef struct
     uint16_t len;     ///< octets of fragment data following the Fragment header
     uint16_t hdr_len; ///< octets from the fragment packet's IPv6 header to its fragment data
     uint8_t next;
-    idemip_bool used;
+    embed_bool used;
     uint8_t pad[6];
 } Ip6ReassFrag;
 
@@ -81,7 +81,7 @@ typedef struct
     uint16_t first;
     uint16_t last;
     uint8_t next;
-    idemip_bool used;
+    embed_bool used;
     uint8_t pad[2];
 } Ip6ReassHole;
 
@@ -92,7 +92,7 @@ typedef struct
     uint8_t datagrams;
     uint8_t frags;
     uint8_t holes;
-    idemip_bool ready;
+    embed_bool ready;
 } Ip6ReassCtx;
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
@@ -100,33 +100,34 @@ typedef struct
 IDEMIP_ASSERT_REGION(IDEMIP_IP6_REASS_OFF_CTX, sizeof(Ip6ReassCtx), IDEMIP_IP6_REASS_OFF_END, "ip6_reass's context");
 
 // An index is (i << SHIFT), so each entry is exactly its width.
-static_assert(sizeof(Ip6ReassDatagram) == (1u << IDEMIP_IP6_REASS_DATAGRAM_ENTRY_SHIFT),
-              "a datagram entry must be 1 << IDEMIP_IP6_REASS_DATAGRAM_ENTRY_SHIFT wide");
-static_assert(sizeof(Ip6ReassFrag) == (1u << IDEMIP_IP6_REASS_FRAG_ENTRY_SHIFT),
-              "a fragment entry must be 1 << IDEMIP_IP6_REASS_FRAG_ENTRY_SHIFT wide");
-static_assert(sizeof(Ip6ReassHole) == (1u << IDEMIP_IP6_REASS_HOLE_ENTRY_SHIFT),
-              "a hole entry must be 1 << IDEMIP_IP6_REASS_HOLE_ENTRY_SHIFT wide (RFC 815 sec 3)");
+EMBED_STATIC_ASSERT(sizeof(Ip6ReassDatagram) == (1u << IDEMIP_IP6_REASS_DATAGRAM_ENTRY_SHIFT),
+                    "a datagram entry must be 1 << IDEMIP_IP6_REASS_DATAGRAM_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(Ip6ReassFrag) == (1u << IDEMIP_IP6_REASS_FRAG_ENTRY_SHIFT),
+                    "a fragment entry must be 1 << IDEMIP_IP6_REASS_FRAG_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(Ip6ReassHole) == (1u << IDEMIP_IP6_REASS_HOLE_ENTRY_SHIFT),
+                    "a hole entry must be 1 << IDEMIP_IP6_REASS_HOLE_ENTRY_SHIFT wide (RFC 815 sec 3)");
 // The caller's borrow, split: the operand block, the context, then the three tables. ip6_reass.h
 // publishes the offsets; these two asserts prove the span covers them before anything runs. The first
 // keeps the context inside the region ahead of the datagram table, the second the whole map inside
 // the borrow.
-static_assert(IDEMIP_IP6_REASS_OFF_CTX + sizeof(Ip6ReassCtx) <= IDEMIP_IP6_REASS_OFF_DATAGRAMS,
-              "IDEMIP_IP6_REASS_CTX_BYTES is short of the operand block and the context - raise it in "
-              "idemip_config.h");
-static_assert(IDEMIP_IP6_REASS_OFF_END <= IDEMIP_IP6_REASS_BORROW,
-              "IDEMIP_IP6_REASS_BORROW is short of the map - raise IDEMIP_IP6_REASS_CTX_BYTES in "
-              "idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_REASS_OFF_CTX + sizeof(Ip6ReassCtx) <= IDEMIP_IP6_REASS_OFF_DATAGRAMS,
+                    "IDEMIP_IP6_REASS_CTX_BYTES is short of the operand block and the context - raise it in "
+                    "idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_REASS_OFF_END <= IDEMIP_IP6_REASS_BORROW,
+                    "IDEMIP_IP6_REASS_BORROW is short of the map - raise IDEMIP_IP6_REASS_CTX_BYTES in "
+                    "idemip_config.h");
 
 // Every table index counts the entries the borrow holds, so IDEMIP_IP6_REASS_NONE names none of them.
-static_assert(IDEMIP_IP6_REASS_DATAGRAMS < IDEMIP_IP6_REASS_NONE && IDEMIP_IP6_REASS_FRAGS < IDEMIP_IP6_REASS_NONE &&
-                  IDEMIP_IP6_REASS_HOLES < IDEMIP_IP6_REASS_NONE,
-              "a table is wider than the index a result member carries");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_REASS_DATAGRAMS < IDEMIP_IP6_REASS_NONE &&
+                        IDEMIP_IP6_REASS_FRAGS < IDEMIP_IP6_REASS_NONE &&
+                        IDEMIP_IP6_REASS_HOLES < IDEMIP_IP6_REASS_NONE,
+                    "a table is wider than the index a result member carries");
 
 // A datagram opens with one hole and each fragment splits at most one hole in two, so the list holds
 // at most one descriptor per datagram plus one per fragment. The carve below writes the first
 // replacement where the hole was, so that count is the peak and not a step below it.
-static_assert(IDEMIP_IP6_REASS_HOLES >= IDEMIP_IP6_REASS_DATAGRAMS + IDEMIP_IP6_REASS_FRAGS,
-              "the hole table must hold one descriptor per datagram plus one per fragment (RFC 815 sec 3)");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_REASS_HOLES >= IDEMIP_IP6_REASS_DATAGRAMS + IDEMIP_IP6_REASS_FRAGS,
+                    "the hole table must hold one descriptor per datagram plus one per fragment (RFC 815 sec 3)");
 
 // The regions, at their offsets in the caller's borrow.
 #define IP6_REASS_IO(w) IDEMIP_IP6_REASS_IO(w)
@@ -163,8 +164,9 @@ static uint8_t ip6_reass_take_datagram(uint8_t *work)
     {
         if (!IP6_REASS_DATAGRAM_AT(work, i)->used)
         {
-            memset(IP6_REASS_DATAGRAM_AT(work, i), 0, sizeof(Ip6ReassDatagram));
-            IP6_REASS_DATAGRAM_AT(work, i)->used = IDEMIP_TRUE;
+            EMBED_CALL(memor.set, MemoriaCfg, .dst = IP6_REASS_DATAGRAM_AT(work, i), .val = 0,
+                       .bytes = sizeof(Ip6ReassDatagram));
+            IP6_REASS_DATAGRAM_AT(work, i)->used = EMBED_TRUE;
             IP6_REASS_DATAGRAM_AT(work, i)->frag_head = IDEMIP_IP6_REASS_NONE;
             IP6_REASS_DATAGRAM_AT(work, i)->hole_head = IDEMIP_IP6_REASS_NONE;
             IP6_REASS_CTX(work)->datagrams++;
@@ -185,8 +187,9 @@ static uint8_t ip6_reass_take_frag(uint8_t *work)
     {
         if (!IP6_REASS_FRAG_AT(work, i)->used)
         {
-            memset(IP6_REASS_FRAG_AT(work, i), 0, sizeof(Ip6ReassFrag));
-            IP6_REASS_FRAG_AT(work, i)->used = IDEMIP_TRUE;
+            EMBED_CALL(memor.set, MemoriaCfg, .dst = IP6_REASS_FRAG_AT(work, i), .val = 0,
+                       .bytes = sizeof(Ip6ReassFrag));
+            IP6_REASS_FRAG_AT(work, i)->used = EMBED_TRUE;
             IP6_REASS_FRAG_AT(work, i)->next = IDEMIP_IP6_REASS_NONE;
             IP6_REASS_CTX(work)->frags++;
             return i;
@@ -210,8 +213,9 @@ static uint8_t ip6_reass_take_hole(uint8_t *work)
     {
         if (!IP6_REASS_HOLE_AT(work, i)->used)
         {
-            memset(IP6_REASS_HOLE_AT(work, i), 0, sizeof(Ip6ReassHole));
-            IP6_REASS_HOLE_AT(work, i)->used = IDEMIP_TRUE;
+            EMBED_CALL(memor.set, MemoriaCfg, .dst = IP6_REASS_HOLE_AT(work, i), .val = 0,
+                       .bytes = sizeof(Ip6ReassHole));
+            IP6_REASS_HOLE_AT(work, i)->used = EMBED_TRUE;
             IP6_REASS_HOLE_AT(work, i)->next = IDEMIP_IP6_REASS_NONE;
             IP6_REASS_CTX(work)->holes++;
             return i;
@@ -230,7 +234,7 @@ static void ip6_reass_put_datagram(uint8_t *work, uint8_t d)
     while (i != IDEMIP_IP6_REASS_NONE)
     {
         uint8_t next = IP6_REASS_FRAG_AT(work, i)->next;
-        IP6_REASS_FRAG_AT(work, i)->used = IDEMIP_FALSE;
+        IP6_REASS_FRAG_AT(work, i)->used = EMBED_FALSE;
         ctx->frags--;
         i = next;
     }
@@ -238,11 +242,11 @@ static void ip6_reass_put_datagram(uint8_t *work, uint8_t d)
     while (i != IDEMIP_IP6_REASS_NONE)
     {
         uint8_t next = IP6_REASS_HOLE_AT(work, i)->next;
-        IP6_REASS_HOLE_AT(work, i)->used = IDEMIP_FALSE;
+        IP6_REASS_HOLE_AT(work, i)->used = EMBED_FALSE;
         ctx->holes--;
         i = next;
     }
-    memset(dg, 0, sizeof(Ip6ReassDatagram));
+    *dg = (Ip6ReassDatagram){0};
     ctx->datagrams--;
 }
 
@@ -303,7 +307,7 @@ static uint8_t ip6_reass_scan(uint8_t *work, uint8_t d, uint16_t offset, uint16_
 // it, the second only if "fragment.more fragments is true". The fragment is [first, end), so RFC
 // 815's fragment.last is end - 1 and its two tests read as end <= hole.first and end <= hole.last.
 // Returns false when the second replacement has no free descriptor.
-static idemip_bool ip6_reass_carve(uint8_t *work, uint8_t d, uint32_t first, uint32_t end, idemip_bool more)
+static embed_bool ip6_reass_carve(uint8_t *work, uint8_t d, uint32_t first, uint32_t end, embed_bool more)
 {
     Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
     uint8_t prev = IDEMIP_IP6_REASS_NONE;
@@ -320,8 +324,8 @@ static idemip_bool ip6_reass_carve(uint8_t *work, uint8_t d, uint32_t first, uin
             cur = next;
             continue;
         }
-        idemip_bool head = (first > hole_first) ? IDEMIP_TRUE : IDEMIP_FALSE;  // step five
-        idemip_bool tail = (end <= hole_last && more) ? IDEMIP_TRUE : IDEMIP_FALSE; // step six
+        embed_bool head = (first > hole_first) ? EMBED_TRUE : EMBED_FALSE;       // step five
+        embed_bool tail = (end <= hole_last && more) ? EMBED_TRUE : EMBED_FALSE; // step six
         if (head)
         {
             h->first = (uint16_t)hole_first;
@@ -341,7 +345,7 @@ static idemip_bool ip6_reass_carve(uint8_t *work, uint8_t d, uint32_t first, uin
             // back one it has torn.
             if (h2 == IDEMIP_IP6_REASS_NONE) // GCOVR_EXCL_BR_LINE
             {
-                return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+                return EMBED_FALSE; // GCOVR_EXCL_LINE
             }
             IP6_REASS_HOLE_AT(work, h2)->first = (uint16_t)end;
             IP6_REASS_HOLE_AT(work, h2)->last = (uint16_t)hole_last;
@@ -364,12 +368,12 @@ static idemip_bool ip6_reass_carve(uint8_t *work, uint8_t d, uint32_t first, uin
             {
                 IP6_REASS_HOLE_AT(work, prev)->next = next;
             }
-            h->used = IDEMIP_FALSE;
+            h->used = EMBED_FALSE;
             IP6_REASS_CTX(work)->holes--;
         }
         cur = next;
     }
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // RFC 815 sec 3 step six's reason for testing more fragments: "that hole descriptor which reaches
@@ -401,7 +405,7 @@ static void ip6_reass_trim(uint8_t *work, uint8_t d, uint32_t end)
             {
                 IP6_REASS_HOLE_AT(work, prev)->next = next; // GCOVR_EXCL_LINE
             }
-            h->used = IDEMIP_FALSE;
+            h->used = EMBED_FALSE;
             IP6_REASS_CTX(work)->holes--;
         }
         else
@@ -432,7 +436,7 @@ static uint32_t ip6_reass_payload_len(uint8_t *work, uint8_t d)
 // Whether any fragment already held reaches past @p end. RFC 8200 sec 4.5 computes the reassembled
 // Payload Length from "the length and offset of the last fragment", so the M flag zero fragment fixes
 // where the Fragmentable Part ends and nothing of the same packet can lie beyond it.
-static idemip_bool ip6_reass_past_end(uint8_t *work, uint8_t d, uint32_t end)
+static embed_bool ip6_reass_past_end(uint8_t *work, uint8_t d, uint32_t end)
 {
     uint8_t cur = IP6_REASS_DATAGRAM_AT(work, d)->frag_head;
     while (cur != IDEMIP_IP6_REASS_NONE)
@@ -440,11 +444,11 @@ static idemip_bool ip6_reass_past_end(uint8_t *work, uint8_t d, uint32_t end)
         const Ip6ReassFrag *fr = IP6_REASS_FRAG_AT(work, cur);
         if ((uint32_t)fr->offset + (uint32_t)fr->len > end)
         {
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         cur = fr->next;
     }
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 // --- the arriving fragment -------------------------------------------------
@@ -458,13 +462,13 @@ typedef struct
     uint16_t frag_len; ///< FL, the fragment data following the Fragment header
     uint16_t hdr_len;  ///< octets from the IPv6 header to that data
     uint8_t next_hdr;  ///< Next Header of the Fragment header
-    idemip_bool more;  ///< the M flag
+    embed_bool more;   ///< the M flag
 } Ip6ReassFields;
 
 // Reads the RFC 8200 sec 4.5 Fragment header and derives the fragment length "as derived from the
 // fragment packet's Payload Length field". False when the packet cannot carry the header the caller
 // named, or names more octets than the buffer holds, or seats its fragment data past sixteen bits.
-static idemip_bool ip6_reass_fields(const uint8_t *pkt, size_t len, size_t fh, Ip6ReassFields *f)
+static embed_bool ip6_reass_fields(const uint8_t *pkt, size_t len, size_t fh, Ip6ReassFields *f)
 {
     // The third test is not measured: sec 3's Payload Length is sixteen bits, so a packet cannot
     // carry the octets a Fragment header seated past IP6_REASS_INFINITY would need, and the second
@@ -473,17 +477,17 @@ static idemip_bool ip6_reass_fields(const uint8_t *pkt, size_t len, size_t fh, I
     if (fh < IDEMIP_IPV6_HDR_LEN || fh + IDEMIP_IP6_FRAG_HDR_LEN > len ||
         fh + IDEMIP_IP6_FRAG_HDR_LEN > IP6_REASS_INFINITY) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     size_t pl = (size_t)idemip_ip6_payload_len(pkt);
     if (pl + IDEMIP_IPV6_HDR_LEN > len)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     size_t unfrag = fh - IDEMIP_IPV6_HDR_LEN; // the per-fragment headers between the two
     if (pl < unfrag + IDEMIP_IP6_FRAG_HDR_LEN)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     const uint8_t *hdr = pkt + fh;
     f->frag_len = (uint16_t)(pl - unfrag - IDEMIP_IP6_FRAG_HDR_LEN);
@@ -493,7 +497,7 @@ static idemip_bool ip6_reass_fields(const uint8_t *pkt, size_t len, size_t fh, I
     f->ident = idemip_ip6_frag_ident(hdr);
     f->next_hdr = hdr[IDEMIP_IP6_FRAG_OFF_NEXT_HDR];
     f->end = (uint32_t)f->offset + (uint32_t)f->frag_len;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // The whole of RFC 8200 sec 4.5 input: the three error conditions a fragment carries on its own, the
@@ -551,7 +555,7 @@ static void ip6_reass_file(uint8_t *work)
     // Address, IPv6 Destination Address, and Fragment Identification) should be processed
     // independently." It joins nothing already held, so one of these cannot reach into a reassembly it
     // shares a key with.
-    const idemip_bool atomic = (idemip_bool)(f.offset == 0u && !f.more);
+    const embed_bool atomic = (embed_bool)(f.offset == 0u && !f.more);
     uint8_t d = atomic ? (uint8_t)IDEMIP_IP6_REASS_NONE : ip6_reass_match(work, src, dst, f.ident);
     uint8_t prev = IDEMIP_IP6_REASS_NONE;
 
@@ -587,7 +591,7 @@ static void ip6_reass_file(uint8_t *work)
         // overlap: "reassembly of that packet must be abandoned and all the fragments that have been
         // received for that packet must be discarded, and no ICMP error messages should be sent."
         Ip6ReassDatagram *dg = IP6_REASS_DATAGRAM_AT(work, d);
-        idemip_bool inconsistent = IDEMIP_FALSE;
+        embed_bool inconsistent = EMBED_FALSE;
         //
         // The second last fragment naming a different end is written out because sec 4.5 fixes the
         // length there and two fragments cannot fix it twice, and the equal case is not measured: a
@@ -596,13 +600,13 @@ static void ip6_reass_file(uint8_t *work)
         // covering octets already held, which the overlap above abandons. Neither reaches here.
         if (!f.more)
         {
-            inconsistent = (idemip_bool)(ip6_reass_past_end(work, d, f.end) ||
-                                         (dg->last_seen &&                            // GCOVR_EXCL_BR_LINE
-                                          (uint32_t)dg->frag_end != f.end)); // GCOVR_EXCL_BR_LINE
+            inconsistent = (embed_bool)(ip6_reass_past_end(work, d, f.end) ||
+                                        (dg->last_seen &&                   // GCOVR_EXCL_BR_LINE
+                                         (uint32_t)dg->frag_end != f.end)); // GCOVR_EXCL_BR_LINE
         }
         else if (dg->last_seen && f.end > (uint32_t)dg->frag_end)
         {
-            inconsistent = IDEMIP_TRUE;
+            inconsistent = EMBED_TRUE;
         }
         if (inconsistent)
         {
@@ -636,7 +640,7 @@ static void ip6_reass_file(uint8_t *work)
         d = ip6_reass_take_datagram(work);
         if (d == IDEMIP_IP6_REASS_NONE)
         {
-            IP6_REASS_FRAG_AT(work, fi)->used = IDEMIP_FALSE;
+            IP6_REASS_FRAG_AT(work, fi)->used = EMBED_FALSE;
             IP6_REASS_CTX(work)->frags--;
             io->status = IDEMIP_BUSY;
             return;
@@ -648,7 +652,7 @@ static void ip6_reass_file(uint8_t *work)
         if (h == IDEMIP_IP6_REASS_NONE) // GCOVR_EXCL_BR_LINE
         {
             // GCOVR_EXCL_START
-            IP6_REASS_FRAG_AT(work, fi)->used = IDEMIP_FALSE;
+            IP6_REASS_FRAG_AT(work, fi)->used = EMBED_FALSE;
             IP6_REASS_CTX(work)->frags--;
             ip6_reass_put_datagram(work, d);
             io->status = IDEMIP_BUSY;
@@ -662,8 +666,8 @@ static void ip6_reass_file(uint8_t *work)
         Ip6ReassDatagram *fresh = IP6_REASS_DATAGRAM_AT(work, d);
         fresh->hole_head = h;
         fresh->ident = f.ident;
-        memcpy(fresh->src, src, IDEMIP_IP6_ADDR_LEN);
-        memcpy(fresh->dst, dst, IDEMIP_IP6_ADDR_LEN);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = fresh->src, .at = src, .size = IDEMIP_IP6_ADDR_LEN);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = fresh->dst, .at = dst, .size = IDEMIP_IP6_ADDR_LEN);
         // sec 4.5: 60 seconds "of the reception of the first-arriving fragment of that packet"
         fresh->deadline_ms = IP6_REASS_CTX(work)->now_ms + IDEMIP_IP6_REASS_MAXAGE_MS;
     }
@@ -692,14 +696,14 @@ static void ip6_reass_file(uint8_t *work)
     if (f.offset == 0u)
     {
         dg->next_hdr = f.next_hdr;
-        dg->first_seen = IDEMIP_TRUE;
+        dg->first_seen = EMBED_TRUE;
     }
     // "FO.last" and "FL.last" come from the fragment packet whose M flag is zero, so that is where the
     // Fragmentable Part ends and what the sec 4.5 Payload Length formula reads.
     if (!f.more)
     {
         dg->frag_end = (uint16_t)f.end;
-        dg->last_seen = IDEMIP_TRUE;
+        dg->last_seen = EMBED_TRUE;
     }
 
     io->datagram = d;
@@ -733,7 +737,7 @@ static void ip6_reass_file(uint8_t *work)
         dg->total_len = (uint16_t)total;
         dg->state = IP6_REASS_COMPLETE;
         io->total_len = dg->total_len;
-        io->complete = IDEMIP_TRUE;
+        io->complete = EMBED_TRUE;
     }
     io->status = IDEMIP_OK;
 }
@@ -749,8 +753,8 @@ void idemip_ip6_reass_clear(uint8_t *work)
         return; // no borrow, so nowhere to report
     }
     Ip6ReassIo *io = IP6_REASS_IO(work);
-    memset(work + IDEMIP_IP6_REASS_OFF_CTX, 0, IP6_REASS_STATE_BYTES);
-    IP6_REASS_CTX(work)->ready = IDEMIP_TRUE;
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_IP6_REASS_OFF_CTX, .val = 0, .bytes = IP6_REASS_STATE_BYTES);
+    IP6_REASS_CTX(work)->ready = EMBED_TRUE;
     io->status = IDEMIP_OK;
 }
 
@@ -767,7 +771,7 @@ void idemip_ip6_reass_input(uint8_t *work)
     Ip6ReassCtx *ctx = IP6_REASS_CTX(work);
     io->status = IDEMIP_ERR;
     io->err = IDEMIP_IP6_REASS_ERR_NONE;
-    io->complete = IDEMIP_FALSE;
+    io->complete = EMBED_FALSE;
     io->datagram = IDEMIP_IP6_REASS_NONE;
     io->frag_count = 0u;
     io->next_hdr = 0u;
@@ -898,4 +902,4 @@ void idemip_ip6_reass_tick(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

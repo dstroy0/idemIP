@@ -22,7 +22,7 @@
 /** @brief RFC 8200 sec 3's Version 6. */
 #define IDEMIP_PSEUDO_V6 6u
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief One accumulate. */
 typedef struct
@@ -38,7 +38,7 @@ typedef struct
 /**
  * @brief Accumulate the pseudo-header @c ip_version fixes into @c sum.
  * @param c The accumulate.
- * @return IDEMIP_FALSE when the build carries no such version, and when the length is one that
+ * @return EMBED_FALSE when the build carries no such version, and when the length is one that
  *         version's pseudo-header cannot carry.
  *
  * RFC 791 sec 3.1's Version 4 and RFC 8200 sec 3's Version 6 are the two forms there are. A version
@@ -48,7 +48,7 @@ typedef struct
  * selected which one each is, so the branch reaches them by name. Each reports for itself, and the
  * one a build left out reports false without touching the sum.
  */
-IDEMIP_INLINE idemip_bool pseudo_accum(const PseudoCtx *c)
+EMBED_INLINE embed_bool pseudo_accum(const PseudoCtx *c)
 {
     if (c->ip_version == (uint8_t)IDEMIP_PSEUDO_V4)
     {
@@ -58,7 +58,7 @@ IDEMIP_INLINE idemip_bool pseudo_accum(const PseudoCtx *c)
     {
         return idemip_pseudo6_accum(c->sum, c->proto, c->src, c->dst, c->upper_len);
     }
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 /* The namespace is a table of function pointers with the caller's argument lists in their types,
@@ -69,11 +69,11 @@ IDEMIP_INLINE idemip_bool pseudo_accum(const PseudoCtx *c)
    call from another translation unit is a load of the table, a load of the entry, and an indirect
    call it cannot see through. */
 
-idemip_bool idemip_pseudo_accum(uint32_t *sum, uint8_t ip_version, uint8_t proto, const uint8_t *src,
-                                const uint8_t *dst, uint32_t upper_len)
+embed_bool idemip_pseudo_accum(uint32_t *sum, uint8_t ip_version, uint8_t proto, const uint8_t *src, const uint8_t *dst,
+                               uint32_t upper_len)
 {
-    return IDEMIP_CALL(pseudo_accum, PseudoCtx, .sum = sum, .ip_version = ip_version, .proto = proto, .src = src,
-                       .dst = dst, .upper_len = upper_len);
+    return EMBED_CALL(pseudo_accum, PseudoCtx, .sum = sum, .ip_version = ip_version, .proto = proto, .src = src,
+                      .dst = dst, .upper_len = upper_len);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

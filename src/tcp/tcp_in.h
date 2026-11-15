@@ -27,7 +27,7 @@
 
 #if IDEMIP_ENABLE_TCP
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
 // What a call asks the caller to do
@@ -191,7 +191,7 @@ typedef struct
     uint32_t text_seq;
     uint16_t text_off;
     uint16_t text_len;
-    idemip_bool acceptable;
+    embed_bool acceptable;
 } TcpInResult;
 
 /**
@@ -312,15 +312,14 @@ void idemip_tcp_in_segment(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const TcpInNs TcpIn IDEMIP_UNUSED = {
-    .clear = idemip_tcp_in_clear,
-    .parse = idemip_tcp_in_parse,
-    .acceptable = idemip_tcp_in_acceptable,
-    .closed = idemip_tcp_in_closed,
-    .listen = idemip_tcp_in_listen,
-    .syn_sent = idemip_tcp_in_syn_sent,
-    .segment = idemip_tcp_in_segment};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE TcpInNs TcpIn EMBED_UNUSED = {.clear = idemip_tcp_in_clear,
+                                                  .parse = idemip_tcp_in_parse,
+                                                  .acceptable = idemip_tcp_in_acceptable,
+                                                  .closed = idemip_tcp_in_closed,
+                                                  .listen = idemip_tcp_in_listen,
+                                                  .syn_sent = idemip_tcp_in_syn_sent,
+                                                  .segment = idemip_tcp_in_segment};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_TCP
 

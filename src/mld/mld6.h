@@ -25,7 +25,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief No group. Every index in this contract reads this when it names none. */
 #define IDEMIP_MLD6_NONE 0xFFu
@@ -42,12 +42,11 @@ IDEMIP_BEGIN_DECLS
  * "A node may be in one of three possible states with respect to any single IPv6 multicast address on
  * any single interface". Non-Listener "requires no storage in the node", so a cleared entry is in it.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_MLD6_NON_LISTENER = 0,   ///< not listening to the address on the interface
-    IDEMIP_MLD6_DELAYING_LISTENER,  ///< listening, with a report delay timer running
-    IDEMIP_MLD6_IDLE_LISTENER,      ///< listening, with no report delay timer running
-} IdemIpMld6State;
+EMBED_ENUM_BYTE(IdemIpMld6State,
+                IDEMIP_MLD6_NON_LISTENER = 0,  ///< not listening to the address on the interface
+                IDEMIP_MLD6_DELAYING_LISTENER, ///< listening, with a report delay timer running
+                IDEMIP_MLD6_IDLE_LISTENER,     ///< listening, with no report delay timer running
+);
 
 /**
  * @brief What a membership call takes.
@@ -73,7 +72,7 @@ typedef struct
     uint32_t now_ms;
     uint32_t rand;
     uint8_t netif;
-    idemip_bool done_always;
+    embed_bool done_always;
 } Mld6GroupArgs;
 
 /**
@@ -101,7 +100,7 @@ typedef struct
     uint32_t rand;
     uint32_t now_ms;
     uint8_t netif;
-    idemip_bool general;
+    embed_bool general;
 } Mld6QueryArgs;
 
 /** @brief What a sweep takes: the millisecond clock every deadline is compared against. */
@@ -143,9 +142,9 @@ typedef struct
     IdemIpMld6State state;
     uint8_t netif;
     uint8_t expired;
-    idemip_bool last_reporter;
-    idemip_bool send_report;
-    idemip_bool send_done;
+    embed_bool last_reporter;
+    embed_bool send_report;
+    embed_bool send_done;
 } Mld6Io;
 
 // ---------------------------------------------------------------------------
@@ -226,20 +225,19 @@ void idemip_mld6_tick(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Mld6Ns Mld6 IDEMIP_UNUSED = {
-    .clear = idemip_mld6_clear,
-    .join = idemip_mld6_join,
-    .leave = idemip_mld6_leave,
-    .find = idemip_mld6_find,
-    .query_in = idemip_mld6_query_in,
-    .report_in = idemip_mld6_report_in,
-    .tick = idemip_mld6_tick};
+EMBED_TABLE_STORAGE Mld6Ns Mld6 EMBED_UNUSED = {.clear = idemip_mld6_clear,
+                                                .join = idemip_mld6_join,
+                                                .leave = idemip_mld6_leave,
+                                                .find = idemip_mld6_find,
+                                                .query_in = idemip_mld6_query_in,
+                                                .report_in = idemip_mld6_report_in,
+                                                .tick = idemip_mld6_tick};
 // RFC 2710 sec 3 draws Type, Code, Checksum, Maximum Response Delay and Reserved above the 16-octet
 // Multicast Address, which is the 24 octets sec 3.7 bounds a message at.
-static_assert(IDEMIP_MLD6_MSG_LEN == 8u + IDEMIP_IP6_ADDR_LEN,
-              "the RFC 2710 sec 3 fields must sum to the 24 octets sec 3.7 bounds a message at");
+EMBED_STATIC_ASSERT(IDEMIP_MLD6_MSG_LEN == 8u + IDEMIP_IP6_ADDR_LEN,
+                    "the RFC 2710 sec 3 fields must sum to the 24 octets sec 3.7 bounds a message at");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

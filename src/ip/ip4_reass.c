@@ -16,7 +16,7 @@
 #include "src/common_defines.h"
 #include "src/ip/ipv4_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads zero here and every
 // entry refuses it, because a zeroed borrow reads each list link as row zero and not as
@@ -92,40 +92,43 @@ typedef struct
 IDEMIP_ASSERT_REGION(IDEMIP_IP4_REASS_OFF_CTX, sizeof(Ip4ReassCtx), IDEMIP_IP4_REASS_BORROW, "ip4_reass's context");
 
 // Row i of each table is at (i << SHIFT), so each width has to be exactly its shift.
-static_assert(sizeof(Ip4ReassDatagram) == (1u << IDEMIP_IP4_REASS_DATAGRAM_ENTRY_SHIFT),
-              "an Ip4ReassDatagram must be exactly 1 << IDEMIP_IP4_REASS_DATAGRAM_ENTRY_SHIFT wide - pad it, or raise "
-              "the shift");
-static_assert(sizeof(Ip4ReassFrag) == (1u << IDEMIP_IP4_REASS_FRAG_ENTRY_SHIFT),
-              "an Ip4ReassFrag must be exactly 1 << IDEMIP_IP4_REASS_FRAG_ENTRY_SHIFT wide - pad it, or raise the "
-              "shift");
-static_assert(sizeof(Ip4ReassHole) == (1u << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT),
-              "an Ip4ReassHole must be exactly 1 << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT wide - pad it, or raise the "
-              "shift");
+EMBED_STATIC_ASSERT(
+    sizeof(Ip4ReassDatagram) == (1u << IDEMIP_IP4_REASS_DATAGRAM_ENTRY_SHIFT),
+    "an Ip4ReassDatagram must be exactly 1 << IDEMIP_IP4_REASS_DATAGRAM_ENTRY_SHIFT wide - pad it, or raise "
+    "the shift");
+EMBED_STATIC_ASSERT(
+    sizeof(Ip4ReassFrag) == (1u << IDEMIP_IP4_REASS_FRAG_ENTRY_SHIFT),
+    "an Ip4ReassFrag must be exactly 1 << IDEMIP_IP4_REASS_FRAG_ENTRY_SHIFT wide - pad it, or raise the "
+    "shift");
+EMBED_STATIC_ASSERT(
+    sizeof(Ip4ReassHole) == (1u << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT),
+    "an Ip4ReassHole must be exactly 1 << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT wide - pad it, or raise the "
+    "shift");
 
 // The head region carries the operand block and the context, both outside all three tables.
-static_assert(IDEMIP_IP4_REASS_OFF_CTX + sizeof(Ip4ReassCtx) <= IDEMIP_IP4_REASS_CTX_BYTES,
-              "IDEMIP_IP4_REASS_CTX_BYTES is short of the operand block and the context - raise it in "
-              "idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_REASS_OFF_CTX + sizeof(Ip4ReassCtx) <= IDEMIP_IP4_REASS_CTX_BYTES,
+                    "IDEMIP_IP4_REASS_CTX_BYTES is short of the operand block and the context - raise it in "
+                    "idemip_config.h");
 
 // The caller's borrow, split: the head region, then the datagrams, the fragments and the holes.
 // ip4_reass.h publishes the offsets; the assert proves the span covers them before anything runs.
-static_assert(IDEMIP_IP4_REASS_OFF_HOLE + (IDEMIP_IP4_REASS_HOLES << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT) <=
-                  IDEMIP_IP4_REASS_BORROW,
-              "IDEMIP_IP4_REASS_BORROW is short of the head region and the three tables - raise it in "
-              "idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_REASS_OFF_HOLE + (IDEMIP_IP4_REASS_HOLES << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT) <=
+                        IDEMIP_IP4_REASS_BORROW,
+                    "IDEMIP_IP4_REASS_BORROW is short of the head region and the three tables - raise it in "
+                    "idemip_config.h");
 
 // clear zeroes all three tables, so the empty row is the zero state.
-static_assert(IDEMIP_IP4_REASS_FREE == 0, "IDEMIP_IP4_REASS_FREE must be zero: clear zeroes the tables");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_REASS_FREE == 0, "IDEMIP_IP4_REASS_FREE must be zero: clear zeroes the tables");
 
 // ip4_reass_holes reports the holes RFC 815 sec 3 step 4 deleted, and IP4_REASS_NONE when the table
 // ran out, so the whole table must stay below that value.
-static_assert(IDEMIP_IP4_REASS_HOLES < IDEMIP_IP4_REASS_INDEX_NONE,
-              "a deleted-hole count shares its octet with IDEMIP_IP4_REASS_INDEX_NONE");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_REASS_HOLES < IDEMIP_IP4_REASS_INDEX_NONE,
+                    "a deleted-hole count shares its octet with IDEMIP_IP4_REASS_INDEX_NONE");
 
 // RFC 815 sec 3 opens hole.last at infinity, and step 6 stores fragment.last plus one into a hole,
 // so the largest fragment.last RFC 791's Total Length permits must stay below that value.
-static_assert(IDEMIP_IP4_TOTAL_LEN_MAX - IDEMIP_IPV4_HDR_LEN < IDEMIP_IP4_REASS_INFINITY,
-              "RFC 815 sec 3 step 6 stores fragment.last plus one: infinity must stay above every fragment");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_TOTAL_LEN_MAX - IDEMIP_IPV4_HDR_LEN < IDEMIP_IP4_REASS_INFINITY,
+                    "RFC 815 sec 3 step 6 stores fragment.last plus one: infinity must stay above every fragment");
 
 // The regions, at their offsets in the caller's borrow.
 #define IP4_REASS_IO(w) IDEMIP_IP4_REASS_IO(w)
@@ -139,9 +142,9 @@ static_assert(IDEMIP_IP4_TOTAL_LEN_MAX - IDEMIP_IPV4_HDR_LEN < IDEMIP_IP4_REASS_
     ((Ip4ReassHole *)(void *)((w) + IDEMIP_IP4_REASS_OFF_HOLE + ((size_t)(i) << IDEMIP_IP4_REASS_HOLE_ENTRY_SHIFT)))
 
 // A borrow clear has not run on holds no list terminator, so every entry but clear refuses it.
-static idemip_bool ip4_reass_ready(uint8_t *work)
+static embed_bool ip4_reass_ready(uint8_t *work)
 {
-    return (idemip_bool)(IP4_REASS_CTX(work)->ready == IP4_REASS_READY);
+    return (embed_bool)(IP4_REASS_CTX(work)->ready == IP4_REASS_READY);
 }
 
 // --- the tables ------------------------------------------------------------
@@ -149,9 +152,9 @@ static idemip_bool ip4_reass_ready(uint8_t *work)
 // True once the millisecond clock has reached the deadline. The difference is taken in the clock's
 // own width and read against a half span, so a clock that wrapped past the deadline still compares
 // as reached.
-static idemip_bool ip4_reass_reached(uint32_t now_ms, uint32_t deadline_ms)
+static embed_bool ip4_reass_reached(uint32_t now_ms, uint32_t deadline_ms)
 {
-    return (idemip_bool)((now_ms - deadline_ms) < 0x80000000u);
+    return (embed_bool)((now_ms - deadline_ms) < 0x80000000u);
 }
 
 // The row still gathering fragments under this RFC 791 sec 3.2 buffer identifier, "the concatenation
@@ -216,7 +219,7 @@ static uint8_t ip4_reass_frag_alloc(uint8_t *work)
 // The failure is written out for the same reason, and is not measured for the reason idemip_config.h
 // states beside IDEMIP_IP4_REASS_HOLES: RFC 815 opens a datagram with one hole and steps 4 through 6
 // leave at most one more per fragment, so D datagrams holding N fragments reach at most D + N
-// descriptors, and the static_assert there holds the table at or above that. Both bounds are enforced
+// descriptors, and the EMBED_STATIC_ASSERT there holds the table at or above that. Both bounds are enforced
 // ahead of every call - a row by IDEMIP_IP4_REASS_DATAGRAMS, a fragment by ctx->held - so the search
 // has an entry every time it is made.
 static uint8_t ip4_reass_hole_alloc(uint8_t *work, uint32_t first, uint32_t last)
@@ -364,7 +367,7 @@ static void ip4_reass_hole_thread(uint8_t *work, uint8_t index, uint8_t at, uint
 // the fragment". Reports the holes step 4 deleted, so zero means steps 2 and 3 passed over every
 // hole and the fragment covers nothing missing, and IP4_REASS_NONE means the hole table ran out.
 // Step 8 is the caller's: it reads hole_head.
-static uint8_t ip4_reass_holes(uint8_t *work, uint8_t index, uint32_t first, uint32_t last, idemip_bool mf)
+static uint8_t ip4_reass_holes(uint8_t *work, uint8_t index, uint32_t first, uint32_t last, embed_bool mf)
 {
     uint8_t prev = IP4_REASS_NONE;
     uint8_t h = IP4_REASS_DGRAM_AT(work, index)->hole_head;
@@ -476,7 +479,7 @@ static void ip4_reass_take(uint8_t *work)
     const uint8_t hdr_len = (uint8_t)idemip_ip4_hdr_len(hdr);
     const uint32_t data_len = (uint32_t)idemip_ip4_payload_len(hdr);
     const uint32_t off = idemip_ip4_frag_offset_bytes(hdr);
-    const idemip_bool mf = idemip_ip4_mf(hdr);
+    const embed_bool mf = idemip_ip4_mf(hdr);
     const uint32_t src = idemip_ip4_src(hdr);
     const uint32_t dst = idemip_ip4_dst(hdr);
     const uint8_t proto = idemip_ip4_proto(hdr);
@@ -516,7 +519,7 @@ static void ip4_reass_take(uint8_t *work)
         return;
     }
 
-    idemip_bool opened = IDEMIP_FALSE;
+    embed_bool opened = EMBED_FALSE;
     uint8_t index = ip4_reass_find(work, src, dst, proto, id);
     if (index == IP4_REASS_NONE)
     {
@@ -548,7 +551,7 @@ static void ip4_reass_take(uint8_t *work)
         fresh->proto = proto;
         fresh->id = id;
         fresh->deadline_ms = io->now_ms + ((uint32_t)IDEMIP_IP_REASS_MAXAGE_S * IP4_REASS_MS_PER_S);
-        opened = IDEMIP_TRUE;
+        opened = EMBED_TRUE;
     }
 
     Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, index);
@@ -682,7 +685,7 @@ static void ip4_reass_take(uint8_t *work)
     {
         row->state = (uint8_t)IDEMIP_IP4_REASS_COMPLETE;
         row->cursor = row->frag_head;
-        io->complete = IDEMIP_TRUE;
+        io->complete = EMBED_TRUE;
     }
     io->index = index;
     io->state = (IdemIpIp4ReassState)row->state;
@@ -806,7 +809,7 @@ static void ip4_reass_expire(uint8_t *work)
     for (unsigned int i = 0u; i < IDEMIP_IP4_REASS_DATAGRAMS; i++)
     {
         const Ip4ReassDatagram *row = IP4_REASS_DGRAM_AT(work, i);
-        const idemip_bool abandoned = (idemip_bool)(row->state == (uint8_t)IDEMIP_IP4_REASS_ABANDONED);
+        const embed_bool abandoned = (embed_bool)(row->state == (uint8_t)IDEMIP_IP4_REASS_ABANDONED);
         if (row->state != (uint8_t)IDEMIP_IP4_REASS_HOLDING && row->state != (uint8_t)IDEMIP_IP4_REASS_COMPLETE &&
             !abandoned)
         {
@@ -824,7 +827,7 @@ static void ip4_reass_expire(uint8_t *work)
         // the disposition RFC 8200 sec 4.5 states for its IPv6 twin: "no ICMP error messages should
         // be sent". Its buffer identifier goes back here, and only here.
         io->src = abandoned ? 0u : row->src;
-        io->frag_zero = (idemip_bool)(!abandoned && row->first_frag != IP4_REASS_NONE);
+        io->frag_zero = (embed_bool)(!abandoned && row->first_frag != IP4_REASS_NONE);
         ip4_reass_flush(work, (uint8_t)i);
         io->state = (IdemIpIp4ReassState)row->state;
         io->index = (uint8_t)i;
@@ -844,8 +847,8 @@ void idemip_ip4_reass_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IP4_REASS_OFF_CTX, 0,
-           (size_t)IDEMIP_IP4_REASS_BORROW - IDEMIP_IP4_REASS_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_IP4_REASS_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_IP4_REASS_BORROW - IDEMIP_IP4_REASS_OFF_CTX);
     IP4_REASS_CTX(work)->ready = IP4_REASS_READY;
     IP4_REASS_IO(work)->status = IDEMIP_OK;
 }
@@ -858,7 +861,7 @@ void idemip_ip4_reass_hold(uint8_t *work)
     }
     Ip4ReassIo *io = IP4_REASS_IO(work);
     io->status = IDEMIP_ERR;
-    io->complete = IDEMIP_FALSE;
+    io->complete = EMBED_FALSE;
     io->total_len = 0;
     io->index = (uint8_t)IDEMIP_IP4_REASS_INDEX_NONE;
     io->state = IDEMIP_IP4_REASS_FREE;
@@ -936,7 +939,7 @@ void idemip_ip4_reass_tick(uint8_t *work)
     io->index = (uint8_t)IDEMIP_IP4_REASS_INDEX_NONE;
     io->state = IDEMIP_IP4_REASS_FREE;
     io->src = 0u;
-    io->frag_zero = IDEMIP_FALSE;
+    io->frag_zero = EMBED_FALSE;
     if (!ip4_reass_ready(work))
     {
         return;
@@ -944,4 +947,4 @@ void idemip_ip4_reass_tick(uint8_t *work)
     ip4_reass_expire(work);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

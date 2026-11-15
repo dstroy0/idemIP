@@ -16,7 +16,7 @@
 #include "src/ip/ipv4_defines.h"
 #include "src/icmp/icmp_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads zero here and every
 // entry refuses it.
@@ -35,8 +35,8 @@ IDEMIP_ASSERT_REGION(IDEMIP_PMTU4_OFF_CTX, sizeof(Pmtu4Ctx), IDEMIP_PMTU4_BORROW
 
 // The caller's borrow, split: the operand block, then the context. pmtu4.h publishes the offsets;
 // the assert proves the span covers them before anything runs.
-static_assert(IDEMIP_PMTU4_OFF_CTX + sizeof(Pmtu4Ctx) <= IDEMIP_PMTU4_BORROW,
-              "IDEMIP_PMTU4_BORROW is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_PMTU4_OFF_CTX + sizeof(Pmtu4Ctx) <= IDEMIP_PMTU4_BORROW,
+                    "IDEMIP_PMTU4_BORROW is short of the operand block and the context - raise it in idemip_config.h");
 
 // The regions, at their offsets in the caller's borrow.
 #define PMTU4_IO(w) IDEMIP_PMTU4_IO(w)
@@ -59,18 +59,18 @@ static const uint16_t pmtu4_plateau[IDEMIP_PMTU4_PLATEAUS] = {
     68u,    // Official minimum MTU, RFC 791
 };
 
-static_assert(sizeof pmtu4_plateau / sizeof pmtu4_plateau[0] == IDEMIP_PMTU4_PLATEAUS,
-              "the plateau table is not IDEMIP_PMTU4_PLATEAUS rows: RFC 1191 Table 7-1 prints eleven");
+EMBED_STATIC_ASSERT(sizeof pmtu4_plateau / sizeof pmtu4_plateau[0] == IDEMIP_PMTU4_PLATEAUS,
+                    "the plateau table is not IDEMIP_PMTU4_PLATEAUS rows: RFC 1191 Table 7-1 prints eleven");
 
 // sec 3: "A host MUST never reduce its estimate of the Path MTU below 68 octets", which is the row
 // Table 7-1 ends on.
-static_assert(IDEMIP_IP4_MIN_FORWARD_MTU == 68u,
-              "RFC 1191 sec 3 floors the estimate at 68 octets, which is RFC 791's minimum");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_MIN_FORWARD_MTU == 68u,
+                    "RFC 1191 sec 3 floors the estimate at 68 octets, which is RFC 791's minimum");
 
 // A borrow clear has not run on carries no mark, so every entry but clear refuses it.
-static idemip_bool pmtu4_ready(uint8_t *work)
+static embed_bool pmtu4_ready(uint8_t *work)
 {
-    return (idemip_bool)(PMTU4_CTX(work)->ready == PMTU4_READY);
+    return (embed_bool)(PMTU4_CTX(work)->ready == PMTU4_READY);
 }
 
 // --- the table -------------------------------------------------------------
@@ -112,7 +112,8 @@ void idemip_pmtu4_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_PMTU4_OFF_CTX, 0, (size_t)IDEMIP_PMTU4_BORROW - IDEMIP_PMTU4_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_PMTU4_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_PMTU4_BORROW - IDEMIP_PMTU4_OFF_CTX);
     PMTU4_CTX(work)->ready = PMTU4_READY;
     PMTU4_IO(work)->status = IDEMIP_OK;
 }
@@ -144,8 +145,8 @@ void idemip_pmtu4_too_big(uint8_t *work)
     io->total_len = 0u;
     io->next_hop_mtu = 0u;
     io->tos = 0u;
-    io->decreased = IDEMIP_FALSE;
-    io->old_style = IDEMIP_FALSE;
+    io->decreased = EMBED_FALSE;
+    io->old_style = EMBED_FALSE;
     if (!pmtu4_ready(work))
     {
         return;
@@ -198,7 +199,7 @@ void idemip_pmtu4_too_big(uint8_t *work)
     }
     else
     {
-        io->old_style = IDEMIP_TRUE;
+        io->old_style = EMBED_TRUE;
         uint16_t len = io->total_len;
         if (held != 0u && len >= held)
         {
@@ -223,7 +224,7 @@ void idemip_pmtu4_too_big(uint8_t *work)
     io->mtu = mtu;
     // sec 3: "A host MUST not increase its estimate of the Path MTU in response to the contents of a
     // Datagram Too Big message", so the estimate stands unless the message strictly lowers it.
-    io->decreased = (idemip_bool)(held != 0u && mtu < held);
+    io->decreased = (embed_bool)(held != 0u && mtu < held);
     io->status = IDEMIP_OK;
 }
 
@@ -342,4 +343,4 @@ void idemip_pmtu4_age(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

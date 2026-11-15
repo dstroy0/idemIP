@@ -20,14 +20,16 @@
 
 #include "src/tcp/tcp_isn.h"
 
-#include <string.h>
+#include "support/borrows.h"
 #include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each so
 // a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_TCP_ISN_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_TCP_ISN_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_TCP_ISN_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_TCP_ISN_BORROW + 16))
+static uint8_t *work_b;
 
 static const uint8_t g_key[IDEMIP_TCP_ISN_SECRET_BYTES] = {0x00u, 0x11u, 0x22u, 0x33u, 0x44u, 0x55u, 0x66u, 0x77u,
                                                            0x88u, 0x99u, 0xAAu, 0xBBu, 0xCCu, 0xDDu, 0xEEu, 0xFFu};
@@ -36,8 +38,9 @@ static const uint8_t g_remote[IDEMIP_TCP_ISN_ADDR_BYTES] = {192u, 0u, 2u, 9u};
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_TCP_ISN_BORROW, CANARY, cap - IDEMIP_TCP_ISN_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_TCP_ISN_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_TCP_ISN_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -68,14 +71,16 @@ static void aim(uint8_t *w)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_tcp_isn);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_tcp_isn);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // --- the borrow --------------------------------------------------------------
@@ -144,7 +149,8 @@ void test_an_unreset_borrow_is_refused(void)
 // three.
 void test_reset_zeroes_the_block_and_the_working_set(void)
 {
-    memset(work_a + IDEMIP_TCP_ISN_OFF_CTX, 0xEE, (size_t)IDEMIP_TCP_ISN_BORROW - IDEMIP_TCP_ISN_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a + IDEMIP_TCP_ISN_OFF_CTX, .val = 0xEE,
+               .bytes = (size_t)IDEMIP_TCP_ISN_BORROW - IDEMIP_TCP_ISN_OFF_CTX);
     TcpIsn.reset(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_ISN_IO(work_a)->status);
     check_zero(work_a, IDEMIP_TCP_ISN_OFF_BLOCK, IDEMIP_TCP_ISN_BLOCK_BYTES,
@@ -199,7 +205,7 @@ void test_two_borrows_share_no_byte(void)
 void test_a_reset_on_one_borrow_leaves_the_other_regions_untouched(void)
 {
     const size_t span = (size_t)IDEMIP_TCP_ISN_BORROW - IDEMIP_TCP_ISN_OFF_BLOCK;
-    memset(work_b + IDEMIP_TCP_ISN_OFF_BLOCK, 0xC3, span);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b + IDEMIP_TCP_ISN_OFF_BLOCK, .val = 0xC3, .bytes = span);
     TcpIsn.reset(work_a);
     for (size_t i = 0; i < span; i++)
     {
@@ -309,7 +315,7 @@ static int carries(const uint8_t *w, size_t off, size_t len, const uint8_t *need
     }
     for (size_t i = 0; i + nlen <= len; i++)
     {
-        if (memcmp(w + off + i, needle, nlen) == 0)
+        if (EMBED_CALL(memor.cmp, MemoriaCfg, .src = w + off + i, .other = needle, .bytes = nlen) == 0)
         {
             return 1;
         }

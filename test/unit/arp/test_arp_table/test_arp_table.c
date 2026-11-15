@@ -20,25 +20,27 @@
 
 #include "src/arp/arp_table.h"
 
-#include <string.h>
-#include <unity.h>
-#include "src/ethernet/ethernet_defines.h"
 #include "src/arp/arp_defines.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
 #define DIRT 0xCCu
-static _Alignas(8) uint8_t work_a[IDEMIP_ARP_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_ARP_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_ARP_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_ARP_BORROW + 16))
+static uint8_t *work_b;
 
 static const uint8_t g_sha[IDEMIP_ARP_HLN_ETHERNET] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
 static uint8_t g_packet[IDEMIP_ARP_LEN];
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_ARP_BORROW, CANARY, cap - IDEMIP_ARP_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_ARP_BORROW, .val = CANARY, .bytes = cap - IDEMIP_ARP_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -52,7 +54,8 @@ static void check_canary(const uint8_t *w, size_t cap)
 // Every byte the two tables span, so a case can dirty them and see clear take them back.
 static void dirty_tables(uint8_t *w)
 {
-    memset(w + IDEMIP_ARP_OFF_TAB, DIRT, (size_t)IDEMIP_ARP_BORROW - (size_t)IDEMIP_ARP_OFF_TAB);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_ARP_OFF_TAB, .val = DIRT,
+               .bytes = (size_t)IDEMIP_ARP_BORROW - (size_t)IDEMIP_ARP_OFF_TAB);
 }
 
 static void assert_tables_zero(const uint8_t *w)
@@ -65,16 +68,18 @@ static void assert_tables_zero(const uint8_t *w)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(g_packet, 0, sizeof g_packet);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_arp);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_arp);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(g_packet, sizeof g_packet);
     idemip_arp_build_request(g_packet, g_sha, 0x0A000001u, 0x0A000002u);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // --- the borrow --------------------------------------------------------------

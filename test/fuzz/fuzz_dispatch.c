@@ -37,12 +37,14 @@
 
 #include "src/idemip.h"
 
+#include "cellularum_laboro/cellularum_laboro.h"
+
+#include "src/udp/udp_defines.h"
+#include "support/borrows.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include "src/udp/udp_defines.h"
 
 // The interface this node answers on. The addresses are RFC 5737 sec 3's TEST-NET-1 and RFC 3849's
 // documentation prefix, so nothing here names a host that exists.
@@ -67,35 +69,55 @@ static const uint8_t fuzz_lo6[16] = {0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
 // One array per borrow, which is the whole footprint: the library holds no file-scope mutable of
 // its own. The dispatch borrow carries a tail of canary octets so a write past
 // IDEMIP_DISPATCH_BORROW is a finding here and not a corruption somewhere later.
-static _Alignas(IDEMIP_ALIGN) uint8_t work[IDEMIP_DISPATCH_BORROW + 64u];
-static _Alignas(IDEMIP_ALIGN) uint8_t stats_mem[IDEMIP_STATS_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t phy_mem[IDEMIP_PHY_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t netif_mem[IDEMIP_NETIF_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t loopif_mem[IDEMIP_LOOPIF_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t vlan_mem[IDEMIP_VLAN_BORROW];
+#define WORK_BYTES ((size_t)(IDEMIP_DISPATCH_BORROW + 64u))
+static uint8_t *work;
+#define STATS_MEM_BYTES ((size_t)(IDEMIP_STATS_BORROW))
+static uint8_t *stats_mem;
+#define PHY_MEM_BYTES ((size_t)(IDEMIP_PHY_BORROW))
+static uint8_t *phy_mem;
+#define NETIF_MEM_BYTES ((size_t)(IDEMIP_NETIF_BORROW))
+static uint8_t *netif_mem;
+#define LOOPIF_MEM_BYTES ((size_t)(IDEMIP_LOOPIF_BORROW))
+static uint8_t *loopif_mem;
+#define VLAN_MEM_BYTES ((size_t)(IDEMIP_VLAN_BORROW))
+static uint8_t *vlan_mem;
 #if IDEMIP_ENABLE_IPV4
-static _Alignas(IDEMIP_ALIGN) uint8_t arp_mem[IDEMIP_ARP_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t ip4_addr_mem[IDEMIP_IP4_ADDR_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t ip4_reass_mem[IDEMIP_IP4_REASS_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t icmp_in_mem[IDEMIP_ICMP_IN_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t igmp_mem[IDEMIP_IGMP_BORROW];
+#define ARP_MEM_BYTES ((size_t)(IDEMIP_ARP_BORROW))
+static uint8_t *arp_mem;
+#define IP4_ADDR_MEM_BYTES ((size_t)(IDEMIP_IP4_ADDR_BORROW))
+static uint8_t *ip4_addr_mem;
+#define IP4_REASS_MEM_BYTES ((size_t)(IDEMIP_IP4_REASS_BORROW))
+static uint8_t *ip4_reass_mem;
+#define ICMP_IN_MEM_BYTES ((size_t)(IDEMIP_ICMP_IN_BORROW))
+static uint8_t *icmp_in_mem;
+#define IGMP_MEM_BYTES ((size_t)(IDEMIP_IGMP_BORROW))
+static uint8_t *igmp_mem;
 #endif
 #if IDEMIP_ENABLE_IPV6
-static _Alignas(IDEMIP_ALIGN) uint8_t ip6_addr_mem[IDEMIP_IP6_ADDR_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t ip6_reass_mem[IDEMIP_IP6_REASS_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t icmp6_in_mem[IDEMIP_ICMP6_IN_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t mld6_mem[IDEMIP_MLD6_BORROW];
+#define IP6_ADDR_MEM_BYTES ((size_t)(IDEMIP_IP6_ADDR_BORROW))
+static uint8_t *ip6_addr_mem;
+#define IP6_REASS_MEM_BYTES ((size_t)(IDEMIP_IP6_REASS_BORROW))
+static uint8_t *ip6_reass_mem;
+#define ICMP6_IN_MEM_BYTES ((size_t)(IDEMIP_ICMP6_IN_BORROW))
+static uint8_t *icmp6_in_mem;
+#define MLD6_MEM_BYTES ((size_t)(IDEMIP_MLD6_BORROW))
+static uint8_t *mld6_mem;
 #endif
 #if IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6
-static _Alignas(IDEMIP_ALIGN) uint8_t raw_mem[IDEMIP_RAW_PCB_BORROW];
+#define RAW_MEM_BYTES ((size_t)(IDEMIP_RAW_PCB_BORROW))
+static uint8_t *raw_mem;
 #endif
 #if IDEMIP_ENABLE_UDP
-static _Alignas(IDEMIP_ALIGN) uint8_t udp_mem[IDEMIP_UDP_PCB_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t udplite_mem[IDEMIP_UDPLITE_BORROW];
+#define UDP_MEM_BYTES ((size_t)(IDEMIP_UDP_PCB_BORROW))
+static uint8_t *udp_mem;
+#define UDPLITE_MEM_BYTES ((size_t)(IDEMIP_UDPLITE_BORROW))
+static uint8_t *udplite_mem;
 #endif
 #if IDEMIP_ENABLE_TCP
-static _Alignas(IDEMIP_ALIGN) uint8_t tcp_pcb_mem[IDEMIP_TCP_PCB_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t tcp_in_mem[IDEMIP_TCP_IN_BORROW];
+#define TCP_PCB_MEM_BYTES ((size_t)(IDEMIP_TCP_PCB_BORROW))
+static uint8_t *tcp_pcb_mem;
+#define TCP_IN_MEM_BYTES ((size_t)(IDEMIP_TCP_IN_BORROW))
+static uint8_t *tcp_in_mem;
 #endif
 
 // The frame is copied out of the fuzzer's buffer so the walk reads a span this harness owns: the
@@ -103,12 +125,9 @@ static _Alignas(IDEMIP_ALIGN) uint8_t tcp_in_mem[IDEMIP_TCP_IN_BORROW];
 // happened on.
 //
 // Both carry a word of slack behind the octets a frame may occupy, which is what a driver's
-// receive buffer has: IDEMIP_DMA_BUF_STRIDE is wider than a frame, and the span helpers in
-// common.h read the tail of a span out to the end of its word and mask it. A buffer sized to the
-// octet would make that read leave the object, which is the caller's arrangement to get right and
-// not a finding about the walk.
-static uint8_t frame[FUZZ_FRAME_MAX + sizeof(IdemIpWord)];
-static uint8_t out[FUZZ_FRAME_MAX + sizeof(IdemIpWord)];
+// receive buffer has: IDEMIP_DMA_BUF_STRIDE is wider than a frame.
+static uint8_t frame[FUZZ_FRAME_MAX + sizeof(embed_word)];
+static uint8_t out[FUZZ_FRAME_MAX + sizeof(embed_word)];
 
 // Off under libFuzzer, which wants no output per input. The standalone replay turns it on with -v,
 // so a seed or a crash file can be read frame by frame without a debugger.
@@ -128,10 +147,41 @@ static int fuzz_verbose;
 
 static void fuzz_wire(void)
 {
-    memset(work, 0, IDEMIP_DISPATCH_BORROW);
-    memset(work + IDEMIP_DISPATCH_BORROW, FUZZ_CANARY, sizeof work - IDEMIP_DISPATCH_BORROW);
-    memset(phy_mem, 0, sizeof phy_mem);
-    memset(out, 0, sizeof out);
+    idemip_test_borrow(&work, WORK_BYTES, idemip_owner_dispatch);
+    idemip_test_borrow(&stats_mem, STATS_MEM_BYTES, idemip_owner_stats);
+    idemip_test_borrow(&phy_mem, PHY_MEM_BYTES, idemip_owner_phy);
+    idemip_test_borrow(&netif_mem, NETIF_MEM_BYTES, idemip_owner_netif);
+    idemip_test_borrow(&loopif_mem, LOOPIF_MEM_BYTES, idemip_owner_loopif);
+    idemip_test_borrow(&vlan_mem, VLAN_MEM_BYTES, idemip_owner_vlan);
+#if IDEMIP_ENABLE_IPV4
+    idemip_test_borrow(&arp_mem, ARP_MEM_BYTES, idemip_owner_arp);
+    idemip_test_borrow(&ip4_addr_mem, IP4_ADDR_MEM_BYTES, idemip_owner_ip4_addr);
+    idemip_test_borrow(&ip4_reass_mem, IP4_REASS_MEM_BYTES, idemip_owner_ip4_reass);
+    idemip_test_borrow(&icmp_in_mem, ICMP_IN_MEM_BYTES, idemip_owner_icmp_in);
+    idemip_test_borrow(&igmp_mem, IGMP_MEM_BYTES, idemip_owner_igmp);
+#endif
+#if IDEMIP_ENABLE_IPV6
+    idemip_test_borrow(&ip6_addr_mem, IP6_ADDR_MEM_BYTES, idemip_owner_ip6_addr);
+    idemip_test_borrow(&ip6_reass_mem, IP6_REASS_MEM_BYTES, idemip_owner_ip6_reass);
+    idemip_test_borrow(&icmp6_in_mem, ICMP6_IN_MEM_BYTES, idemip_owner_icmp6_in);
+    idemip_test_borrow(&mld6_mem, MLD6_MEM_BYTES, idemip_owner_mld6);
+#endif
+#if IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6
+    idemip_test_borrow(&raw_mem, RAW_MEM_BYTES, idemip_owner_raw_pcb);
+#endif
+#if IDEMIP_ENABLE_UDP
+    idemip_test_borrow(&udp_mem, UDP_MEM_BYTES, idemip_owner_udp_pcb);
+    idemip_test_borrow(&udplite_mem, UDPLITE_MEM_BYTES, idemip_owner_udplite);
+#endif
+#if IDEMIP_ENABLE_TCP
+    idemip_test_borrow(&tcp_pcb_mem, TCP_PCB_MEM_BYTES, idemip_owner_tcp_pcb);
+    idemip_test_borrow(&tcp_in_mem, TCP_IN_MEM_BYTES, idemip_owner_tcp_in);
+#endif
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work, .val = 0, .bytes = IDEMIP_DISPATCH_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_DISPATCH_BORROW, .val = FUZZ_CANARY,
+               .bytes = WORK_BYTES - IDEMIP_DISPATCH_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = phy_mem, .val = 0, .bytes = PHY_MEM_BYTES);
+    mmgr_zero_buf(out, sizeof out);
 
     Stats.clear(stats_mem);
     Vlan.clear(vlan_mem);
@@ -206,7 +256,7 @@ static void fuzz_wire(void)
 #if IDEMIP_ENABLE_UDP && IDEMIP_ENABLE_IPV4
     UdpPcbIo *up = IDEMIP_UDP_PCB_IO(udp_mem);
     up->open_args.ip_version = 4u;
-    up->open_args.lite = IDEMIP_FALSE;
+    up->open_args.lite = EMBED_FALSE;
     UdpPcb.open(udp_mem);
     if (up->status == IDEMIP_OK)
     {
@@ -223,7 +273,7 @@ static void fuzz_wire(void)
 #if IDEMIP_ENABLE_UDP && IDEMIP_ENABLE_IPV6
     UdpPcbIo *up6 = IDEMIP_UDP_PCB_IO(udp_mem);
     up6->open_args.ip_version = 6u;
-    up6->open_args.lite = IDEMIP_FALSE;
+    up6->open_args.lite = EMBED_FALSE;
     UdpPcb.open(udp_mem);
     if (up6->status == IDEMIP_OK)
     {
@@ -239,7 +289,7 @@ static void fuzz_wire(void)
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
 #if IDEMIP_ENABLE_IPV4
     static uint8_t tcp_local[IDEMIP_TCP_PCB_ADDR_BYTES];
-    memset(tcp_local, 0, sizeof tcp_local);
+    mmgr_zero_buf(tcp_local, sizeof tcp_local);
     idemip_wr32(tcp_local, FUZZ_LOCAL_IP4);
     tp->listen_args.ip = tcp_local;
     tp->listen_args.port = (uint16_t)FUZZ_TCP_PORT;
@@ -302,7 +352,7 @@ static void fuzz_wire(void)
     io->if_args.index = 0u;
     io->if_args.dma = NULL;
     io->if_args.vid = 0u;
-    io->if_args.tagged = IDEMIP_FALSE;
+    io->if_args.tagged = EMBED_FALSE;
     Dispatch.if_bind(work);
     FUZZ_CHECK(io->status == IDEMIP_OK, "the interface row would not bind");
 }
@@ -312,7 +362,7 @@ static void fuzz_check(size_t len)
 {
     const DispatchIo *io = IDEMIP_DISPATCH_IO(work);
 
-    for (size_t i = IDEMIP_DISPATCH_BORROW; i < sizeof work; i++)
+    for (size_t i = IDEMIP_DISPATCH_BORROW; i < WORK_BYTES; i++)
     {
         FUZZ_CHECK(work[i] == FUZZ_CANARY, "a write landed past IDEMIP_DISPATCH_BORROW");
     }
@@ -368,7 +418,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         // size - at, and the long one clips want to what remains after the two length octets. The
         // destination is the wider of the two either way - len is capped at FUZZ_FRAME_MAX and
         // frame carries a word past that.
-        memcpy(frame, data + at, len); // NOSONAR c:S3519 - the bound is the caller's, and it is above
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = frame, .at = data + at,
+                   .size = len); // NOSONAR c:S3519 - the bound is the caller's, and it is above
         at += want;
 
         DispatchIo *io = IDEMIP_DISPATCH_IO(work);
@@ -408,7 +459,9 @@ int main(int argc, char **argv)
 {
     static uint8_t buf[64u * 1024u];
     int first = 1;
-    if (argc > 1 && strcmp(argv[1], "-v") == 0)
+    // The cap is the size of "-v" with its terminator. The compare reads no more of argv[1] than that.
+    if (argc > 1 &&
+        EMBED_CALL(cellul.eq, CatenaFinitaCfg, .src = argv[1], .other = "-v", .cap = sizeof("-v"), .ci = EMBED_FALSE))
     {
         fuzz_verbose = 1;
         first = 2;

@@ -24,18 +24,21 @@
 
 #include "src/ip/ip4_route.h"
 
-#include <string.h>
+#include "support/borrows.h"
 #include <unity.h>
 
 #define CANARY 0x5Au
 #define DIRT 0xCCu
-static _Alignas(8) uint8_t work_a[IDEMIP_IP4_ROUTE_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_IP4_ROUTE_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_IP4_ROUTE_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_IP4_ROUTE_BORROW + 16))
+static uint8_t *work_b;
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_IP4_ROUTE_BORROW, CANARY, cap - IDEMIP_IP4_ROUTE_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_IP4_ROUTE_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_IP4_ROUTE_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -48,7 +51,8 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 static void dirty_table(uint8_t *w)
 {
-    memset(w + IDEMIP_IP4_ROUTE_OFF_TAB, DIRT, (size_t)IDEMIP_IP4_ROUTE_BORROW - (size_t)IDEMIP_IP4_ROUTE_OFF_TAB);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_IP4_ROUTE_OFF_TAB, .val = DIRT,
+               .bytes = (size_t)IDEMIP_IP4_ROUTE_BORROW - (size_t)IDEMIP_IP4_ROUTE_OFF_TAB);
 }
 
 static void assert_table_zero(const uint8_t *w)
@@ -61,14 +65,16 @@ static void assert_table_zero(const uint8_t *w)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_ip4_route);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_ip4_route);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // --- the borrow --------------------------------------------------------------
@@ -311,7 +317,7 @@ static uint8_t add_row_ctx(const AddRowArgs *args)
     return IDEMIP_IP4_ROUTE_IO(args->w)->index;
 }
 
-#define add_row(...) IDEMIP_CALL(add_row_ctx, AddRowArgs, __VA_ARGS__)
+#define add_row(...) EMBED_CALL(add_row_ctx, AddRowArgs, __VA_ARGS__)
 
 static uint8_t add_net(uint8_t *w, uint32_t dst, uint32_t mask)
 {

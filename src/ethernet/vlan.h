@@ -39,7 +39,7 @@
 
 #if IDEMIP_ENABLE_ETHERNET
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
 // What a call takes
@@ -82,7 +82,7 @@ typedef struct
 {
     uint16_t vid;
     uint8_t pcp;
-    idemip_bool dei;
+    embed_bool dei;
 } VlanTagArgs;
 
 /**
@@ -136,11 +136,11 @@ typedef struct
     uint16_t type;
     uint16_t vid;
     uint8_t pcp;
-    idemip_bool dei;
-    idemip_bool tagged;
-    idemip_bool llc;
-    idemip_bool vid_null;
-    idemip_bool vid_reserved;
+    embed_bool dei;
+    embed_bool tagged;
+    embed_bool llc;
+    embed_bool vid_null;
+    embed_bool vid_reserved;
 } VlanIo;
 
 // ---------------------------------------------------------------------------
@@ -219,14 +219,13 @@ void idemip_vlan_split(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const VlanNs Vlan IDEMIP_UNUSED = {
-    .clear = idemip_vlan_clear,
-    .parse = idemip_vlan_parse,
-    .build = idemip_vlan_build,
-    .pack = idemip_vlan_pack,
-    .split = idemip_vlan_split};
+EMBED_TABLE_STORAGE VlanNs Vlan EMBED_UNUSED = {.clear = idemip_vlan_clear,
+                                                .parse = idemip_vlan_parse,
+                                                .build = idemip_vlan_build,
+                                                .pack = idemip_vlan_pack,
+                                                .split = idemip_vlan_split};
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET
 

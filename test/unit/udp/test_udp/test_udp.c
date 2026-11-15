@@ -21,9 +21,9 @@
 
 #include "src/udp/udp.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/udp/udp_defines.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // 192.168.0.1 and 192.168.0.2, the addresses every vector below was summed with.
 #define SRC 0xC0A80001u
@@ -61,7 +61,7 @@ static uint8_t buf_b[64];
 
 static void arm(uint8_t *b, size_t cap)
 {
-    memset(b, CANARY, cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = b, .val = CANARY, .bytes = cap);
 }
 
 void setUp(void)
@@ -100,7 +100,7 @@ void test_accessors_read_the_figure_fields(void)
 // Ethernet frame, so it is read at an odd address in the frame it arrived in.
 void test_accessors_read_at_an_odd_address(void)
 {
-    memcpy(buf + 1u, v_hello, sizeof v_hello);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf + 1u, .at = v_hello, .size = sizeof v_hello);
     const uint8_t *h = buf + 1u;
     TEST_ASSERT_EQUAL_HEX16(0x1234u, idemip_udp_src_port(h));
     TEST_ASSERT_EQUAL_HEX16(0x5678u, idemip_udp_dst_port(h));
@@ -111,8 +111,8 @@ void test_accessors_read_at_an_odd_address(void)
 // Two datagrams back to back: each accessor reads its own eight octets and never the next one's.
 void test_two_headers_side_by_side_do_not_read_each_other(void)
 {
-    memcpy(buf, v_hello, sizeof v_hello);
-    memcpy(buf + sizeof v_hello, v_even, sizeof v_even);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_hello, .size = sizeof v_hello);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf + sizeof v_hello, .at = v_even, .size = sizeof v_even);
     const uint8_t *a = buf;
     const uint8_t *b = buf + sizeof v_hello;
     TEST_ASSERT_EQUAL_HEX16(0x1234u, idemip_udp_src_port(a));
@@ -294,7 +294,7 @@ void test_udp_is_protocol_seventeen(void)
 
 void test_cksum_write_stores_what_compute_returned(void)
 {
-    memcpy(buf, v_hello, sizeof v_hello);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_hello, .size = sizeof v_hello);
     idemip_udp_cksum_write(buf, sizeof v_hello, SRC, DST);
     TEST_ASSERT_EQUAL_HEX16(V_HELLO_CKSUM, idemip_udp_cksum(buf));
     TEST_ASSERT_EQUAL_HEX8(CANARY, buf[sizeof v_hello]);
@@ -304,7 +304,7 @@ void test_cksum_write_stores_what_compute_returned(void)
 // datagram lands on the same value rather than folding the old one in.
 void test_cksum_write_repeats(void)
 {
-    memcpy(buf, v_hello, sizeof v_hello);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_hello, .size = sizeof v_hello);
     idemip_udp_cksum_write(buf, sizeof v_hello, SRC, DST);
     idemip_udp_cksum_write(buf, sizeof v_hello, SRC, DST);
     TEST_ASSERT_EQUAL_HEX16(V_HELLO_CKSUM, idemip_udp_cksum(buf));
@@ -314,13 +314,13 @@ void test_cksum_write_repeats(void)
 // zero. One flipped bit anywhere in the datagram breaks it.
 void test_a_carried_checksum_verifies_and_a_flipped_bit_does_not(void)
 {
-    memcpy(buf, v_hello, sizeof v_hello);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_hello, .size = sizeof v_hello);
     idemip_udp_cksum_write(buf, sizeof v_hello, SRC, DST);
     TEST_ASSERT_TRUE(idemip_udp_cksum_valid(buf, sizeof v_hello, SRC, DST));
 
     for (size_t i = 0; i < sizeof v_hello; i++)
     {
-        memcpy(buf_b, buf, sizeof v_hello);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = buf_b, .at = buf, .size = sizeof v_hello);
         buf_b[i] ^= 0x01u;
         TEST_ASSERT_FALSE_MESSAGE(idemip_udp_cksum_valid(buf_b, sizeof v_hello, SRC, DST),
                                   "a flipped bit still verified");
@@ -331,7 +331,7 @@ void test_a_carried_checksum_verifies_and_a_flipped_bit_does_not(void)
 // protection RFC 768 names.
 void test_a_misrouted_datagram_does_not_verify(void)
 {
-    memcpy(buf, v_hello, sizeof v_hello);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_hello, .size = sizeof v_hello);
     idemip_udp_cksum_write(buf, sizeof v_hello, SRC, DST);
     TEST_ASSERT_FALSE(idemip_udp_cksum_valid(buf, sizeof v_hello, SRC, DST + 1u));
     TEST_ASSERT_FALSE(idemip_udp_cksum_valid(buf, sizeof v_hello, SRC + 1u, DST));
@@ -340,7 +340,7 @@ void test_a_misrouted_datagram_does_not_verify(void)
 // The all-ones substitution has to verify too, or the sender's own datagram would be dropped.
 void test_the_all_ones_substitution_verifies(void)
 {
-    memcpy(buf, v_zero, sizeof v_zero);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_zero, .size = sizeof v_zero);
     idemip_udp_cksum_write(buf, sizeof v_zero, SRC, DST);
     TEST_ASSERT_EQUAL_HEX16(IDEMIP_UDP_CKSUM_ZERO_AS, idemip_udp_cksum(buf));
     TEST_ASSERT_TRUE(idemip_udp_cksum_valid(buf, sizeof v_zero, SRC, DST));
@@ -434,15 +434,15 @@ void test_checksum_at_coverage_eight(void)
 // the checksum where it was.
 void test_octets_past_the_coverage_do_not_enter_the_sum(void)
 {
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     uint16_t base = idemip_udplite_cksum_compute(buf, 8u, V_LITE_IPL, SRC, DST);
     TEST_ASSERT_EQUAL_HEX16(V_LITE_COV8_CKSUM, base);
 
-    memset(buf + 8u, 0x00u, sizeof v_lite - 8u);
+    mmgr_zero_buf(buf + 8u, sizeof v_lite - 8u);
     TEST_ASSERT_EQUAL_HEX16_MESSAGE(base, idemip_udplite_cksum_compute(buf, 8u, V_LITE_IPL, SRC, DST),
                                     "a payload octet outside the coverage moved the checksum");
 
-    memset(buf + 8u, 0xFFu, sizeof v_lite - 8u);
+    fill_bytes(buf + 8u, 0xFFu, sizeof v_lite - 8u);
     TEST_ASSERT_EQUAL_HEX16(base, idemip_udplite_cksum_compute(buf, 8u, V_LITE_IPL, SRC, DST));
 }
 
@@ -450,7 +450,7 @@ void test_octets_past_the_coverage_do_not_enter_the_sum(void)
 // not.
 void test_coverage_of_twelve_covers_four_payload_octets(void)
 {
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     idemip_udplite_set_cov(buf, 12u);
     TEST_ASSERT_EQUAL_HEX16(V_LITE_COV12_CKSUM, idemip_udplite_cksum_compute(buf, 12u, V_LITE_IPL, SRC, DST));
 
@@ -464,7 +464,7 @@ void test_coverage_of_twelve_covers_four_payload_octets(void)
 
 void test_checksum_at_full_coverage(void)
 {
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     idemip_udplite_set_cov(buf, IDEMIP_UDPLITE_COV_ALL);
     TEST_ASSERT_EQUAL_HEX16(V_LITE_COV0_CKSUM,
                             idemip_udplite_cksum_compute(buf, IDEMIP_UDPLITE_COV_ALL, V_LITE_IPL, SRC, DST));
@@ -497,7 +497,7 @@ void test_a_computed_zero_at_partial_coverage_is_all_ones(void)
 
 void test_udplite_cksum_write_stores_what_compute_returned(void)
 {
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     idemip_udplite_cksum_write(buf, 8u, V_LITE_IPL, SRC, DST);
     TEST_ASSERT_EQUAL_HEX16(V_LITE_COV8_CKSUM, idemip_udp_cksum(buf));
     TEST_ASSERT_EQUAL_HEX8(CANARY, buf[sizeof v_lite]);
@@ -507,21 +507,21 @@ void test_udplite_cksum_write_stores_what_compute_returned(void)
 // flip outside is delivered as RFC 3828 intends.
 void test_udplite_verifies_over_its_coverage_only(void)
 {
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     idemip_udplite_set_cov(buf, 12u);
     idemip_udplite_cksum_write(buf, 12u, V_LITE_IPL, SRC, DST);
     TEST_ASSERT_TRUE(idemip_udplite_cksum_valid(buf, 12u, V_LITE_IPL, SRC, DST));
 
     for (size_t i = 0; i < 12u; i++)
     {
-        memcpy(buf_b, buf, sizeof v_lite);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = buf_b, .at = buf, .size = sizeof v_lite);
         buf_b[i] ^= 0x01u;
         TEST_ASSERT_FALSE_MESSAGE(idemip_udplite_cksum_valid(buf_b, 12u, V_LITE_IPL, SRC, DST),
                                   "a flipped bit inside the coverage still verified");
     }
     for (size_t i = 12u; i < sizeof v_lite; i++)
     {
-        memcpy(buf_b, buf, sizeof v_lite);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = buf_b, .at = buf, .size = sizeof v_lite);
         buf_b[i] ^= 0x01u;
         TEST_ASSERT_TRUE_MESSAGE(idemip_udplite_cksum_valid(buf_b, 12u, V_LITE_IPL, SRC, DST),
                                  "a flipped bit outside the coverage broke the checksum");
@@ -534,7 +534,7 @@ void test_udplite_never_transmits_an_all_zero_checksum(void)
 {
     for (uint16_t dp = 0u; dp < 512u; dp++)
     {
-        memcpy(buf, v_lite, sizeof v_lite);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
         idemip_udp_set_dst_port(buf, dp);
         uint16_t c = idemip_udplite_cksum_compute(buf, 8u, V_LITE_IPL, SRC, DST);
         TEST_ASSERT_NOT_EQUAL_MESSAGE(IDEMIP_UDP_CKSUM_NONE, c, "UDP-Lite transmitted an all-zero checksum");
@@ -545,7 +545,7 @@ void test_udplite_never_transmits_an_all_zero_checksum(void)
 // value of 8", which still covers the header including the Coverage field itself.
 void test_coverage_eight_still_covers_the_coverage_field(void)
 {
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     uint16_t base = idemip_udplite_cksum_compute(buf, 8u, V_LITE_IPL, SRC, DST);
     idemip_udplite_set_cov(buf, 9u);
     TEST_ASSERT_NOT_EQUAL(base, idemip_udplite_cksum_compute(buf, 8u, V_LITE_IPL, SRC, DST));

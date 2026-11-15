@@ -17,7 +17,7 @@
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ethernet/mii_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The one definition, private to this TU. A claimed descriptor is tracked so a release without a
 // claim, and a second claim before a release, are both refused rather than handed to the engine.
@@ -25,7 +25,7 @@ typedef struct
 {
     const IdemIpPhyDriver *drv;
     uint8_t addr;
-    idemip_bool claimed;
+    embed_bool claimed;
 } PhyCtx;
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
@@ -34,8 +34,8 @@ IDEMIP_ASSERT_REGION(IDEMIP_PHY_OFF_CTX, sizeof(PhyCtx), IDEMIP_PHY_BORROW, "phy
 
 // The caller's borrow, split: the operand block, then the context. phy.h publishes the offsets; the
 // assert below proves the span covers them before anything runs.
-static_assert(IDEMIP_PHY_OFF_CTX + sizeof(PhyCtx) <= IDEMIP_PHY_BORROW,
-              "IDEMIP_PHY_BORROW is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_PHY_OFF_CTX + sizeof(PhyCtx) <= IDEMIP_PHY_BORROW,
+                    "IDEMIP_PHY_BORROW is short of the operand block and the context - raise it in idemip_config.h");
 
 // The region, at its offset in the caller's borrow.
 #define PHY_CTX(w) ((PhyCtx *)(void *)((w) + IDEMIP_PHY_OFF_CTX))
@@ -67,7 +67,7 @@ void idemip_phy_bind(uint8_t *work)
     PhyCtx *ctx = PHY_CTX(work);
     ctx->drv = drv;
     ctx->addr = io->bind_args.addr;
-    ctx->claimed = IDEMIP_FALSE;
+    ctx->claimed = EMBED_FALSE;
     io->status = IDEMIP_OK;
 }
 
@@ -114,7 +114,7 @@ void idemip_phy_rx_claim(uint8_t *work)
         return;
     }
     ctx->drv->cache_invalidate(frame, len);
-    ctx->claimed = IDEMIP_TRUE;
+    ctx->claimed = EMBED_TRUE;
     io->frame = frame;
     io->len = len;
     io->status = IDEMIP_OK;
@@ -134,7 +134,7 @@ void idemip_phy_rx_release(uint8_t *work)
         return;
     }
     ctx->drv->rx_release();
-    ctx->claimed = IDEMIP_FALSE;
+    ctx->claimed = EMBED_FALSE;
     io->frame = NULL;
     io->len = 0;
     io->status = IDEMIP_OK;
@@ -223,4 +223,4 @@ void idemip_phy_mdio_write(uint8_t *work)
     io->status = ctx->drv->mdio_write(ctx->addr, io->reg_args.reg, io->reg_args.val) ? IDEMIP_OK : IDEMIP_BUSY;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

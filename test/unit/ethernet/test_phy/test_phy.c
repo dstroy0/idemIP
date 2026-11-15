@@ -14,10 +14,11 @@
 
 #include "src/ethernet/phy.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ethernet/mii_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // --- a recording driver ------------------------------------------------------
 
@@ -89,16 +90,16 @@ static uint8_t *fake_tx_claim(size_t len)
     }
     return g_txbuf;
 }
-static idemip_bool fake_tx_commit(size_t len)
+static embed_bool fake_tx_commit(size_t len)
 {
     ev(EV_TX_COMMIT);
     if (g_tx_commit_fails)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     g_committed++;
     g_commit_len = len;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 static void fake_invalidate(const void *p, size_t len)
 {
@@ -113,17 +114,17 @@ static void fake_clean(const void *p, size_t len)
     ev(EV_CLEAN);
 }
 static uint16_t g_regs[32];
-static idemip_bool fake_mdio_read(uint8_t addr, uint8_t reg, uint16_t *out)
+static embed_bool fake_mdio_read(uint8_t addr, uint8_t reg, uint16_t *out)
 {
     (void)addr;
     *out = g_regs[reg];
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
-static idemip_bool fake_mdio_write(uint8_t addr, uint8_t reg, uint16_t val)
+static embed_bool fake_mdio_write(uint8_t addr, uint8_t reg, uint16_t val)
 {
     (void)addr;
     g_regs[reg] = val;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 static const IdemIpPhyDriver g_drv = {
@@ -142,13 +143,15 @@ static const IdemIpPhyDriver g_drv = {
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_PHY_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_PHY_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_PHY_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_PHY_BORROW + 16))
+static uint8_t *work_b;
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_PHY_BORROW, CANARY, cap - IDEMIP_PHY_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_PHY_BORROW, .val = CANARY, .bytes = cap - IDEMIP_PHY_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -161,9 +164,11 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(g_frame, 0xA5, sizeof g_frame);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_phy);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_phy);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    fill_bytes(g_frame, 0xA5, sizeof g_frame);
     g_frame_len = 0;
     g_released = 0;
     g_committed = 0;
@@ -171,12 +176,12 @@ void setUp(void)
     g_ev_n = 0;
     g_tx_full = 0;
     g_tx_commit_fails = 0;
-    memset(g_regs, 0, sizeof g_regs);
+    mmgr_zero_buf(g_regs, sizeof g_regs);
 }
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void bind_ok(uint8_t *w)
@@ -284,7 +289,7 @@ void test_bind_refuses_an_incomplete_driver(void)
     const size_t members = sizeof(IdemIpPhyDriver) / sizeof(void (*)(void));
     for (size_t i = 0; i < members; i++)
     {
-        memcpy(&partial, &g_drv, sizeof partial);
+        partial = g_drv;
         ((void **)&partial)[i] = NULL;
         IDEMIP_PHY_IO(work_a)->bind_args.drv = &partial;
         IDEMIP_PHY_IO(work_a)->bind_args.addr = 1u;
@@ -522,7 +527,7 @@ void test_mdio_write_then_read(void)
 // interface, so every entry that reaches through the driver refuses the call.
 void test_an_unbound_link_is_refused(void)
 {
-    memset(work_a, 0, IDEMIP_PHY_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0, .bytes = IDEMIP_PHY_BORROW);
 
     Phy.rx_release(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_PHY_IO(work_a)->status, "a release ran with no driver");

@@ -19,7 +19,7 @@
 
 #include "src/idemip_config.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief The clock everything is timed against: milliseconds, sixty-four bits.
@@ -32,7 +32,7 @@ IDEMIP_BEGIN_DECLS
  */
 typedef uint64_t IdemIpMs;
 
-// The assert that this is a whole number of IdemIpWord sits in common.h, where that type is
+// The assert that this is a whole number of embed_word sits in common.h, where that type is
 // declared: this header is under it and cannot see it.
 
 /** @brief Dispatch table. Addressed by offset, so the layout is asserted below. */
@@ -44,7 +44,7 @@ typedef struct
     IdemIpMs (*join)(uint32_t hi, uint32_t lo);
     IdemIpMs (*extend)(uint32_t *last_ms, uint32_t *hi, uint32_t now_ms);
 } MsNs;
-IDEMIP_NS_LAYOUT(MsNs, from_s, hi, lo, join, extend);
+EMBED_TABLE_LAYOUT(MsNs, from_s, hi, lo, join, extend);
 
 /** @name The entries the table points at.
  *  @brief Nameable so a static const table can name them, and for no other reason. The table is
@@ -64,7 +64,7 @@ IdemIpMs idemip_ms_extend(uint32_t *last_ms, uint32_t *hi, uint32_t now_ms);
  * inlined body and cannot do that through an extern one, where the table is in another
  * translation unit and every call is a load and an indirect jump.
  */
-IDEMIP_NS MsNs ms IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE MsNs ms EMBED_UNUSED = {
     .from_s = idemip_ms_from_s,
     .hi = idemip_ms_hi,
     .lo = idemip_ms_lo,
@@ -72,6 +72,6 @@ IDEMIP_NS MsNs ms IDEMIP_UNUSED = {
     .extend = idemip_ms_extend,
 };
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_MS_H

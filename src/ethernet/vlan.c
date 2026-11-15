@@ -16,12 +16,12 @@
 #include "src/ethernet/vlan_defines.h" // the C-Tag layout, and ethernet's behind it
 #include "src/ethernet/ethernet_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The running context. ready is the mark clear leaves, so a borrow no one cleared is refused.
 typedef struct
 {
-    idemip_bool ready;
+    embed_bool ready;
     uint8_t pad[7];
 } VlanCtx;
 
@@ -31,10 +31,11 @@ IDEMIP_ASSERT_REGION(IDEMIP_VLAN_OFF_CTX, sizeof(VlanCtx), IDEMIP_VLAN_OFF_END, 
 
 // The caller's borrow, split: the operand block, then the context. vlan.h publishes the offsets;
 // these two asserts prove the span covers them before anything runs.
-static_assert(IDEMIP_VLAN_OFF_CTX + sizeof(VlanCtx) <= IDEMIP_VLAN_OFF_END,
-              "IDEMIP_VLAN_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_VLAN_OFF_END <= IDEMIP_VLAN_BORROW,
-              "IDEMIP_VLAN_BORROW is short of the map - raise IDEMIP_VLAN_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_VLAN_OFF_CTX + sizeof(VlanCtx) <= IDEMIP_VLAN_OFF_END,
+    "IDEMIP_VLAN_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_VLAN_OFF_END <= IDEMIP_VLAN_BORROW,
+                    "IDEMIP_VLAN_BORROW is short of the map - raise IDEMIP_VLAN_CTX_BYTES in idemip_config.h");
 
 // The regions, at their offsets in the caller's borrow.
 #define VLAN_IO(w) IDEMIP_VLAN_IO(w)
@@ -50,10 +51,10 @@ static void vlan_split_tci(VlanIo *io, uint16_t tci)
 {
     io->tci = tci;
     io->pcp = (uint8_t)((tci >> IDEMIP_VLAN_PCP_SHIFT) & IDEMIP_VLAN_PCP_MASK);
-    io->dei = (idemip_bool)((tci >> IDEMIP_VLAN_DEI_SHIFT) & IDEMIP_VLAN_DEI_MASK);
+    io->dei = (embed_bool)((tci >> IDEMIP_VLAN_DEI_SHIFT) & IDEMIP_VLAN_DEI_MASK);
     io->vid = (uint16_t)(tci & IDEMIP_VLAN_VID_MASK);
-    io->vid_null = (idemip_bool)(io->vid == IDEMIP_VLAN_VID_NULL);
-    io->vid_reserved = (idemip_bool)(io->vid == IDEMIP_VLAN_VID_RESERVED);
+    io->vid_null = (embed_bool)(io->vid == IDEMIP_VLAN_VID_NULL);
+    io->vid_reserved = (embed_bool)(io->vid == IDEMIP_VLAN_VID_RESERVED);
 }
 
 // The same three fields, back into one word.
@@ -66,13 +67,13 @@ static uint16_t vlan_pack_tci(const VlanTagArgs *tag)
 
 // What a written tag has to satisfy: RFC 6325 sec 4.1.1 puts the Priority at "0 through 7", holds
 // the VLAN ID in twelve bits, and states "The VLAN ID 0xFFF MUST NOT be used".
-static idemip_bool vlan_tag_writable(const VlanTagArgs *tag)
+static embed_bool vlan_tag_writable(const VlanTagArgs *tag)
 {
     if (tag->pcp > IDEMIP_VLAN_PCP_MAX || tag->vid > IDEMIP_VLAN_VID_MASK)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    return (tag->vid == IDEMIP_VLAN_VID_RESERVED) ? IDEMIP_FALSE : IDEMIP_TRUE;
+    return (tag->vid == IDEMIP_VLAN_VID_RESERVED) ? EMBED_FALSE : EMBED_TRUE;
 }
 
 // Every result member a call leaves behind, so no entry reports what an earlier one found.
@@ -81,15 +82,15 @@ static void vlan_reset(VlanIo *io)
     io->status = IDEMIP_ERR;
     io->payload = NULL;
     io->payload_off = 0u;
-    io->llc = IDEMIP_FALSE;
+    io->llc = EMBED_FALSE;
     io->tci = 0u;
     io->type = 0u;
     io->vid = 0u;
     io->pcp = 0u;
-    io->dei = IDEMIP_FALSE;
-    io->tagged = IDEMIP_FALSE;
-    io->vid_null = IDEMIP_FALSE;
-    io->vid_reserved = IDEMIP_FALSE;
+    io->dei = EMBED_FALSE;
+    io->tagged = EMBED_FALSE;
+    io->vid_null = EMBED_FALSE;
+    io->vid_reserved = EMBED_FALSE;
 }
 
 // --- the entries -----------------------------------------------------------
@@ -100,8 +101,8 @@ void idemip_vlan_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_VLAN_OFF_CTX, 0, VLAN_STATE_BYTES);
-    VLAN_CTX(work)->ready = IDEMIP_TRUE;
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_VLAN_OFF_CTX, .val = 0, .bytes = VLAN_STATE_BYTES);
+    VLAN_CTX(work)->ready = EMBED_TRUE;
     VLAN_IO(work)->status = IDEMIP_OK;
 }
 
@@ -138,7 +139,7 @@ void idemip_vlan_parse(uint8_t *work)
             io->type = idemip_rd16(frame + IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_LLC_OFF_TYPE);
             io->payload_off = (uint16_t)need;
             io->payload = frame + need;
-            io->llc = IDEMIP_TRUE;
+            io->llc = EMBED_TRUE;
             io->status = IDEMIP_OK;
             return;
         }
@@ -154,7 +155,7 @@ void idemip_vlan_parse(uint8_t *work)
     }
     vlan_split_tci(io, idemip_rd16(frame + IDEMIP_VLAN_OFF_TCI));
     uint16_t type = idemip_rd16(frame + IDEMIP_VLAN_OFF_TYPE);
-    io->tagged = IDEMIP_TRUE;
+    io->tagged = EMBED_TRUE;
     // The same sec 2.3.3 discriminator behind the tag, where the field sits at
     // IDEMIP_VLAN_OFF_TYPE rather than at IDEMIP_VLAN_OFF_TPID.
     if (type <= (uint16_t)IDEMIP_ETH_MAX_PAYLOAD)
@@ -162,13 +163,13 @@ void idemip_vlan_parse(uint8_t *work)
         const size_t need = (size_t)IDEMIP_VLAN_OFF_PAYLOAD + IDEMIP_LLC_SNAP_LEN;
         if (io->parse_args.len < need || !idemip_llc_is_snap(frame + IDEMIP_VLAN_OFF_PAYLOAD))
         {
-            io->tagged = IDEMIP_FALSE;
+            io->tagged = EMBED_FALSE;
             return;
         }
         io->type = idemip_rd16(frame + IDEMIP_VLAN_OFF_PAYLOAD + IDEMIP_LLC_OFF_TYPE);
         io->payload_off = (uint16_t)need;
         io->payload = frame + need;
-        io->llc = IDEMIP_TRUE;
+        io->llc = EMBED_TRUE;
         io->status = IDEMIP_OK;
         return;
     }
@@ -203,7 +204,7 @@ void idemip_vlan_build(uint8_t *work)
     io->type = type;
     io->payload_off = IDEMIP_VLAN_OFF_PAYLOAD;
     io->payload = frame + IDEMIP_VLAN_OFF_PAYLOAD;
-    io->tagged = IDEMIP_TRUE;
+    io->tagged = EMBED_TRUE;
     io->status = IDEMIP_OK;
 }
 
@@ -245,4 +246,4 @@ void idemip_vlan_split(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

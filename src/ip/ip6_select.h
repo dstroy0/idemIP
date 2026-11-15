@@ -24,7 +24,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief No candidate, no destination, no policy row. */
 #define IDEMIP_IP6_SELECT_NONE 0xFFu
@@ -97,11 +97,11 @@ typedef struct
     const uint8_t *addr;
     uint32_t zone;
     uint8_t netif;
-    idemip_bool deprecated;
-    idemip_bool temporary;
-    idemip_bool home;
-    idemip_bool care_of;
-    idemip_bool next_hop;
+    embed_bool deprecated;
+    embed_bool temporary;
+    embed_bool home;
+    embed_bool care_of;
+    embed_bool next_hop;
 } Ip6SelectSourceArgs;
 
 /**
@@ -122,8 +122,8 @@ typedef struct
     const uint8_t *addr;
     uint32_t zone;
     uint8_t netif;
-    idemip_bool unreachable;
-    idemip_bool encapsulated;
+    embed_bool unreachable;
+    embed_bool encapsulated;
 } Ip6SelectDestArgs;
 
 /**
@@ -221,8 +221,8 @@ typedef struct
     uint8_t common;
     uint8_t netif;
     IdemIpIp6Scope scope;
-    idemip_bool found;
-    idemip_bool sorted;
+    embed_bool found;
+    embed_bool sorted;
 } Ip6SelectIo;
 
 // ---------------------------------------------------------------------------
@@ -327,32 +327,31 @@ void idemip_ip6_select_dest_at(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Ip6SelectNs Ip6Select IDEMIP_UNUSED = {
-    .clear = idemip_ip6_select_clear,
-    .policy_set = idemip_ip6_select_policy_set,
-    .policy_lookup = idemip_ip6_select_policy_lookup,
-    .scope_of = idemip_ip6_select_scope_of,
-    .common_prefix = idemip_ip6_select_common_prefix_entry,
-    .source_add = idemip_ip6_select_source_add,
-    .dest_add = idemip_ip6_select_dest_add,
-    .source_select = idemip_ip6_select_source_select,
-    .dest_sort = idemip_ip6_select_dest_sort,
-    .dest_at = idemip_ip6_select_dest_at};
+EMBED_TABLE_STORAGE Ip6SelectNs Ip6Select EMBED_UNUSED = {.clear = idemip_ip6_select_clear,
+                                                          .policy_set = idemip_ip6_select_policy_set,
+                                                          .policy_lookup = idemip_ip6_select_policy_lookup,
+                                                          .scope_of = idemip_ip6_select_scope_of,
+                                                          .common_prefix = idemip_ip6_select_common_prefix_entry,
+                                                          .source_add = idemip_ip6_select_source_add,
+                                                          .dest_add = idemip_ip6_select_dest_add,
+                                                          .source_select = idemip_ip6_select_source_select,
+                                                          .dest_sort = idemip_ip6_select_dest_sort,
+                                                          .dest_at = idemip_ip6_select_dest_at};
 // Every table index counts the entries the borrow holds, so IDEMIP_IP6_SELECT_NONE names none.
-static_assert(IDEMIP_IP6_SELECT_SOURCES < IDEMIP_IP6_SELECT_NONE &&
-                  IDEMIP_IP6_SELECT_DESTS < IDEMIP_IP6_SELECT_NONE &&
-                  IDEMIP_IP6_SELECT_POLICIES < IDEMIP_IP6_SELECT_NONE,
-              "a table is wider than the index a result member carries");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_SELECT_SOURCES < IDEMIP_IP6_SELECT_NONE &&
+                        IDEMIP_IP6_SELECT_DESTS < IDEMIP_IP6_SELECT_NONE &&
+                        IDEMIP_IP6_SELECT_POLICIES < IDEMIP_IP6_SELECT_NONE,
+                    "a table is wider than the index a result member carries");
 
 // sec 2.1's default table has to fit, or clear could not load it.
-static_assert(IDEMIP_IP6_SELECT_POLICIES >= IDEMIP_IP6_SELECT_DEFAULT_POLICIES,
-              "IDEMIP_IP6_SELECT_POLICIES is short of the nine rows RFC 6724 sec 2.1 prints");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_SELECT_POLICIES >= IDEMIP_IP6_SELECT_DEFAULT_POLICIES,
+                    "IDEMIP_IP6_SELECT_POLICIES is short of the nine rows RFC 6724 sec 2.1 prints");
 
 // sec 2.2 measures up to S's prefix, which RFC 4291 sec 2.5.1 puts at 64 bits.
-static_assert(IDEMIP_IP6_SELECT_COMMON_PREFIX_MAX == (IDEMIP_IP6_ADDR_BITS >> 1),
-              "the interface ID is half an address (RFC 4291 sec 2.5.1)");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_SELECT_COMMON_PREFIX_MAX == (IDEMIP_IP6_ADDR_BITS >> 1),
+                    "the interface ID is half an address (RFC 4291 sec 2.5.1)");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

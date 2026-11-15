@@ -24,7 +24,7 @@
 
 #if IDEMIP_ENABLE_ETHERNET
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief Type field values: RFC 894 IPv4, RFC 1042 ARP, RFC 2464 IPv6. */
 typedef enum IDEMIP_ENUM_PACKED
@@ -48,10 +48,10 @@ typedef struct
     const uint8_t *(*src)(const uint8_t *h);
     uint16_t (*type)(const uint8_t *h);
     const uint8_t *(*payload)(const uint8_t *h);
-    idemip_bool (*is_broadcast)(const uint8_t *mac);
-    idemip_bool (*llc_is_snap)(const uint8_t *p);
+    embed_bool (*is_broadcast)(const uint8_t *mac);
+    embed_bool (*llc_is_snap)(const uint8_t *p);
 } EthParseNs;
-IDEMIP_NS_LAYOUT(EthParseNs, dst, src, type, payload, is_broadcast, llc_is_snap);
+EMBED_TABLE_LAYOUT(EthParseNs, dst, src, type, payload, is_broadcast, llc_is_snap);
 
 /**
  * @brief Building a frame where the engine will read it, and the RFC 894 pad.
@@ -69,7 +69,7 @@ typedef struct
     size_t (*frame_len)(size_t payload_len);
     size_t (*pad)(uint8_t *h, size_t payload_len);
 } EthBuildNs;
-IDEMIP_NS_LAYOUT(EthBuildNs, build, padded_payload, frame_len, pad);
+EMBED_TABLE_LAYOUT(EthBuildNs, build, padded_payload, frame_len, pad);
 
 /** @name The entries the tables point at.
  *  @brief Nameable so a static const table can name them, and for no other reason. The tables are
@@ -79,8 +79,8 @@ const uint8_t *idemip_eth_dst(const uint8_t *h);
 const uint8_t *idemip_eth_src(const uint8_t *h);
 uint16_t idemip_eth_type(const uint8_t *h);
 const uint8_t *idemip_eth_payload(const uint8_t *h);
-idemip_bool idemip_eth_is_broadcast(const uint8_t *mac);
-idemip_bool idemip_llc_is_snap(const uint8_t *p);
+embed_bool idemip_eth_is_broadcast(const uint8_t *mac);
+embed_bool idemip_llc_is_snap(const uint8_t *p);
 
 void idemip_eth_build(uint8_t *h, const uint8_t *dst, const uint8_t *src, uint16_t type);
 size_t idemip_eth_padded_payload(size_t payload_len);
@@ -95,7 +95,7 @@ size_t idemip_eth_pad(uint8_t *h, size_t payload_len);
  * inlined body and cannot do that through an extern one, where the table is in another
  * translation unit and every call is a load and an indirect jump.
  */
-IDEMIP_NS EthParseNs eth_parse IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE EthParseNs eth_parse EMBED_UNUSED = {
     .dst = idemip_eth_dst,
     .src = idemip_eth_src,
     .type = idemip_eth_type,
@@ -104,14 +104,14 @@ IDEMIP_NS EthParseNs eth_parse IDEMIP_UNUSED = {
     .llc_is_snap = idemip_llc_is_snap,
 };
 
-IDEMIP_NS EthBuildNs eth_build IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE EthBuildNs eth_build EMBED_UNUSED = {
     .build = idemip_eth_build,
     .padded_payload = idemip_eth_padded_payload,
     .frame_len = idemip_eth_frame_len,
     .pad = idemip_eth_pad,
 };
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET
 

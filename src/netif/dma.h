@@ -14,7 +14,7 @@
  * Receive is take, then either post or pin. A unit that holds a frame past dispatch pins the
  * descriptor, and the descriptor returns to the engine when the last pin is dropped. Every retaining
  * capacity is a compile-time constant, so IDEMIP_MAX_PINNED_FRAMES bounds the pins and the
- * static_assert in idemip_config.h proves the ring cannot starve.
+ * EMBED_STATIC_ASSERT in idemip_config.h proves the ring cannot starve.
  *
  * The engine wrote a received buffer, so a cached copy of it is discarded before the frame is read;
  * the engine reads a transmit buffer, so what the build left in cache is written back before the
@@ -28,7 +28,7 @@
 
 #if IDEMIP_ENABLE_ETHERNET
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief What a descriptor says about itself, one bit each.
@@ -38,13 +38,8 @@ IDEMIP_BEGIN_DECLS
  * @var IDEMIP_DMA_FLAG_ERR  the engine reported an error on the frame in it
  * @var IDEMIP_DMA_FLAG_LAST the descriptor holds the last octets of a frame
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_DMA_FLAG_OWN = 0x0001,
-    IDEMIP_DMA_FLAG_HELD = 0x0002,
-    IDEMIP_DMA_FLAG_ERR = 0x0004,
-    IDEMIP_DMA_FLAG_LAST = 0x0008,
-} IdemIpDmaFlag;
+EMBED_ENUM_BYTE(IdemIpDmaFlag, IDEMIP_DMA_FLAG_OWN = 0x0001, IDEMIP_DMA_FLAG_HELD = 0x0002,
+                IDEMIP_DMA_FLAG_ERR = 0x0004, IDEMIP_DMA_FLAG_LAST = 0x0008, );
 
 /** @brief Every flag a descriptor may carry. */
 #define IDEMIP_DMA_FLAG_MASK                                                                                           \
@@ -203,18 +198,17 @@ void idemip_dma_pinned(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const DmaNs Dma IDEMIP_UNUSED = {
-    .clear = idemip_dma_clear,
-    .bind = idemip_dma_bind,
-    .rx_take = idemip_dma_rx_take,
-    .rx_post = idemip_dma_rx_post,
-    .pin = idemip_dma_pin,
-    .unpin = idemip_dma_unpin,
-    .tx_take = idemip_dma_tx_take,
-    .tx_post = idemip_dma_tx_post,
-    .tx_reap = idemip_dma_tx_reap,
-    .pinned = idemip_dma_pinned};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE DmaNs Dma EMBED_UNUSED = {.clear = idemip_dma_clear,
+                                              .bind = idemip_dma_bind,
+                                              .rx_take = idemip_dma_rx_take,
+                                              .rx_post = idemip_dma_rx_post,
+                                              .pin = idemip_dma_pin,
+                                              .unpin = idemip_dma_unpin,
+                                              .tx_take = idemip_dma_tx_take,
+                                              .tx_post = idemip_dma_tx_post,
+                                              .tx_reap = idemip_dma_tx_reap,
+                                              .pinned = idemip_dma_pinned};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET
 

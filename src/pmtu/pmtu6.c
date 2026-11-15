@@ -17,7 +17,7 @@
 #include "src/ip/ipv6_defines.h"
 #include "src/icmp/icmpv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads zero here and every
 // entry refuses it.
@@ -31,7 +31,7 @@ typedef struct
 {
     uint32_t stamp_ms;
     uint8_t dst[IDEMIP_IP6_ADDR_LEN];
-    idemip_bool used;
+    embed_bool used;
     uint8_t reserved[11];
 } Pmtu6Stamp;
 
@@ -46,21 +46,22 @@ typedef struct
 IDEMIP_ASSERT_REGION(IDEMIP_PMTU6_OFF_CTX, sizeof(Pmtu6Ctx), IDEMIP_PMTU6_OFF_END, "pmtu6's context");
 
 // Stamp i is at (i << SHIFT), so the width has to be exactly the shift.
-static_assert(sizeof(Pmtu6Stamp) == (1u << IDEMIP_PMTU6_ENTRY_SHIFT),
-              "a Pmtu6Stamp must be exactly 1 << IDEMIP_PMTU6_ENTRY_SHIFT wide - pad it, or raise the shift");
+EMBED_STATIC_ASSERT(sizeof(Pmtu6Stamp) == (1u << IDEMIP_PMTU6_ENTRY_SHIFT),
+                    "a Pmtu6Stamp must be exactly 1 << IDEMIP_PMTU6_ENTRY_SHIFT wide - pad it, or raise the shift");
 
 // The head region carries the operand block and the context, both outside the table.
-static_assert(IDEMIP_PMTU6_OFF_CTX + sizeof(Pmtu6Ctx) <= IDEMIP_PMTU6_OFF_STAMPS,
-              "IDEMIP_PMTU6_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_PMTU6_OFF_CTX + sizeof(Pmtu6Ctx) <= IDEMIP_PMTU6_OFF_STAMPS,
+    "IDEMIP_PMTU6_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
 
 // The caller's borrow, split: the head region, then the stamps. pmtu6.h publishes the offsets; the
 // assert proves the span covers them before anything runs.
-static_assert(IDEMIP_PMTU6_OFF_END <= IDEMIP_PMTU6_BORROW,
-              "IDEMIP_PMTU6_BORROW is short of the head region and the stamps - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_PMTU6_OFF_END <= IDEMIP_PMTU6_BORROW,
+                    "IDEMIP_PMTU6_BORROW is short of the head region and the stamps - raise it in idemip_config.h");
 
 // RFC 8200 sec 5: "IPv6 requires that every link in the Internet have an MTU of 1280 octets or
 // greater", which sec 4 of RFC 8201 floors every estimate at.
-static_assert(IDEMIP_IPV6_MIN_MTU == 1280u, "the IPv6 minimum link MTU is RFC 8200 sec 5's 1280 octets");
+EMBED_STATIC_ASSERT(IDEMIP_IPV6_MIN_MTU == 1280u, "the IPv6 minimum link MTU is RFC 8200 sec 5's 1280 octets");
 
 // The regions, at their offsets in the caller's borrow.
 #define PMTU6_IO(w) IDEMIP_PMTU6_IO(w)
@@ -69,14 +70,14 @@ static_assert(IDEMIP_IPV6_MIN_MTU == 1280u, "the IPv6 minimum link MTU is RFC 82
     ((Pmtu6Stamp *)(void *)((w) + IDEMIP_PMTU6_OFF_STAMPS + ((size_t)(i) << IDEMIP_PMTU6_ENTRY_SHIFT)))
 
 // A borrow clear has not run on carries no stamps, so every entry but clear refuses it.
-static idemip_bool pmtu6_ready(uint8_t *work)
+static embed_bool pmtu6_ready(uint8_t *work)
 {
-    return (idemip_bool)(PMTU6_CTX(work)->ready == PMTU6_READY);
+    return (embed_bool)(PMTU6_CTX(work)->ready == PMTU6_READY);
 }
 
 // --- the path --------------------------------------------------------------
 
-static idemip_bool pmtu6_addr_eq(const uint8_t *a, const uint8_t *b)
+static embed_bool pmtu6_addr_eq(const uint8_t *a, const uint8_t *b)
 {
     return (idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
 }
@@ -176,7 +177,8 @@ void idemip_pmtu6_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_PMTU6_OFF_CTX, 0, (size_t)IDEMIP_PMTU6_BORROW - IDEMIP_PMTU6_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_PMTU6_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_PMTU6_BORROW - IDEMIP_PMTU6_OFF_CTX);
     PMTU6_CTX(work)->ready = PMTU6_READY;
     PMTU6_IO(work)->status = IDEMIP_OK;
 }
@@ -205,8 +207,8 @@ void idemip_pmtu6_too_big(uint8_t *work)
     io->reported_mtu = 0u;
     io->mtu = 0u;
     io->index = (uint8_t)IDEMIP_PMTU6_NONE;
-    io->decreased = IDEMIP_FALSE;
-    io->probe = IDEMIP_FALSE;
+    io->decreased = EMBED_FALSE;
+    io->probe = EMBED_FALSE;
     if (!pmtu6_ready(work))
     {
         return;
@@ -252,12 +254,12 @@ void idemip_pmtu6_too_big(uint8_t *work)
     }
 
     io->mtu = mtu;
-    io->decreased = IDEMIP_TRUE;
+    io->decreased = EMBED_TRUE;
     uint8_t i = pmtu6_take(work, io->dst, io->now_ms);
     Pmtu6Stamp *s = PMTU6_AT(work, i);
-    memcpy(s->dst, io->dst, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = s->dst, .at = io->dst, .size = IDEMIP_IP6_ADDR_LEN);
     s->stamp_ms = io->now_ms;
-    s->used = IDEMIP_TRUE;
+    s->used = EMBED_TRUE;
     io->index = i;
     io->status = IDEMIP_OK;
 }
@@ -281,8 +283,8 @@ void idemip_pmtu6_tick(uint8_t *work)
     io->dst = NULL;
     io->mtu = 0u;
     io->index = (uint8_t)IDEMIP_PMTU6_NONE;
-    io->decreased = IDEMIP_FALSE;
-    io->probe = IDEMIP_FALSE;
+    io->decreased = EMBED_FALSE;
+    io->probe = EMBED_FALSE;
     if (!pmtu6_ready(work))
     {
         return;
@@ -298,11 +300,11 @@ void idemip_pmtu6_tick(uint8_t *work)
         {
             continue;
         }
-        s->used = IDEMIP_FALSE;
+        s->used = EMBED_FALSE;
         io->index = i;
         io->dst = s->dst;
         io->mtu = io->probe_args.link_mtu;
-        io->probe = IDEMIP_TRUE;
+        io->probe = EMBED_TRUE;
         io->status = IDEMIP_OK;
         return;
     }
@@ -329,9 +331,9 @@ void idemip_pmtu6_forget(uint8_t *work)
     {
         return;
     }
-    PMTU6_AT(work, i)->used = IDEMIP_FALSE;
+    PMTU6_AT(work, i)->used = EMBED_FALSE;
     io->index = i;
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

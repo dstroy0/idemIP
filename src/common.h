@@ -19,34 +19,11 @@
 
 #include "src/endian.h" // the wire-integer accessors, and through them the fixed widths
 
-/**
- * @brief The system's word: the width a load or a store is one instruction at.
- *
- * Every size below is a power of two multiple of it, so an access compiles to a plain load or store
- * and the lanes a SWAR operation packs are the ones the register already holds.
- *
- * Here rather than in common_defines.h because the typedef under it is what this header declares,
- * and a type cannot be declared against a width it cannot see.
- */
-#ifndef IDEMIP_WORD_BITS
-#if UINTPTR_MAX == 0xFFFFFFFFFFFFFFFFu
-#define IDEMIP_WORD_BITS 64u
-#elif UINTPTR_MAX == 0xFFFFFFFFu
-#define IDEMIP_WORD_BITS 32u
-#else
-#define IDEMIP_WORD_BITS 16u
-#endif
-#endif
+// embed_word is the system word, and EMBED_WORD_BITS is its width. embed_types.h gets both from
+// UINTPTR_MAX, and a build can set EMBED_WORD_BITS on the command line. Each size below is a power
+// of two multiple of the word, so an access is one plain load or store.
 
-IDEMIP_BEGIN_DECLS
-
-#if IDEMIP_WORD_BITS == 64u
-typedef uint64_t IdemIpWord;
-#elif IDEMIP_WORD_BITS == 32u
-typedef uint32_t IdemIpWord;
-#else
-typedef uint16_t IdemIpWord;
-#endif
+EMBED_BEGIN_DECLS
 
 // Time is its own header, and is included from here rather than beside endian.h because its epoch
 // is asserted against the word declared just above. clock.h tells the readings apart: now(), stamp()
@@ -68,19 +45,19 @@ typedef uint16_t IdemIpWord;
  */
 typedef struct
 {
-    IdemIpWord (*tail)(const uint8_t *p, size_t r);
-    idemip_bool (*zero)(const uint8_t *p, size_t n);
-    idemip_bool (*eq)(const uint8_t *a, const uint8_t *b, size_t n);
+    embed_word (*tail)(const uint8_t *p, size_t r);
+    embed_bool (*zero)(const uint8_t *p, size_t n);
+    embed_bool (*eq)(const uint8_t *a, const uint8_t *b, size_t n);
 } SpanNs;
-IDEMIP_NS_LAYOUT(SpanNs, tail, zero, eq);
+EMBED_TABLE_LAYOUT(SpanNs, tail, zero, eq);
 
 /** @name The entries the table points at.
  *  @brief Nameable so a static const table can name them, and for no other reason. The table is
  *         still the whole surface: call through it.
  *  @{ */
-IdemIpWord idemip_span_tail(const uint8_t *p, size_t r);
-idemip_bool idemip_bytes_zero(const uint8_t *p, size_t n);
-idemip_bool idemip_bytes_eq(const uint8_t *a, const uint8_t *b, size_t n);
+embed_word idemip_span_tail(const uint8_t *p, size_t r);
+embed_bool idemip_bytes_zero(const uint8_t *p, size_t n);
+embed_bool idemip_bytes_eq(const uint8_t *a, const uint8_t *b, size_t n);
 /** @} */
 
 /**
@@ -90,12 +67,12 @@ idemip_bool idemip_bytes_eq(const uint8_t *a, const uint8_t *b, size_t n);
  * inlined body and cannot do that through an extern one, where the table is in another
  * translation unit and every call is a load and an indirect jump.
  */
-IDEMIP_NS SpanNs span IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE SpanNs span EMBED_UNUSED = {
     .tail = idemip_span_tail,
     .zero = idemip_bytes_zero,
     .eq = idemip_bytes_eq,
 };
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_COMMON_H

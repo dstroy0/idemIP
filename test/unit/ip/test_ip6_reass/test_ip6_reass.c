@@ -17,16 +17,18 @@
 
 #include "src/ip/ip6_reass.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(IDEMIP_ALIGN) uint8_t work_a[IDEMIP_IP6_REASS_BORROW + 16];
-static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_IP6_REASS_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_IP6_REASS_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_IP6_REASS_BORROW + 16))
+static uint8_t *work_b;
 
 // The span clear owns: the context and the three tables.
 #define STATE_OFF ((size_t)IDEMIP_IP6_REASS_OFF_CTX)
@@ -35,8 +37,9 @@ static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_IP6_REASS_BORROW + 16];
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_IP6_REASS_BORROW, CANARY, cap - IDEMIP_IP6_REASS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_IP6_REASS_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_IP6_REASS_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -49,14 +52,16 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_ip6_reass);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_ip6_reass);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // Every entry, in namespace order, so a new one added to Ip6ReassNs is added here too.
@@ -100,7 +105,7 @@ void test_two_borrows_share_no_byte(void)
 // this module has.
 void test_clear_on_one_borrow_leaves_the_other_untouched(void)
 {
-    memset(work_b + STATE_OFF, 0xC3, STATE_END - STATE_OFF);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b + STATE_OFF, .val = 0xC3, .bytes = STATE_END - STATE_OFF);
     IDEMIP_IP6_REASS_IO(work_b)->input_args.desc = 0x7777u;
 
     Ip6Reass.clear(work_a);
@@ -165,7 +170,7 @@ void test_clear_reports_ok(void)
 // hole survives into the next use of the borrow.
 void test_clear_zeroes_the_tables(void)
 {
-    memset(work_a, 0xFF, IDEMIP_IP6_REASS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_IP6_REASS_BORROW);
     Ip6Reass.clear(work_a);
     for (size_t i = TABLE_OFF; i < STATE_END; i++)
     {
@@ -177,7 +182,7 @@ void test_clear_zeroes_the_tables(void)
 // mark that these bytes were cleared.
 void test_clear_zeroes_the_context_apart_from_the_cleared_mark(void)
 {
-    memset(work_a, 0xFF, IDEMIP_IP6_REASS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_IP6_REASS_BORROW);
     Ip6Reass.clear(work_a);
     size_t set = 0;
     for (size_t i = STATE_OFF; i < TABLE_OFF; i++)
@@ -205,9 +210,9 @@ void test_clear_leaves_the_operand_block_alone(void)
 // once.
 void test_clear_is_idempotent(void)
 {
-    memset(work_a, 0xFF, IDEMIP_IP6_REASS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_IP6_REASS_BORROW);
     Ip6Reass.clear(work_a);
-    memcpy(work_b, work_a, IDEMIP_IP6_REASS_BORROW);
+    EMBED_CALL(memor.cpy, MemoriaCfg, .dst = work_b, .src = work_a, .bytes = IDEMIP_IP6_REASS_BORROW);
     Ip6Reass.clear(work_a);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(work_b + STATE_OFF, work_a + STATE_OFF, STATE_END - STATE_OFF);
 }
@@ -278,7 +283,7 @@ static uint8_t pkt[PKT_CAP];
 
 static void fill_addr(uint8_t *a, uint8_t tag)
 {
-    memset(a, 0, IDEMIP_IP6_ADDR_LEN);
+    mmgr_zero_buf(a, IDEMIP_IP6_ADDR_LEN);
     a[0] = 0xFEu;
     a[1] = 0x80u;
     a[IDEMIP_IP6_ADDR_LEN - 1] = tag;
@@ -300,7 +305,7 @@ typedef struct
 
 static size_t build_frag_ctx(const BuildFragArgs *args)
 {
-    memset(pkt, 0, PKT_CAP);
+    mmgr_zero_buf(pkt, PKT_CAP);
     IdemIpIp6BuildArgs a;
     a.src = args->src;
     a.dst = args->dst;
@@ -315,7 +320,8 @@ static size_t build_frag_ctx(const BuildFragArgs *args)
         pkt[IDEMIP_IPV6_HDR_LEN + IDEMIP_IP6_EXT_OFF_NEXT_HDR] = IDEMIP_IP6_NH_FRAGMENT;
         pkt[IDEMIP_IPV6_HDR_LEN + IDEMIP_IP6_EXT_OFF_LEN] = (uint8_t)((args->ext >> 3) - 1u);
     }
-    idemip_ip6_frag_build(pkt + IDEMIP_IPV6_HDR_LEN + args->ext, args->nh, args->off, args->more ? IDEMIP_TRUE : IDEMIP_FALSE, args->ident);
+    idemip_ip6_frag_build(pkt + IDEMIP_IPV6_HDR_LEN + args->ext, args->nh, args->off,
+                          args->more ? EMBED_TRUE : EMBED_FALSE, args->ident);
     for (size_t i = 0; i < args->data; i++)
     {
         pkt[IDEMIP_IPV6_HDR_LEN + args->ext + IDEMIP_IP6_FRAG_HDR_LEN + i] = (uint8_t)(0xA0u + i);
@@ -323,7 +329,7 @@ static size_t build_frag_ctx(const BuildFragArgs *args)
     return IDEMIP_IPV6_HDR_LEN + args->ext + IDEMIP_IP6_FRAG_HDR_LEN + args->data;
 }
 
-#define build_frag(...) IDEMIP_CALL(build_frag_ctx, BuildFragArgs, __VA_ARGS__)
+#define build_frag(...) EMBED_CALL(build_frag_ctx, BuildFragArgs, __VA_ARGS__)
 
 static void feed(uint8_t *w, size_t len, size_t frag_hdr, uint32_t now, uint16_t desc)
 {
@@ -354,7 +360,7 @@ static void feed_plain_ctx(const FeedPlainArgs *args)
     feed(args->w, len, IDEMIP_IPV6_HDR_LEN, args->now, args->desc);
 }
 
-#define feed_plain(...) IDEMIP_CALL(feed_plain_ctx, FeedPlainArgs, __VA_ARGS__)
+#define feed_plain(...) EMBED_CALL(feed_plain_ctx, FeedPlainArgs, __VA_ARGS__)
 
 static void ready(void)
 {

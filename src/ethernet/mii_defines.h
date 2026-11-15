@@ -50,8 +50,8 @@
 #define IDEMIP_MII_REG_MAX 32u
 
 // Both fields are 5 bits wide, so each count is 1 << 5 and a bound test is a mask. B MII_NPHY 32.
-static_assert(IDEMIP_MII_PHY_ADDR_MAX == (1u << 5), "the management address field is 5 bits");
-static_assert(IDEMIP_MII_REG_MAX == (1u << 5), "the register address field is 5 bits");
+EMBED_STATIC_ASSERT(IDEMIP_MII_PHY_ADDR_MAX == (1u << 5), "the management address field is 5 bits");
+EMBED_STATIC_ASSERT(IDEMIP_MII_REG_MAX == (1u << 5), "the register address field is 5 bits");
 
 // ---------------------------------------------------------------------------
 // Register addresses (Clause 22.2.4)
@@ -166,25 +166,26 @@ static_assert(IDEMIP_MII_REG_MAX == (1u << 5), "the register address field is 5 
 
 // The AND of registers 4 and 5 is the common ability set only while both carry a field in the same
 // place. Asserted rather than assumed.
-static_assert(IDEMIP_ANLPAR_100BASE_T4 == IDEMIP_ANAR_100BASE_T4,
-              "register 5 must hold 100BASE-T4 where register 4 does");
-static_assert(IDEMIP_ANLPAR_100BASE_TX_FD == IDEMIP_ANAR_100BASE_TX_FD,
-              "register 5 must hold 100BASE-TX full duplex where register 4 does");
-static_assert(IDEMIP_ANLPAR_100BASE_TX_HD == IDEMIP_ANAR_100BASE_TX_HD,
-              "register 5 must hold 100BASE-TX half duplex where register 4 does");
-static_assert(IDEMIP_ANLPAR_10BASE_T_FD == IDEMIP_ANAR_10BASE_T_FD,
-              "register 5 must hold 10BASE-T full duplex where register 4 does");
-static_assert(IDEMIP_ANLPAR_10BASE_T_HD == IDEMIP_ANAR_10BASE_T_HD,
-              "register 5 must hold 10BASE-T half duplex where register 4 does");
-static_assert(IDEMIP_ANLPAR_PAUSE == IDEMIP_ANAR_PAUSE, "register 5 must hold symmetric pause where register 4 does");
-static_assert(IDEMIP_ANLPAR_PAUSE_ASYM == IDEMIP_ANAR_PAUSE_ASYM,
-              "register 5 must hold asymmetric pause where register 4 does");
+EMBED_STATIC_ASSERT(IDEMIP_ANLPAR_100BASE_T4 == IDEMIP_ANAR_100BASE_T4,
+                    "register 5 must hold 100BASE-T4 where register 4 does");
+EMBED_STATIC_ASSERT(IDEMIP_ANLPAR_100BASE_TX_FD == IDEMIP_ANAR_100BASE_TX_FD,
+                    "register 5 must hold 100BASE-TX full duplex where register 4 does");
+EMBED_STATIC_ASSERT(IDEMIP_ANLPAR_100BASE_TX_HD == IDEMIP_ANAR_100BASE_TX_HD,
+                    "register 5 must hold 100BASE-TX half duplex where register 4 does");
+EMBED_STATIC_ASSERT(IDEMIP_ANLPAR_10BASE_T_FD == IDEMIP_ANAR_10BASE_T_FD,
+                    "register 5 must hold 10BASE-T full duplex where register 4 does");
+EMBED_STATIC_ASSERT(IDEMIP_ANLPAR_10BASE_T_HD == IDEMIP_ANAR_10BASE_T_HD,
+                    "register 5 must hold 10BASE-T half duplex where register 4 does");
+EMBED_STATIC_ASSERT(IDEMIP_ANLPAR_PAUSE == IDEMIP_ANAR_PAUSE,
+                    "register 5 must hold symmetric pause where register 4 does");
+EMBED_STATIC_ASSERT(IDEMIP_ANLPAR_PAUSE_ASYM == IDEMIP_ANAR_PAUSE_ASYM,
+                    "register 5 must hold asymmetric pause where register 4 does");
 
-static_assert(IDEMIP_MII_TECH_MASK == 0x03E0u, "the technology ability field is bits 9:5");
-static_assert((IDEMIP_MII_TECH_MASK & IDEMIP_MII_SELECTOR_MASK) == 0u,
-              "the technology ability field and the selector field must not overlap");
-static_assert(IDEMIP_ANAR_SELECTOR_802_3 == (IDEMIP_ANAR_SELECTOR_802_3 & IDEMIP_MII_SELECTOR_MASK),
-              "the 802.3 selector value must fit the selector field");
+EMBED_STATIC_ASSERT(IDEMIP_MII_TECH_MASK == 0x03E0u, "the technology ability field is bits 9:5");
+EMBED_STATIC_ASSERT((IDEMIP_MII_TECH_MASK & IDEMIP_MII_SELECTOR_MASK) == 0u,
+                    "the technology ability field and the selector field must not overlap");
+EMBED_STATIC_ASSERT(IDEMIP_ANAR_SELECTOR_802_3 == (IDEMIP_ANAR_SELECTOR_802_3 & IDEMIP_MII_SELECTOR_MASK),
+                    "the 802.3 selector value must fit the selector field");
 
 // ---------------------------------------------------------------------------
 // Decoding a register value

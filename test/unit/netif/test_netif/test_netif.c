@@ -15,24 +15,28 @@
 
 #include "src/netif/netif.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_NETIF_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_NETIF_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_NETIF_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_NETIF_BORROW + 16))
+static uint8_t *work_b;
 
 static const uint8_t g_mac_a[IDEMIP_MAC_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
 static const uint8_t g_mac_b[IDEMIP_MAC_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x02};
 
 // Two phy borrows, only ever compared as addresses by this unit.
-static _Alignas(8) uint8_t phy_a[IDEMIP_PHY_BORROW];
-static _Alignas(8) uint8_t phy_b[IDEMIP_PHY_BORROW];
+#define PHY_A_BYTES ((size_t)(IDEMIP_PHY_BORROW))
+static uint8_t *phy_a;
+#define PHY_B_BYTES ((size_t)(IDEMIP_PHY_BORROW))
+static uint8_t *phy_b;
 
 #if IDEMIP_ENABLE_IPV6
 static const uint8_t g_addr6_a[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
@@ -41,8 +45,9 @@ static const uint8_t g_addr6_b[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0x80, 0, 0, 0, 0, 0
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_NETIF_BORROW, CANARY, cap - IDEMIP_NETIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_NETIF_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_NETIF_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -55,16 +60,20 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(phy_a, 0, sizeof phy_a);
-    memset(phy_b, 0, sizeof phy_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_netif);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_netif);
+    idemip_test_borrow(&phy_a, PHY_A_BYTES, idemip_owner_phy);
+    idemip_test_borrow(&phy_b, PHY_B_BYTES, idemip_owner_phy);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = phy_a, .val = 0, .bytes = PHY_A_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = phy_b, .val = 0, .bytes = PHY_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // Every entry, so a case that walks the whole namespace cannot miss one.
@@ -201,7 +210,7 @@ void test_clear_reports_ok(void)
 // every other entry reads as empty.
 void test_clear_zeroes_the_table_regions(void)
 {
-    memset(work_a, 0xFF, IDEMIP_NETIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_NETIF_BORROW);
     Netif.clear(work_a);
     for (size_t i = (size_t)IDEMIP_NETIF_OFF_TAB; i < (size_t)IDEMIP_NETIF_OFF_END; i++)
     {
@@ -222,7 +231,7 @@ void test_clear_leaves_the_operands_alone(void)
 // Clearing one borrow does not clear the other.
 void test_clear_reaches_one_borrow_only(void)
 {
-    memset(work_b, 0xFF, IDEMIP_NETIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b, .val = 0xFF, .bytes = IDEMIP_NETIF_BORROW);
     Netif.clear(work_a);
     for (size_t i = (size_t)IDEMIP_NETIF_OFF_TAB; i < (size_t)IDEMIP_NETIF_OFF_END; i++)
     {
@@ -236,7 +245,7 @@ void test_clear_reaches_one_borrow_only(void)
 // interface record out of whatever was there.
 void test_an_uncleared_borrow_is_refused(void)
 {
-    memset(work_a, 0xFF, IDEMIP_NETIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_NETIF_BORROW);
     IDEMIP_NETIF_IO(work_a)->bind_args.index = 0u;
     IDEMIP_NETIF_IO(work_a)->bind_args.phy = phy_a;
     IDEMIP_NETIF_IO(work_a)->bind_args.hwaddr = g_mac_a;
@@ -244,19 +253,19 @@ void test_an_uncleared_borrow_is_refused(void)
     Netif.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status);
 
-    memset(work_a, 0xFF, IDEMIP_NETIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_NETIF_BORROW);
     IDEMIP_NETIF_IO(work_a)->if_args.index = 0u;
     Netif.get(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status);
 
-    memset(work_a, 0xFF, IDEMIP_NETIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_NETIF_BORROW);
     IDEMIP_NETIF_IO(work_a)->route_args.index = 0u;
     IDEMIP_NETIF_IO(work_a)->route_args.dst = 0x0A000002u;
     Netif.local4(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status);
 
     // And the rest of them, each on its own set of bytes clear has not run on.
-    memset(work_a, 0xFF, IDEMIP_NETIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_NETIF_BORROW);
     IDEMIP_NETIF_IO(work_a)->if_args.index = 0u;
     IDEMIP_NETIF_IO(work_a)->if_args.set = 0u;
     IDEMIP_NETIF_IO(work_a)->if_args.clear = 0u;
@@ -726,13 +735,13 @@ void test_find_addr6_reports_neither_a_duplicate_nor_a_tentative_address(void)
 
     add6(work_a, 0u, g_addr6_a, IDEMIP_NETIF_ADDR6_DUPLICATE, 600u, 600u);
     IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_a;
-    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = IDEMIP_FALSE;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = EMBED_FALSE;
     Netif.find_addr6(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
                                   "an address DAD found duplicate answered as the interface's own");
     // Not even the Target Address match takes a duplicate.
     IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_a;
-    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = IDEMIP_TRUE;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = EMBED_TRUE;
     Netif.find_addr6(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status);
 
@@ -740,12 +749,12 @@ void test_find_addr6_reports_neither_a_duplicate_nor_a_tentative_address(void)
     up(work_a, 0u, phy_a, g_mac_a, 1500u);
     add6(work_a, 0u, g_addr6_a, IDEMIP_NETIF_ADDR6_TENTATIVE, 600u, 600u);
     IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_a;
-    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = IDEMIP_FALSE;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = EMBED_FALSE;
     Netif.find_addr6(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_NETIF_IO(work_a)->status,
                                   "a tentative address answered an ordinary lookup");
     IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_a;
-    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = IDEMIP_TRUE;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = EMBED_TRUE;
     Netif.find_addr6(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status,
                                   "the sec 5.4.3 Target Address match cannot see its own tentative address");
@@ -755,7 +764,7 @@ void test_find_addr6_reports_neither_a_duplicate_nor_a_tentative_address(void)
     up(work_a, 0u, phy_a, g_mac_a, 1500u);
     add6(work_a, 0u, g_addr6_a, IDEMIP_NETIF_ADDR6_PREFERRED, 600u, 600u);
     IDEMIP_NETIF_IO(work_a)->addr6_args.addr = g_addr6_a;
-    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = IDEMIP_FALSE;
+    IDEMIP_NETIF_IO(work_a)->addr6_args.tentative = EMBED_FALSE;
     Netif.find_addr6(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(work_a)->status);
 }

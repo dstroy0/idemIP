@@ -17,7 +17,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief One message access. */
 typedef struct
@@ -36,67 +36,67 @@ typedef struct
 // --- reading a received message --------------------------------------------
 
 /** @brief Type. */
-IDEMIP_INLINE uint8_t icmp_type(const IcmpCtx *c)
+EMBED_INLINE uint8_t icmp_type(const IcmpCtx *c)
 {
     return c->m[IDEMIP_ICMP_OFF_TYPE];
 }
 
 /** @brief Code; its meaning depends on the type. */
-IDEMIP_INLINE uint8_t icmp_code(const IcmpCtx *c)
+EMBED_INLINE uint8_t icmp_code(const IcmpCtx *c)
 {
     return c->m[IDEMIP_ICMP_OFF_CODE];
 }
 
 /** @brief Checksum as carried. */
-IDEMIP_INLINE uint16_t icmp_cksum(const IcmpCtx *c)
+EMBED_INLINE uint16_t icmp_cksum(const IcmpCtx *c)
 {
     return idemip_rd16(c->m + IDEMIP_ICMP_OFF_CKSUM);
 }
 
 /** @brief Identifier (echo and echo reply). */
-IDEMIP_INLINE uint16_t icmp_id(const IcmpCtx *c)
+EMBED_INLINE uint16_t icmp_id(const IcmpCtx *c)
 {
     return idemip_rd16(c->m + IDEMIP_ICMP_OFF_ID);
 }
 
 /** @brief Sequence Number (echo and echo reply). */
-IDEMIP_INLINE uint16_t icmp_seq(const IcmpCtx *c)
+EMBED_INLINE uint16_t icmp_seq(const IcmpCtx *c)
 {
     return idemip_rd16(c->m + IDEMIP_ICMP_OFF_SEQ);
 }
 
 /** @brief Pointer: the octet of the original header the fault was found at (parameter problem). */
-IDEMIP_INLINE uint8_t icmp_pointer(const IcmpCtx *c)
+EMBED_INLINE uint8_t icmp_pointer(const IcmpCtx *c)
 {
     return c->m[IDEMIP_ICMP_OFF_POINTER];
 }
 
 /** @brief Gateway Internet Address (redirect). */
-IDEMIP_INLINE uint32_t icmp_gateway(const IcmpCtx *c)
+EMBED_INLINE uint32_t icmp_gateway(const IcmpCtx *c)
 {
     return idemip_rd32(c->m + IDEMIP_ICMP_OFF_GATEWAY);
 }
 
 /** @brief Originate Timestamp (timestamp and timestamp reply). */
-IDEMIP_INLINE uint32_t icmp_orig_ts(const IcmpCtx *c)
+EMBED_INLINE uint32_t icmp_orig_ts(const IcmpCtx *c)
 {
     return idemip_rd32(c->m + IDEMIP_ICMP_OFF_ORIG_TS);
 }
 
 /** @brief Receive Timestamp (timestamp reply). */
-IDEMIP_INLINE uint32_t icmp_recv_ts(const IcmpCtx *c)
+EMBED_INLINE uint32_t icmp_recv_ts(const IcmpCtx *c)
 {
     return idemip_rd32(c->m + IDEMIP_ICMP_OFF_RECV_TS);
 }
 
 /** @brief Transmit Timestamp (timestamp reply). */
-IDEMIP_INLINE uint32_t icmp_xmit_ts(const IcmpCtx *c)
+EMBED_INLINE uint32_t icmp_xmit_ts(const IcmpCtx *c)
 {
     return idemip_rd32(c->m + IDEMIP_ICMP_OFF_XMIT_TS);
 }
 
 /** @brief The quoted datagram an error message carries: its internet header, then its data. */
-IDEMIP_INLINE const uint8_t *icmp_quote(const IcmpCtx *c)
+EMBED_INLINE const uint8_t *icmp_quote(const IcmpCtx *c)
 {
     return c->m + IDEMIP_ICMP_OFF_QUOTE;
 }
@@ -108,7 +108,7 @@ IDEMIP_INLINE const uint8_t *icmp_quote(const IcmpCtx *c)
  * Problem." The remaining types are queries. Unlike RFC 4443 no bit sorts them, so the type is
  * matched against the list.
  */
-IDEMIP_INLINE idemip_bool icmp_is_error(const IcmpCtx *c)
+EMBED_INLINE embed_bool icmp_is_error(const IcmpCtx *c)
 {
     switch (c->m[IDEMIP_ICMP_OFF_TYPE])
     {
@@ -117,9 +117,9 @@ IDEMIP_INLINE idemip_bool icmp_is_error(const IcmpCtx *c)
     case IDEMIP_ICMP_REDIRECT:
     case IDEMIP_ICMP_TIME_EXCEEDED:
     case IDEMIP_ICMP_PARAMETER_PROBLEM:
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     default:
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
 }
 
@@ -133,7 +133,7 @@ IDEMIP_INLINE idemip_bool icmp_is_error(const IcmpCtx *c)
  *
  * No pseudo-header: unlike UDP and TCP, this covers the message alone.
  */
-IDEMIP_INLINE uint16_t icmp_cksum_compute(const IcmpCtx *c)
+EMBED_INLINE uint16_t icmp_cksum_compute(const IcmpCtx *c)
 {
     return idemip_cksum(c->m, c->len);
 }
@@ -146,7 +146,7 @@ IDEMIP_INLINE uint16_t icmp_cksum_compute(const IcmpCtx *c)
  * RFC 792, Echo or Echo Reply: Type, Code 0, Checksum, Identifier, Sequence Number, then Data. The
  * data sits at IDEMIP_ICMP_ECHO_HDR_LEN and the length counts it.
  */
-IDEMIP_INLINE void icmp_build_echo(const IcmpCtx *c)
+EMBED_INLINE void icmp_build_echo(const IcmpCtx *c)
 {
     c->w[IDEMIP_ICMP_OFF_TYPE] = c->type;
     c->w[IDEMIP_ICMP_OFF_CODE] = IDEMIP_ICMP_CODE_ECHO;
@@ -165,7 +165,7 @@ IDEMIP_INLINE void icmp_build_echo(const IcmpCtx *c)
  * the data are carried through, which is RFC 1122 sec 3.2.2.6: "Data received in an ICMP Echo
  * Request MUST be entirely included in the resulting Echo Reply."
  */
-IDEMIP_INLINE void icmp_echo_reply(const IcmpCtx *c)
+EMBED_INLINE void icmp_echo_reply(const IcmpCtx *c)
 {
     idemip_icmp_build_echo(c->w, (uint8_t)IDEMIP_ICMP_ECHO_REPLY, idemip_icmp_id(c->w), idemip_icmp_seq(c->w), c->len);
 }
@@ -177,7 +177,7 @@ IDEMIP_INLINE void icmp_echo_reply(const IcmpCtx *c)
  * unused, the Pointer in the top octet for parameter problem, the Gateway Internet Address for
  * redirect. The quoted datagram sits at IDEMIP_ICMP_OFF_QUOTE and the length counts it.
  */
-IDEMIP_INLINE void icmp_build_error(const IcmpCtx *c)
+EMBED_INLINE void icmp_build_error(const IcmpCtx *c)
 {
     c->w[IDEMIP_ICMP_OFF_TYPE] = c->type;
     c->w[IDEMIP_ICMP_OFF_CODE] = c->code;
@@ -194,7 +194,7 @@ IDEMIP_INLINE void icmp_build_error(const IcmpCtx *c)
  * Unreachable), when the designated transport protocol (e.g., UDP) is unable to demultiplex the
  * datagram but has no protocol mechanism to inform the sender."
  */
-IDEMIP_INLINE void icmp_dest_unreachable(const IcmpCtx *c)
+EMBED_INLINE void icmp_dest_unreachable(const IcmpCtx *c)
 {
     idemip_icmp_build_error(c->w, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, c->code, 0u, c->len);
 }
@@ -206,7 +206,7 @@ IDEMIP_INLINE void icmp_dest_unreachable(const IcmpCtx *c)
  * missing fragments within its time limit it discards the datagram, and it may send a time exceeded
  * message", which is code 1.
  */
-IDEMIP_INLINE void icmp_time_exceeded(const IcmpCtx *c)
+EMBED_INLINE void icmp_time_exceeded(const IcmpCtx *c)
 {
     idemip_icmp_build_error(c->w, (uint8_t)IDEMIP_ICMP_TIME_EXCEEDED, c->code, 0u, c->len);
 }
@@ -217,7 +217,7 @@ IDEMIP_INLINE void icmp_time_exceeded(const IcmpCtx *c)
  * RFC 792: "The pointer identifies the octet of the original datagram's header where the error was
  * detected", and it is the top octet of the word at offset 4.
  */
-IDEMIP_INLINE void icmp_parameter_problem(const IcmpCtx *c)
+EMBED_INLINE void icmp_parameter_problem(const IcmpCtx *c)
 {
     idemip_icmp_build_error(c->w, (uint8_t)IDEMIP_ICMP_PARAMETER_PROBLEM, c->code,
                             (uint32_t)c->pointer << IDEMIP_ICMP_POINTER_SHIFT, c->len);
@@ -230,7 +230,7 @@ IDEMIP_INLINE void icmp_parameter_problem(const IcmpCtx *c)
  * reached, the point at which it is forced to discard incoming datagrams due to a shortage of
  * reassembly buffers or other resources."
  */
-IDEMIP_INLINE void icmp_source_quench(const IcmpCtx *c)
+EMBED_INLINE void icmp_source_quench(const IcmpCtx *c)
 {
     idemip_icmp_build_error(c->w, (uint8_t)IDEMIP_ICMP_SOURCE_QUENCH, IDEMIP_ICMP_CODE_SOURCE_QUENCH, 0u, c->len);
 }
@@ -241,7 +241,7 @@ IDEMIP_INLINE void icmp_source_quench(const IcmpCtx *c)
  * The error head, then the quoted header of IHL 32-bit words (RFC 791 sec 3.1), then eight octets of
  * its data.
  */
-IDEMIP_INLINE size_t icmp_err_len(const IcmpCtx *c)
+EMBED_INLINE size_t icmp_err_len(const IcmpCtx *c)
 {
     return (size_t)IDEMIP_ICMP_ERR_HDR_LEN + IDEMIP_IP4_HDR_BYTES(idemip_ip4_ihl(c->m)) + IDEMIP_ICMP_ERR_QUOTE_DATA;
 }
@@ -251,109 +251,109 @@ IDEMIP_INLINE size_t icmp_err_len(const IcmpCtx *c)
 
 uint8_t idemip_icmp_type(const uint8_t *m)
 {
-    return IDEMIP_CALL(icmp_type, IcmpCtx, .m = m);
+    return EMBED_CALL(icmp_type, IcmpCtx, .m = m);
 }
 
 uint8_t idemip_icmp_code(const uint8_t *m)
 {
-    return IDEMIP_CALL(icmp_code, IcmpCtx, .m = m);
+    return EMBED_CALL(icmp_code, IcmpCtx, .m = m);
 }
 
 uint16_t idemip_icmp_cksum(const uint8_t *m)
 {
-    return IDEMIP_CALL(icmp_cksum, IcmpCtx, .m = m);
+    return EMBED_CALL(icmp_cksum, IcmpCtx, .m = m);
 }
 
 uint16_t idemip_icmp_id(const uint8_t *m)
 {
-    return IDEMIP_CALL(icmp_id, IcmpCtx, .m = m);
+    return EMBED_CALL(icmp_id, IcmpCtx, .m = m);
 }
 
 uint16_t idemip_icmp_seq(const uint8_t *m)
 {
-    return IDEMIP_CALL(icmp_seq, IcmpCtx, .m = m);
+    return EMBED_CALL(icmp_seq, IcmpCtx, .m = m);
 }
 
 uint8_t idemip_icmp_pointer(const uint8_t *m)
 {
-    return IDEMIP_CALL(icmp_pointer, IcmpCtx, .m = m);
+    return EMBED_CALL(icmp_pointer, IcmpCtx, .m = m);
 }
 
 uint32_t idemip_icmp_gateway(const uint8_t *m)
 {
-    return IDEMIP_CALL(icmp_gateway, IcmpCtx, .m = m);
+    return EMBED_CALL(icmp_gateway, IcmpCtx, .m = m);
 }
 
 uint32_t idemip_icmp_orig_ts(const uint8_t *m)
 {
-    return IDEMIP_CALL(icmp_orig_ts, IcmpCtx, .m = m);
+    return EMBED_CALL(icmp_orig_ts, IcmpCtx, .m = m);
 }
 
 uint32_t idemip_icmp_recv_ts(const uint8_t *m)
 {
-    return IDEMIP_CALL(icmp_recv_ts, IcmpCtx, .m = m);
+    return EMBED_CALL(icmp_recv_ts, IcmpCtx, .m = m);
 }
 
 uint32_t idemip_icmp_xmit_ts(const uint8_t *m)
 {
-    return IDEMIP_CALL(icmp_xmit_ts, IcmpCtx, .m = m);
+    return EMBED_CALL(icmp_xmit_ts, IcmpCtx, .m = m);
 }
 
 const uint8_t *idemip_icmp_quote(const uint8_t *m)
 {
-    return IDEMIP_CALL(icmp_quote, IcmpCtx, .m = m);
+    return EMBED_CALL(icmp_quote, IcmpCtx, .m = m);
 }
 
-idemip_bool idemip_icmp_is_error(const uint8_t *m)
+embed_bool idemip_icmp_is_error(const uint8_t *m)
 {
-    return IDEMIP_CALL(icmp_is_error, IcmpCtx, .m = m);
+    return EMBED_CALL(icmp_is_error, IcmpCtx, .m = m);
 }
 
 uint16_t idemip_icmp_cksum_compute(const uint8_t *m, size_t len)
 {
-    return IDEMIP_CALL(icmp_cksum_compute, IcmpCtx, .m = m, .len = len);
+    return EMBED_CALL(icmp_cksum_compute, IcmpCtx, .m = m, .len = len);
 }
 
 void idemip_icmp_build_echo(uint8_t *m, uint8_t type, uint16_t id, uint16_t seq, size_t len)
 {
-    IDEMIP_CALL(icmp_build_echo, IcmpCtx, .w = m, .type = type, .id = id, .seq = seq, .len = len);
+    EMBED_CALL(icmp_build_echo, IcmpCtx, .w = m, .type = type, .id = id, .seq = seq, .len = len);
 }
 
 void idemip_icmp_echo_reply(uint8_t *m, size_t len)
 {
-    IDEMIP_CALL(icmp_echo_reply, IcmpCtx, .w = m, .len = len);
+    EMBED_CALL(icmp_echo_reply, IcmpCtx, .w = m, .len = len);
 }
 
 void idemip_icmp_build_error(uint8_t *m, uint8_t type, uint8_t code, uint32_t word, size_t len)
 {
-    IDEMIP_CALL(icmp_build_error, IcmpCtx, .w = m, .type = type, .code = code, .word = word, .len = len);
+    EMBED_CALL(icmp_build_error, IcmpCtx, .w = m, .type = type, .code = code, .word = word, .len = len);
 }
 
 void idemip_icmp_build_dest_unreachable(uint8_t *m, uint8_t code, size_t len)
 {
-    IDEMIP_CALL(icmp_dest_unreachable, IcmpCtx, .w = m, .code = code, .len = len);
+    EMBED_CALL(icmp_dest_unreachable, IcmpCtx, .w = m, .code = code, .len = len);
 }
 
 void idemip_icmp_build_time_exceeded(uint8_t *m, uint8_t code, size_t len)
 {
-    IDEMIP_CALL(icmp_time_exceeded, IcmpCtx, .w = m, .code = code, .len = len);
+    EMBED_CALL(icmp_time_exceeded, IcmpCtx, .w = m, .code = code, .len = len);
 }
 
 void idemip_icmp_build_parameter_problem(uint8_t *m, uint8_t code, uint8_t pointer, size_t len)
 {
-    IDEMIP_CALL(icmp_parameter_problem, IcmpCtx, .w = m, .code = code, .pointer = pointer, .len = len);
+    EMBED_CALL(icmp_parameter_problem, IcmpCtx, .w = m, .code = code, .pointer = pointer, .len = len);
 }
 
 void idemip_icmp_build_source_quench(uint8_t *m, size_t len)
 {
-    IDEMIP_CALL(icmp_source_quench, IcmpCtx, .w = m, .len = len);
+    EMBED_CALL(icmp_source_quench, IcmpCtx, .w = m, .len = len);
 }
 
 size_t idemip_icmp_err_len(const uint8_t *ip)
 {
-    return IDEMIP_CALL(icmp_err_len, IcmpCtx, .m = ip);
+    return EMBED_CALL(icmp_err_len, IcmpCtx, .m = ip);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4

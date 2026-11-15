@@ -18,7 +18,7 @@
 #include "src/tcp/tcp_pcb.h"
 #include "src/tcp/tcp_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // One TCB: RFC 9293 sec 3.3.1's "local and remote IP addresses and port numbers", the Table 2 send
 // variables and Table 3 receive variables, the sec 3.3.2 state, the estimator and congestion state,
@@ -42,7 +42,7 @@ typedef struct
     uint8_t ttl;
     uint8_t ip_version;
     IdemIpTcpState state;
-    idemip_bool in_use;
+    embed_bool in_use;
 } TcpPcbTcbFields;
 
 // One listener: the RFC 9293 sec 3.3.2 passive OPEN's address and port, and the connections it holds
@@ -56,7 +56,7 @@ typedef struct
     uint8_t backlog;
     uint8_t ip_version;
     IdemIpTcpState state;
-    idemip_bool in_use;
+    embed_bool in_use;
 } TcpPcbListenFields;
 
 // One send-queue segment: the caller's data octets, their RFC 9293 sec 3.1 Sequence Number, the
@@ -70,7 +70,7 @@ typedef struct
     uint16_t len;
     uint16_t flags;
     uint16_t opts;
-    idemip_bool in_use;
+    embed_bool in_use;
 } TcpPcbSegFields;
 
 // One held out-of-order segment: the pinned receive descriptor, where in that frame the data starts,
@@ -83,7 +83,7 @@ typedef struct
     uint16_t desc;
     uint16_t offset;
     uint16_t len;
-    idemip_bool in_use;
+    embed_bool in_use;
 } TcpPcbOosFields;
 
 // Entry i of each table sits at (i << SHIFT), so each entry is exactly that wide.
@@ -107,23 +107,24 @@ typedef union {
     uint8_t raw[1u << IDEMIP_TCP_OOSEQ_ENTRY_SHIFT];
 } TcpPcbOosEntry;
 
-static_assert(sizeof(TcpPcbTcbEntry) == (1u << IDEMIP_TCP_PCB_ENTRY_SHIFT),
-              "a TCB must be 1 << IDEMIP_TCP_PCB_ENTRY_SHIFT wide - raise the shift in idemip_config.h");
-static_assert(sizeof(TcpPcbTcbFields) <= sizeof(TcpPcbTcbEntry),
-              "the RFC 9293 sec 3.3.1 field set outgrew one TCB - raise IDEMIP_TCP_PCB_ENTRY_SHIFT");
-static_assert(sizeof(TcpPcbListenEntry) == (1u << IDEMIP_TCP_LISTEN_ENTRY_SHIFT),
-              "a listener must be 1 << IDEMIP_TCP_LISTEN_ENTRY_SHIFT wide - raise the shift in idemip_config.h");
-static_assert(sizeof(TcpPcbListenFields) <= sizeof(TcpPcbListenEntry),
-              "the passive OPEN field set outgrew one listener - raise IDEMIP_TCP_LISTEN_ENTRY_SHIFT");
-static_assert(sizeof(TcpPcbSegEntry) == (1u << IDEMIP_TCP_SEG_ENTRY_SHIFT),
-              "a send-queue segment must be 1 << IDEMIP_TCP_SEG_ENTRY_SHIFT wide - raise the shift in "
-              "idemip_config.h");
-static_assert(sizeof(TcpPcbSegFields) <= sizeof(TcpPcbSegEntry),
-              "the send-queue field set outgrew one segment - raise IDEMIP_TCP_SEG_ENTRY_SHIFT");
-static_assert(sizeof(TcpPcbOosEntry) == (1u << IDEMIP_TCP_OOSEQ_ENTRY_SHIFT),
-              "a held segment must be 1 << IDEMIP_TCP_OOSEQ_ENTRY_SHIFT wide - raise the shift in idemip_config.h");
-static_assert(sizeof(TcpPcbOosFields) <= sizeof(TcpPcbOosEntry),
-              "the out-of-order field set outgrew one entry - raise IDEMIP_TCP_OOSEQ_ENTRY_SHIFT");
+EMBED_STATIC_ASSERT(sizeof(TcpPcbTcbEntry) == (1u << IDEMIP_TCP_PCB_ENTRY_SHIFT),
+                    "a TCB must be 1 << IDEMIP_TCP_PCB_ENTRY_SHIFT wide - raise the shift in idemip_config.h");
+EMBED_STATIC_ASSERT(sizeof(TcpPcbTcbFields) <= sizeof(TcpPcbTcbEntry),
+                    "the RFC 9293 sec 3.3.1 field set outgrew one TCB - raise IDEMIP_TCP_PCB_ENTRY_SHIFT");
+EMBED_STATIC_ASSERT(sizeof(TcpPcbListenEntry) == (1u << IDEMIP_TCP_LISTEN_ENTRY_SHIFT),
+                    "a listener must be 1 << IDEMIP_TCP_LISTEN_ENTRY_SHIFT wide - raise the shift in idemip_config.h");
+EMBED_STATIC_ASSERT(sizeof(TcpPcbListenFields) <= sizeof(TcpPcbListenEntry),
+                    "the passive OPEN field set outgrew one listener - raise IDEMIP_TCP_LISTEN_ENTRY_SHIFT");
+EMBED_STATIC_ASSERT(sizeof(TcpPcbSegEntry) == (1u << IDEMIP_TCP_SEG_ENTRY_SHIFT),
+                    "a send-queue segment must be 1 << IDEMIP_TCP_SEG_ENTRY_SHIFT wide - raise the shift in "
+                    "idemip_config.h");
+EMBED_STATIC_ASSERT(sizeof(TcpPcbSegFields) <= sizeof(TcpPcbSegEntry),
+                    "the send-queue field set outgrew one segment - raise IDEMIP_TCP_SEG_ENTRY_SHIFT");
+EMBED_STATIC_ASSERT(
+    sizeof(TcpPcbOosEntry) == (1u << IDEMIP_TCP_OOSEQ_ENTRY_SHIFT),
+    "a held segment must be 1 << IDEMIP_TCP_OOSEQ_ENTRY_SHIFT wide - raise the shift in idemip_config.h");
+EMBED_STATIC_ASSERT(sizeof(TcpPcbOosFields) <= sizeof(TcpPcbOosEntry),
+                    "the out-of-order field set outgrew one entry - raise IDEMIP_TCP_OOSEQ_ENTRY_SHIFT");
 
 // The one definition, private to this TU. A borrow that was never cleared carries no mark, so every
 // entry refuses it rather than reading tables that were never zeroed. A bind of
@@ -146,17 +147,18 @@ IDEMIP_ASSERT_REGION(IDEMIP_TCP_PCB_OFF_CTX, sizeof(TcpPcbCtx), IDEMIP_TCP_PCB_B
 
 // The caller's borrow, split: the operand block, the context, then the four tables. tcp_pcb.h
 // publishes the offsets; the asserts below prove the span covers them before anything runs.
-static_assert(IDEMIP_TCP_PCB_OFF_CTX + sizeof(TcpPcbCtx) <= IDEMIP_TCP_PCB_CTX_BYTES,
-              "IDEMIP_TCP_PCB_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_TCP_PCB_OFF_OOSEQ + (TCP_PCB_OOSEQ_ENTRIES << IDEMIP_TCP_OOSEQ_ENTRY_SHIFT) <=
-                  IDEMIP_TCP_PCB_BORROW,
-              "IDEMIP_TCP_PCB_BORROW is short of the context and the four tables - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_TCP_PCB_OFF_CTX + sizeof(TcpPcbCtx) <= IDEMIP_TCP_PCB_CTX_BYTES,
+    "IDEMIP_TCP_PCB_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_PCB_OFF_OOSEQ + (TCP_PCB_OOSEQ_ENTRIES << IDEMIP_TCP_OOSEQ_ENTRY_SHIFT) <=
+                        IDEMIP_TCP_PCB_BORROW,
+                    "IDEMIP_TCP_PCB_BORROW is short of the context and the four tables - raise it in idemip_config.h");
 
 // Every index reported through the operand block is 16 bits, so no table may hold more entries than
 // that, and IDEMIP_TCP_PCB_NONE must name none of them.
-static_assert(IDEMIP_TCP_PCBS < IDEMIP_TCP_PCB_NONE && IDEMIP_TCP_LISTEN_PCBS < IDEMIP_TCP_PCB_NONE &&
-                  IDEMIP_TCP_SEGS < IDEMIP_TCP_PCB_NONE && TCP_PCB_OOSEQ_ENTRIES < IDEMIP_TCP_PCB_NONE,
-              "a table outgrew the 16-bit index the operand block reports");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_PCBS < IDEMIP_TCP_PCB_NONE && IDEMIP_TCP_LISTEN_PCBS < IDEMIP_TCP_PCB_NONE &&
+                        IDEMIP_TCP_SEGS < IDEMIP_TCP_PCB_NONE && TCP_PCB_OOSEQ_ENTRIES < IDEMIP_TCP_PCB_NONE,
+                    "a table outgrew the 16-bit index the operand block reports");
 
 // The regions, at their offsets in the caller's borrow.
 #define TCP_PCB_CTX(w) ((TcpPcbCtx *)(void *)((w) + IDEMIP_TCP_PCB_OFF_CTX))
@@ -209,15 +211,15 @@ static uint8_t tcp_pcb_addr_bytes(uint8_t ip_version)
     return 0u;
 }
 
-static idemip_bool tcp_pcb_addr_eq(const uint8_t *a, const uint8_t *b, uint8_t n)
+static embed_bool tcp_pcb_addr_eq(const uint8_t *a, const uint8_t *b, uint8_t n)
 {
-    return (idemip_bytes_eq(a, b, (size_t)n)) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (idemip_bytes_eq(a, b, (size_t)n)) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 9293 sec 3.9.1.1: a passive OPEN whose "local IP address" parameter is unspecified "will await
 // an incoming connection request to any local IP address". An all-zero address is that parameter
 // left unspecified.
-static idemip_bool tcp_pcb_addr_unspecified(const uint8_t *a, uint8_t n)
+static embed_bool tcp_pcb_addr_unspecified(const uint8_t *a, uint8_t n)
 {
     return idemip_bytes_zero(a, (size_t)n);
 }
@@ -226,8 +228,8 @@ static idemip_bool tcp_pcb_addr_unspecified(const uint8_t *a, uint8_t n)
 // that many, so the octets past the version's width are zeroed rather than left as they were found.
 static void tcp_pcb_addr_set(uint8_t *dst, const uint8_t *src, uint8_t n)
 {
-    memcpy(dst, src, (size_t)n);
-    memset(dst + n, 0, (size_t)IDEMIP_TCP_PCB_ADDR_BYTES - n);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = dst, .at = src, .size = (size_t)n);
+    mmgr_zero_buf(dst + n, (size_t)IDEMIP_TCP_PCB_ADDR_BYTES - n);
 }
 
 // --- the RFC 9293 sec 3.3.2 state machine ----------------------------------
@@ -312,16 +314,16 @@ static uint16_t tcp_pcb_transitions(IdemIpTcpState from)
     }
 }
 
-static idemip_bool tcp_pcb_transition_ok(IdemIpTcpState from, IdemIpTcpState to)
+static embed_bool tcp_pcb_transition_ok(IdemIpTcpState from, IdemIpTcpState to)
 {
     // Not measured, from the other side of the same argument: the bound is written out here so a
     // reader sees it beside the shift that needs it, and idemip_tcp_pcb_store has already refused a
     // state past TIME-WAIT. A TCB's own state is one this module wrote, and it writes no other.
     if (from > IDEMIP_TCP_STATE_TIME_WAIT || to > IDEMIP_TCP_STATE_TIME_WAIT) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+        return EMBED_FALSE; // GCOVR_EXCL_LINE
     }
-    return ((tcp_pcb_transitions(from) >> (unsigned)to) & 1u) != 0u ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((tcp_pcb_transitions(from) >> (unsigned)to) & 1u) != 0u ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // --- the three queues ------------------------------------------------------
@@ -339,7 +341,8 @@ static void tcp_pcb_send_queues_free(uint8_t *work, uint16_t pcb)
         for (uint16_t n = 0u; n < (uint16_t)IDEMIP_TCP_SEGS && at < (uint16_t)IDEMIP_TCP_SEGS; n++)
         {
             uint16_t next = TCP_PCB_SEG_AT(work, at)->f.next;
-            memset(TCP_PCB_SEG_AT(work, at)->raw, 0, sizeof(TcpPcbSegEntry));
+            EMBED_CALL(memor.set, MemoriaCfg, .dst = TCP_PCB_SEG_AT(work, at)->raw, .val = 0,
+                       .bytes = sizeof(TcpPcbSegEntry));
             at = next;
         }
     }
@@ -350,7 +353,7 @@ static void tcp_pcb_send_queues_free(uint8_t *work, uint16_t pcb)
 // RFC 9293 sec 3.4 case (b), "all sequence numbers occupied by a segment have been acknowledged
 // (e.g., to remove the segment from a retransmission queue)". The segment is on exactly one of the
 // TCB's two send queues, so both heads are tried.
-static idemip_bool tcp_pcb_seg_unlink(uint8_t *work, uint16_t pcb, uint16_t seg)
+static embed_bool tcp_pcb_seg_unlink(uint8_t *work, uint16_t pcb, uint16_t seg)
 {
     TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, pcb)->f;
     // Not measured where the pair runs out, for the reason written at the report below: a segment in
@@ -361,7 +364,7 @@ static idemip_bool tcp_pcb_seg_unlink(uint8_t *work, uint16_t pcb, uint16_t seg)
         if (*head == seg)
         {
             *head = TCP_PCB_SEG_AT(work, seg)->f.next;
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         uint16_t at = *head;
         // Not measured where the count runs out: a queue holds segments drawn from a table of
@@ -377,7 +380,7 @@ static idemip_bool tcp_pcb_seg_unlink(uint8_t *work, uint16_t pcb, uint16_t seg)
             if (s->next == seg)
             {
                 s->next = TCP_PCB_SEG_AT(work, seg)->f.next;
-                return IDEMIP_TRUE;
+                return EMBED_TRUE;
             }
             at = s->next;
         }
@@ -386,18 +389,18 @@ static idemip_bool tcp_pcb_seg_unlink(uint8_t *work, uint16_t pcb, uint16_t seg)
     // unacked queue by idemip_tcp_pcb_seg_sent, so one in use and naming this TCB is on one of the
     // two. The report is here because a walk that can fail must say so rather than leave the caller
     // to assume, and idemip_tcp_pcb_seg_free reads it.
-    return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+    return EMBED_FALSE; // GCOVR_EXCL_LINE
 }
 
 // RFC 9293 sec 3.10.7.4, releasing a held segment once RCV.NXT has passed it. The receive descriptor
 // the entry names is unpinned by the caller that pinned it, through netif/dma.h.
-static idemip_bool tcp_pcb_oos_unlink(uint8_t *work, uint16_t pcb, uint16_t oos)
+static embed_bool tcp_pcb_oos_unlink(uint8_t *work, uint16_t pcb, uint16_t oos)
 {
     TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, pcb)->f;
     if (t->ooseq == oos)
     {
         t->ooseq = TCP_PCB_OOS_AT(work, oos)->f.next;
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     uint16_t at = t->ooseq;
     // Not measured, for the reason written at tcp_pcb_seg_unlink.
@@ -409,13 +412,13 @@ static idemip_bool tcp_pcb_oos_unlink(uint8_t *work, uint16_t pcb, uint16_t oos)
         if (o->next == oos)
         {
             o->next = TCP_PCB_OOS_AT(work, oos)->f.next;
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         at = o->next;
     }
     // Not measured, for the same reason as the send queue above: a hold is threaded into this TCB's
     // ooseq list when it is allocated and comes off it only here.
-    return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+    return EMBED_FALSE; // GCOVR_EXCL_LINE
 }
 
 // --- the local port --------------------------------------------------------
@@ -429,34 +432,34 @@ static idemip_bool tcp_pcb_oos_unlink(uint8_t *work, uint16_t pcb, uint16_t oos)
 // sec 3.9.1.1 (MUST-42) requires that a LISTEN on a port be possible "while a connection block with
 // the same local port is in SYN-SENT or SYN-RECEIVED state", so a listener's port does not make one
 // taken here and a TCB's does not make one taken for a listen.
-static idemip_bool tcp_pcb_port_taken(uint8_t *work, uint16_t port, uint16_t except)
+static embed_bool tcp_pcb_port_taken(uint8_t *work, uint16_t port, uint16_t except)
 {
     for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_PCBS; i++)
     {
         const TcpPcbTcbFields *t = &TCP_PCB_TCB_AT(work, i)->f;
         if (t->in_use && i != except && t->local_port == port)
         {
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
     }
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 // RFC 6056 sec 3.1: "Port numbers that are currently in use by a TCP in the LISTEN state should not
 // be allowed for use as ephemeral ports. If this rule is not complied with, an attacker could
 // potentially 'steal' an incoming connection to a local server application". Only the ephemeral draw
 // walks past a listening port; idemip_tcp_pcb_bind's named-port path is what MUST-42 protects.
-static idemip_bool tcp_pcb_port_listening(uint8_t *work, uint16_t port)
+static embed_bool tcp_pcb_port_listening(uint8_t *work, uint16_t port)
 {
     for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_LISTEN_PCBS; i++)
     {
         const TcpPcbListenFields *l = &TCP_PCB_LISTEN_AT(work, i)->f;
         if (l->in_use && l->local_port == port)
         {
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
     }
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 // The ephemeral pool, drawn by RFC 6056 sec 3.3.1 Algorithm 1:
@@ -498,29 +501,29 @@ static uint16_t tcp_pcb_port_draw(uint8_t *work, uint16_t except, uint32_t rand)
 // RFC 9293 sec 3.3.1 keys a TCB on "the local and remote IP addresses and port numbers". The
 // segment's own pair is swapped against it: its Destination Port is the local port. RFC 4007 sec 6
 // zone indices qualify a non-global IPv6 address, so they are compared only over IPv6.
-static idemip_bool tcp_pcb_tcb_matches(const TcpPcbTcbFields *t, const TcpPcbFindArgs *a, uint8_t n)
+static embed_bool tcp_pcb_tcb_matches(const TcpPcbTcbFields *t, const TcpPcbFindArgs *a, uint8_t n)
 {
     if (!t->in_use || t->ip_version != a->ip_version)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (t->local_port != a->local_port || t->remote_port != a->remote_port)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (t->netif != 0u && t->netif != a->netif)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (!tcp_pcb_addr_eq(t->local_ip, a->local_ip, n) || !tcp_pcb_addr_eq(t->remote_ip, a->remote_ip, n))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (a->ip_version == 6u && (t->local_zone != a->local_zone || t->remote_zone != a->remote_zone))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // A listener matches on the local half alone. RFC 9293 sec 3.9.1.1: "If the parameter is
@@ -528,16 +531,16 @@ static idemip_bool tcp_pcb_tcb_matches(const TcpPcbTcbFields *t, const TcpPcbFin
 // an all-zero local address matches every destination. A listener bound to the destination is
 // preferred over one that is not, which is the order lwIP walks in
 // lwip_ref/src/core/tcp_in.c:353 "first try specific local IP".
-static idemip_bool tcp_pcb_listener_matches(const TcpPcbListenFields *l, const TcpPcbFindArgs *a, uint8_t n,
-                                            idemip_bool wildcard)
+static embed_bool tcp_pcb_listener_matches(const TcpPcbListenFields *l, const TcpPcbFindArgs *a, uint8_t n,
+                                           embed_bool wildcard)
 {
     if (!l->in_use || l->ip_version != a->ip_version || l->local_port != a->local_port)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (l->netif != 0u && l->netif != a->netif)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (wildcard)
     {
@@ -545,13 +548,13 @@ static idemip_bool tcp_pcb_listener_matches(const TcpPcbListenFields *l, const T
     }
     if (tcp_pcb_addr_unspecified(l->local_ip, n) || !tcp_pcb_addr_eq(l->local_ip, a->local_ip, n))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (a->ip_version == 6u && l->local_zone != a->local_zone)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // --- the entries -----------------------------------------------------------
@@ -566,13 +569,14 @@ void idemip_tcp_pcb_clear(uint8_t *work)
         return; // no borrow, so nowhere to report
     }
     TcpPcbIo *io = TCP_PCB_IO(work);
-    memset(work + IDEMIP_TCP_PCB_OFF_CTX, 0, (size_t)IDEMIP_TCP_PCB_BORROW - IDEMIP_TCP_PCB_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_TCP_PCB_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_TCP_PCB_BORROW - IDEMIP_TCP_PCB_OFF_CTX);
     TCP_PCB_CTX(work)->ready = TCP_PCB_READY;
-    memset(&io->vars, 0, sizeof io->vars);
-    memset(&io->ctl, 0, sizeof io->ctl);
-    memset(&io->info, 0, sizeof io->info);
-    memset(&io->seg, 0, sizeof io->seg);
-    memset(&io->oos, 0, sizeof io->oos);
+    io->vars = (IdemIpTcpVars){0};
+    io->ctl = (TcpPcbCtl){0};
+    io->info = (TcpPcbInfo){0};
+    io->seg = (TcpPcbSegInfo){0};
+    io->oos = (TcpPcbOosInfo){0};
     io->state = IDEMIP_TCP_STATE_CLOSED;
     io->index = IDEMIP_TCP_PCB_NONE;
     io->port = IDEMIP_TCP_PCB_PORT_ANY;
@@ -608,7 +612,8 @@ void idemip_tcp_pcb_open(uint8_t *work)
         {
             continue;
         }
-        memset(TCP_PCB_TCB_AT(work, i)->raw, 0, sizeof(TcpPcbTcbEntry));
+        EMBED_CALL(memor.set, MemoriaCfg, .dst = TCP_PCB_TCB_AT(work, i)->raw, .val = 0,
+                   .bytes = sizeof(TcpPcbTcbEntry));
         t->listener = IDEMIP_TCP_PCB_NONE;
         t->unsent = IDEMIP_TCP_PCB_NONE;
         t->unacked = IDEMIP_TCP_PCB_NONE;
@@ -619,7 +624,7 @@ void idemip_tcp_pcb_open(uint8_t *work)
         t->ctl.r2_syn = (uint8_t)IDEMIP_TCP_SYNMAXRTX;
         t->ip_version = io->open_args.ip_version;
         t->state = IDEMIP_TCP_STATE_CLOSED;
-        t->in_use = IDEMIP_TRUE;
+        t->in_use = EMBED_TRUE;
         io->index = i;
         io->status = IDEMIP_OK;
         return;
@@ -686,7 +691,8 @@ void idemip_tcp_pcb_close(uint8_t *work)
         return;
     }
     tcp_pcb_send_queues_free(work, io->pcb_args.index);
-    memset(TCP_PCB_TCB_AT(work, io->pcb_args.index)->raw, 0, sizeof(TcpPcbTcbEntry));
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = TCP_PCB_TCB_AT(work, io->pcb_args.index)->raw, .val = 0,
+               .bytes = sizeof(TcpPcbTcbEntry));
     io->status = IDEMIP_OK;
 }
 
@@ -752,7 +758,7 @@ void idemip_tcp_pcb_bind(uint8_t *work)
 // initialization procedure by which the host learns its own IP address". A directed broadcast is
 // the network's own prefix with a host part of all ones, which is not derivable from the address
 // alone, so it is not among these.
-static idemip_bool tcp_pcb_remote_invalid(uint8_t ip_version, const uint8_t *ip)
+static embed_bool tcp_pcb_remote_invalid(uint8_t ip_version, const uint8_t *ip)
 {
 #if IDEMIP_ENABLE_IPV4
     if (ip_version == 4u)
@@ -760,8 +766,8 @@ static idemip_bool tcp_pcb_remote_invalid(uint8_t ip_version, const uint8_t *ip)
         IdemIpIp4AddrType type = idemip_ip4_addr_type(idemip_rd32(ip));
         return (type == IDEMIP_IP4_TYPE_MULTICAST || type == IDEMIP_IP4_TYPE_BROADCAST ||
                 type == IDEMIP_IP4_TYPE_UNSPECIFIED)
-                   ? IDEMIP_TRUE
-                   : IDEMIP_FALSE;
+                   ? EMBED_TRUE
+                   : EMBED_FALSE;
     }
 #else
     (void)ip_version;
@@ -770,13 +776,13 @@ static idemip_bool tcp_pcb_remote_invalid(uint8_t ip_version, const uint8_t *ip)
     // RFC 4291 sec 2.7: "Multicast addresses must not be used as source addresses in IPv6 packets or
     // appear in any Routing header", and sec 2.5.2 makes :: unusable as a destination.
     IdemIpIp6Type type = idemip_ip6_addr_type(ip);
-    return (type == IDEMIP_IP6_TYPE_MULTICAST || type == IDEMIP_IP6_TYPE_UNSPECIFIED) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (type == IDEMIP_IP6_TYPE_MULTICAST || type == IDEMIP_IP6_TYPE_UNSPECIFIED) ? EMBED_TRUE : EMBED_FALSE;
 #else
     // A build without IPv6 has no address type to read here and nothing that opens a v6 connection,
     // so the arm is unreachable rather than permissive: an address this module cannot judge is
     // refused, not admitted.
     (void)ip;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 #endif
 }
 
@@ -845,9 +851,9 @@ void idemip_tcp_pcb_load(uint8_t *work)
     }
     TcpPcbIo *io = TCP_PCB_IO(work);
     io->status = IDEMIP_ERR;
-    memset(&io->vars, 0, sizeof io->vars);
-    memset(&io->ctl, 0, sizeof io->ctl);
-    memset(&io->info, 0, sizeof io->info);
+    io->vars = (IdemIpTcpVars){0};
+    io->ctl = (TcpPcbCtl){0};
+    io->info = (TcpPcbInfo){0};
     io->state = IDEMIP_TCP_STATE_CLOSED;
     if (TCP_PCB_CTX(work)->ready != TCP_PCB_READY || io->pcb_args.index >= IDEMIP_TCP_PCBS)
     {
@@ -927,7 +933,7 @@ static uint8_t tcp_pcb_syn_received_on(uint8_t *work, uint16_t listener, uint16_
     return n;
 }
 
-static_assert(IDEMIP_TCP_PCBS <= 255u, "tcp_pcb_syn_received_on counts TCBs in a uint8_t");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_PCBS <= 255u, "tcp_pcb_syn_received_on counts TCBs in a uint8_t");
 
 // RFC 9293 sec 3.5 (MUST-11): "a TCP implementation MUST keep track of whether a connection has
 // reached SYN-RECEIVED state as the result of a passive OPEN or an active OPEN". sec 3.10.7.2 creates
@@ -1018,7 +1024,8 @@ void idemip_tcp_pcb_listen(uint8_t *work)
         {
             continue;
         }
-        memset(TCP_PCB_LISTEN_AT(work, i)->raw, 0, sizeof(TcpPcbListenEntry));
+        EMBED_CALL(memor.set, MemoriaCfg, .dst = TCP_PCB_LISTEN_AT(work, i)->raw, .val = 0,
+                   .bytes = sizeof(TcpPcbListenEntry));
         tcp_pcb_addr_set(l->local_ip, io->listen_args.ip, n);
         l->local_port = io->listen_args.port;
         l->local_zone = io->listen_args.zone;
@@ -1026,7 +1033,7 @@ void idemip_tcp_pcb_listen(uint8_t *work)
         l->backlog = io->listen_args.backlog;
         l->ip_version = io->listen_args.ip_version;
         l->state = IDEMIP_TCP_STATE_LISTEN;
-        l->in_use = IDEMIP_TRUE;
+        l->in_use = EMBED_TRUE;
         io->index = i;
         io->status = IDEMIP_OK;
         return;
@@ -1053,7 +1060,8 @@ void idemip_tcp_pcb_unlisten(uint8_t *work)
     {
         return;
     }
-    memset(TCP_PCB_LISTEN_AT(work, io->pcb_args.index)->raw, 0, sizeof(TcpPcbListenEntry));
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = TCP_PCB_LISTEN_AT(work, io->pcb_args.index)->raw, .val = 0,
+               .bytes = sizeof(TcpPcbListenEntry));
     io->status = IDEMIP_OK;
 }
 
@@ -1111,7 +1119,7 @@ void idemip_tcp_pcb_find_listener(uint8_t *work)
     }
     for (uint8_t pass = 0u; pass < 2u; pass++)
     {
-        idemip_bool wildcard = (pass == 1u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+        embed_bool wildcard = (pass == 1u) ? EMBED_TRUE : EMBED_FALSE;
         for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_LISTEN_PCBS; i++)
         {
             if (tcp_pcb_listener_matches(&TCP_PCB_LISTEN_AT(work, i)->f, &io->find_args, n, wildcard))
@@ -1159,7 +1167,8 @@ void idemip_tcp_pcb_seg_alloc(uint8_t *work)
         {
             continue;
         }
-        memset(TCP_PCB_SEG_AT(work, i)->raw, 0, sizeof(TcpPcbSegEntry));
+        EMBED_CALL(memor.set, MemoriaCfg, .dst = TCP_PCB_SEG_AT(work, i)->raw, .val = 0,
+                   .bytes = sizeof(TcpPcbSegEntry));
         s->data = io->seg_args.data;
         s->seq = io->seg_args.seq;
         s->next = IDEMIP_TCP_PCB_NONE;
@@ -1167,7 +1176,7 @@ void idemip_tcp_pcb_seg_alloc(uint8_t *work)
         s->len = io->seg_args.len;
         s->flags = io->seg_args.flags;
         s->opts = io->seg_args.opts;
-        s->in_use = IDEMIP_TRUE;
+        s->in_use = EMBED_TRUE;
         if (t->unsent >= (uint16_t)IDEMIP_TCP_SEGS)
         {
             t->unsent = i;
@@ -1203,7 +1212,7 @@ void idemip_tcp_pcb_seg_load(uint8_t *work)
     }
     TcpPcbIo *io = TCP_PCB_IO(work);
     io->status = IDEMIP_ERR;
-    memset(&io->seg, 0, sizeof io->seg);
+    io->seg = (TcpPcbSegInfo){0};
     if (TCP_PCB_CTX(work)->ready != TCP_PCB_READY || io->seg_args.index >= IDEMIP_TCP_SEGS)
     {
         return;
@@ -1305,7 +1314,8 @@ void idemip_tcp_pcb_seg_free(uint8_t *work)
     {
         return; // GCOVR_EXCL_LINE
     }
-    memset(TCP_PCB_SEG_AT(work, io->seg_args.index)->raw, 0, sizeof(TcpPcbSegEntry));
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = TCP_PCB_SEG_AT(work, io->seg_args.index)->raw, .val = 0,
+               .bytes = sizeof(TcpPcbSegEntry));
     io->status = IDEMIP_OK;
 }
 
@@ -1358,14 +1368,15 @@ void idemip_tcp_pcb_oos_alloc(uint8_t *work)
         {
             continue;
         }
-        memset(TCP_PCB_OOS_AT(work, i)->raw, 0, sizeof(TcpPcbOosEntry));
+        EMBED_CALL(memor.set, MemoriaCfg, .dst = TCP_PCB_OOS_AT(work, i)->raw, .val = 0,
+                   .bytes = sizeof(TcpPcbOosEntry));
         o->seq = io->oos_args.seq;
         o->next = IDEMIP_TCP_PCB_NONE;
         o->pcb = io->oos_args.pcb;
         o->desc = io->oos_args.desc;
         o->offset = io->oos_args.offset;
         o->len = io->oos_args.len;
-        o->in_use = IDEMIP_TRUE;
+        o->in_use = EMBED_TRUE;
         uint16_t prev = IDEMIP_TCP_PCB_NONE;
         uint16_t cur = t->ooseq;
         // Not measured, for the reason written at tcp_pcb_seg_unlink.
@@ -1412,7 +1423,7 @@ void idemip_tcp_pcb_oos_load(uint8_t *work)
     }
     TcpPcbIo *io = TCP_PCB_IO(work);
     io->status = IDEMIP_ERR;
-    memset(&io->oos, 0, sizeof io->oos);
+    io->oos = (TcpPcbOosInfo){0};
     if (TCP_PCB_CTX(work)->ready != TCP_PCB_READY || io->oos_args.index >= TCP_PCB_OOSEQ_ENTRIES)
     {
         return;
@@ -1457,8 +1468,9 @@ void idemip_tcp_pcb_oos_free(uint8_t *work)
     {
         return; // GCOVR_EXCL_LINE
     }
-    memset(TCP_PCB_OOS_AT(work, io->oos_args.index)->raw, 0, sizeof(TcpPcbOosEntry));
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = TCP_PCB_OOS_AT(work, io->oos_args.index)->raw, .val = 0,
+               .bytes = sizeof(TcpPcbOosEntry));
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

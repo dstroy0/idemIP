@@ -21,7 +21,7 @@
 
 #if IDEMIP_ENABLE_UDP
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
 // The message header (RFC 1035 sec 4.1.1)
@@ -172,47 +172,42 @@ IDEMIP_BEGIN_DECLS
 #define IDEMIP_DNS_AAAA_RDLEN 16u
 
 /** @brief The TYPE values this resolver asks for and reads (RFC 1035 sec 3.2.2, RFC 3596 sec 2.1). */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_DNS_TYPE_A = 1,      ///< sec 3.2.2: "A 1 a host address"
-    IDEMIP_DNS_TYPE_NS = 2,     ///< sec 3.2.2: an authoritative name server
-    IDEMIP_DNS_TYPE_CNAME = 5,  ///< sec 3.2.2: the canonical name for an alias
-    IDEMIP_DNS_TYPE_PTR = 12,   ///< sec 3.2.2: a domain name pointer
-    IDEMIP_DNS_TYPE_TXT = 16,   ///< sec 3.2.2: text strings
-    IDEMIP_DNS_TYPE_AAAA = 28,  ///< RFC 3596 sec 2.1: "The IANA assigned value of the type is 28"
-} IdemIpDnsType;
+EMBED_ENUM_BYTE(IdemIpDnsType,
+                IDEMIP_DNS_TYPE_A = 1,     ///< sec 3.2.2: "A 1 a host address"
+                IDEMIP_DNS_TYPE_NS = 2,    ///< sec 3.2.2: an authoritative name server
+                IDEMIP_DNS_TYPE_CNAME = 5, ///< sec 3.2.2: the canonical name for an alias
+                IDEMIP_DNS_TYPE_PTR = 12,  ///< sec 3.2.2: a domain name pointer
+                IDEMIP_DNS_TYPE_TXT = 16,  ///< sec 3.2.2: text strings
+                IDEMIP_DNS_TYPE_AAAA = 28, ///< RFC 3596 sec 2.1: "The IANA assigned value of the type is 28"
+);
 
 /** @brief RCODE, the response codes of RFC 1035 sec 4.1.1. */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_DNS_RCODE_NO_ERROR = 0,   ///< "No error condition"
-    IDEMIP_DNS_RCODE_FORMAT_ERR = 1, ///< "Format error"
-    IDEMIP_DNS_RCODE_SERVER_FAIL = 2,///< "Server failure"
-    IDEMIP_DNS_RCODE_NAME_ERR = 3,   ///< "Name Error"
-    IDEMIP_DNS_RCODE_NOT_IMPL = 4,   ///< "Not Implemented"
-    IDEMIP_DNS_RCODE_REFUSED = 5,    ///< "Refused"
-} IdemIpDnsRcode;
+EMBED_ENUM_BYTE(IdemIpDnsRcode,
+                IDEMIP_DNS_RCODE_NO_ERROR = 0,    ///< "No error condition"
+                IDEMIP_DNS_RCODE_FORMAT_ERR = 1,  ///< "Format error"
+                IDEMIP_DNS_RCODE_SERVER_FAIL = 2, ///< "Server failure"
+                IDEMIP_DNS_RCODE_NAME_ERR = 3,    ///< "Name Error"
+                IDEMIP_DNS_RCODE_NOT_IMPL = 4,    ///< "Not Implemented"
+                IDEMIP_DNS_RCODE_REFUSED = 5,     ///< "Refused"
+);
 
 /** @brief What one outstanding question is doing. A zeroed entry is free. */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_DNS_QUERY_FREE = 0, ///< the slot holds no question
-    IDEMIP_DNS_QUERY_NEW,      ///< registered, the question not yet on the wire
-    IDEMIP_DNS_QUERY_SENT,     ///< asked, the response outstanding
-    IDEMIP_DNS_QUERY_DONE,     ///< answered, and the answer cached
-    IDEMIP_DNS_QUERY_FAILED,   ///< the RCODE refused it, or the retries ran out
-} IdemIpDnsQueryState;
+EMBED_ENUM_BYTE(IdemIpDnsQueryState,
+                IDEMIP_DNS_QUERY_FREE = 0, ///< the slot holds no question
+                IDEMIP_DNS_QUERY_NEW,      ///< registered, the question not yet on the wire
+                IDEMIP_DNS_QUERY_SENT,     ///< asked, the response outstanding
+                IDEMIP_DNS_QUERY_DONE,     ///< answered, and the answer cached
+                IDEMIP_DNS_QUERY_FAILED,   ///< the RCODE refused it, or the retries ran out
+);
 
 /** @brief What one cached answer is. A zeroed entry is free. */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_DNS_ENTRY_FREE = 0, ///< the slot holds no answer
-    IDEMIP_DNS_ENTRY_VALID,    ///< an answer inside its TTL
-    /** RFC 1123 sec 6.1.3.3 (4): "All DNS name servers and resolvers SHOULD cache negative responses
-     *  that indicate the specified name, or data of the specified type, does not exist". The slot
-     *  holds that outcome and its RCODE, inside IDEMIP_DNS_NEG_TTL_S. */
-    IDEMIP_DNS_ENTRY_NEGATIVE,
-} IdemIpDnsEntryState;
+EMBED_ENUM_BYTE(IdemIpDnsEntryState,
+                IDEMIP_DNS_ENTRY_FREE = 0, ///< the slot holds no answer
+                IDEMIP_DNS_ENTRY_VALID,    ///< an answer inside its TTL
+                /** RFC 1123 sec 6.1.3.3 (4): "All DNS name servers and resolvers SHOULD cache negative responses
+                 *  that indicate the specified name, or data of the specified type, does not exist". The slot
+                 *  holds that outcome and its RCODE, inside IDEMIP_DNS_NEG_TTL_S. */
+                IDEMIP_DNS_ENTRY_NEGATIVE, );
 
 /**
  * @brief What the resolver is configured with, in the caller's rodata.
@@ -249,7 +244,7 @@ typedef struct
     const uint8_t *addr;
     uint32_t zone;
     uint16_t port;
-    idemip_bool ipv6;
+    embed_bool ipv6;
 } DnsServerArgs;
 
 /**
@@ -319,7 +314,7 @@ typedef struct
     const uint8_t *dst;
     uint16_t src_port;
     uint16_t dst_port;
-    idemip_bool ipv6;
+    embed_bool ipv6;
 } DnsInputArgs;
 
 /** @brief What cancel takes. */
@@ -386,7 +381,7 @@ typedef struct
     uint32_t now_ms;
     IdemIpStatus status;
     uint8_t addr[IDEMIP_DNS_ADDR_LEN];
-    idemip_bool ipv6;
+    embed_bool ipv6;
     uint16_t type;
     uint32_t ttl_s;
     uint8_t query;
@@ -398,7 +393,7 @@ typedef struct
     uint16_t dst_port;
     uint16_t src_port;
     uint16_t xid;
-    idemip_bool failed;
+    embed_bool failed;
 } DnsIo;
 
 // ---------------------------------------------------------------------------
@@ -524,63 +519,62 @@ void idemip_dns_flush(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const DnsNs Dns IDEMIP_UNUSED = {
-    .clear = idemip_dns_clear,
-    .bind = idemip_dns_bind,
-    .set_server = idemip_dns_set_server,
-    .query = idemip_dns_query,
-    .lookup = idemip_dns_lookup,
-    .build = idemip_dns_build,
-    .input = idemip_dns_input,
-    .tick = idemip_dns_tick,
-    .cancel = idemip_dns_cancel,
-    .flush = idemip_dns_flush};
+EMBED_TABLE_STORAGE DnsNs Dns EMBED_UNUSED = {.clear = idemip_dns_clear,
+                                              .bind = idemip_dns_bind,
+                                              .set_server = idemip_dns_set_server,
+                                              .query = idemip_dns_query,
+                                              .lookup = idemip_dns_lookup,
+                                              .build = idemip_dns_build,
+                                              .input = idemip_dns_input,
+                                              .tick = idemip_dns_tick,
+                                              .cancel = idemip_dns_cancel,
+                                              .flush = idemip_dns_flush};
 // The header of RFC 1035 sec 4.1.1: six 16-bit fields, the question section behind them.
-static_assert(IDEMIP_DNS_HDR_OFF_ARCOUNT + 2u == IDEMIP_DNS_HDR_LEN,
-              "the header is six 16-bit fields (RFC 1035 sec 4.1.1)");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_HDR_OFF_ARCOUNT + 2u == IDEMIP_DNS_HDR_LEN,
+                    "the header is six 16-bit fields (RFC 1035 sec 4.1.1)");
 // The flags word is partitioned, so no bit belongs to two fields and every bit belongs to one.
-static_assert((IDEMIP_DNS_FLAG_QR | IDEMIP_DNS_FLAG_OPCODE | IDEMIP_DNS_FLAG_AA | IDEMIP_DNS_FLAG_TC |
-               IDEMIP_DNS_FLAG_RD | IDEMIP_DNS_FLAG_RA | IDEMIP_DNS_FLAG_Z | IDEMIP_DNS_FLAG_RCODE) == 0xFFFFu,
-              "the sec 4.1.1 flags word is fully partitioned");
-static_assert((IDEMIP_DNS_FLAG_OPCODE >> IDEMIP_DNS_OPCODE_SHIFT) == 0xFu,
-              "the Opcode is four bits at IDEMIP_DNS_OPCODE_SHIFT (RFC 1035 sec 4.1.1)");
+EMBED_STATIC_ASSERT((IDEMIP_DNS_FLAG_QR | IDEMIP_DNS_FLAG_OPCODE | IDEMIP_DNS_FLAG_AA | IDEMIP_DNS_FLAG_TC |
+                     IDEMIP_DNS_FLAG_RD | IDEMIP_DNS_FLAG_RA | IDEMIP_DNS_FLAG_Z | IDEMIP_DNS_FLAG_RCODE) == 0xFFFFu,
+                    "the sec 4.1.1 flags word is fully partitioned");
+EMBED_STATIC_ASSERT((IDEMIP_DNS_FLAG_OPCODE >> IDEMIP_DNS_OPCODE_SHIFT) == 0xFu,
+                    "the Opcode is four bits at IDEMIP_DNS_OPCODE_SHIFT (RFC 1035 sec 4.1.1)");
 // sec 2.3.4 bounds a label at 63 octets, which is what leaves the two high bits of a length octet
 // free for the sec 4.1.4 pointer form.
-static_assert(IDEMIP_DNS_LABEL_MAX == (uint8_t)~IDEMIP_DNS_LABEL_PTR,
-              "a label length shares its octet with the sec 4.1.4 pointer bits");
-static_assert(IDEMIP_DNS_ADDR_LEN == IDEMIP_DNS_AAAA_RDLEN,
-              "an answer address holds an AAAA record's RDATA (RFC 3596 sec 2.2)");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_LABEL_MAX == (uint8_t)~IDEMIP_DNS_LABEL_PTR,
+                    "a label length shares its octet with the sec 4.1.4 pointer bits");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_ADDR_LEN == IDEMIP_DNS_AAAA_RDLEN,
+                    "an answer address holds an AAAA record's RDATA (RFC 3596 sec 2.2)");
 // A record's fixed fields are TYPE, CLASS, TTL and RDLENGTH, in that order (RFC 1035 sec 4.1.3).
-static_assert(IDEMIP_DNS_RR_OFF_RDLENGTH + 2u == IDEMIP_DNS_RR_FIXED_LEN,
-              "the sec 4.1.3 fixed fields are two, two, four and two octets");
-static_assert(IDEMIP_DNS_RR_OFF_TTL + 4u == IDEMIP_DNS_RR_OFF_RDLENGTH,
-              "the sec 4.1.3 TTL is a 32 bit field");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_RR_OFF_RDLENGTH + 2u == IDEMIP_DNS_RR_FIXED_LEN,
+                    "the sec 4.1.3 fixed fields are two, two, four and two octets");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_RR_OFF_TTL + 4u == IDEMIP_DNS_RR_OFF_RDLENGTH, "the sec 4.1.3 TTL is a 32 bit field");
 // sec 4.2.1 caps a UDP message, so the shortest response is a header, a root QNAME and its fixed
 // fields, and the longest question this resolver can ask has to fit under that cap.
-static_assert(IDEMIP_DNS_HDR_LEN + 1u + IDEMIP_DNS_QFIXED_LEN < IDEMIP_DNS_MSG_MAX,
-              "the sec 4.1.2 question does not fit a sec 4.2.1 UDP message");
-static_assert(IDEMIP_DNS_HDR_LEN + IDEMIP_DNS_NAME_WIRE_MAX + IDEMIP_DNS_QFIXED_LEN <= IDEMIP_DNS_MSG_MAX,
-              "the widest sec 3.1 name does not fit a sec 4.2.1 UDP message");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_HDR_LEN + 1u + IDEMIP_DNS_QFIXED_LEN < IDEMIP_DNS_MSG_MAX,
+                    "the sec 4.1.2 question does not fit a sec 4.2.1 UDP message");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_HDR_LEN + IDEMIP_DNS_NAME_WIRE_MAX + IDEMIP_DNS_QFIXED_LEN <= IDEMIP_DNS_MSG_MAX,
+                    "the widest sec 3.1 name does not fit a sec 4.2.1 UDP message");
 // The dotted form a question is given trades one separator for each length octet and adds the root.
-static_assert(IDEMIP_DNS_NAME_TEXT_MAX + 2u == IDEMIP_DNS_NAME_WIRE_MAX,
-              "the dotted bound is not the sec 3.1 wire bound less the length and root octets");
-static_assert(IDEMIP_DNS_NAME_TEXT_MAX < IDEMIP_DNS_NAME_MAX,
-              "a name and its terminator do not fit a name region: raise IDEMIP_DNS_NAME_SHIFT");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_NAME_TEXT_MAX + 2u == IDEMIP_DNS_NAME_WIRE_MAX,
+                    "the dotted bound is not the sec 3.1 wire bound less the length and root octets");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_NAME_TEXT_MAX < IDEMIP_DNS_NAME_MAX,
+                    "a name and its terminator do not fit a name region: raise IDEMIP_DNS_NAME_SHIFT");
 // A pointer hop yields a length octet and a label octet at least, so half the sec 3.1 name bound is
 // more hops than any name can need.
-static_assert(IDEMIP_DNS_PTR_HOPS_MAX < IDEMIP_DNS_NAME_WIRE_MAX,
-              "the sec 4.1.4 hop bound exceeds the sec 3.1 name bound");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_PTR_HOPS_MAX < IDEMIP_DNS_NAME_WIRE_MAX,
+                    "the sec 4.1.4 hop bound exceeds the sec 3.1 name bound");
 // RFC 1035 sec 4.2.1: "the minimum retransmission interval should be 2-5 seconds".
-static_assert(IDEMIP_DNS_RETRY_MS >= 2000u && IDEMIP_DNS_RETRY_MS <= 5000u,
-              "IDEMIP_DNS_RETRY_MS is outside RFC 1035 sec 4.2.1's 2 to 5 seconds");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_RETRY_MS >= 2000u && IDEMIP_DNS_RETRY_MS <= 5000u,
+                    "IDEMIP_DNS_RETRY_MS is outside RFC 1035 sec 4.2.1's 2 to 5 seconds");
 // A TTL becomes a millisecond deadline by one multiply, so the ceiling has to leave that in 32 bits.
-static_assert(IDEMIP_DNS_TTL_MAX_S <= (0xFFFFFFFFu / IDEMIP_DNS_MS_PER_S),
-              "IDEMIP_DNS_TTL_MAX_S milliseconds overflows a 32 bit deadline");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_TTL_MAX_S <= (0xFFFFFFFFu / IDEMIP_DNS_MS_PER_S),
+                    "IDEMIP_DNS_TTL_MAX_S milliseconds overflows a 32 bit deadline");
 // RFC 2181 sec 8: a TTL is "an unsigned number, with a minimum value of 0, and a maximum value of
 // 2147483647".
-static_assert(IDEMIP_DNS_TTL_MAX_S < IDEMIP_DNS_TTL_SIGN, "IDEMIP_DNS_TTL_MAX_S is past RFC 2181 sec 8's 2^31 - 1");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_TTL_MAX_S < IDEMIP_DNS_TTL_SIGN,
+                    "IDEMIP_DNS_TTL_MAX_S is past RFC 2181 sec 8's 2^31 - 1");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_UDP
 

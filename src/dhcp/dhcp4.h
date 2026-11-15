@@ -20,7 +20,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
 // The message on the wire (RFC 2131 sec 2, Figure 1 and Table 1)
@@ -187,34 +187,25 @@ IDEMIP_BEGIN_DECLS
 #define IDEMIP_DHCP4_DEADLINE_MAX_S 2147483u
 
 /** @brief The option 53 values, RFC 2132 sec 9.6. */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_DHCP4_DISCOVER = 1,
-    IDEMIP_DHCP4_OFFER = 2,
-    IDEMIP_DHCP4_REQUEST = 3,
-    IDEMIP_DHCP4_DECLINE = 4,
-    IDEMIP_DHCP4_ACK = 5,
-    IDEMIP_DHCP4_NAK = 6,
-    IDEMIP_DHCP4_RELEASE = 7,
-    IDEMIP_DHCP4_INFORM = 8,
-} IdemIpDhcp4MsgType;
+EMBED_ENUM_BYTE(IdemIpDhcp4MsgType, IDEMIP_DHCP4_DISCOVER = 1, IDEMIP_DHCP4_OFFER = 2, IDEMIP_DHCP4_REQUEST = 3,
+                IDEMIP_DHCP4_DECLINE = 4, IDEMIP_DHCP4_ACK = 5, IDEMIP_DHCP4_NAK = 6, IDEMIP_DHCP4_RELEASE = 7,
+                IDEMIP_DHCP4_INFORM = 8, );
 
 /**
  * @brief The client states of RFC 2131 sec 4.4, Figure 5, named as the figure names them.
  *
  * A zeroed borrow is in INIT, which sec 4.4.1 states the client begins in.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_DHCP4_INIT = 0,    ///< sec 4.4.1: "The client begins in INIT state"
-    IDEMIP_DHCP4_SELECTING,   ///< DHCPDISCOVER sent, DHCPOFFER replies collected
-    IDEMIP_DHCP4_REQUESTING,  ///< an offer selected, DHCPREQUEST sent
-    IDEMIP_DHCP4_BOUND,       ///< lease recorded, timers T1 and T2 set
-    IDEMIP_DHCP4_RENEWING,    ///< T1 expired, DHCPREQUEST unicast to the leasing server
-    IDEMIP_DHCP4_REBINDING,   ///< T2 expired, DHCPREQUEST broadcast to any server
-    IDEMIP_DHCP4_INIT_REBOOT, ///< sec 4.4.2, a known address to verify
-    IDEMIP_DHCP4_REBOOTING,   ///< DHCPREQUEST sent from INIT-REBOOT
-} IdemIpDhcp4State;
+EMBED_ENUM_BYTE(IdemIpDhcp4State,
+                IDEMIP_DHCP4_INIT = 0,    ///< sec 4.4.1: "The client begins in INIT state"
+                IDEMIP_DHCP4_SELECTING,   ///< DHCPDISCOVER sent, DHCPOFFER replies collected
+                IDEMIP_DHCP4_REQUESTING,  ///< an offer selected, DHCPREQUEST sent
+                IDEMIP_DHCP4_BOUND,       ///< lease recorded, timers T1 and T2 set
+                IDEMIP_DHCP4_RENEWING,    ///< T1 expired, DHCPREQUEST unicast to the leasing server
+                IDEMIP_DHCP4_REBINDING,   ///< T2 expired, DHCPREQUEST broadcast to any server
+                IDEMIP_DHCP4_INIT_REBOOT, ///< sec 4.4.2, a known address to verify
+                IDEMIP_DHCP4_REBOOTING,   ///< DHCPREQUEST sent from INIT-REBOOT
+);
 
 /**
  * @brief What one lease machine is configured with, in the caller's rodata.
@@ -233,7 +224,7 @@ typedef struct
     uint8_t netif;
     uint8_t htype;
     uint8_t hlen;
-    idemip_bool broadcast;
+    embed_bool broadcast;
 } IdemIpDhcp4Cfg;
 
 /** @brief What bind takes. */
@@ -447,61 +438,61 @@ void idemip_dhcp4_inform(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Dhcp4Ns Dhcp4 IDEMIP_UNUSED = {
-    .clear = idemip_dhcp4_clear,
-    .bind = idemip_dhcp4_bind,
-    .start = idemip_dhcp4_start,
-    .stop = idemip_dhcp4_stop,
-    .input = idemip_dhcp4_input,
-    .build = idemip_dhcp4_build,
-    .tick = idemip_dhcp4_tick,
-    .release = idemip_dhcp4_release,
-    .decline = idemip_dhcp4_decline,
-    .inform = idemip_dhcp4_inform};
+EMBED_TABLE_STORAGE Dhcp4Ns Dhcp4 EMBED_UNUSED = {.clear = idemip_dhcp4_clear,
+                                                  .bind = idemip_dhcp4_bind,
+                                                  .start = idemip_dhcp4_start,
+                                                  .stop = idemip_dhcp4_stop,
+                                                  .input = idemip_dhcp4_input,
+                                                  .build = idemip_dhcp4_build,
+                                                  .tick = idemip_dhcp4_tick,
+                                                  .release = idemip_dhcp4_release,
+                                                  .decline = idemip_dhcp4_decline,
+                                                  .inform = idemip_dhcp4_inform};
 // The field chain of RFC 2131 sec 2, Figure 1, each field starting where the one before it ends.
-static_assert(IDEMIP_DHCP4_MSG_OFF_CHADDR + IDEMIP_DHCP4_CHADDR_LEN == IDEMIP_DHCP4_MSG_OFF_SNAME,
-              "chaddr is 16 octets and sname follows it (RFC 2131 sec 2, Figure 1)");
-static_assert(IDEMIP_DHCP4_MSG_OFF_SNAME + 64u == IDEMIP_DHCP4_MSG_OFF_FILE,
-              "sname is 64 octets and file follows it (RFC 2131 sec 2, Figure 1)");
-static_assert(IDEMIP_DHCP4_MSG_OFF_FILE + 128u == IDEMIP_DHCP4_MSG_OFF_COOKIE,
-              "file is 128 octets and the cookie follows it (RFC 2131 sec 2, Figure 1)");
-static_assert(IDEMIP_DHCP4_MSG_OFF_COOKIE + 4u == IDEMIP_DHCP4_MSG_OFF_OPTIONS,
-              "the magic cookie is four octets and the options follow it (RFC 2131 sec 4.1)");
-static_assert(IDEMIP_DHCP4_MSG_MIN > IDEMIP_DHCP4_FIXED_LEN,
-              "a 576-octet message must hold the fixed part and options (RFC 2131 sec 2)");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_MSG_OFF_CHADDR + IDEMIP_DHCP4_CHADDR_LEN == IDEMIP_DHCP4_MSG_OFF_SNAME,
+                    "chaddr is 16 octets and sname follows it (RFC 2131 sec 2, Figure 1)");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_MSG_OFF_SNAME + 64u == IDEMIP_DHCP4_MSG_OFF_FILE,
+                    "sname is 64 octets and file follows it (RFC 2131 sec 2, Figure 1)");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_MSG_OFF_FILE + 128u == IDEMIP_DHCP4_MSG_OFF_COOKIE,
+                    "file is 128 octets and the cookie follows it (RFC 2131 sec 2, Figure 1)");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_MSG_OFF_COOKIE + 4u == IDEMIP_DHCP4_MSG_OFF_OPTIONS,
+                    "the magic cookie is four octets and the options follow it (RFC 2131 sec 4.1)");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_MSG_MIN > IDEMIP_DHCP4_FIXED_LEN,
+                    "a 576-octet message must hold the fixed part and options (RFC 2131 sec 2)");
 
 // RFC 1542 sec 2.1's 300-octet minimal BOOTP header leaves room for options past the fixed part, and
 // a client must be prepared to receive more than it sends (RFC 2131 sec 2).
-static_assert(IDEMIP_DHCP4_MSG_BOOTP_MIN > IDEMIP_DHCP4_FIXED_LEN,
-              "the 300-octet minimal BOOTP header holds the fixed part and options (RFC 1542 sec 2.1)");
-static_assert(IDEMIP_DHCP4_MSG_BOOTP_MIN <= IDEMIP_DHCP4_MSG_MIN,
-              "a built message fits what a client must be prepared to receive (RFC 2131 sec 2)");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_MSG_BOOTP_MIN > IDEMIP_DHCP4_FIXED_LEN,
+                    "the 300-octet minimal BOOTP header holds the fixed part and options (RFC 1542 sec 2.1)");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_MSG_BOOTP_MIN <= IDEMIP_DHCP4_MSG_MIN,
+                    "a built message fits what a client must be prepared to receive (RFC 2131 sec 2)");
 
 // RFC 2131 sec 4.1 doubles 4 seconds to a maximum of 64, which is four doublings, so the backoff is a
 // shift and no multiply or divide appears on the retransmission path.
-static_assert((IDEMIP_DHCP4_RETRY_BASE_MS << 4u) == IDEMIP_DHCP4_RETRY_MAX_MS,
-              "RFC 2131 sec 4.1 doubles the 4-second delay to 64 seconds in four steps");
+EMBED_STATIC_ASSERT((IDEMIP_DHCP4_RETRY_BASE_MS << 4u) == IDEMIP_DHCP4_RETRY_MAX_MS,
+                    "RFC 2131 sec 4.1 doubles the 4-second delay to 64 seconds in four steps");
 
 // sec 4.4.1 draws the startup delay over a one-to-ten-second span, and sec 4.1 the jitter over two
 // seconds. Both spans are drawn by masking a word to the power of two above them (PLAN sec 3.4).
-static_assert(IDEMIP_DHCP4_START_DELAY_MAX_MS > IDEMIP_DHCP4_START_DELAY_MIN_MS,
-              "RFC 2131 sec 4.4.1 puts the startup delay between one and ten seconds");
-static_assert((IDEMIP_DHCP4_START_DELAY_MAX_MS - IDEMIP_DHCP4_START_DELAY_MIN_MS) <= 0x3FFFu,
-              "the sec 4.4.1 startup span is drawn from 14 bits of one word");
-static_assert((IDEMIP_DHCP4_JITTER_MS << 1u) <= 0x7FFu, "the sec 4.1 jitter span is drawn from 11 bits of one word");
-static_assert(IDEMIP_DHCP4_RETRY_BASE_MS > IDEMIP_DHCP4_JITTER_MS,
-              "the sec 4.1 jitter never drives a delay below zero");
-static_assert(IDEMIP_DHCP4_RENEW_MIN_MS > IDEMIP_DHCP4_JITTER_MS,
-              "the sec 4.4.5 minimum retransmission delay stays above the jitter");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_START_DELAY_MAX_MS > IDEMIP_DHCP4_START_DELAY_MIN_MS,
+                    "RFC 2131 sec 4.4.1 puts the startup delay between one and ten seconds");
+EMBED_STATIC_ASSERT((IDEMIP_DHCP4_START_DELAY_MAX_MS - IDEMIP_DHCP4_START_DELAY_MIN_MS) <= 0x3FFFu,
+                    "the sec 4.4.1 startup span is drawn from 14 bits of one word");
+EMBED_STATIC_ASSERT((IDEMIP_DHCP4_JITTER_MS << 1u) <= 0x7FFu,
+                    "the sec 4.1 jitter span is drawn from 11 bits of one word");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_RETRY_BASE_MS > IDEMIP_DHCP4_JITTER_MS,
+                    "the sec 4.1 jitter never drives a delay below zero");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_RENEW_MIN_MS > IDEMIP_DHCP4_JITTER_MS,
+                    "the sec 4.4.5 minimum retransmission delay stays above the jitter");
 
 // A deadline is the clock plus a span, so the span has to fit the half of the 32-bit millisecond
 // clock a wrap-safe compare covers (sec 3.3 holds every time value in seconds).
-static_assert(IDEMIP_DHCP4_DEADLINE_MAX_S * 1000u <= IDEMIP_DHCP4_DEADLINE_MAX_MS,
-              "the deadline horizon in seconds fits the horizon in milliseconds");
-static_assert(IDEMIP_DHCP4_DEADLINE_MAX_S < IDEMIP_DHCP4_TIME_INFINITE,
-              "the deadline horizon is short of sec 3.3's infinity");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_DEADLINE_MAX_S * 1000u <= IDEMIP_DHCP4_DEADLINE_MAX_MS,
+                    "the deadline horizon in seconds fits the horizon in milliseconds");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP4_DEADLINE_MAX_S < IDEMIP_DHCP4_TIME_INFINITE,
+                    "the deadline horizon is short of sec 3.3's infinity");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

@@ -4,7 +4,7 @@
 #include "unity.h"
 #include "src/ethernet/ethernet.h"
 #include "src/ethernet/ethernet_defines.h"
-#include <string.h>
+#include "support/fill_bytes.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);

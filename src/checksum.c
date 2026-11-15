@@ -49,7 +49,7 @@
 #define IDEMIP_CKSUM_WORD_SWAP 0
 #endif
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief One sum over one span. */
 typedef struct
@@ -71,12 +71,12 @@ typedef struct
  *
  * Not an entry: it is the word path's own arithmetic and no caller has a use for it.
  */
-IDEMIP_INLINE uint16_t cksum_fold_word(IdemIpWord acc)
+EMBED_INLINE uint16_t cksum_fold_word(embed_word acc)
 {
-#if IDEMIP_WORD_BITS == 64u
+#if EMBED_WORD_BITS == 64u
     acc = (acc & 0xFFFFFFFFu) + (acc >> 32);
 #endif
-#if IDEMIP_WORD_BITS >= 32u
+#if EMBED_WORD_BITS >= 32u
     acc = (acc & 0xFFFFu) + (acc >> 16);
 #endif
     uint32_t s = (uint32_t)(acc & 0xFFFFu) + (uint32_t)(acc >> 16);
@@ -107,7 +107,7 @@ IDEMIP_INLINE uint16_t cksum_fold_word(IdemIpWord acc)
  * associative, we do not have to sum the integers in the order they appear in the message. Instead
  * we can add them in 'parallel' by exploiting the larger word size ... simply do a 1's complement
  * addition of the message using the native word size of the machine." One word covers
- * sizeof(IdemIpWord) octets, so the loop runs that many times fewer. The word is taken by copy and
+ * sizeof(embed_word) octets, so the loop runs that many times fewer. The word is taken by copy and
  * not through a cast, which is what lets it be taken from wherever the span begins: endian.h's rule
  * is that "a cast to a wider type at an odd address is a fault on the parts in the target list that
  * require natural alignment", and a copy of a constant width is defined at every address. A target
@@ -118,23 +118,24 @@ IDEMIP_INLINE uint16_t cksum_fold_word(IdemIpWord acc)
  * significant bits are added into the least significant bits", so no length can overflow it and the
  * run needs no bound.
  */
-IDEMIP_INLINE uint32_t cksum_accum(const ChecksumCtx *c)
+EMBED_INLINE uint32_t cksum_accum(const ChecksumCtx *c)
 {
     uint32_t sum = c->sum;
     size_t i = 0;
 
 #if IDEMIP_CKSUM_WORD
-    if (c->len >= sizeof(IdemIpWord))
+    if (c->len >= sizeof(embed_word))
     {
-        IdemIpWord acc = 0u;
+        embed_word acc = 0u;
         do
         {
-            IdemIpWord w;
-            memcpy(&w, c->p + i, sizeof w);
+            const embed_word w = EMBED_CALL(proxim.load, ProximusCfg, .at = c->p + i);
             acc += w;
-            acc += (IdemIpWord)(acc < w); // sec 1's end-around carry, applied as it goes
+            // Explicit cast narrows the int of the compare, 0 or 1, to the word the carry adds to
+            const embed_word carry = (embed_word)(acc < w);
+            acc += carry; // sec 1's end-around carry, applied as it goes
             i += sizeof w;
-        } while (i + sizeof(IdemIpWord) <= c->len);
+        } while (i + sizeof(embed_word) <= c->len);
         uint16_t folded = cksum_fold_word(acc);
 #if IDEMIP_CKSUM_WORD_SWAP
         // sec 2 (B): the sum came out with its bytes swapped, "except the bytes are swapped in the
@@ -170,7 +171,7 @@ IDEMIP_INLINE uint32_t cksum_accum(const ChecksumCtx *c)
  * RFC 1071 sec 1: the end-around carry is applied until none remains, then the sum is complemented.
  * Two folds are enough - the first can produce at most one new carry.
  */
-IDEMIP_INLINE uint16_t cksum_final(const ChecksumCtx *c)
+EMBED_INLINE uint16_t cksum_final(const ChecksumCtx *c)
 {
     uint32_t sum = c->sum;
     sum = (sum & 0xFFFFu) + (sum >> 16);
@@ -183,24 +184,24 @@ IDEMIP_INLINE uint16_t cksum_final(const ChecksumCtx *c)
  * @param c The span.
  * @return The sixteen bits the field carries.
  */
-IDEMIP_INLINE uint16_t cksum_over(const ChecksumCtx *c)
+EMBED_INLINE uint16_t cksum_over(const ChecksumCtx *c)
 {
     const uint32_t sum = cksum_accum(c);
-    return IDEMIP_CALL(cksum_final, ChecksumCtx, .sum = sum);
+    return EMBED_CALL(cksum_final, ChecksumCtx, .sum = sum);
 }
 
 /**
  * @brief True when a received span checks out.
  * @param c The span.
- * @return IDEMIP_TRUE when it does.
+ * @return EMBED_TRUE when it does.
  *
  * RFC 1071 sec 1: summing a span that already carries its checksum yields all ones, whose
  * complement is zero. A verifier therefore runs the same sum and tests for zero rather than
  * clearing the field and recomputing.
  */
-IDEMIP_INLINE idemip_bool cksum_valid(const ChecksumCtx *c)
+EMBED_INLINE embed_bool cksum_valid(const ChecksumCtx *c)
 {
-    return (idemip_bool)(cksum_over(c) == 0u);
+    return (embed_bool)(cksum_over(c) == 0u);
 }
 
 /* The namespace is a table of function pointers with the caller's argument lists in their types,
@@ -208,22 +209,22 @@ IDEMIP_INLINE idemip_bool cksum_valid(const ChecksumCtx *c)
 
 uint32_t idemip_cksum_accum(uint32_t sum, const uint8_t *p, size_t len)
 {
-    return IDEMIP_CALL(cksum_accum, ChecksumCtx, .sum = sum, .p = p, .len = len);
+    return EMBED_CALL(cksum_accum, ChecksumCtx, .sum = sum, .p = p, .len = len);
 }
 
 uint16_t idemip_cksum_final(uint32_t sum)
 {
-    return IDEMIP_CALL(cksum_final, ChecksumCtx, .sum = sum);
+    return EMBED_CALL(cksum_final, ChecksumCtx, .sum = sum);
 }
 
 uint16_t idemip_cksum(const uint8_t *p, size_t len)
 {
-    return IDEMIP_CALL(cksum_over, ChecksumCtx, .p = p, .len = len);
+    return EMBED_CALL(cksum_over, ChecksumCtx, .p = p, .len = len);
 }
 
-idemip_bool idemip_cksum_valid(const uint8_t *p, size_t len)
+embed_bool idemip_cksum_valid(const uint8_t *p, size_t len)
 {
-    return IDEMIP_CALL(cksum_valid, ChecksumCtx, .p = p, .len = len);
+    return EMBED_CALL(cksum_valid, ChecksumCtx, .p = p, .len = len);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

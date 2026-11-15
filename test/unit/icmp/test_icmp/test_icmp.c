@@ -17,11 +17,11 @@
 
 #include "src/icmp/icmp.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
-#include "src/ip/ipv4_defines.h"
 #include "src/icmp/icmp_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // A message buffer with a canary past the end, so a helper writing outside the length it was handed
 // is visible. Every build helper takes a total length, and nothing past it may move.
@@ -31,8 +31,8 @@ static uint8_t msg[MSG_CAP + 16u];
 
 static void arm(void)
 {
-    memset(msg, 0, MSG_CAP);
-    memset(msg + MSG_CAP, CANARY, sizeof msg - MSG_CAP);
+    mmgr_zero_buf(msg, MSG_CAP);
+    fill_bytes(msg + MSG_CAP, CANARY, sizeof msg - MSG_CAP);
 }
 
 static void check_canary(void)
@@ -144,7 +144,7 @@ void test_echo_vector_carries_a_valid_checksum(void)
 // recomputed." The expected bytes are the request's with those two changes and nothing else.
 void test_rfc792_echo_reply_is_the_request_retyped(void)
 {
-    memcpy(msg, echo_req, sizeof echo_req);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg, .at = echo_req, .size = sizeof echo_req);
     idemip_icmp_echo_reply(msg, sizeof echo_req);
 
     TEST_ASSERT_EQUAL_UINT8_ARRAY(echo_rep, msg, sizeof echo_rep);
@@ -160,7 +160,7 @@ void test_rfc792_echo_reply_is_the_request_retyped(void)
 // same values in the echo reply."
 void test_rfc1122_echo_reply_returns_every_data_octet(void)
 {
-    memcpy(msg, echo_req, sizeof echo_req);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg, .at = echo_req, .size = sizeof echo_req);
     idemip_icmp_echo_reply(msg, sizeof echo_req);
 
     TEST_ASSERT_EQUAL_UINT8_ARRAY(echo_req + IDEMIP_ICMP_ECHO_HDR_LEN, msg + IDEMIP_ICMP_ECHO_HDR_LEN,
@@ -174,7 +174,7 @@ void test_rfc1122_echo_reply_returns_every_data_octet(void)
 // followed by a zero reach the same checksum.
 void test_rfc792_odd_length_echo_pads_with_one_zero_octet(void)
 {
-    memcpy(msg, echo_req, sizeof echo_req);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg, .at = echo_req, .size = sizeof echo_req);
     msg[sizeof echo_req] = 0x69u; // a ninth data octet, making the message odd
     idemip_icmp_echo_reply(msg, sizeof echo_req + 1u);
     uint16_t odd = idemip_icmp_cksum(msg);
@@ -190,8 +190,8 @@ void test_rfc792_odd_length_echo_pads_with_one_zero_octet(void)
 // the same number.
 void test_build_echo_reproduces_the_vector(void)
 {
-    memcpy(msg + IDEMIP_ICMP_ECHO_HDR_LEN, echo_req + IDEMIP_ICMP_ECHO_HDR_LEN,
-           sizeof echo_req - IDEMIP_ICMP_ECHO_HDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg + IDEMIP_ICMP_ECHO_HDR_LEN,
+               .at = echo_req + IDEMIP_ICMP_ECHO_HDR_LEN, .size = sizeof echo_req - IDEMIP_ICMP_ECHO_HDR_LEN);
     idemip_icmp_build_echo(msg, (uint8_t)IDEMIP_ICMP_ECHO, 0x1234u, 1u, sizeof echo_req);
 
     TEST_ASSERT_EQUAL_UINT8_ARRAY(echo_req, msg, sizeof echo_req);
@@ -233,8 +233,8 @@ void test_rfc1122_destination_unreachable_added_codes(void)
 void test_rfc1122_port_unreachable_message(void)
 {
     const size_t len = IDEMIP_ICMP_ERR_HDR_LEN + sizeof quoted;
-    memset(msg, 0xFFu, MSG_CAP); // the unused word must be zeroed by the helper, not by the caller
-    memcpy(msg + IDEMIP_ICMP_OFF_QUOTE, quoted, sizeof quoted);
+    fill_bytes(msg, 0xFFu, MSG_CAP); // the unused word must be zeroed by the helper, not by the caller
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg + IDEMIP_ICMP_OFF_QUOTE, .at = quoted, .size = sizeof quoted);
     idemip_icmp_build_dest_unreachable(msg, IDEMIP_ICMP_DU_PORT, len);
 
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP_DEST_UNREACHABLE, idemip_icmp_type(msg));
@@ -250,15 +250,15 @@ void test_rfc1122_port_unreachable_message(void)
 void test_rfc792_unused_word_is_zero_when_sent(void)
 {
     const size_t len = IDEMIP_ICMP_ERR_HDR_LEN + sizeof quoted;
-    memset(msg, 0xFFu, MSG_CAP);
+    fill_bytes(msg, 0xFFu, MSG_CAP);
     idemip_icmp_build_dest_unreachable(msg, IDEMIP_ICMP_DU_NET, len);
     TEST_ASSERT_EQUAL_HEX32(0u, idemip_rd32(msg + IDEMIP_ICMP_OFF_UNUSED));
 
-    memset(msg, 0xFFu, MSG_CAP);
+    fill_bytes(msg, 0xFFu, MSG_CAP);
     idemip_icmp_build_time_exceeded(msg, IDEMIP_ICMP_TE_TTL, len);
     TEST_ASSERT_EQUAL_HEX32(0u, idemip_rd32(msg + IDEMIP_ICMP_OFF_UNUSED));
 
-    memset(msg, 0xFFu, MSG_CAP);
+    fill_bytes(msg, 0xFFu, MSG_CAP);
     idemip_icmp_build_source_quench(msg, len);
     TEST_ASSERT_EQUAL_HEX32(0u, idemip_rd32(msg + IDEMIP_ICMP_OFF_UNUSED));
 }
@@ -278,7 +278,7 @@ void test_rfc792_time_exceeded_codes(void)
 void test_rfc792_reassembly_time_exceeded_message(void)
 {
     const size_t len = IDEMIP_ICMP_ERR_HDR_LEN + sizeof quoted;
-    memcpy(msg + IDEMIP_ICMP_OFF_QUOTE, quoted, sizeof quoted);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg + IDEMIP_ICMP_OFF_QUOTE, .at = quoted, .size = sizeof quoted);
     idemip_icmp_build_time_exceeded(msg, IDEMIP_ICMP_TE_REASSEMBLY, len);
 
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP_TIME_EXCEEDED, idemip_icmp_type(msg));
@@ -303,8 +303,8 @@ void test_rfc792_and_rfc1122_parameter_problem_codes(void)
 void test_rfc792_parameter_problem_pointer_at_octet_four(void)
 {
     const size_t len = IDEMIP_ICMP_ERR_HDR_LEN + sizeof quoted;
-    memset(msg, 0xFFu, MSG_CAP);
-    memcpy(msg + IDEMIP_ICMP_OFF_QUOTE, quoted, sizeof quoted);
+    fill_bytes(msg, 0xFFu, MSG_CAP);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg + IDEMIP_ICMP_OFF_QUOTE, .at = quoted, .size = sizeof quoted);
     idemip_icmp_build_parameter_problem(msg, IDEMIP_ICMP_PP_POINTER, 20u, len);
 
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP_PARAMETER_PROBLEM, idemip_icmp_type(msg));
@@ -321,7 +321,7 @@ void test_rfc792_parameter_problem_pointer_at_octet_four(void)
 void test_rfc792_pointer_one_is_the_type_of_service_octet(void)
 {
     const size_t len = IDEMIP_ICMP_ERR_HDR_LEN + sizeof quoted;
-    memcpy(msg + IDEMIP_ICMP_OFF_QUOTE, quoted, sizeof quoted);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg + IDEMIP_ICMP_OFF_QUOTE, .at = quoted, .size = sizeof quoted);
     idemip_icmp_build_parameter_problem(msg, IDEMIP_ICMP_PP_POINTER, IDEMIP_IP4_OFF_TOS, len);
 
     TEST_ASSERT_EQUAL_UINT8(1u, idemip_icmp_pointer(msg));
@@ -339,7 +339,7 @@ void test_rfc792_pointer_one_is_the_type_of_service_octet(void)
 void test_rfc792_source_quench_message(void)
 {
     const size_t len = IDEMIP_ICMP_ERR_HDR_LEN + sizeof quoted;
-    memcpy(msg + IDEMIP_ICMP_OFF_QUOTE, quoted, sizeof quoted);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg + IDEMIP_ICMP_OFF_QUOTE, .at = quoted, .size = sizeof quoted);
     idemip_icmp_build_source_quench(msg, len);
 
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP_SOURCE_QUENCH, idemip_icmp_type(msg));
@@ -389,7 +389,7 @@ void test_rfc792_error_quotes_header_plus_sixty_four_bits(void)
 
     // IHL 7, a header carrying two words of options: 8 + 28 + 8.
     uint8_t with_options[IDEMIP_IPV4_HDR_LEN + 8u];
-    memcpy(with_options, quoted, sizeof with_options);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = with_options, .at = quoted, .size = sizeof with_options);
     with_options[IDEMIP_IP4_OFF_VER_IHL] = 0x47u;
     TEST_ASSERT_EQUAL_UINT8(7u, idemip_ip4_ihl(with_options));
     TEST_ASSERT_EQUAL_size_t(44u, idemip_icmp_err_len(with_options));
@@ -420,7 +420,7 @@ void test_rfc792_timestamp_figure_offsets(void)
 void test_rfc792_nonstandard_timestamp_high_order_bit(void)
 {
     uint8_t ts[IDEMIP_ICMP_TS_LEN];
-    memset(ts, 0, sizeof ts);
+    mmgr_zero_buf(ts, sizeof ts);
     idemip_wr32(ts + IDEMIP_ICMP_OFF_ORIG_TS, IDEMIP_ICMP_TS_NONSTANDARD | 5u);
     TEST_ASSERT_EQUAL_HEX32(0x80000000u, IDEMIP_ICMP_TS_NONSTANDARD);
     TEST_ASSERT_EQUAL_HEX8(0x80u, ts[IDEMIP_ICMP_OFF_ORIG_TS]);
@@ -449,7 +449,7 @@ void test_accessors_read_the_same_at_an_odd_offset(void)
 {
     uint8_t frame[1u + sizeof echo_req];
     frame[0] = 0xFFu;
-    memcpy(frame + 1u, echo_req, sizeof echo_req);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = frame + 1u, .at = echo_req, .size = sizeof echo_req);
 
     TEST_ASSERT_EQUAL_UINT8(idemip_icmp_type(echo_req), idemip_icmp_type(frame + 1u));
     TEST_ASSERT_EQUAL_HEX16(idemip_icmp_cksum(echo_req), idemip_icmp_cksum(frame + 1u));
@@ -466,9 +466,9 @@ void test_building_twice_gives_the_same_bytes(void)
     uint8_t first[MSG_CAP];
     const size_t len = IDEMIP_ICMP_ERR_HDR_LEN + sizeof quoted;
 
-    memcpy(msg + IDEMIP_ICMP_OFF_QUOTE, quoted, sizeof quoted);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg + IDEMIP_ICMP_OFF_QUOTE, .at = quoted, .size = sizeof quoted);
     idemip_icmp_build_dest_unreachable(msg, IDEMIP_ICMP_DU_PROTOCOL, len);
-    memcpy(first, msg, MSG_CAP);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = first, .at = msg, .size = MSG_CAP);
 
     idemip_icmp_build_dest_unreachable(msg, IDEMIP_ICMP_DU_PROTOCOL, len);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(first, msg, MSG_CAP);

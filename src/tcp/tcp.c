@@ -16,7 +16,7 @@
 
 #if IDEMIP_ENABLE_TCP
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief One header or option access. */
 typedef struct
@@ -39,67 +39,67 @@ typedef struct
 // --- reading a field -------------------------------------------------------
 
 /** @brief Source Port. */
-IDEMIP_INLINE uint16_t tcp_src_port(const TcpCtx *c)
+EMBED_INLINE uint16_t tcp_src_port(const TcpCtx *c)
 {
     return idemip_rd16(c->h + IDEMIP_TCP_OFF_SRC_PORT);
 }
 
 /** @brief Destination Port. */
-IDEMIP_INLINE uint16_t tcp_dst_port(const TcpCtx *c)
+EMBED_INLINE uint16_t tcp_dst_port(const TcpCtx *c)
 {
     return idemip_rd16(c->h + IDEMIP_TCP_OFF_DST_PORT);
 }
 
 /** @brief Sequence Number. */
-IDEMIP_INLINE uint32_t tcp_seq(const TcpCtx *c)
+EMBED_INLINE uint32_t tcp_seq(const TcpCtx *c)
 {
     return idemip_rd32(c->h + IDEMIP_TCP_OFF_SEQ);
 }
 
 /** @brief Acknowledgment Number; significant only when ACK is set. */
-IDEMIP_INLINE uint32_t tcp_ack(const TcpCtx *c)
+EMBED_INLINE uint32_t tcp_ack(const TcpCtx *c)
 {
     return idemip_rd32(c->h + IDEMIP_TCP_OFF_ACK);
 }
 
 /** @brief Data Offset, in 32-bit words. */
-IDEMIP_INLINE uint8_t tcp_doff(const TcpCtx *c)
+EMBED_INLINE uint8_t tcp_doff(const TcpCtx *c)
 {
     return (uint8_t)((idemip_rd16(c->h + IDEMIP_TCP_OFF_OFFS_FLAGS) >> IDEMIP_TCP_DOFF_SHIFT) & IDEMIP_TCP_DOFF_MASK);
 }
 
 /** @brief The eight control bits, as the low octet of the offset/flags word. */
-IDEMIP_INLINE uint8_t tcp_flags(const TcpCtx *c)
+EMBED_INLINE uint8_t tcp_flags(const TcpCtx *c)
 {
     return (uint8_t)(idemip_rd16(c->h + IDEMIP_TCP_OFF_OFFS_FLAGS) & 0xFFu);
 }
 
 /** @brief Window: octets this sender is willing to accept. */
-IDEMIP_INLINE uint16_t tcp_window(const TcpCtx *c)
+EMBED_INLINE uint16_t tcp_window(const TcpCtx *c)
 {
     return idemip_rd16(c->h + IDEMIP_TCP_OFF_WINDOW);
 }
 
 /** @brief Checksum as carried. */
-IDEMIP_INLINE uint16_t tcp_cksum_field(const TcpCtx *c)
+EMBED_INLINE uint16_t tcp_cksum_field(const TcpCtx *c)
 {
     return idemip_rd16(c->h + IDEMIP_TCP_OFF_CKSUM);
 }
 
 /** @brief Urgent Pointer; significant only when URG is set. */
-IDEMIP_INLINE uint16_t tcp_urgent(const TcpCtx *c)
+EMBED_INLINE uint16_t tcp_urgent(const TcpCtx *c)
 {
     return idemip_rd16(c->h + IDEMIP_TCP_OFF_URGENT);
 }
 
 /** @brief Header octets, options included, from the Data Offset. */
-IDEMIP_INLINE size_t tcp_hdr_len(const TcpCtx *c)
+EMBED_INLINE size_t tcp_hdr_len(const TcpCtx *c)
 {
     return IDEMIP_TCP_HDR_BYTES(tcp_doff(c));
 }
 
 /** @brief The options region, where the fixed fields end. */
-IDEMIP_INLINE const uint8_t *tcp_opts(const TcpCtx *c)
+EMBED_INLINE const uint8_t *tcp_opts(const TcpCtx *c)
 {
     return c->h + IDEMIP_TCP_OFF_OPTIONS;
 }
@@ -110,7 +110,7 @@ IDEMIP_INLINE const uint8_t *tcp_opts(const TcpCtx *c)
  * RFC 9293 sec 3.1: "size(Options) == (DOffset-5)*32; present only when DOffset > 5", padding
  * included. A Data Offset below the five-word minimum names no options at all.
  */
-IDEMIP_INLINE size_t tcp_opts_len(const TcpCtx *c)
+EMBED_INLINE size_t tcp_opts_len(const TcpCtx *c)
 {
     uint8_t doff = tcp_doff(c);
     if (doff <= IDEMIP_TCP_DOFF_MIN)
@@ -123,7 +123,7 @@ IDEMIP_INLINE size_t tcp_opts_len(const TcpCtx *c)
 // --- the option walk -------------------------------------------------------
 
 /** @brief Aim a walk at the options of the header. */
-IDEMIP_INLINE void tcp_opt_walk(const TcpCtx *c)
+EMBED_INLINE void tcp_opt_walk(const TcpCtx *c)
 {
     IdemIpTcpOptWalk *w = c->walk;
     w->opts = idemip_tcp_opts(c->h);
@@ -132,7 +132,7 @@ IDEMIP_INLINE void tcp_opt_walk(const TcpCtx *c)
     w->opt = NULL;
     w->kind = (uint8_t)IDEMIP_TCP_OPT_END;
     w->len = 0u;
-    w->bad = IDEMIP_FALSE;
+    w->bad = EMBED_FALSE;
 }
 
 /**
@@ -146,14 +146,14 @@ IDEMIP_INLINE void tcp_opt_walk(const TcpCtx *c)
  * A length below two, or one reaching past the options, is the illegal length of MUST-7: the walk
  * sets bad and ends rather than reading outside the region.
  */
-IDEMIP_INLINE idemip_bool tcp_opt_next(const TcpCtx *c)
+EMBED_INLINE embed_bool tcp_opt_next(const TcpCtx *c)
 {
     IdemIpTcpOptWalk *w = c->walk;
     w->opt = NULL;
     w->len = 0u;
     if (w->pos >= w->end)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     const uint8_t *o = w->opts + w->pos;
     uint8_t kind = o[IDEMIP_TCP_OPT_OFF_KIND];
@@ -163,29 +163,29 @@ IDEMIP_INLINE idemip_bool tcp_opt_next(const TcpCtx *c)
     {
         if (left < IDEMIP_TCP_OPT_LEN_MIN)
         {
-            w->bad = IDEMIP_TRUE;
+            w->bad = EMBED_TRUE;
             w->pos = w->end;
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         len = (size_t)o[IDEMIP_TCP_OPT_OFF_LEN];
         if (len < IDEMIP_TCP_OPT_LEN_MIN || len > left)
         {
-            w->bad = IDEMIP_TRUE;
+            w->bad = EMBED_TRUE;
             w->pos = w->end;
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
     }
     w->opt = o;
     w->kind = kind;
     w->len = (uint8_t)len;
     w->pos = (kind == IDEMIP_TCP_OPT_END) ? w->end : (w->pos + len);
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // --- reading option data ---------------------------------------------------
 
 /** @brief Maximum Segment Size, the 2-byte value of kind 2 (RFC 9293 sec 3.2). */
-IDEMIP_INLINE uint16_t tcp_opt_mss(const TcpCtx *c)
+EMBED_INLINE uint16_t tcp_opt_mss(const TcpCtx *c)
 {
     return idemip_rd16(c->h + IDEMIP_TCP_OPT_OFF_DATA);
 }
@@ -196,26 +196,26 @@ IDEMIP_INLINE uint16_t tcp_opt_mss(const TcpCtx *c)
  * RFC 7323 sec 2.3: "If a Window Scale option is received with a shift.cnt value larger than 14,
  * the TCP SHOULD log the error but MUST use 14 instead of the specified value."
  */
-IDEMIP_INLINE uint8_t tcp_opt_ws(const TcpCtx *c)
+EMBED_INLINE uint8_t tcp_opt_ws(const TcpCtx *c)
 {
     uint8_t shift = c->h[IDEMIP_TCP_OPT_OFF_WS_SHIFT];
     return (shift > IDEMIP_TCP_WS_MAX) ? (uint8_t)IDEMIP_TCP_WS_MAX : shift;
 }
 
 /** @brief TSval, the first four-byte field of kind 8 (RFC 7323 sec 3.2). */
-IDEMIP_INLINE uint32_t tcp_opt_tsval(const TcpCtx *c)
+EMBED_INLINE uint32_t tcp_opt_tsval(const TcpCtx *c)
 {
     return idemip_rd32(c->h + IDEMIP_TCP_OPT_OFF_TSVAL);
 }
 
 /** @brief TSecr, the second; valid only when the header's ACK bit is set (RFC 7323 sec 3.2). */
-IDEMIP_INLINE uint32_t tcp_opt_tsecr(const TcpCtx *c)
+EMBED_INLINE uint32_t tcp_opt_tsecr(const TcpCtx *c)
 {
     return idemip_rd32(c->h + IDEMIP_TCP_OPT_OFF_TSECR);
 }
 
 /** @brief Blocks kind 5 carries: its length less the two header octets, in eights. */
-IDEMIP_INLINE uint8_t tcp_opt_sack_blocks(const TcpCtx *c)
+EMBED_INLINE uint8_t tcp_opt_sack_blocks(const TcpCtx *c)
 {
     uint8_t len = c->h[IDEMIP_TCP_OPT_OFF_LEN];
     if (len < IDEMIP_TCP_OPT_LEN_MIN)
@@ -226,7 +226,7 @@ IDEMIP_INLINE uint8_t tcp_opt_sack_blocks(const TcpCtx *c)
 }
 
 /** @brief Left Edge of the named block: "the first sequence number of this block" (RFC 2018 sec 3). */
-IDEMIP_INLINE uint32_t tcp_opt_sack_left(const TcpCtx *c)
+EMBED_INLINE uint32_t tcp_opt_sack_left(const TcpCtx *c)
 {
     return idemip_rd32(c->h + IDEMIP_TCP_OPT_OFF_DATA + ((size_t)c->index << IDEMIP_TCP_SACK_BLOCK_SHIFT));
 }
@@ -235,7 +235,7 @@ IDEMIP_INLINE uint32_t tcp_opt_sack_left(const TcpCtx *c)
  * @brief Right Edge of the named block: "the sequence number immediately following the last sequence
  * number of this block" (RFC 2018 sec 3).
  */
-IDEMIP_INLINE uint32_t tcp_opt_sack_right(const TcpCtx *c)
+EMBED_INLINE uint32_t tcp_opt_sack_right(const TcpCtx *c)
 {
     return idemip_rd32(c->h + IDEMIP_TCP_OPT_OFF_DATA + ((size_t)c->index << IDEMIP_TCP_SACK_BLOCK_SHIFT) + 4u);
 }
@@ -243,7 +243,7 @@ IDEMIP_INLINE uint32_t tcp_opt_sack_right(const TcpCtx *c)
 // --- writing an option -----------------------------------------------------
 
 /** @brief End of Option List, one octet of kind 0 (RFC 9293 sec 3.2). */
-IDEMIP_INLINE size_t tcp_put_end(const TcpCtx *c)
+EMBED_INLINE size_t tcp_put_end(const TcpCtx *c)
 {
     c->w[IDEMIP_TCP_OPT_OFF_KIND] = (uint8_t)IDEMIP_TCP_OPT_END;
     return 1u;
@@ -255,7 +255,7 @@ IDEMIP_INLINE size_t tcp_put_end(const TcpCtx *c)
  * RFC 9293 sec 3.2: "This option code can be used between options, for example, to align the
  * beginning of a subsequent option on a word boundary."
  */
-IDEMIP_INLINE size_t tcp_put_nop(const TcpCtx *c)
+EMBED_INLINE size_t tcp_put_nop(const TcpCtx *c)
 {
     c->w[IDEMIP_TCP_OPT_OFF_KIND] = (uint8_t)IDEMIP_TCP_OPT_NOP;
     return 1u;
@@ -267,7 +267,7 @@ IDEMIP_INLINE size_t tcp_put_nop(const TcpCtx *c)
  * RFC 9293 sec 3.2 MUST-65: it "may be sent in the initial connection request (i.e., in segments
  * with the SYN control bit set) and MUST NOT be sent in other segments".
  */
-IDEMIP_INLINE size_t tcp_put_mss(const TcpCtx *c)
+EMBED_INLINE size_t tcp_put_mss(const TcpCtx *c)
 {
     c->w[IDEMIP_TCP_OPT_OFF_KIND] = (uint8_t)IDEMIP_TCP_OPT_MSS;
     c->w[IDEMIP_TCP_OPT_OFF_LEN] = (uint8_t)IDEMIP_TCP_OPT_MSS_LEN;
@@ -281,7 +281,7 @@ IDEMIP_INLINE size_t tcp_put_mss(const TcpCtx *c)
  * RFC 7323 sec 2.2: "The three-byte Window Scale option MAY be sent in a <SYN> segment", and the
  * shift count "MUST be limited to 14" (sec 2.3).
  */
-IDEMIP_INLINE size_t tcp_put_ws(const TcpCtx *c)
+EMBED_INLINE size_t tcp_put_ws(const TcpCtx *c)
 {
     c->w[IDEMIP_TCP_OPT_OFF_KIND] = (uint8_t)IDEMIP_TCP_OPT_WS;
     c->w[IDEMIP_TCP_OPT_OFF_LEN] = (uint8_t)IDEMIP_TCP_OPT_WS_LEN;
@@ -295,7 +295,7 @@ IDEMIP_INLINE size_t tcp_put_ws(const TcpCtx *c)
  * RFC 7323 sec 3.2: "If the ACK bit is not set in the outgoing TCP header, the sender of that
  * segment SHOULD set the TSecr field to zero."
  */
-IDEMIP_INLINE size_t tcp_put_ts(const TcpCtx *c)
+EMBED_INLINE size_t tcp_put_ts(const TcpCtx *c)
 {
     c->w[IDEMIP_TCP_OPT_OFF_KIND] = (uint8_t)IDEMIP_TCP_OPT_TS;
     c->w[IDEMIP_TCP_OPT_OFF_LEN] = (uint8_t)IDEMIP_TCP_OPT_TS_LEN;
@@ -311,7 +311,7 @@ IDEMIP_INLINE size_t tcp_put_ts(const TcpCtx *c)
  * receive (and presumably process) the SACK option once the connection has opened. It MUST NOT be
  * sent on non-SYN segments."
  */
-IDEMIP_INLINE size_t tcp_put_sack_perm(const TcpCtx *c)
+EMBED_INLINE size_t tcp_put_sack_perm(const TcpCtx *c)
 {
     c->w[IDEMIP_TCP_OPT_OFF_KIND] = (uint8_t)IDEMIP_TCP_OPT_SACK_PERM;
     c->w[IDEMIP_TCP_OPT_OFF_LEN] = (uint8_t)IDEMIP_TCP_OPT_SACK_PERM_LEN;
@@ -326,7 +326,7 @@ IDEMIP_INLINE size_t tcp_put_sack_perm(const TcpCtx *c)
  * The same shape as UDP's: the two addresses, a zero octet, the protocol, and the length of the
  * TCP segment - header and data, which is not a field of the header and so is passed in.
  */
-IDEMIP_INLINE uint32_t tcp_pseudo_accum(const TcpCtx *c)
+EMBED_INLINE uint32_t tcp_pseudo_accum(const TcpCtx *c)
 {
     uint32_t sum = c->sum;
     sum += (c->src >> 16) & 0xFFFFu;
@@ -344,7 +344,7 @@ IDEMIP_INLINE uint32_t tcp_pseudo_accum(const TcpCtx *c)
  * The caller zeroes the checksum field first. Unlike UDP there is no "no checksum" encoding: a
  * result of zero is written as zero.
  */
-IDEMIP_INLINE uint16_t tcp_cksum_compute(const TcpCtx *c)
+EMBED_INLINE uint16_t tcp_cksum_compute(const TcpCtx *c)
 {
     uint32_t sum = idemip_tcp_pseudo_accum(0u, c->src, c->dst, (uint16_t)c->len);
     return idemip_cksum_final(idemip_cksum_accum(sum, c->h, c->len));
@@ -355,149 +355,149 @@ IDEMIP_INLINE uint16_t tcp_cksum_compute(const TcpCtx *c)
 
 uint16_t idemip_tcp_src_port(const uint8_t *h)
 {
-    return IDEMIP_CALL(tcp_src_port, TcpCtx, .h = h);
+    return EMBED_CALL(tcp_src_port, TcpCtx, .h = h);
 }
 
 uint16_t idemip_tcp_dst_port(const uint8_t *h)
 {
-    return IDEMIP_CALL(tcp_dst_port, TcpCtx, .h = h);
+    return EMBED_CALL(tcp_dst_port, TcpCtx, .h = h);
 }
 
 uint32_t idemip_tcp_seq(const uint8_t *h)
 {
-    return IDEMIP_CALL(tcp_seq, TcpCtx, .h = h);
+    return EMBED_CALL(tcp_seq, TcpCtx, .h = h);
 }
 
 uint32_t idemip_tcp_ack(const uint8_t *h)
 {
-    return IDEMIP_CALL(tcp_ack, TcpCtx, .h = h);
+    return EMBED_CALL(tcp_ack, TcpCtx, .h = h);
 }
 
 uint8_t idemip_tcp_doff(const uint8_t *h)
 {
-    return IDEMIP_CALL(tcp_doff, TcpCtx, .h = h);
+    return EMBED_CALL(tcp_doff, TcpCtx, .h = h);
 }
 
 uint8_t idemip_tcp_flags(const uint8_t *h)
 {
-    return IDEMIP_CALL(tcp_flags, TcpCtx, .h = h);
+    return EMBED_CALL(tcp_flags, TcpCtx, .h = h);
 }
 
 uint16_t idemip_tcp_window(const uint8_t *h)
 {
-    return IDEMIP_CALL(tcp_window, TcpCtx, .h = h);
+    return EMBED_CALL(tcp_window, TcpCtx, .h = h);
 }
 
 uint16_t idemip_tcp_cksum(const uint8_t *h)
 {
-    return IDEMIP_CALL(tcp_cksum_field, TcpCtx, .h = h);
+    return EMBED_CALL(tcp_cksum_field, TcpCtx, .h = h);
 }
 
 uint16_t idemip_tcp_urgent(const uint8_t *h)
 {
-    return IDEMIP_CALL(tcp_urgent, TcpCtx, .h = h);
+    return EMBED_CALL(tcp_urgent, TcpCtx, .h = h);
 }
 
 size_t idemip_tcp_hdr_len(const uint8_t *h)
 {
-    return IDEMIP_CALL(tcp_hdr_len, TcpCtx, .h = h);
+    return EMBED_CALL(tcp_hdr_len, TcpCtx, .h = h);
 }
 
 const uint8_t *idemip_tcp_opts(const uint8_t *h)
 {
-    return IDEMIP_CALL(tcp_opts, TcpCtx, .h = h);
+    return EMBED_CALL(tcp_opts, TcpCtx, .h = h);
 }
 
 size_t idemip_tcp_opts_len(const uint8_t *h)
 {
-    return IDEMIP_CALL(tcp_opts_len, TcpCtx, .h = h);
+    return EMBED_CALL(tcp_opts_len, TcpCtx, .h = h);
 }
 
 void idemip_tcp_opt_walk(IdemIpTcpOptWalk *w, const uint8_t *h)
 {
-    IDEMIP_CALL(tcp_opt_walk, TcpCtx, .walk = w, .h = h);
+    EMBED_CALL(tcp_opt_walk, TcpCtx, .walk = w, .h = h);
 }
 
-idemip_bool idemip_tcp_opt_next(IdemIpTcpOptWalk *w)
+embed_bool idemip_tcp_opt_next(IdemIpTcpOptWalk *w)
 {
-    return IDEMIP_CALL(tcp_opt_next, TcpCtx, .walk = w);
+    return EMBED_CALL(tcp_opt_next, TcpCtx, .walk = w);
 }
 
 uint16_t idemip_tcp_opt_mss(const uint8_t *o)
 {
-    return IDEMIP_CALL(tcp_opt_mss, TcpCtx, .h = o);
+    return EMBED_CALL(tcp_opt_mss, TcpCtx, .h = o);
 }
 
 uint8_t idemip_tcp_opt_ws(const uint8_t *o)
 {
-    return IDEMIP_CALL(tcp_opt_ws, TcpCtx, .h = o);
+    return EMBED_CALL(tcp_opt_ws, TcpCtx, .h = o);
 }
 
 uint32_t idemip_tcp_opt_tsval(const uint8_t *o)
 {
-    return IDEMIP_CALL(tcp_opt_tsval, TcpCtx, .h = o);
+    return EMBED_CALL(tcp_opt_tsval, TcpCtx, .h = o);
 }
 
 uint32_t idemip_tcp_opt_tsecr(const uint8_t *o)
 {
-    return IDEMIP_CALL(tcp_opt_tsecr, TcpCtx, .h = o);
+    return EMBED_CALL(tcp_opt_tsecr, TcpCtx, .h = o);
 }
 
 uint8_t idemip_tcp_opt_sack_blocks(const uint8_t *o)
 {
-    return IDEMIP_CALL(tcp_opt_sack_blocks, TcpCtx, .h = o);
+    return EMBED_CALL(tcp_opt_sack_blocks, TcpCtx, .h = o);
 }
 
 uint32_t idemip_tcp_opt_sack_left(const uint8_t *o, uint8_t i)
 {
-    return IDEMIP_CALL(tcp_opt_sack_left, TcpCtx, .h = o, .index = i);
+    return EMBED_CALL(tcp_opt_sack_left, TcpCtx, .h = o, .index = i);
 }
 
 uint32_t idemip_tcp_opt_sack_right(const uint8_t *o, uint8_t i)
 {
-    return IDEMIP_CALL(tcp_opt_sack_right, TcpCtx, .h = o, .index = i);
+    return EMBED_CALL(tcp_opt_sack_right, TcpCtx, .h = o, .index = i);
 }
 
 size_t idemip_tcp_opt_put_end(uint8_t *o)
 {
-    return IDEMIP_CALL(tcp_put_end, TcpCtx, .w = o);
+    return EMBED_CALL(tcp_put_end, TcpCtx, .w = o);
 }
 
 size_t idemip_tcp_opt_put_nop(uint8_t *o)
 {
-    return IDEMIP_CALL(tcp_put_nop, TcpCtx, .w = o);
+    return EMBED_CALL(tcp_put_nop, TcpCtx, .w = o);
 }
 
 size_t idemip_tcp_opt_put_mss(uint8_t *o, uint16_t mss)
 {
-    return IDEMIP_CALL(tcp_put_mss, TcpCtx, .w = o, .mss = mss);
+    return EMBED_CALL(tcp_put_mss, TcpCtx, .w = o, .mss = mss);
 }
 
 size_t idemip_tcp_opt_put_ws(uint8_t *o, uint8_t shift)
 {
-    return IDEMIP_CALL(tcp_put_ws, TcpCtx, .w = o, .shift = shift);
+    return EMBED_CALL(tcp_put_ws, TcpCtx, .w = o, .shift = shift);
 }
 
 size_t idemip_tcp_opt_put_ts(uint8_t *o, uint32_t tsval, uint32_t tsecr)
 {
-    return IDEMIP_CALL(tcp_put_ts, TcpCtx, .w = o, .tsval = tsval, .tsecr = tsecr);
+    return EMBED_CALL(tcp_put_ts, TcpCtx, .w = o, .tsval = tsval, .tsecr = tsecr);
 }
 
 size_t idemip_tcp_opt_put_sack_perm(uint8_t *o)
 {
-    return IDEMIP_CALL(tcp_put_sack_perm, TcpCtx, .w = o);
+    return EMBED_CALL(tcp_put_sack_perm, TcpCtx, .w = o);
 }
 
 uint32_t idemip_tcp_pseudo_accum(uint32_t sum, uint32_t src, uint32_t dst, uint16_t seg_len)
 {
-    return IDEMIP_CALL(tcp_pseudo_accum, TcpCtx, .sum = sum, .src = src, .dst = dst, .seg_len = seg_len);
+    return EMBED_CALL(tcp_pseudo_accum, TcpCtx, .sum = sum, .src = src, .dst = dst, .seg_len = seg_len);
 }
 
 uint16_t idemip_tcp_cksum_compute(const uint8_t *h, size_t len, uint32_t src, uint32_t dst)
 {
-    return IDEMIP_CALL(tcp_cksum_compute, TcpCtx, .h = h, .len = len, .src = src, .dst = dst);
+    return EMBED_CALL(tcp_cksum_compute, TcpCtx, .h = h, .len = len, .src = src, .dst = dst);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_TCP

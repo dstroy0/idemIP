@@ -25,12 +25,18 @@
   "frameworks": "*",
   "platforms": "*",
   "headers": ["idemip.h"],
+  "dependencies": {
+    "MMgr": "https://github.com/dstroy0/MMgr.git",
+    "embedded_types": "https://github.com/dstroy0/embedded_types.git"
+  },
   "export": {
     "exclude": [
       ".github",
       ".gitignore",
       ".vscode",
+      "deps",
       "docs/learn",
+      "include/MMgr",
       "test"
     ]
   },

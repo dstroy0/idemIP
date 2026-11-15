@@ -4,7 +4,7 @@
 #include "unity.h"
 #include "src/ip/ip6_addr.h"
 #include "src/ip/ipv6_defines.h"
-#include <string.h>
+#include "support/borrows.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);
@@ -107,43 +107,43 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/ip/test_ip6_addr/test_ip6_addr.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 107);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 117);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 135);
-  run_test(test_uncleared_borrow_refuses_work, "test_uncleared_borrow_refuses_work", 156);
-  run_test(test_a_null_address_is_refused, "test_a_null_address_is_refused", 175);
-  run_test(test_sec2_4_unspecified_and_loopback, "test_sec2_4_unspecified_and_loopback", 190);
-  run_test(test_sec2_4_multicast_and_link_local, "test_sec2_4_multicast_and_link_local", 203);
-  run_test(test_sec2_4_global_unicast_is_everything_else, "test_sec2_4_global_unicast_is_everything_else", 221);
-  run_test(test_sec2_5_7_site_local_is_fec0_slash_10, "test_sec2_5_7_site_local_is_fec0_slash_10", 233);
-  run_test(test_sec2_5_5_embedded_ipv4_forms, "test_sec2_5_5_embedded_ipv4_forms", 248);
-  run_test(test_sec2_7_ntp_group_scopes, "test_sec2_7_ntp_group_scopes", 270);
-  run_test(test_sec2_7_transient_flag, "test_sec2_7_transient_flag", 293);
-  run_test(test_a_unicast_address_reports_no_multicast_flags, "test_a_unicast_address_reports_no_multicast_flags", 307);
-  run_test(test_sec2_7_1_worked_example, "test_sec2_7_1_worked_example", 319);
-  run_test(test_sec2_7_1_range_endpoints, "test_sec2_7_1_range_endpoints", 332);
-  run_test(test_sec2_7_1_high_order_bits_alias, "test_sec2_7_1_high_order_bits_alias", 350);
-  run_test(test_solicited_refuses_a_multicast_or_unspecified_address, "test_solicited_refuses_a_multicast_or_unspecified_address", 368);
-  run_test(test_rfc4007_link_local_takes_the_interface_index, "test_rfc4007_link_local_takes_the_interface_index", 388);
-  run_test(test_rfc4007_interface_zero_does_not_derive_the_default_zone, "test_rfc4007_interface_zero_does_not_derive_the_default_zone", 406);
-  run_test(test_rfc4007_interface_local_multicast_takes_the_interface_index, "test_rfc4007_interface_local_multicast_takes_the_interface_index", 435);
-  run_test(test_rfc4291_a_scop_f_multicast_address_has_global_scope, "test_rfc4291_a_scop_f_multicast_address_has_global_scope", 450);
-  run_test(test_rfc4007_global_scope_is_the_default_zone, "test_rfc4007_global_scope_is_the_default_zone", 476);
-  run_test(test_rfc4007_a_site_zone_is_not_derived, "test_rfc4007_a_site_zone_is_not_derived", 488);
-  run_test(test_a_reserved_scop_of_zero_has_no_zone, "test_a_reserved_scop_of_zero_has_no_zone", 501);
-  run_test(test_a_reserved_scop_of_f_takes_the_global_zone, "test_a_reserved_scop_of_f_takes_the_global_zone", 512);
-  run_test(test_the_unspecified_address_has_no_scope, "test_the_unspecified_address_has_no_scope", 524);
-  run_test(test_the_loopback_address_has_link_local_scope, "test_the_loopback_address_has_link_local_scope", 536);
-  run_test(test_the_same_link_local_address_in_two_zones_is_not_one_interface, "test_the_same_link_local_address_in_two_zones_is_not_one_interface", 548);
-  run_test(test_the_default_zone_matches_whatever_the_other_names, "test_the_default_zone_matches_whatever_the_other_names", 568);
-  run_test(test_a_global_address_ignores_zone_indices, "test_a_global_address_ignores_zone_indices", 583);
-  run_test(test_prefix_equality_over_the_leading_bits, "test_prefix_equality_over_the_leading_bits", 598);
-  run_test(test_a_prefix_longer_than_the_address_is_refused, "test_a_prefix_longer_than_the_address_is_refused", 625);
-  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 637);
-  run_test(test_the_type_of_an_address_is_read_to_the_width_of_its_prefix, "test_the_type_of_an_address_is_read_to_the_width_of_its_prefix", 653);
-  run_test(test_the_all_nodes_group_is_the_assigned_one_and_not_a_transient_copy, "test_the_all_nodes_group_is_the_assigned_one_and_not_a_transient_copy", 677);
-  run_test(test_the_entries_refuse_what_no_address_can_answer, "test_the_entries_refuse_what_no_address_can_answer", 689);
-  run_test(test_two_equal_addresses_in_different_zones_are_not_the_same_address, "test_two_equal_addresses_in_different_zones_are_not_the_same_address", 724);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 112);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 122);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 140);
+  run_test(test_uncleared_borrow_refuses_work, "test_uncleared_borrow_refuses_work", 162);
+  run_test(test_a_null_address_is_refused, "test_a_null_address_is_refused", 181);
+  run_test(test_sec2_4_unspecified_and_loopback, "test_sec2_4_unspecified_and_loopback", 196);
+  run_test(test_sec2_4_multicast_and_link_local, "test_sec2_4_multicast_and_link_local", 209);
+  run_test(test_sec2_4_global_unicast_is_everything_else, "test_sec2_4_global_unicast_is_everything_else", 227);
+  run_test(test_sec2_5_7_site_local_is_fec0_slash_10, "test_sec2_5_7_site_local_is_fec0_slash_10", 239);
+  run_test(test_sec2_5_5_embedded_ipv4_forms, "test_sec2_5_5_embedded_ipv4_forms", 254);
+  run_test(test_sec2_7_ntp_group_scopes, "test_sec2_7_ntp_group_scopes", 276);
+  run_test(test_sec2_7_transient_flag, "test_sec2_7_transient_flag", 299);
+  run_test(test_a_unicast_address_reports_no_multicast_flags, "test_a_unicast_address_reports_no_multicast_flags", 313);
+  run_test(test_sec2_7_1_worked_example, "test_sec2_7_1_worked_example", 325);
+  run_test(test_sec2_7_1_range_endpoints, "test_sec2_7_1_range_endpoints", 338);
+  run_test(test_sec2_7_1_high_order_bits_alias, "test_sec2_7_1_high_order_bits_alias", 356);
+  run_test(test_solicited_refuses_a_multicast_or_unspecified_address, "test_solicited_refuses_a_multicast_or_unspecified_address", 375);
+  run_test(test_rfc4007_link_local_takes_the_interface_index, "test_rfc4007_link_local_takes_the_interface_index", 395);
+  run_test(test_rfc4007_interface_zero_does_not_derive_the_default_zone, "test_rfc4007_interface_zero_does_not_derive_the_default_zone", 413);
+  run_test(test_rfc4007_interface_local_multicast_takes_the_interface_index, "test_rfc4007_interface_local_multicast_takes_the_interface_index", 442);
+  run_test(test_rfc4291_a_scop_f_multicast_address_has_global_scope, "test_rfc4291_a_scop_f_multicast_address_has_global_scope", 457);
+  run_test(test_rfc4007_global_scope_is_the_default_zone, "test_rfc4007_global_scope_is_the_default_zone", 483);
+  run_test(test_rfc4007_a_site_zone_is_not_derived, "test_rfc4007_a_site_zone_is_not_derived", 495);
+  run_test(test_a_reserved_scop_of_zero_has_no_zone, "test_a_reserved_scop_of_zero_has_no_zone", 508);
+  run_test(test_a_reserved_scop_of_f_takes_the_global_zone, "test_a_reserved_scop_of_f_takes_the_global_zone", 519);
+  run_test(test_the_unspecified_address_has_no_scope, "test_the_unspecified_address_has_no_scope", 531);
+  run_test(test_the_loopback_address_has_link_local_scope, "test_the_loopback_address_has_link_local_scope", 543);
+  run_test(test_the_same_link_local_address_in_two_zones_is_not_one_interface, "test_the_same_link_local_address_in_two_zones_is_not_one_interface", 555);
+  run_test(test_the_default_zone_matches_whatever_the_other_names, "test_the_default_zone_matches_whatever_the_other_names", 575);
+  run_test(test_a_global_address_ignores_zone_indices, "test_a_global_address_ignores_zone_indices", 590);
+  run_test(test_prefix_equality_over_the_leading_bits, "test_prefix_equality_over_the_leading_bits", 605);
+  run_test(test_a_prefix_longer_than_the_address_is_refused, "test_a_prefix_longer_than_the_address_is_refused", 632);
+  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 644);
+  run_test(test_the_type_of_an_address_is_read_to_the_width_of_its_prefix, "test_the_type_of_an_address_is_read_to_the_width_of_its_prefix", 660);
+  run_test(test_the_all_nodes_group_is_the_assigned_one_and_not_a_transient_copy, "test_the_all_nodes_group_is_the_assigned_one_and_not_a_transient_copy", 684);
+  run_test(test_the_entries_refuse_what_no_address_can_answer, "test_the_entries_refuse_what_no_address_can_answer", 696);
+  run_test(test_two_equal_addresses_in_different_zones_are_not_the_same_address, "test_two_equal_addresses_in_different_zones_are_not_the_same_address", 731);
 
   return UNITY_END();
 }

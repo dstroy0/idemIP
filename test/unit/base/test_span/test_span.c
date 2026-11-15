@@ -13,30 +13,24 @@
 
 #include "src/common.h"
 
-#include <string.h>
 #include <unity.h>
 
 #define SPAN 96u
 #define ALIGNS 9u
 
-// Aligned to IDEMIP_ALIGN and a word longer than the longest span either helper is asked for, which
-// is what a borrow is: idemip.h declares every one of them `static _Alignas(IDEMIP_ALIGN) uint8_t`.
-// The base being aligned is what makes the nine offsets below mean anything - they are then every
-// alignment a word load can meet, rather than nine offsets from wherever the linker happened to put
-// the array.
+// Aligned to IDEMIP_ALIGN and a word longer than the longest span either helper is asked for. The
+// aligned base makes the nine offsets below every alignment a word load can meet, and not nine offsets
+// from the address the linker gives the array.
 //
-// The slack is for the tail. It is taken as one whole word and masked, so a span ending short of a
-// word boundary is read out to the end of that word. In the library those octets are inside the
-// caller's own borrow; here the slack is what makes that true of these two arrays. The cases below
-// still set the octet immediately past each span, which the mask has to discard, so the slack
-// widens the buffer without weakening anything the suite proves.
-static _Alignas(IDEMIP_ALIGN) uint8_t buf[SPAN + ALIGNS + sizeof(IdemIpWord)];
-static _Alignas(IDEMIP_ALIGN) uint8_t other[SPAN + ALIGNS + sizeof(IdemIpWord)];
+// The helpers read no octet past a span, so the slack stays unread. The cases below set the octet
+// immediately past each span, and a helper that read past a span would see it.
+static _Alignas(IDEMIP_ALIGN) uint8_t buf[SPAN + ALIGNS + sizeof(embed_word)];
+static _Alignas(IDEMIP_ALIGN) uint8_t other[SPAN + ALIGNS + sizeof(embed_word)];
 
 void setUp(void)
 {
-    memset(buf, 0, sizeof buf);
-    memset(other, 0, sizeof other);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = buf, .val = 0, .bytes = sizeof buf);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = other, .val = 0, .bytes = sizeof other);
 }
 
 void tearDown(void)
@@ -94,13 +88,13 @@ void test_one_set_octet_anywhere_makes_a_span_not_zero(void)
         {
             for (size_t at = 0; at < n; at++)
             {
-                memset(buf, 0, sizeof buf);
+                EMBED_CALL(memor.set, MemoriaCfg, .dst = buf, .val = 0, .bytes = sizeof buf);
                 buf[off + at] = 0x80u;
                 TEST_ASSERT_FALSE_MESSAGE(idemip_bytes_zero(buf + off, n), "a set octet was not seen");
                 TEST_ASSERT_EQUAL_INT(reference_zero(buf + off, n), (int)idemip_bytes_zero(buf + off, n));
             }
             // One octet past the end belongs to nobody, so it cannot change the answer.
-            memset(buf, 0, sizeof buf);
+            EMBED_CALL(memor.set, MemoriaCfg, .dst = buf, .val = 0, .bytes = sizeof buf);
             buf[off + n] = 0xFFu;
             TEST_ASSERT_TRUE_MESSAGE(idemip_bytes_zero(buf + off, n), "an octet past the end was read");
         }
@@ -115,8 +109,8 @@ void test_equality_matches_the_definition_at_every_length_and_alignment(void)
     {
         for (size_t n = 0; n <= 40u; n++)
         {
-            memset(buf, 0, sizeof buf);
-            memset(other, 0, sizeof other);
+            EMBED_CALL(memor.set, MemoriaCfg, .dst = buf, .val = 0, .bytes = sizeof buf);
+            EMBED_CALL(memor.set, MemoriaCfg, .dst = other, .val = 0, .bytes = sizeof other);
             for (size_t i = 0; i < sizeof buf; i++)
             {
                 buf[i] = (uint8_t)((i * 37u) ^ 0xA5u);
@@ -142,8 +136,8 @@ void test_equality_matches_the_definition_at_every_length_and_alignment(void)
 // An empty span holds no octet that could differ, so it is zero and it equals anything.
 void test_an_empty_span_is_zero_and_equal(void)
 {
-    memset(buf, 0xFFu, sizeof buf);
-    memset(other, 0x00u, sizeof other);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = buf, .val = 0xFFu, .bytes = sizeof buf);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = other, .val = 0x00u, .bytes = sizeof other);
     TEST_ASSERT_TRUE(idemip_bytes_zero(buf, 0u));
     TEST_ASSERT_TRUE(idemip_bytes_eq(buf, other, 0u));
 }
@@ -152,13 +146,12 @@ void test_an_empty_span_is_zero_and_equal(void)
 // sec 3.1 ones are four, and both are what a word loop plus its tail has to cover exactly.
 void test_the_address_widths_the_call_sites_use(void)
 {
-    // Each carries the slack the two fixtures above carry, and for the reason written there: the
-    // tail is read out to the end of its word, and in the library those octets are inside the
-    // caller's own borrow. A width is passed as the width itself, so the slack is never in a span.
-    uint8_t a6[16u + sizeof(IdemIpWord)];
-    uint8_t b6[16u + sizeof(IdemIpWord)];
-    memset(a6, 0, sizeof a6);
-    memset(b6, 0, sizeof b6);
+    // Each carries the slack the two fixtures above carry. A width is passed as the width itself, so
+    // the slack is never in a span.
+    uint8_t a6[16u + sizeof(embed_word)];
+    uint8_t b6[16u + sizeof(embed_word)];
+    mmgr_zero_buf(a6, sizeof a6);
+    mmgr_zero_buf(b6, sizeof b6);
     TEST_ASSERT_TRUE(idemip_bytes_zero(a6, 16u));
     TEST_ASSERT_TRUE(idemip_bytes_eq(a6, b6, 16u));
 
@@ -169,10 +162,10 @@ void test_the_address_widths_the_call_sites_use(void)
     TEST_ASSERT_TRUE_MESSAGE(idemip_bytes_zero(a6, 15u), "::1 is zero over its leading fifteen octets");
     TEST_ASSERT_FALSE(idemip_bytes_eq(a6, b6, 16u));
 
-    uint8_t a4[4u + sizeof(IdemIpWord)];
-    uint8_t b4[4u + sizeof(IdemIpWord)];
-    memset(a4, 0, sizeof a4);
-    memset(b4, 0, sizeof b4);
+    uint8_t a4[4u + sizeof(embed_word)];
+    uint8_t b4[4u + sizeof(embed_word)];
+    mmgr_zero_buf(a4, sizeof a4);
+    mmgr_zero_buf(b4, sizeof b4);
     b4[3] = 1u;
     TEST_ASSERT_TRUE_MESSAGE(idemip_bytes_zero(a4, 4u), "RFC 1122 sec 3.2.1.3 (a) is four zero octets");
     TEST_ASSERT_FALSE(idemip_bytes_zero(b4, 4u));

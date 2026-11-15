@@ -32,7 +32,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief What one row of the translation table is.
@@ -43,12 +43,11 @@ IDEMIP_BEGIN_DECLS
  * carries ar$sha, or complete. lwIP etharp.c spells the same three ETHARP_STATE_EMPTY, _PENDING and
  * _STABLE.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_ARP_STATE_FREE = 0, ///< no triplet in this row
-    IDEMIP_ARP_STATE_PENDING,  ///< ar$spa is known, ar$sha is not, and a REQUEST is out for it
-    IDEMIP_ARP_STATE_STABLE,   ///< the whole triplet is in the row
-} IdemIpArpState;
+EMBED_ENUM_BYTE(IdemIpArpState,
+                IDEMIP_ARP_STATE_FREE = 0, ///< no triplet in this row
+                IDEMIP_ARP_STATE_PENDING,  ///< ar$spa is known, ar$sha is not, and a REQUEST is out for it
+                IDEMIP_ARP_STATE_STABLE,   ///< the whole triplet is in the row
+);
 
 /** @brief No row and no list link. Every index result and every list terminator reads this. */
 #define IDEMIP_ARP_INDEX_NONE 0xFFu
@@ -165,9 +164,9 @@ typedef struct
     IdemIpArpState state;
     uint8_t index;
     uint8_t netif;
-    idemip_bool merged;
-    idemip_bool reply_owed;
-    idemip_bool conflict;
+    embed_bool merged;
+    embed_bool reply_owed;
+    embed_bool conflict;
 } ArpTableIo;
 
 // ---------------------------------------------------------------------------
@@ -193,10 +192,10 @@ typedef struct
 #define IDEMIP_ARP_IO(w) ((ArpTableIo *)(void *)((w) + IDEMIP_ARP_OFF_IO))
 
 // A row index and a list link are one octet, so a count at or above the terminator is unaddressable.
-static_assert(IDEMIP_ARP_ENTRIES < IDEMIP_ARP_INDEX_NONE,
-              "IDEMIP_ARP_ENTRIES must stay below IDEMIP_ARP_INDEX_NONE: a row index is one octet");
-static_assert(IDEMIP_ARP_PENDING < IDEMIP_ARP_INDEX_NONE,
-              "IDEMIP_ARP_PENDING must stay below IDEMIP_ARP_INDEX_NONE: a list link is one octet");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_ENTRIES < IDEMIP_ARP_INDEX_NONE,
+                    "IDEMIP_ARP_ENTRIES must stay below IDEMIP_ARP_INDEX_NONE: a row index is one octet");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_PENDING < IDEMIP_ARP_INDEX_NONE,
+                    "IDEMIP_ARP_PENDING must stay below IDEMIP_ARP_INDEX_NONE: a list link is one octet");
 
 /**
  * @brief The translation table.
@@ -280,16 +279,15 @@ void idemip_arp_tick(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const ArpTableNs ArpTable IDEMIP_UNUSED = {
-    .clear = idemip_arp_clear,
-    .add = idemip_arp_add,
-    .find = idemip_arp_find,
-    .remove = idemip_arp_remove,
-    .input = idemip_arp_input,
-    .queue = idemip_arp_queue,
-    .dequeue = idemip_arp_dequeue,
-    .tick = idemip_arp_tick};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE ArpTableNs ArpTable EMBED_UNUSED = {.clear = idemip_arp_clear,
+                                                        .add = idemip_arp_add,
+                                                        .find = idemip_arp_find,
+                                                        .remove = idemip_arp_remove,
+                                                        .input = idemip_arp_input,
+                                                        .queue = idemip_arp_queue,
+                                                        .dequeue = idemip_arp_dequeue,
+                                                        .tick = idemip_arp_tick};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

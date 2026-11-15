@@ -23,7 +23,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
 // The classes (RFC 791 sec 3.2, RFC 1122 sec 3.2.1.3)
@@ -52,14 +52,13 @@ IDEMIP_BEGIN_DECLS
 #define IDEMIP_IP4_CLASS_E_TAG 0xF0000000u
 
 /** @brief Which of the five classes the high-order bits name. */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IP4_CLASS_A = 0, ///< 0, "7 bits of net, 24 bits of host"
-    IDEMIP_IP4_CLASS_B,     ///< 10, "14 bits of net, 16 bits of host"
-    IDEMIP_IP4_CLASS_C,     ///< 110, "21 bits of net, 8 bits of host"
-    IDEMIP_IP4_CLASS_D,     ///< 1110, the host group addresses of RFC 1112 sec 4
-    IDEMIP_IP4_CLASS_E,     ///< 1111, "reserved for future addressing modes" (RFC 1112 sec 4)
-} IdemIpIp4Class;
+EMBED_ENUM_BYTE(IdemIpIp4Class,
+                IDEMIP_IP4_CLASS_A = 0, ///< 0, "7 bits of net, 24 bits of host"
+                IDEMIP_IP4_CLASS_B,     ///< 10, "14 bits of net, 16 bits of host"
+                IDEMIP_IP4_CLASS_C,     ///< 110, "21 bits of net, 8 bits of host"
+                IDEMIP_IP4_CLASS_D,     ///< 1110, the host group addresses of RFC 1112 sec 4
+                IDEMIP_IP4_CLASS_E,     ///< 1111, "reserved for future addressing modes" (RFC 1112 sec 4)
+);
 
 // ---------------------------------------------------------------------------
 // The special cases (RFC 1122 sec 3.2.1.3, RFC 3927 sec 2.1)
@@ -98,17 +97,16 @@ typedef enum IDEMIP_ENUM_PACKED
  * high-order bits, and 127/8 and 169.254/16 before them, since both sit inside class A and class B
  * unicast space.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IP4_TYPE_UNSPECIFIED = 0, ///< 0.0.0.0, case (a) "{ 0, 0 }"
-    IDEMIP_IP4_TYPE_THIS_NETWORK,    ///< 0/8 with a host part, case (b) "{ 0, <Host-number> }"
-    IDEMIP_IP4_TYPE_LOOPBACK,        ///< 127/8, case (g) "{ 127, <any> }"
-    IDEMIP_IP4_TYPE_LINK_LOCAL,      ///< 169.254/16 (RFC 3927 sec 2.1)
-    IDEMIP_IP4_TYPE_MULTICAST,       ///< 224/4, a class D host group (RFC 1112 sec 4)
-    IDEMIP_IP4_TYPE_RESERVED,        ///< 240/4, class E (RFC 1112 sec 4)
-    IDEMIP_IP4_TYPE_BROADCAST,       ///< 255.255.255.255, case (c) "{ -1, -1 }"
-    IDEMIP_IP4_TYPE_UNICAST,         ///< everything else
-} IdemIpIp4AddrType;
+EMBED_ENUM_BYTE(IdemIpIp4AddrType,
+                IDEMIP_IP4_TYPE_UNSPECIFIED = 0, ///< 0.0.0.0, case (a) "{ 0, 0 }"
+                IDEMIP_IP4_TYPE_THIS_NETWORK,    ///< 0/8 with a host part, case (b) "{ 0, <Host-number> }"
+                IDEMIP_IP4_TYPE_LOOPBACK,        ///< 127/8, case (g) "{ 127, <any> }"
+                IDEMIP_IP4_TYPE_LINK_LOCAL,      ///< 169.254/16 (RFC 3927 sec 2.1)
+                IDEMIP_IP4_TYPE_MULTICAST,       ///< 224/4, a class D host group (RFC 1112 sec 4)
+                IDEMIP_IP4_TYPE_RESERVED,        ///< 240/4, class E (RFC 1112 sec 4)
+                IDEMIP_IP4_TYPE_BROADCAST,       ///< 255.255.255.255, case (c) "{ -1, -1 }"
+                IDEMIP_IP4_TYPE_UNICAST,         ///< everything else
+);
 
 // ---------------------------------------------------------------------------
 // The Ethernet multicast map (RFC 1112 sec 6.4)
@@ -141,9 +139,9 @@ typedef enum IDEMIP_ENUM_PACKED
 // through a borrow; nothing implements one of them twice.
 
 /** @brief True when the address carries @p tag everywhere @p mask is set. */
-IDEMIP_INLINE idemip_bool idemip_ip4_addr_tagged(uint32_t addr, uint32_t mask, uint32_t tag)
+EMBED_INLINE embed_bool idemip_ip4_addr_tagged(uint32_t addr, uint32_t mask, uint32_t tag)
 {
-    return ((addr & mask) == tag) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((addr & mask) == tag) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 /**
@@ -151,7 +149,7 @@ IDEMIP_INLINE idemip_bool idemip_ip4_addr_tagged(uint32_t addr, uint32_t mask, u
  *
  * Tested longest tag first, so 1110 is taken before the 110 and 10 tags can match.
  */
-IDEMIP_INLINE IdemIpIp4Class idemip_ip4_addr_class(uint32_t addr)
+EMBED_INLINE IdemIpIp4Class idemip_ip4_addr_class(uint32_t addr)
 {
     if (idemip_ip4_addr_tagged(addr, IDEMIP_IP4_CLASS_A_MASK, IDEMIP_IP4_CLASS_A_TAG))
     {
@@ -173,7 +171,7 @@ IDEMIP_INLINE IdemIpIp4Class idemip_ip4_addr_class(uint32_t addr)
 }
 
 /** @brief True for a class D host group address (RFC 1112 sec 4). */
-IDEMIP_INLINE idemip_bool idemip_ip4_addr_is_mcast(uint32_t addr)
+EMBED_INLINE embed_bool idemip_ip4_addr_is_mcast(uint32_t addr)
 {
     return idemip_ip4_addr_tagged(addr, IDEMIP_IP4_CLASS_D_MASK, IDEMIP_IP4_CLASS_D_TAG);
 }
@@ -184,7 +182,7 @@ IDEMIP_INLINE idemip_bool idemip_ip4_addr_is_mcast(uint32_t addr)
  * The limited broadcast is taken first because 255.255.255.255 also carries class E's high-order
  * bits, and 127/8 and 169.254/16 before the classes because both sit inside unicast space.
  */
-IDEMIP_INLINE IdemIpIp4AddrType idemip_ip4_addr_type(uint32_t addr)
+EMBED_INLINE IdemIpIp4AddrType idemip_ip4_addr_type(uint32_t addr)
 {
     if (addr == IDEMIP_IP4_BROADCAST)
     {
@@ -229,7 +227,7 @@ IDEMIP_INLINE IdemIpIp4AddrType idemip_ip4_addr_type(uint32_t addr)
  * low-order 23-bits of the IP address into the low-order 23 bits of the Ethernet multicast address
  * 01-00-5E-00-00-00 (hex)."
  */
-IDEMIP_INLINE void idemip_ip4_addr_mcast_mac(uint8_t *out, uint32_t group)
+EMBED_INLINE void idemip_ip4_addr_mcast_mac(uint8_t *out, uint32_t group)
 {
     uint32_t low = group & IDEMIP_IP4_MCAST_MAC_MASK;
     out[0] = IDEMIP_IP4_MCAST_MAC_0;
@@ -311,9 +309,9 @@ typedef struct
     IdemIpIp4AddrType type;
     IdemIpIp4Class addr_class;
     uint8_t prefix_len;
-    idemip_bool on_subnet;
-    idemip_bool is_broadcast;
-    idemip_bool contiguous;
+    embed_bool on_subnet;
+    embed_bool is_broadcast;
+    embed_bool contiguous;
 } Ip4AddrIo;
 
 // ---------------------------------------------------------------------------
@@ -383,39 +381,38 @@ void idemip_ip4_addr_mcast_mac_io(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Ip4AddrNs Ip4Addr IDEMIP_UNUSED = {
-    .clear = idemip_ip4_addr_clear,
-    .classify = idemip_ip4_addr_classify,
-    .match = idemip_ip4_addr_match,
-    .mcast_mac = idemip_ip4_addr_mcast_mac_io};
+EMBED_TABLE_STORAGE Ip4AddrNs Ip4Addr EMBED_UNUSED = {.clear = idemip_ip4_addr_clear,
+                                                      .classify = idemip_ip4_addr_classify,
+                                                      .match = idemip_ip4_addr_match,
+                                                      .mcast_mac = idemip_ip4_addr_mcast_mac_io};
 // The class tags and their masks agree with the bit patterns RFC 791 sec 3.2 prints.
-static_assert((IDEMIP_IP4_CLASS_A_TAG & ~IDEMIP_IP4_CLASS_A_MASK) == 0u &&
-                  (IDEMIP_IP4_CLASS_B_TAG & ~IDEMIP_IP4_CLASS_B_MASK) == 0u &&
-                  (IDEMIP_IP4_CLASS_C_TAG & ~IDEMIP_IP4_CLASS_C_MASK) == 0u &&
-                  (IDEMIP_IP4_CLASS_D_TAG & ~IDEMIP_IP4_CLASS_D_MASK) == 0u &&
-                  (IDEMIP_IP4_CLASS_E_TAG & ~IDEMIP_IP4_CLASS_E_MASK) == 0u,
-              "a class tag must lie inside its own mask (RFC 791 sec 3.2)");
+EMBED_STATIC_ASSERT((IDEMIP_IP4_CLASS_A_TAG & ~IDEMIP_IP4_CLASS_A_MASK) == 0u &&
+                        (IDEMIP_IP4_CLASS_B_TAG & ~IDEMIP_IP4_CLASS_B_MASK) == 0u &&
+                        (IDEMIP_IP4_CLASS_C_TAG & ~IDEMIP_IP4_CLASS_C_MASK) == 0u &&
+                        (IDEMIP_IP4_CLASS_D_TAG & ~IDEMIP_IP4_CLASS_D_MASK) == 0u &&
+                        (IDEMIP_IP4_CLASS_E_TAG & ~IDEMIP_IP4_CLASS_E_MASK) == 0u,
+                    "a class tag must lie inside its own mask (RFC 791 sec 3.2)");
 
 // RFC 1112 sec 4: host group addresses "range from 224.0.0.0 to 239.255.255.255".
-static_assert(IDEMIP_IP4_CLASS_D_TAG == 0xE0000000u && (IDEMIP_IP4_CLASS_D_TAG | ~IDEMIP_IP4_CLASS_D_MASK) == 0xEFFFFFFFu,
-              "class D must span 224.0.0.0 through 239.255.255.255 (RFC 1112 sec 4)");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_CLASS_D_TAG == 0xE0000000u &&
+                        (IDEMIP_IP4_CLASS_D_TAG | ~IDEMIP_IP4_CLASS_D_MASK) == 0xEFFFFFFFu,
+                    "class D must span 224.0.0.0 through 239.255.255.255 (RFC 1112 sec 4)");
 
 // RFC 1112 sec 6.4 carries 23 bits, so the mask is 23 ones.
-static_assert(IDEMIP_IP4_MCAST_MAC_MASK == 0x7FFFFFu, "RFC 1112 sec 6.4 maps the low-order 23 bits");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_MCAST_MAC_MASK == 0x7FFFFFu, "RFC 1112 sec 6.4 maps the low-order 23 bits");
 
 // sec 6.4: "there are 28 significant bits in an IP host group address", which is what the class D
 // tag leaves free.
-static_assert((0xFFFFFFFFu & ~IDEMIP_IP4_CLASS_D_MASK) == 0x0FFFFFFFu &&
-                  IDEMIP_IP4_MCAST_GROUP_BITS == 28u,
-              "a class D group carries 28 significant bits (RFC 1112 sec 6.4)");
+EMBED_STATIC_ASSERT((0xFFFFFFFFu & ~IDEMIP_IP4_CLASS_D_MASK) == 0x0FFFFFFFu && IDEMIP_IP4_MCAST_GROUP_BITS == 28u,
+                    "a class D group carries 28 significant bits (RFC 1112 sec 6.4)");
 
 // RFC 3927 sec 2.1 registers a /16, and sec 2.6.2 names 169.254.255.255 "the broadcast address for
 // the Link-Local prefix", which is inside it.
-static_assert((IDEMIP_IP4_LINK_LOCAL_TAG & ~IDEMIP_IP4_LINK_LOCAL_MASK) == 0u &&
-                  IDEMIP_IP4_LINK_LOCAL_TAG == IDEMIP_AUTOIP_PREFIX,
-              "the RFC 3927 sec 2.1 link-local prefix must be 169.254/16");
+EMBED_STATIC_ASSERT((IDEMIP_IP4_LINK_LOCAL_TAG & ~IDEMIP_IP4_LINK_LOCAL_MASK) == 0u &&
+                        IDEMIP_IP4_LINK_LOCAL_TAG == IDEMIP_AUTOIP_PREFIX,
+                    "the RFC 3927 sec 2.1 link-local prefix must be 169.254/16");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

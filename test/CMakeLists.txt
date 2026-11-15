@@ -140,7 +140,7 @@ foreach(suite_src ${IDEMIP_SUITE_SOURCES})
         "${unity_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}"
     )
-    target_link_libraries(${suite_name} PRIVATE idemip idemip_warnings)
+    target_link_libraries(${suite_name} PRIVATE idemip idemip_warnings idemip_test_program idemip_host_hooks)
 
     # test_clock measures determinism_pad(), which the header gates out unless the capability is on,
     # so this one suite is compiled with it on however the build was configured. The value reaches
@@ -202,7 +202,8 @@ add_custom_target(fuzz_corpus_files DEPENDS "${IDEMIP_FUZZ_CORPUS}.stamp")
 
 add_executable(fuzz_replay "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/fuzz_dispatch.c")
 target_compile_definitions(fuzz_replay PRIVATE IDEMIP_FUZZ_STANDALONE=1)
-target_link_libraries(fuzz_replay PRIVATE idemip idemip_warnings)
+target_include_directories(fuzz_replay PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(fuzz_replay PRIVATE idemip idemip_warnings idemip_test_program idemip_host_hooks)
 add_dependencies(fuzz_replay fuzz_corpus_files)
 set_target_properties(fuzz_replay PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test")
 add_test(NAME fuzz_corpus COMMAND ${CMAKE_COMMAND}

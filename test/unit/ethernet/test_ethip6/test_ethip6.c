@@ -17,16 +17,18 @@
 
 #include "src/ethernet/ethip6.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_ETHIP6_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_ETHIP6_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_ETHIP6_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_ETHIP6_BORROW + 16))
+static uint8_t *work_b;
 
 // RFC 2464 sec 4, the printed example: "the Interface Identifier for an Ethernet interface whose
 // built-in address is, in hexadecimal, 34-56-78-9A-BC-DE would be 36-56-78-FF-FE-9A-BC-DE."
@@ -55,8 +57,9 @@ static const uint8_t unicast[16] = {0x20, 0x01, 0x0D, 0xB8, 0x00, 0x00, 0x00, 0x
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_ETHIP6_BORROW, CANARY, cap - IDEMIP_ETHIP6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_ETHIP6_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_ETHIP6_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -69,14 +72,16 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_ethip6);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_ethip6);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void ready(uint8_t *w)
@@ -142,7 +147,7 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
 
     eui64_of(work_a, rfc2464_mac);
     uint8_t first[8];
-    memcpy(first, IDEMIP_ETHIP6_IO(work_a)->iid, sizeof first);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = first, .at = IDEMIP_ETHIP6_IO(work_a)->iid, .size = sizeof first);
 
     eui64_of(work_b, local_mac);
     eui64_of(work_a, rfc2464_mac);
@@ -157,7 +162,7 @@ void test_repeating_a_call_repeats_its_answer(void)
     ready(work_a);
     map_of(work_a, solicited_node);
     uint8_t first[6];
-    memcpy(first, IDEMIP_ETHIP6_IO(work_a)->mac, sizeof first);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = first, .at = IDEMIP_ETHIP6_IO(work_a)->mac, .size = sizeof first);
     map_of(work_a, solicited_node);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(first, IDEMIP_ETHIP6_IO(work_a)->mac, 6);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ETHIP6_IO(work_a)->status);
@@ -330,7 +335,7 @@ void test_linklocal_appends_the_sec4_identifier(void)
     ready(work_a);
     eui64_of(work_a, rfc2464_mac);
     uint8_t iid[8];
-    memcpy(iid, IDEMIP_ETHIP6_IO(work_a)->iid, sizeof iid);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = iid, .at = IDEMIP_ETHIP6_IO(work_a)->iid, .size = sizeof iid);
     linklocal_of(work_a, rfc2464_mac);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(iid, IDEMIP_ETHIP6_IO(work_a)->addr + IDEMIP_ETHIP6_LINKLOCAL_PREFIX_LEN, 8);
 }
@@ -425,8 +430,8 @@ void test_multicast_map_reads_only_the_last_four_octets(void)
 {
     uint8_t one[16];
     uint8_t two[16];
-    memcpy(one, all_nodes, sizeof one);
-    memcpy(two, all_nodes, sizeof two);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = one, .at = all_nodes, .size = sizeof one);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = two, .at = all_nodes, .size = sizeof two);
     two[1] = 0x05;
     two[8] = 0xAB;
     two[11] = 0xCD;
@@ -434,7 +439,7 @@ void test_multicast_map_reads_only_the_last_four_octets(void)
     ready(work_a);
     map_of(work_a, one);
     uint8_t first[6];
-    memcpy(first, IDEMIP_ETHIP6_IO(work_a)->mac, sizeof first);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = first, .at = IDEMIP_ETHIP6_IO(work_a)->mac, .size = sizeof first);
     map_of(work_a, two);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(first, IDEMIP_ETHIP6_IO(work_a)->mac, IDEMIP_MAC_LEN);
 }
@@ -447,7 +452,7 @@ void test_multicast_map_carries_every_one_of_the_four_octets(void)
     for (unsigned i = 12; i < 16u; i++)
     {
         uint8_t dst[16];
-        memcpy(dst, all_nodes, sizeof dst);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = dst, .at = all_nodes, .size = sizeof dst);
         dst[i] = (uint8_t)(0xA0u + i);
         map_of(work_a, dst);
         TEST_ASSERT_EQUAL_HEX8_MESSAGE((uint8_t)(0xA0u + i), IDEMIP_ETHIP6_IO(work_a)->mac[i - 10u],
@@ -473,7 +478,7 @@ void test_multicast_map_refuses_a_unicast_destination(void)
 void test_multicast_map_refuses_a_first_octet_one_short_of_ff(void)
 {
     uint8_t dst[16];
-    memcpy(dst, all_nodes, sizeof dst);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = dst, .at = all_nodes, .size = sizeof dst);
     dst[0] = 0xFE;
     ready(work_a);
     map_of(work_a, dst);
@@ -494,7 +499,7 @@ void test_multicast_map_accepts_every_scope(void)
     for (unsigned scope = 0; scope < 16u; scope++)
     {
         uint8_t dst[16];
-        memcpy(dst, all_nodes, sizeof dst);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = dst, .at = all_nodes, .size = sizeof dst);
         dst[1] = (uint8_t)scope;
         map_of(work_a, dst);
         TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ETHIP6_IO(work_a)->status, "a scope was refused");

@@ -41,8 +41,12 @@ cannot be reached each carry the argument for why, written beside them.
 ```c
 #include "src/idemip.h"
 
-static _Alignas(IDEMIP_ALIGN) uint8_t netif_w[IDEMIP_NETIF_BORROW];
-static _Alignas(IDEMIP_ALIGN) uint8_t arp_w[IDEMIP_ARP_BORROW];
+ParsMemoriaeInternae(net_pool, IDEMIP_TOTAL_BORROW + 1024u);
+LocusCarcerum(net_site, MMGR_MINIMUM_SECURITY(net_pool));
+MMGR_OWNERS(IDEMIP_OWNERS)
+
+uint8_t *netif_w = net_site.net_pool.persistent_buf_alloc(IDEMIP_NETIF_BORROW, idemip_owner_netif);
+uint8_t *arp_w = net_site.net_pool.persistent_buf_alloc(IDEMIP_ARP_BORROW, idemip_owner_arp);
 ```
 
 `src/idemip.h` is the only header an application includes. It adds no type, macro or call of its
@@ -53,13 +57,16 @@ opening comment for the worked example.
 
 |            |                                                                    |
 | ---------- | ------------------------------------------------------------------ |
-| CMake      | 3.20 or newer                                                      |
+| CMake      | 3.25 or newer                                                      |
 | C compiler | any C11 compiler; the warning set and `-Os` apply to GCC and Clang |
 | Python 3   | drives `test/harness.py`, which generates the Unity runners        |
 | Ruby       | runs Unity's `generate_test_runner.rb`                             |
-| Network    | once, so `FetchContent` can clone Unity v2.6.1                     |
+| Network    | once, so `FetchContent` can clone Unity v2.6.1 and embedded_types  |
 
 Python and Ruby are needed only to build the tests.
+
+`include/MMgr` is the MMgr submodule. Clone with `git clone --recurse-submodules`, or run
+`git submodule update --init` in an existing clone.
 
 ## Build
 
@@ -100,6 +107,9 @@ ctest --test-dir ../build --output-on-failure
 
 Release builds take `-Os` and link-time optimization, which is what folds the namespace
 indirection. `IDEMIP_LTO=OFF` turns the latter off.
+
+`IDEMIP_WORD_BITS` sets the machine word the whole build takes: 16, 32 or 64 bits. The default is 32,
+the word of the ESP32.
 
 ## Capabilities
 
@@ -192,7 +202,7 @@ cmake -S . -B ../build -G Ninja -DCMAKE_C_FLAGS=-DIDEMIP_TCP_PCBS=2
 ```
 
 which takes the total above to 29296. Each borrow is a formula over the counts, never a number, and
-each unit's `.c` carries `static_assert(sizeof(<Unit>Ctx) <= IDEMIP_<UNIT>_CTX_BYTES)`, so a
+each unit's `.c` carries `EMBED_STATIC_ASSERT(sizeof(<Unit>Ctx) <= IDEMIP_<UNIT>_CTX_BYTES)`, so a
 context that outgrows its budget fails the build naming the macro to raise.
 
 ## Tests
@@ -218,9 +228,10 @@ header and never wired to a caller is invisible to a green test run.
 ## Style
 
 `src/` is C11 with no heap, no `auto`, and no array with automatic storage duration. The only
-system headers it takes are `<assert.h>` for `static_assert`, `<stddef.h>`, `<stdint.h>` for the
-fixed widths, and `<string.h>` for `memcpy`, `memset` and `memcmp`; there is no `<stdlib.h>` and
-nothing is parsed by the library. Names are flat `idemip_snake_case` in one namespace. Sizes are
+system headers it takes are `<stddef.h>` and `<stdint.h>` for the fixed widths; there is no
+`<stdlib.h>` and nothing is parsed by the library. `memcpy`, `memset` and `memcmp` are MMgr's,
+from `include/MMgr`. The dispatch tables, `EMBED_CALL`, `EMBED_STATIC_ASSERT`, `embed_bool` and
+`embed_word` are embedded_types', which `deps/` fetches. Names are flat `idemip_snake_case` in one namespace. Sizes are
 powers of two so an index is a shift, because hardware divide is not on every target in the list.
 `test/` and `tools/` are exempt and read as plain host C.
 

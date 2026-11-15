@@ -16,7 +16,7 @@
 
 #include "src/core/stats.h"
 
-#include <string.h>
+#include "support/borrows.h"
 #include <unity.h>
 
 #define CANARY 0x5Au
@@ -25,13 +25,16 @@
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each so
 // a write past the map is visible.
-static _Alignas(8) uint8_t work_a[IDEMIP_STATS_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_STATS_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_STATS_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_STATS_BORROW + 16))
+static uint8_t *work_b;
 
 static void arm_canary(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_STATS_BORROW, CANARY, cap - IDEMIP_STATS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_STATS_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_STATS_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -45,7 +48,7 @@ static void check_canary(const uint8_t *w, size_t cap)
 // Fill the mapped span, leaving the canary alone, so a region a call fails to touch is visible.
 static void dirty(uint8_t *w, uint8_t v)
 {
-    memset(w, v, IDEMIP_STATS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = v, .bytes = IDEMIP_STATS_BORROW);
 }
 
 static void expect_span(const uint8_t *w, size_t off, size_t len, uint8_t v, const char *what)
@@ -58,13 +61,15 @@ static void expect_span(const uint8_t *w, size_t off, size_t len, uint8_t v, con
 
 void setUp(void)
 {
-    arm_canary(work_a, sizeof work_a);
-    arm_canary(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_stats);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_stats);
+    arm_canary(work_a, WORK_A_BYTES);
+    arm_canary(work_b, WORK_B_BYTES);
 }
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // Plausible operands for every entry, so a case can drive the whole namespace.
@@ -833,9 +838,7 @@ void test_the_ipv4_and_ipv6_groups_are_separate_sets(void)
 // The four octets at a published offset, read as bytes so nothing is assumed about the region type.
 static uint32_t raw_ctr(const uint8_t *w, size_t off)
 {
-    uint32_t v = 0;
-    memcpy(&v, w + off, sizeof v);
-    return v;
+    return EMBED_CALL(proxim.load32, ProximusCfg, .at = w + off);
 }
 
 // The borrow map is public, so a reader finds the object an id names at

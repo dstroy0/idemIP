@@ -27,7 +27,7 @@
 
 #if IDEMIP_ENABLE_TCP
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief Octets an address operand and an address in an entry span.
@@ -68,12 +68,12 @@ IDEMIP_BEGIN_DECLS
 /** @brief The mask that wraps an ephemeral port walk, IDEMIP_TCP_PCB_PORT_EPH_COUNT - 1. */
 #define IDEMIP_TCP_PCB_PORT_EPH_MASK (IDEMIP_TCP_PCB_PORT_EPH_COUNT - 1u)
 
-static_assert((IDEMIP_TCP_PCB_PORT_EPH_COUNT & IDEMIP_TCP_PCB_PORT_EPH_MASK) == 0u,
-              "the ephemeral ports must number a power of two so the walk wraps with a mask");
-static_assert((IDEMIP_TCP_PCB_PORT_EPH_FIRST & IDEMIP_TCP_PCB_PORT_EPH_MASK) == 0u,
-              "the first ephemeral port must be a multiple of their count so an OR rebuilds the port");
-static_assert(IDEMIP_TCP_PCB_PORT_EPH_FIRST >= 1024u,
-              "RFC 6056 sec 3.2 bounds an ephemeral pool below at 1024, the first non-System Port");
+EMBED_STATIC_ASSERT((IDEMIP_TCP_PCB_PORT_EPH_COUNT & IDEMIP_TCP_PCB_PORT_EPH_MASK) == 0u,
+                    "the ephemeral ports must number a power of two so the walk wraps with a mask");
+EMBED_STATIC_ASSERT((IDEMIP_TCP_PCB_PORT_EPH_FIRST & IDEMIP_TCP_PCB_PORT_EPH_MASK) == 0u,
+                    "the first ephemeral port must be a multiple of their count so an OR rebuilds the port");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_PCB_PORT_EPH_FIRST >= 1024u,
+                    "RFC 6056 sec 3.2 bounds an ephemeral pool below at 1024, the first non-System Port");
 
 /**
  * @brief The eleven states of RFC 9293 sec 3.3.2.
@@ -83,8 +83,8 @@ static_assert(IDEMIP_TCP_PCB_PORT_EPH_FIRST >= 1024u,
  * represents the state when there is no TCB, and therefore, no connection." CLOSED is zero, so a
  * zeroed entry reads as the state that has no TCB.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
+EMBED_ENUM_BYTE(
+    IdemIpTcpState,
     IDEMIP_TCP_STATE_CLOSED = 0,   ///< "represents no connection state at all"
     IDEMIP_TCP_STATE_LISTEN,       ///< "waiting for a connection request from any remote TCP peer and port"
     IDEMIP_TCP_STATE_SYN_SENT,     ///< "waiting for a matching connection request after having sent a
@@ -103,7 +103,7 @@ typedef enum IDEMIP_ENUM_PACKED
                                    ///< previously sent to the remote TCP peer"
     IDEMIP_TCP_STATE_TIME_WAIT,    ///< "waiting for enough time to pass to be sure the remote TCP peer
                                    ///< received the acknowledgment of its connection termination request"
-} IdemIpTcpState;
+);
 
 /** @brief The eleven states, so a walk over them is bounded by a constant. */
 #define IDEMIP_TCP_STATES 11u
@@ -752,28 +752,27 @@ void idemip_tcp_pcb_oos_free(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const TcpPcbNs TcpPcb IDEMIP_UNUSED = {
-    .clear = idemip_tcp_pcb_clear,
-    .open = idemip_tcp_pcb_open,
-    .opt = idemip_tcp_pcb_opt,
-    .close = idemip_tcp_pcb_close,
-    .bind = idemip_tcp_pcb_bind,
-    .connect = idemip_tcp_pcb_connect,
-    .load = idemip_tcp_pcb_load,
-    .store = idemip_tcp_pcb_store,
-    .accept = idemip_tcp_pcb_accept,
-    .listen = idemip_tcp_pcb_listen,
-    .unlisten = idemip_tcp_pcb_unlisten,
-    .find = idemip_tcp_pcb_find,
-    .find_listener = idemip_tcp_pcb_find_listener,
-    .seg_alloc = idemip_tcp_pcb_seg_alloc,
-    .seg_load = idemip_tcp_pcb_seg_load,
-    .seg_sent = idemip_tcp_pcb_seg_sent,
-    .seg_free = idemip_tcp_pcb_seg_free,
-    .oos_alloc = idemip_tcp_pcb_oos_alloc,
-    .oos_load = idemip_tcp_pcb_oos_load,
-    .oos_free = idemip_tcp_pcb_oos_free};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE TcpPcbNs TcpPcb EMBED_UNUSED = {.clear = idemip_tcp_pcb_clear,
+                                                    .open = idemip_tcp_pcb_open,
+                                                    .opt = idemip_tcp_pcb_opt,
+                                                    .close = idemip_tcp_pcb_close,
+                                                    .bind = idemip_tcp_pcb_bind,
+                                                    .connect = idemip_tcp_pcb_connect,
+                                                    .load = idemip_tcp_pcb_load,
+                                                    .store = idemip_tcp_pcb_store,
+                                                    .accept = idemip_tcp_pcb_accept,
+                                                    .listen = idemip_tcp_pcb_listen,
+                                                    .unlisten = idemip_tcp_pcb_unlisten,
+                                                    .find = idemip_tcp_pcb_find,
+                                                    .find_listener = idemip_tcp_pcb_find_listener,
+                                                    .seg_alloc = idemip_tcp_pcb_seg_alloc,
+                                                    .seg_load = idemip_tcp_pcb_seg_load,
+                                                    .seg_sent = idemip_tcp_pcb_seg_sent,
+                                                    .seg_free = idemip_tcp_pcb_seg_free,
+                                                    .oos_alloc = idemip_tcp_pcb_oos_alloc,
+                                                    .oos_load = idemip_tcp_pcb_oos_load,
+                                                    .oos_free = idemip_tcp_pcb_oos_free};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_TCP
 

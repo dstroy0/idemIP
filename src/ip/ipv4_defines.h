@@ -120,40 +120,42 @@
 // Each offset is the one before it plus that field's width, and the last lands on the option-free
 // header length.
 
-static_assert(IDEMIP_IP4_OFF_TOS == IDEMIP_IP4_OFF_VER_IHL + 1u, "Version and IHL share one octet");
-static_assert(IDEMIP_IP4_OFF_TOTAL_LEN == IDEMIP_IP4_OFF_TOS + 1u, "Type of Service is 8 bits");
-static_assert(IDEMIP_IP4_OFF_ID == IDEMIP_IP4_OFF_TOTAL_LEN + 2u, "Total Length is 16 bits");
-static_assert(IDEMIP_IP4_OFF_FLAGS_FRAG == IDEMIP_IP4_OFF_ID + 2u, "Identification is 16 bits");
-static_assert(IDEMIP_IP4_OFF_TTL == IDEMIP_IP4_OFF_FLAGS_FRAG + 2u, "Flags and Fragment Offset share 16 bits");
-static_assert(IDEMIP_IP4_OFF_PROTO == IDEMIP_IP4_OFF_TTL + 1u, "Time to Live is 8 bits");
-static_assert(IDEMIP_IP4_OFF_CKSUM == IDEMIP_IP4_OFF_PROTO + 1u, "Protocol is 8 bits");
-static_assert(IDEMIP_IP4_OFF_SRC == IDEMIP_IP4_OFF_CKSUM + 2u, "Header Checksum is 16 bits");
-static_assert(IDEMIP_IP4_OFF_DST == IDEMIP_IP4_OFF_SRC + 4u, "Source Address is 32 bits");
-static_assert(IDEMIP_IP4_OFF_OPTIONS == IDEMIP_IP4_OFF_DST + 4u, "Destination Address is 32 bits");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_OFF_TOS == IDEMIP_IP4_OFF_VER_IHL + 1u, "Version and IHL share one octet");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_OFF_TOTAL_LEN == IDEMIP_IP4_OFF_TOS + 1u, "Type of Service is 8 bits");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_OFF_ID == IDEMIP_IP4_OFF_TOTAL_LEN + 2u, "Total Length is 16 bits");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_OFF_FLAGS_FRAG == IDEMIP_IP4_OFF_ID + 2u, "Identification is 16 bits");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_OFF_TTL == IDEMIP_IP4_OFF_FLAGS_FRAG + 2u, "Flags and Fragment Offset share 16 bits");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_OFF_PROTO == IDEMIP_IP4_OFF_TTL + 1u, "Time to Live is 8 bits");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_OFF_CKSUM == IDEMIP_IP4_OFF_PROTO + 1u, "Protocol is 8 bits");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_OFF_SRC == IDEMIP_IP4_OFF_CKSUM + 2u, "Header Checksum is 16 bits");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_OFF_DST == IDEMIP_IP4_OFF_SRC + 4u, "Source Address is 32 bits");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_OFF_OPTIONS == IDEMIP_IP4_OFF_DST + 4u, "Destination Address is 32 bits");
 
-static_assert(IDEMIP_IP4_OFF_OPTIONS == IDEMIP_IPV4_HDR_LEN,
-              "the RFC 791 field offsets must sum to the option-free header length");
-static_assert(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) == IDEMIP_IPV4_HDR_LEN,
-              "the minimum IHL of 5 words is the option-free header (RFC 791 sec 3.1)");
-static_assert(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MAX) == IDEMIP_IP4_HDR_MAX,
-              "RFC 791 sec 3.1: an IHL of 15 words is the 60-octet maximal internet header");
-static_assert(IDEMIP_IP4_TOTAL_LEN_MAX == 0xFFFFu,
-              "RFC 791 sec 3.1: Total Length is 16 bits, allowing up to 65,535 octets");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_OFF_OPTIONS == IDEMIP_IPV4_HDR_LEN,
+                    "the RFC 791 field offsets must sum to the option-free header length");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) == IDEMIP_IPV4_HDR_LEN,
+                    "the minimum IHL of 5 words is the option-free header (RFC 791 sec 3.1)");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MAX) == IDEMIP_IP4_HDR_MAX,
+                    "RFC 791 sec 3.1: an IHL of 15 words is the 60-octet maximal internet header");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_TOTAL_LEN_MAX == 0xFFFFu,
+                    "RFC 791 sec 3.1: Total Length is 16 bits, allowing up to 65,535 octets");
 
-static_assert(IDEMIP_IP4_FLAG_RESERVED == 0x8000u && IDEMIP_IP4_FLAG_DF == 0x4000u && IDEMIP_IP4_FLAG_MF == 0x2000u,
-              "RFC 791 sec 3.1 Flags: bit 0 reserved, bit 1 DF, bit 2 MF, most significant first");
-static_assert((IDEMIP_IP4_FLAG_RESERVED | IDEMIP_IP4_FLAG_DF | IDEMIP_IP4_FLAG_MF | IDEMIP_IP4_FRAG_OFF_MASK) ==
-                  0xFFFFu,
-              "the three flags and the 13-bit Fragment Offset fill one 16-bit field");
-static_assert((IDEMIP_IP4_FRAG_OFF_MASK & (IDEMIP_IP4_FLAG_RESERVED | IDEMIP_IP4_FLAG_DF | IDEMIP_IP4_FLAG_MF)) == 0u,
-              "the Fragment Offset mask must not reach a flag bit");
-static_assert(IDEMIP_IP4_FRAG_UNIT == (1u << IDEMIP_IP4_FRAG_SHIFT),
-              "RFC 791 sec 3.1: the fragment offset is measured in units of 8 octets, so its shift is three");
-static_assert(IDEMIP_IP4_FRAG_MAX_UNITS == IDEMIP_IP4_FRAG_OFF_MASK + 1u,
-              "RFC 791 sec 3.2: 2**13 = 8192 fragments is the whole 13-bit field");
-static_assert(IDEMIP_IP4_FRAG_MAX_UNITS * IDEMIP_IP4_FRAG_UNIT == 65536u,
-              "RFC 791 sec 3.2: 8192 fragments of 8 octets each total 65,536 octets");
-static_assert(IDEMIP_IP4_MIN_FORWARD_MTU == IDEMIP_IP4_HDR_MAX + IDEMIP_IP4_FRAG_UNIT,
-              "RFC 791 sec 3.2: 68 octets is a 60-octet header plus the 8-octet minimum fragment");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_FLAG_RESERVED == 0x8000u && IDEMIP_IP4_FLAG_DF == 0x4000u &&
+                        IDEMIP_IP4_FLAG_MF == 0x2000u,
+                    "RFC 791 sec 3.1 Flags: bit 0 reserved, bit 1 DF, bit 2 MF, most significant first");
+EMBED_STATIC_ASSERT((IDEMIP_IP4_FLAG_RESERVED | IDEMIP_IP4_FLAG_DF | IDEMIP_IP4_FLAG_MF | IDEMIP_IP4_FRAG_OFF_MASK) ==
+                        0xFFFFu,
+                    "the three flags and the 13-bit Fragment Offset fill one 16-bit field");
+EMBED_STATIC_ASSERT((IDEMIP_IP4_FRAG_OFF_MASK & (IDEMIP_IP4_FLAG_RESERVED | IDEMIP_IP4_FLAG_DF | IDEMIP_IP4_FLAG_MF)) ==
+                        0u,
+                    "the Fragment Offset mask must not reach a flag bit");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_FRAG_UNIT == (1u << IDEMIP_IP4_FRAG_SHIFT),
+                    "RFC 791 sec 3.1: the fragment offset is measured in units of 8 octets, so its shift is three");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_FRAG_MAX_UNITS == IDEMIP_IP4_FRAG_OFF_MASK + 1u,
+                    "RFC 791 sec 3.2: 2**13 = 8192 fragments is the whole 13-bit field");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_FRAG_MAX_UNITS *IDEMIP_IP4_FRAG_UNIT == 65536u,
+                    "RFC 791 sec 3.2: 8192 fragments of 8 octets each total 65,536 octets");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_MIN_FORWARD_MTU == IDEMIP_IP4_HDR_MAX + IDEMIP_IP4_FRAG_UNIT,
+                    "RFC 791 sec 3.2: 68 octets is a 60-octet header plus the 8-octet minimum fragment");
 
 #endif // IDEMIP_IPV4_DEFINES_H

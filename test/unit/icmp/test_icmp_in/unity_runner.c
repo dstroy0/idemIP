@@ -4,9 +4,10 @@
 #include "unity.h"
 #include "src/icmp/icmp_in.h"
 #include "src/common_defines.h"
-#include "src/ip/ipv4_defines.h"
 #include "src/icmp/icmp_defines.h"
-#include <string.h>
+#include "src/ip/ipv4_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);
@@ -137,71 +138,71 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/icmp/test_icmp_in/test_icmp_in.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 169);
-  run_test(test_uncleared_borrow_refuses_work, "test_uncleared_borrow_refuses_work", 179);
-  run_test(test_clear_reports_ok_and_zeroes_the_block, "test_clear_reports_ok_and_zeroes_the_block", 194);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 206);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 229);
-  run_test(test_echo_request_is_answered_with_an_echo_reply, "test_echo_request_is_answered_with_an_echo_reply", 250);
-  run_test(test_echo_reply_carries_the_data_entirely, "test_echo_reply_carries_the_data_entirely", 269);
-  run_test(test_echo_reply_checksum_verifies, "test_echo_reply_checksum_verifies", 282);
-  run_test(test_echo_reply_source_is_the_specific_destination, "test_echo_reply_source_is_the_specific_destination", 294);
-  run_test(test_echo_to_a_broadcast_destination_is_discarded, "test_echo_to_a_broadcast_destination_is_discarded", 306);
-  run_test(test_echo_to_a_multicast_destination_is_discarded, "test_echo_to_a_multicast_destination_is_discarded", 318);
-  run_test(test_echo_reply_is_truncated_to_the_maximum_transmission_size, "test_echo_reply_is_truncated_to_the_maximum_transmission_size", 329);
-  run_test(test_an_arriving_echo_reply_goes_to_the_user, "test_an_arriving_echo_reply_goes_to_the_user", 346);
-  run_test(test_a_bad_checksum_is_discarded, "test_a_bad_checksum_is_discarded", 362);
-  run_test(test_an_unknown_type_is_discarded, "test_an_unknown_type_is_discarded", 379);
-  run_test(test_an_information_request_is_discarded, "test_an_information_request_is_discarded", 391);
-  run_test(test_a_timestamp_request_is_discarded, "test_a_timestamp_request_is_discarded", 404);
-  run_test(test_a_message_shorter_than_the_common_header_is_discarded, "test_a_message_shorter_than_the_common_header_is_discarded", 418);
-  run_test(test_an_echo_shorter_than_its_header_is_discarded, "test_an_echo_shorter_than_its_header_is_discarded", 429);
-  run_test(test_recv_refuses_a_datagram_the_internet_layer_would_discard, "test_recv_refuses_a_datagram_the_internet_layer_would_discard", 444);
-  run_test(test_recv_refuses_a_null_datagram_and_a_null_out, "test_recv_refuses_a_null_datagram_and_a_null_out", 454);
-  run_test(test_recv_refuses_an_out_buffer_below_the_echo_header, "test_recv_refuses_an_out_buffer_below_the_echo_header", 469);
-  run_test(test_destination_unreachable_demuxes_on_the_quoted_protocol, "test_destination_unreachable_demuxes_on_the_quoted_protocol", 483);
-  run_test(test_source_quench_time_exceeded_and_parameter_problem_reach_the_transport, "test_source_quench_time_exceeded_and_parameter_problem_reach_the_transport", 499);
-  run_test(test_a_redirect_reports_the_gateway, "test_a_redirect_reports_the_gateway", 518);
-  run_test(test_a_redirect_naming_an_off_link_gateway_is_discarded, "test_a_redirect_naming_an_off_link_gateway_is_discarded", 534);
-  run_test(test_a_redirect_naming_a_broadcast_or_multicast_gateway_is_discarded, "test_a_redirect_naming_a_broadcast_or_multicast_gateway_is_discarded", 552);
-  run_test(test_an_accepted_redirect_reports_the_destination_it_names, "test_an_accepted_redirect_reports_the_destination_it_names", 572);
-  run_test(test_an_error_without_a_whole_quoted_header_is_discarded, "test_an_error_without_a_whole_quoted_header_is_discarded", 588);
-  run_test(test_a_port_unreachable_is_built, "test_a_port_unreachable_is_built", 604);
-  run_test(test_an_error_quotes_the_header_and_eight_data_octets, "test_an_error_quotes_the_header_and_eight_data_octets", 620);
-  run_test(test_an_error_checksum_verifies, "test_an_error_checksum_verifies", 633);
-  run_test(test_an_error_goes_back_to_the_datagrams_source, "test_an_error_goes_back_to_the_datagrams_source", 642);
-  run_test(test_a_parameter_problem_carries_the_pointer, "test_a_parameter_problem_carries_the_pointer", 653);
-  run_test(test_no_error_about_an_icmp_error_message, "test_no_error_about_an_icmp_error_message", 666);
-  run_test(test_an_error_about_an_icmp_query_is_allowed, "test_an_error_about_an_icmp_query_is_allowed", 678);
-  run_test(test_no_error_about_a_limited_broadcast_destination, "test_no_error_about_a_limited_broadcast_destination", 688);
-  run_test(test_no_error_about_a_subnet_directed_broadcast_destination, "test_no_error_about_a_subnet_directed_broadcast_destination", 698);
-  run_test(test_no_error_about_a_multicast_destination, "test_no_error_about_a_multicast_destination", 707);
-  run_test(test_no_error_about_a_link_layer_broadcast, "test_no_error_about_a_link_layer_broadcast", 718);
-  run_test(test_no_error_about_a_non_initial_fragment, "test_no_error_about_a_non_initial_fragment", 730);
-  run_test(test_an_error_about_the_first_fragment_is_allowed, "test_an_error_about_the_first_fragment_is_allowed", 738);
-  run_test(test_no_error_about_a_zero_source, "test_no_error_about_a_zero_source", 747);
-  run_test(test_no_error_about_a_loopback_source, "test_no_error_about_a_loopback_source", 756);
-  run_test(test_no_error_about_a_broadcast_source, "test_no_error_about_a_broadcast_source", 765);
-  run_test(test_no_error_about_a_multicast_source, "test_no_error_about_a_multicast_source", 774);
-  run_test(test_no_error_about_a_class_e_source, "test_no_error_about_a_class_e_source", 783);
-  run_test(test_a_host_does_not_originate_a_redirect, "test_a_host_does_not_originate_a_redirect", 793);
-  run_test(test_error_refuses_a_query_type, "test_error_refuses_a_query_type", 804);
-  run_test(test_error_refuses_a_buffer_short_of_the_quote, "test_error_refuses_a_buffer_short_of_the_quote", 815);
-  run_test(test_error_refuses_a_datagram_the_internet_layer_would_discard, "test_error_refuses_a_datagram_the_internet_layer_would_discard", 825);
-  run_test(test_error_refuses_a_null_datagram_and_a_null_out, "test_error_refuses_a_null_datagram_and_a_null_out", 834);
-  run_test(test_a_suppressed_error_never_becomes_ok_on_a_retry, "test_a_suppressed_error_never_becomes_ok_on_a_retry", 850);
-  run_test(test_originated_errors_are_rate_limited, "test_originated_errors_are_rate_limited", 870);
-  run_test(test_source_quench_is_rate_limited, "test_source_quench_is_rate_limited", 913);
-  run_test(test_the_rate_limit_is_per_borrow, "test_the_rate_limit_is_per_borrow", 930);
-  run_test(test_an_error_quotes_a_header_with_options_whole, "test_an_error_quotes_a_header_with_options_whole", 950);
-  run_test(test_a_built_error_repeats, "test_a_built_error_repeats", 980);
-  run_test(test_a_redirect_naming_a_classful_broadcast_is_discarded, "test_a_redirect_naming_a_classful_broadcast_is_discarded", 1002);
-  run_test(test_a_single_host_interface_has_no_subnet_broadcast, "test_a_single_host_interface_has_no_subnet_broadcast", 1057);
-  run_test(test_a_redirect_with_no_gateway_field_or_no_readable_quote, "test_a_redirect_with_no_gateway_field_or_no_readable_quote", 1072);
-  run_test(test_the_icmp_error_suppression_reads_the_message_the_datagram_carries, "test_the_icmp_error_suppression_reads_the_message_the_datagram_carries", 1107);
-  run_test(test_an_error_about_a_datagram_shorter_than_the_quote_carries_what_there_is, "test_an_error_about_a_datagram_shorter_than_the_quote_carries_what_there_is", 1127);
-  run_test(test_the_token_bucket_refill_stops_at_the_top, "test_the_token_bucket_refill_stops_at_the_top", 1143);
-  run_test(test_a_quote_whose_header_length_is_below_the_minimum_names_no_protocol, "test_a_quote_whose_header_length_is_below_the_minimum_names_no_protocol", 1166);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 175);
+  run_test(test_uncleared_borrow_refuses_work, "test_uncleared_borrow_refuses_work", 185);
+  run_test(test_clear_reports_ok_and_zeroes_the_block, "test_clear_reports_ok_and_zeroes_the_block", 200);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 212);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 235);
+  run_test(test_echo_request_is_answered_with_an_echo_reply, "test_echo_request_is_answered_with_an_echo_reply", 256);
+  run_test(test_echo_reply_carries_the_data_entirely, "test_echo_reply_carries_the_data_entirely", 275);
+  run_test(test_echo_reply_checksum_verifies, "test_echo_reply_checksum_verifies", 288);
+  run_test(test_echo_reply_source_is_the_specific_destination, "test_echo_reply_source_is_the_specific_destination", 300);
+  run_test(test_echo_to_a_broadcast_destination_is_discarded, "test_echo_to_a_broadcast_destination_is_discarded", 312);
+  run_test(test_echo_to_a_multicast_destination_is_discarded, "test_echo_to_a_multicast_destination_is_discarded", 324);
+  run_test(test_echo_reply_is_truncated_to_the_maximum_transmission_size, "test_echo_reply_is_truncated_to_the_maximum_transmission_size", 335);
+  run_test(test_an_arriving_echo_reply_goes_to_the_user, "test_an_arriving_echo_reply_goes_to_the_user", 352);
+  run_test(test_a_bad_checksum_is_discarded, "test_a_bad_checksum_is_discarded", 368);
+  run_test(test_an_unknown_type_is_discarded, "test_an_unknown_type_is_discarded", 385);
+  run_test(test_an_information_request_is_discarded, "test_an_information_request_is_discarded", 397);
+  run_test(test_a_timestamp_request_is_discarded, "test_a_timestamp_request_is_discarded", 410);
+  run_test(test_a_message_shorter_than_the_common_header_is_discarded, "test_a_message_shorter_than_the_common_header_is_discarded", 424);
+  run_test(test_an_echo_shorter_than_its_header_is_discarded, "test_an_echo_shorter_than_its_header_is_discarded", 435);
+  run_test(test_recv_refuses_a_datagram_the_internet_layer_would_discard, "test_recv_refuses_a_datagram_the_internet_layer_would_discard", 450);
+  run_test(test_recv_refuses_a_null_datagram_and_a_null_out, "test_recv_refuses_a_null_datagram_and_a_null_out", 460);
+  run_test(test_recv_refuses_an_out_buffer_below_the_echo_header, "test_recv_refuses_an_out_buffer_below_the_echo_header", 475);
+  run_test(test_destination_unreachable_demuxes_on_the_quoted_protocol, "test_destination_unreachable_demuxes_on_the_quoted_protocol", 489);
+  run_test(test_source_quench_time_exceeded_and_parameter_problem_reach_the_transport, "test_source_quench_time_exceeded_and_parameter_problem_reach_the_transport", 505);
+  run_test(test_a_redirect_reports_the_gateway, "test_a_redirect_reports_the_gateway", 524);
+  run_test(test_a_redirect_naming_an_off_link_gateway_is_discarded, "test_a_redirect_naming_an_off_link_gateway_is_discarded", 540);
+  run_test(test_a_redirect_naming_a_broadcast_or_multicast_gateway_is_discarded, "test_a_redirect_naming_a_broadcast_or_multicast_gateway_is_discarded", 558);
+  run_test(test_an_accepted_redirect_reports_the_destination_it_names, "test_an_accepted_redirect_reports_the_destination_it_names", 578);
+  run_test(test_an_error_without_a_whole_quoted_header_is_discarded, "test_an_error_without_a_whole_quoted_header_is_discarded", 594);
+  run_test(test_a_port_unreachable_is_built, "test_a_port_unreachable_is_built", 610);
+  run_test(test_an_error_quotes_the_header_and_eight_data_octets, "test_an_error_quotes_the_header_and_eight_data_octets", 626);
+  run_test(test_an_error_checksum_verifies, "test_an_error_checksum_verifies", 639);
+  run_test(test_an_error_goes_back_to_the_datagrams_source, "test_an_error_goes_back_to_the_datagrams_source", 648);
+  run_test(test_a_parameter_problem_carries_the_pointer, "test_a_parameter_problem_carries_the_pointer", 659);
+  run_test(test_no_error_about_an_icmp_error_message, "test_no_error_about_an_icmp_error_message", 672);
+  run_test(test_an_error_about_an_icmp_query_is_allowed, "test_an_error_about_an_icmp_query_is_allowed", 684);
+  run_test(test_no_error_about_a_limited_broadcast_destination, "test_no_error_about_a_limited_broadcast_destination", 694);
+  run_test(test_no_error_about_a_subnet_directed_broadcast_destination, "test_no_error_about_a_subnet_directed_broadcast_destination", 704);
+  run_test(test_no_error_about_a_multicast_destination, "test_no_error_about_a_multicast_destination", 713);
+  run_test(test_no_error_about_a_link_layer_broadcast, "test_no_error_about_a_link_layer_broadcast", 724);
+  run_test(test_no_error_about_a_non_initial_fragment, "test_no_error_about_a_non_initial_fragment", 736);
+  run_test(test_an_error_about_the_first_fragment_is_allowed, "test_an_error_about_the_first_fragment_is_allowed", 744);
+  run_test(test_no_error_about_a_zero_source, "test_no_error_about_a_zero_source", 753);
+  run_test(test_no_error_about_a_loopback_source, "test_no_error_about_a_loopback_source", 762);
+  run_test(test_no_error_about_a_broadcast_source, "test_no_error_about_a_broadcast_source", 771);
+  run_test(test_no_error_about_a_multicast_source, "test_no_error_about_a_multicast_source", 780);
+  run_test(test_no_error_about_a_class_e_source, "test_no_error_about_a_class_e_source", 789);
+  run_test(test_a_host_does_not_originate_a_redirect, "test_a_host_does_not_originate_a_redirect", 799);
+  run_test(test_error_refuses_a_query_type, "test_error_refuses_a_query_type", 810);
+  run_test(test_error_refuses_a_buffer_short_of_the_quote, "test_error_refuses_a_buffer_short_of_the_quote", 821);
+  run_test(test_error_refuses_a_datagram_the_internet_layer_would_discard, "test_error_refuses_a_datagram_the_internet_layer_would_discard", 831);
+  run_test(test_error_refuses_a_null_datagram_and_a_null_out, "test_error_refuses_a_null_datagram_and_a_null_out", 840);
+  run_test(test_a_suppressed_error_never_becomes_ok_on_a_retry, "test_a_suppressed_error_never_becomes_ok_on_a_retry", 856);
+  run_test(test_originated_errors_are_rate_limited, "test_originated_errors_are_rate_limited", 876);
+  run_test(test_source_quench_is_rate_limited, "test_source_quench_is_rate_limited", 919);
+  run_test(test_the_rate_limit_is_per_borrow, "test_the_rate_limit_is_per_borrow", 936);
+  run_test(test_an_error_quotes_a_header_with_options_whole, "test_an_error_quotes_a_header_with_options_whole", 956);
+  run_test(test_a_built_error_repeats, "test_a_built_error_repeats", 986);
+  run_test(test_a_redirect_naming_a_classful_broadcast_is_discarded, "test_a_redirect_naming_a_classful_broadcast_is_discarded", 1008);
+  run_test(test_a_single_host_interface_has_no_subnet_broadcast, "test_a_single_host_interface_has_no_subnet_broadcast", 1063);
+  run_test(test_a_redirect_with_no_gateway_field_or_no_readable_quote, "test_a_redirect_with_no_gateway_field_or_no_readable_quote", 1078);
+  run_test(test_the_icmp_error_suppression_reads_the_message_the_datagram_carries, "test_the_icmp_error_suppression_reads_the_message_the_datagram_carries", 1113);
+  run_test(test_an_error_about_a_datagram_shorter_than_the_quote_carries_what_there_is, "test_an_error_about_a_datagram_shorter_than_the_quote_carries_what_there_is", 1133);
+  run_test(test_the_token_bucket_refill_stops_at_the_top, "test_the_token_bucket_refill_stops_at_the_top", 1149);
+  run_test(test_a_quote_whose_header_length_is_below_the_minimum_names_no_protocol, "test_a_quote_whose_header_length_is_below_the_minimum_names_no_protocol", 1172);
 
   return UNITY_END();
 }

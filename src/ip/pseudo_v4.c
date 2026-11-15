@@ -21,7 +21,7 @@
 /** @brief Largest upper-layer length the IPv4 form's 16-bit field carries. */
 #define IDEMIP_PSEUDO_V4_LEN_MAX 0xFFFFu
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief One accumulate, RFC 768's form. */
 typedef struct
@@ -36,18 +36,18 @@ typedef struct
 /**
  * @brief Accumulate RFC 768's pseudo-header into @c sum.
  * @param c The accumulate.
- * @return IDEMIP_FALSE when the length is one this form's sixteen-bit field cannot carry, in which
+ * @return EMBED_FALSE when the length is one this form's sixteen-bit field cannot carry, in which
  *         case the sum is left as it was.
  *
  * The two addresses are summed as halves of their words, then the protocol, then the length. The
  * zero octet RFC 768 puts before the protocol is why the protocol is added as the low half of its
  * word and nothing is added for the octet itself.
  */
-IDEMIP_INLINE idemip_bool pseudo4_accum(const Pseudo4Ctx *c)
+EMBED_INLINE embed_bool pseudo4_accum(const Pseudo4Ctx *c)
 {
     if (c->upper_len > (uint32_t)IDEMIP_PSEUDO_V4_LEN_MAX)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     uint32_t s = idemip_rd32(c->src);
     uint32_t d = idemip_rd32(c->dst);
@@ -59,17 +59,17 @@ IDEMIP_INLINE idemip_bool pseudo4_accum(const Pseudo4Ctx *c)
     a += (uint32_t)c->proto; // the zero octet leaves the protocol as the low half
     a += c->upper_len;
     *c->sum = a;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 /* The namespace is a table of function pointers with the caller's argument lists in their types,
    so this is what it points at. It builds the context and hands it to the body above. */
 
-idemip_bool idemip_pseudo4_accum(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst,
-                                 uint32_t upper_len)
+embed_bool idemip_pseudo4_accum(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst,
+                                uint32_t upper_len)
 {
-    return IDEMIP_CALL(pseudo4_accum, Pseudo4Ctx, .sum = sum, .proto = proto, .src = src, .dst = dst,
-                       .upper_len = upper_len);
+    return EMBED_CALL(pseudo4_accum, Pseudo4Ctx, .sum = sum, .proto = proto, .src = src, .dst = dst,
+                      .upper_len = upper_len);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

@@ -3,19 +3,15 @@
 
 /**
  * @file endian.h
- * @brief Wire integers, byte at a time.
+ * @brief Wire integers in network byte order, read and written through MMgr's magna_extremitas.
  *
  * Every protocol here puts its multi-byte fields in network byte order, and lands them wherever the
  * preceding fields end - RFC 826 puts a 32-bit protocol address at offset 14, RFC 791 puts one at
  * 12 inside a header that itself starts 14 bytes into the frame. Neither is aligned for its width.
  *
- * So a field is assembled from its bytes with shifts and masks rather than read through a cast. A
- * cast to a wider type at an odd address is a fault on the parts in the target list that require
- * natural alignment, and a silent penalty on the ones that only prefer it. Byte reads are always
- * aligned, so this is the only form that is correct everywhere and it is what every accessor here
- * compiles to.
- *
- * The table is the whole surface. There are no free functions to call.
+ * magna_extremitas reads and writes the most significant byte first, through proxim's loads and
+ * stores, which take any address. These four give each width its own type, so a call site states the
+ * width once.
  */
 
 #ifndef IDEMIP_ENDIAN_H
@@ -23,42 +19,52 @@
 
 #include "src/idemip_config.h"
 
-IDEMIP_BEGIN_DECLS
+#include "endian/endian.h"
 
-/** @brief Dispatch table. Addressed by offset, so the layout is asserted below. */
-typedef struct
-{
-    uint16_t (*rd16)(const uint8_t *p);
-    uint32_t (*rd32)(const uint8_t *p);
-    void (*wr16)(uint8_t *p, uint16_t v);
-    void (*wr32)(uint8_t *p, uint32_t v);
-} EndianNs;
-IDEMIP_NS_LAYOUT(EndianNs, rd16, rd32, wr16, wr32);
-
-/** @name The entries the table points at.
- *  @brief Nameable so a static const table can name them, and for no other reason. The table is
- *         still the whole surface: call through it.
- *  @{ */
-uint16_t idemip_rd16(const uint8_t *p);
-uint32_t idemip_rd32(const uint8_t *p);
-void idemip_wr16(uint8_t *p, uint16_t v);
-void idemip_wr32(uint8_t *p, uint32_t v);
-/** @} */
+EMBED_BEGIN_DECLS
 
 /**
- * @brief Module namespace.
- *
- * static const, like every other module's. gcc devirtualizes a call through one down to the
- * inlined body and cannot do that through an extern one, where the table is in another
- * translation unit and every call is a load and an indirect jump.
+ * @brief Reads a 16-bit field in network byte order.
+ * @param p The first of the two bytes [BORROWS].
+ * @return  The field.
  */
-IDEMIP_NS EndianNs endian IDEMIP_UNUSED = {
-    .rd16 = idemip_rd16,
-    .rd32 = idemip_rd32,
-    .wr16 = idemip_wr16,
-    .wr32 = idemip_wr32,
-};
+EMBED_INLINE uint16_t idemip_rd16(const uint8_t *p)
+{
+    // Explicit cast narrows the 64-bit read to the 16 bits MMGR_ENDIAN_16 reads
+    return (uint16_t)EMBED_CALL(magna_extremitas.rd, EndianCfg, .src = p, .width = MMGR_ENDIAN_16);
+}
 
-IDEMIP_END_DECLS
+/**
+ * @brief Reads a 32-bit field in network byte order.
+ * @param p The first of the four bytes [BORROWS].
+ * @return  The field.
+ */
+EMBED_INLINE uint32_t idemip_rd32(const uint8_t *p)
+{
+    // Explicit cast narrows the 64-bit read to the 32 bits MMGR_ENDIAN_32 reads
+    return (uint32_t)EMBED_CALL(magna_extremitas.rd, EndianCfg, .src = p, .width = MMGR_ENDIAN_32);
+}
+
+/**
+ * @brief Writes a 16-bit field in network byte order.
+ * @param p The first of the two bytes [BORROWS].
+ * @param v The field.
+ */
+EMBED_INLINE void idemip_wr16(uint8_t *p, uint16_t v)
+{
+    EMBED_CALL(magna_extremitas.wr, EndianCfg, .dst = p, .val = v, .width = MMGR_ENDIAN_16);
+}
+
+/**
+ * @brief Writes a 32-bit field in network byte order.
+ * @param p The first of the four bytes [BORROWS].
+ * @param v The field.
+ */
+EMBED_INLINE void idemip_wr32(uint8_t *p, uint32_t v)
+{
+    EMBED_CALL(magna_extremitas.wr, EndianCfg, .dst = p, .val = v, .width = MMGR_ENDIAN_32);
+}
+
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENDIAN_H

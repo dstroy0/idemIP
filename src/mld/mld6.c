@@ -18,7 +18,7 @@
 #include "src/mld/mld6.h"
 #include "src/ip/ipv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // One group on one interface. deadline_ms is the sec 4 report delay timer, drawn from
 // [0, Maximum Response Delay] and held in the milliseconds sec 3.4 states that field in.
@@ -28,8 +28,8 @@ typedef struct
     uint8_t group[IDEMIP_IP6_ADDR_LEN];
     IdemIpMld6State state;
     uint8_t netif;
-    idemip_bool last_reporter;
-    idemip_bool used;
+    embed_bool last_reporter;
+    embed_bool used;
     uint8_t pad[8];
 } Mld6Group;
 
@@ -37,7 +37,7 @@ typedef struct
 typedef struct
 {
     uint32_t now_ms;
-    idemip_bool ready;
+    embed_bool ready;
     uint8_t pad[3];
 } Mld6Ctx;
 
@@ -46,18 +46,19 @@ typedef struct
 IDEMIP_ASSERT_REGION(IDEMIP_MLD6_OFF_CTX, sizeof(Mld6Ctx), IDEMIP_MLD6_OFF_END, "mld6's context");
 
 // An index is (i << SHIFT), so each entry is exactly its width.
-static_assert(sizeof(Mld6Group) == (1u << IDEMIP_MLD6_ENTRY_SHIFT),
-              "a group entry must be 1 << IDEMIP_MLD6_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(Mld6Group) == (1u << IDEMIP_MLD6_ENTRY_SHIFT),
+                    "a group entry must be 1 << IDEMIP_MLD6_ENTRY_SHIFT wide");
 // The caller's borrow, split: the operand block, the context, then the table. mld6.h publishes the
 // offsets; these two asserts prove the span covers them before anything runs. The first keeps the
 // context inside the region ahead of the group table, the second the whole map inside the borrow.
-static_assert(IDEMIP_MLD6_OFF_CTX + sizeof(Mld6Ctx) <= IDEMIP_MLD6_OFF_GROUPS,
-              "IDEMIP_MLD6_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_MLD6_OFF_END <= IDEMIP_MLD6_BORROW,
-              "IDEMIP_MLD6_BORROW is short of the map - raise IDEMIP_MLD6_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_MLD6_OFF_CTX + sizeof(Mld6Ctx) <= IDEMIP_MLD6_OFF_GROUPS,
+    "IDEMIP_MLD6_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_MLD6_OFF_END <= IDEMIP_MLD6_BORROW,
+                    "IDEMIP_MLD6_BORROW is short of the map - raise IDEMIP_MLD6_CTX_BYTES in idemip_config.h");
 
 // Every table index counts the entries the borrow holds, so IDEMIP_MLD6_NONE names none of them.
-static_assert(IDEMIP_MLD6_GROUPS < IDEMIP_MLD6_NONE, "the table is wider than the index a result member carries");
+EMBED_STATIC_ASSERT(IDEMIP_MLD6_GROUPS < IDEMIP_MLD6_NONE, "the table is wider than the index a result member carries");
 
 // The regions, at their offsets in the caller's borrow.
 #define MLD6_IO(w) IDEMIP_MLD6_IO(w)
@@ -86,19 +87,19 @@ static_assert(IDEMIP_MLD6_GROUPS < IDEMIP_MLD6_NONE, "the table is wider than th
 // or 1 (node-local)", and the link-scope all-nodes address "never transitions to another state, and
 // never sends a Report or Done". Everything else, sec 5 included, is reported. The scope test runs
 // first, so the RFC 4291 sec 2.7.1 form ip6_addr.h names reaches this only at link scope.
-static idemip_bool mld6_reportable(const uint8_t *addr)
+static embed_bool mld6_reportable(const uint8_t *addr)
 {
     if ((addr[1] & MLD6_SCOPE_MASK) <= MLD6_SCOPE_INTERFACE_LOCAL)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    return idemip_ip6_addr_is_all_nodes(addr) ? IDEMIP_FALSE : IDEMIP_TRUE;
+    return idemip_ip6_addr_is_all_nodes(addr) ? EMBED_FALSE : EMBED_TRUE;
 }
 
 // The sec 3.6 Multicast Address a Report or Done carries names a multicast address, RFC 4291 sec 2.7.
-static idemip_bool mld6_is_multicast(const uint8_t *addr)
+static embed_bool mld6_is_multicast(const uint8_t *addr)
 {
-    return (addr[0] == MLD6_MULTICAST_PREFIX) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (addr[0] == MLD6_MULTICAST_PREFIX) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // --- the table -------------------------------------------------------------
@@ -146,9 +147,9 @@ static void mld6_report_entry(Mld6Io *io, const Mld6Group *g, uint8_t index)
 
 // A deadline has passed when the signed difference against the clock is not negative, which keeps the
 // comparison right across the millisecond clock's wrap.
-static idemip_bool mld6_due(uint32_t now_ms, uint32_t deadline_ms)
+static embed_bool mld6_due(uint32_t now_ms, uint32_t deadline_ms)
 {
-    return ((int32_t)(now_ms - deadline_ms) >= 0) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((int32_t)(now_ms - deadline_ms) >= 0) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // What is left of a running timer, zero once it is due.
@@ -198,15 +199,15 @@ static uint32_t mld6_draw(uint32_t *state, uint32_t max)
 // to the new random value only if the requested Maximum Response Delay is less than the remaining
 // value of the running timer". The comparison is against the requested delay, not the drawn one. A
 // Maximum Response Delay of zero draws zero, so the deadline lands on the clock and the sweep fires it.
-static idemip_bool mld6_arm(Mld6Group *g, uint32_t now_ms, uint32_t max_resp_ms, uint32_t draw_ms)
+static embed_bool mld6_arm(Mld6Group *g, uint32_t now_ms, uint32_t max_resp_ms, uint32_t draw_ms)
 {
     if (g->state == IDEMIP_MLD6_DELAYING_LISTENER && max_resp_ms >= mld6_remaining(now_ms, g->deadline_ms))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     g->deadline_ms = now_ms + draw_ms;
     g->state = IDEMIP_MLD6_DELAYING_LISTENER;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // --- the entries -----------------------------------------------------------
@@ -221,8 +222,8 @@ void idemip_mld6_clear(uint8_t *work)
         return; // no borrow, so nowhere to report
     }
     Mld6Io *io = MLD6_IO(work);
-    memset(work + IDEMIP_MLD6_OFF_CTX, 0, MLD6_STATE_BYTES);
-    MLD6_CTX(work)->ready = IDEMIP_TRUE;
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_MLD6_OFF_CTX, .val = 0, .bytes = MLD6_STATE_BYTES);
+    MLD6_CTX(work)->ready = EMBED_TRUE;
     io->status = IDEMIP_OK;
 }
 
@@ -242,7 +243,7 @@ void idemip_mld6_join(uint8_t *work)
     const Mld6Ctx *ctx = MLD6_CTX(work);
     io->status = IDEMIP_ERR;
     io->index = IDEMIP_MLD6_NONE;
-    io->send_report = IDEMIP_FALSE;
+    io->send_report = EMBED_FALSE;
     if (!ctx->ready || io->group_args.group == NULL || io->group_args.netif >= IDEMIP_NETIF_COUNT)
     {
         return;
@@ -268,9 +269,9 @@ void idemip_mld6_join(uint8_t *work)
     }
 
     Mld6Group *g = MLD6_GROUP_AT(work, index);
-    memcpy(g->group, io->group_args.group, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g->group, .at = io->group_args.group, .size = IDEMIP_IP6_ADDR_LEN);
     g->netif = io->group_args.netif;
-    g->used = IDEMIP_TRUE;
+    g->used = EMBED_TRUE;
     if (mld6_reportable(g->group))
     {
         // sec 5 start listening: "If this is an unsolicited Report, the timer is set to a delay value
@@ -278,14 +279,14 @@ void idemip_mld6_join(uint8_t *work)
         // put every node that joined at the same instant on the same repeat.
         uint32_t mixer = io->group_args.rand;
         g->state = IDEMIP_MLD6_DELAYING_LISTENER;
-        g->last_reporter = IDEMIP_TRUE;
+        g->last_reporter = EMBED_TRUE;
         g->deadline_ms = io->group_args.now_ms + mld6_draw(&mixer, (uint32_t)IDEMIP_MLD6_JOIN_DELAY_MS);
-        io->send_report = IDEMIP_TRUE;
+        io->send_report = EMBED_TRUE;
     }
     else
     {
         g->state = IDEMIP_MLD6_IDLE_LISTENER;
-        g->last_reporter = IDEMIP_FALSE;
+        g->last_reporter = EMBED_FALSE;
         g->deadline_ms = 0u;
     }
     mld6_report_entry(io, g, index);
@@ -307,7 +308,7 @@ void idemip_mld6_leave(uint8_t *work)
     const Mld6Ctx *ctx = MLD6_CTX(work);
     io->status = IDEMIP_ERR;
     io->index = IDEMIP_MLD6_NONE;
-    io->send_done = IDEMIP_FALSE;
+    io->send_done = EMBED_FALSE;
     if (!ctx->ready || io->group_args.group == NULL || io->group_args.netif >= IDEMIP_NETIF_COUNT)
     {
         return;
@@ -326,7 +327,7 @@ void idemip_mld6_leave(uint8_t *work)
     // all, and still for none of the ones it forbids MLD messages for.
     io->send_done = io->group_args.done_always ? mld6_reportable(g->group) : g->last_reporter;
     io->last_reporter = g->last_reporter;
-    memset(g, 0, sizeof(*g));
+    *g = (Mld6Group){0};
 
     io->index = index;
     io->group = io->group_args.group;
@@ -384,7 +385,7 @@ void idemip_mld6_query_in(uint8_t *work)
     const Mld6Ctx *ctx = MLD6_CTX(work);
     io->status = IDEMIP_ERR;
     io->index = IDEMIP_MLD6_NONE;
-    io->send_report = IDEMIP_FALSE;
+    io->send_report = EMBED_FALSE;
     if (!ctx->ready || (!io->query_args.general && io->query_args.group == NULL))
     {
         return;
@@ -460,7 +461,7 @@ void idemip_mld6_report_in(uint8_t *work)
     {
         g->state = IDEMIP_MLD6_IDLE_LISTENER;
         g->deadline_ms = 0u;
-        g->last_reporter = IDEMIP_FALSE;
+        g->last_reporter = EMBED_FALSE;
     }
     mld6_report_entry(io, g, index);
     io->status = IDEMIP_OK;
@@ -482,7 +483,7 @@ void idemip_mld6_tick(uint8_t *work)
     Mld6Ctx *ctx = MLD6_CTX(work);
     io->status = IDEMIP_ERR;
     io->expired = 0u;
-    io->send_report = IDEMIP_FALSE;
+    io->send_report = EMBED_FALSE;
     io->index = IDEMIP_MLD6_NONE;
     if (!ctx->ready)
     {
@@ -512,11 +513,11 @@ void idemip_mld6_tick(uint8_t *work)
 
     Mld6Group *g = MLD6_GROUP_AT(work, first);
     g->state = IDEMIP_MLD6_IDLE_LISTENER;
-    g->last_reporter = IDEMIP_TRUE;
+    g->last_reporter = EMBED_TRUE;
     g->deadline_ms = 0u;
-    io->send_report = IDEMIP_TRUE;
+    io->send_report = EMBED_TRUE;
     mld6_report_entry(io, g, first);
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

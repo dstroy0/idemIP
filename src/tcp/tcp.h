@@ -20,7 +20,7 @@
 
 #if IDEMIP_ENABLE_TCP
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief Where a walk stands in one segment's options.
@@ -45,7 +45,7 @@ typedef struct
     const uint8_t *opt;
     uint8_t kind;
     uint8_t len;
-    idemip_bool bad;
+    embed_bool bad;
 } IdemIpTcpOptWalk;
 
 /**
@@ -70,8 +70,8 @@ typedef struct
     const uint8_t *(*opts)(const uint8_t *h);
     size_t (*opts_len)(const uint8_t *h);
 } TcpReadNs;
-IDEMIP_NS_LAYOUT(TcpReadNs, src_port, dst_port, seq, ack, doff, flags, window, cksum, urgent, hdr_len, opts,
-                 opts_len);
+EMBED_TABLE_LAYOUT(TcpReadNs, src_port, dst_port, seq, ack, doff, flags, window, cksum, urgent, hdr_len, opts,
+                   opts_len);
 
 /**
  * @brief The option walk, RFC 9293 sec 3.1: "There are two cases for the format of an option".
@@ -82,9 +82,9 @@ IDEMIP_NS_LAYOUT(TcpReadNs, src_port, dst_port, seq, ack, doff, flags, window, c
 typedef struct
 {
     void (*start)(IdemIpTcpOptWalk *w, const uint8_t *h);
-    idemip_bool (*next)(IdemIpTcpOptWalk *w);
+    embed_bool (*next)(IdemIpTcpOptWalk *w);
 } TcpWalkNs;
-IDEMIP_NS_LAYOUT(TcpWalkNs, start, next);
+EMBED_TABLE_LAYOUT(TcpWalkNs, start, next);
 
 /**
  * @brief Reading the option a walk landed on.
@@ -102,7 +102,7 @@ typedef struct
     uint32_t (*sack_left)(const uint8_t *o, uint8_t i);
     uint32_t (*sack_right)(const uint8_t *o, uint8_t i);
 } TcpOptNs;
-IDEMIP_NS_LAYOUT(TcpOptNs, mss, ws, tsval, tsecr, sack_blocks, sack_left, sack_right);
+EMBED_TABLE_LAYOUT(TcpOptNs, mss, ws, tsval, tsecr, sack_blocks, sack_left, sack_right);
 
 /**
  * @brief Writing one option into the caller's bytes.
@@ -119,7 +119,7 @@ typedef struct
     size_t (*ts)(uint8_t *o, uint32_t tsval, uint32_t tsecr);
     size_t (*sack_perm)(uint8_t *o);
 } TcpOptPutNs;
-IDEMIP_NS_LAYOUT(TcpOptPutNs, end, nop, mss, ws, ts, sack_perm);
+EMBED_TABLE_LAYOUT(TcpOptPutNs, end, nop, mss, ws, ts, sack_perm);
 
 /** @brief The checksum, over the pseudo-header and the segment. */
 typedef struct
@@ -127,7 +127,7 @@ typedef struct
     uint32_t (*pseudo_accum)(uint32_t sum, uint32_t src, uint32_t dst, uint16_t seg_len);
     uint16_t (*compute)(const uint8_t *h, size_t len, uint32_t src, uint32_t dst);
 } TcpCksumNs;
-IDEMIP_NS_LAYOUT(TcpCksumNs, pseudo_accum, compute);
+EMBED_TABLE_LAYOUT(TcpCksumNs, pseudo_accum, compute);
 
 /** @name The entries the tables point at.
  *  @brief Nameable so a static const table can name them, and for no other reason. The tables are
@@ -147,7 +147,7 @@ const uint8_t *idemip_tcp_opts(const uint8_t *h);
 size_t idemip_tcp_opts_len(const uint8_t *h);
 
 void idemip_tcp_opt_walk(IdemIpTcpOptWalk *w, const uint8_t *h);
-idemip_bool idemip_tcp_opt_next(IdemIpTcpOptWalk *w);
+embed_bool idemip_tcp_opt_next(IdemIpTcpOptWalk *w);
 
 uint16_t idemip_tcp_opt_mss(const uint8_t *o);
 uint8_t idemip_tcp_opt_ws(const uint8_t *o);
@@ -175,7 +175,7 @@ uint16_t idemip_tcp_cksum_compute(const uint8_t *h, size_t len, uint32_t src, ui
  * inlined body and cannot do that through an extern one, where the table is in another
  * translation unit and every call is a load and an indirect jump.
  */
-IDEMIP_NS TcpReadNs tcp_read IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE TcpReadNs tcp_read EMBED_UNUSED = {
     .src_port = idemip_tcp_src_port,
     .dst_port = idemip_tcp_dst_port,
     .seq = idemip_tcp_seq,
@@ -190,12 +190,12 @@ IDEMIP_NS TcpReadNs tcp_read IDEMIP_UNUSED = {
     .opts_len = idemip_tcp_opts_len,
 };
 
-IDEMIP_NS TcpWalkNs tcp_walk IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE TcpWalkNs tcp_walk EMBED_UNUSED = {
     .start = idemip_tcp_opt_walk,
     .next = idemip_tcp_opt_next,
 };
 
-IDEMIP_NS TcpOptNs tcp_opt IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE TcpOptNs tcp_opt EMBED_UNUSED = {
     .mss = idemip_tcp_opt_mss,
     .ws = idemip_tcp_opt_ws,
     .tsval = idemip_tcp_opt_tsval,
@@ -205,7 +205,7 @@ IDEMIP_NS TcpOptNs tcp_opt IDEMIP_UNUSED = {
     .sack_right = idemip_tcp_opt_sack_right,
 };
 
-IDEMIP_NS TcpOptPutNs tcp_opt_put IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE TcpOptPutNs tcp_opt_put EMBED_UNUSED = {
     .end = idemip_tcp_opt_put_end,
     .nop = idemip_tcp_opt_put_nop,
     .mss = idemip_tcp_opt_put_mss,
@@ -214,12 +214,12 @@ IDEMIP_NS TcpOptPutNs tcp_opt_put IDEMIP_UNUSED = {
     .sack_perm = idemip_tcp_opt_put_sack_perm,
 };
 
-IDEMIP_NS TcpCksumNs tcp_cksum IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE TcpCksumNs tcp_cksum EMBED_UNUSED = {
     .pseudo_accum = idemip_tcp_pseudo_accum,
     .compute = idemip_tcp_cksum_compute,
 };
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_TCP
 

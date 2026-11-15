@@ -21,7 +21,7 @@
 
 #if IDEMIP_ENABLE_ETHERNET
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief Negotiated line rate, in megabits per second. */
 typedef enum IDEMIP_ENUM_PACKED
@@ -36,8 +36,8 @@ typedef enum IDEMIP_ENUM_PACKED
 typedef struct
 {
     IdemIpPhySpeed speed;    ///< negotiated rate; NONE while the link is down
-    idemip_bool full_duplex; ///< true when the link negotiated full duplex
-    idemip_bool up;          ///< true once the link is usable
+    embed_bool full_duplex;  ///< true when the link negotiated full duplex
+    embed_bool up;           ///< true once the link is usable
 } IdemIpPhyLink;
 
 /**
@@ -65,7 +65,7 @@ typedef struct
     size_t (*rx_claim)(const uint8_t **frame);
     void (*rx_release)(void);
     uint8_t *(*tx_claim)(size_t len);
-    idemip_bool (*tx_commit)(size_t len);
+    embed_bool (*tx_commit)(size_t len);
 
     // No-ops on a part without a data cache. Both are required: a null one is refused at bind
     // rather than tested on every frame.
@@ -74,8 +74,8 @@ typedef struct
 
     // Clause 22 management. The driver owns the MDC/MDIO timing, this layer owns what the
     // registers mean. Both address fields are 5 bits on the wire.
-    idemip_bool (*mdio_read)(uint8_t phy_addr, uint8_t reg, uint16_t *out);
-    idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);
+    embed_bool (*mdio_read)(uint8_t phy_addr, uint8_t reg, uint16_t *out);
+    embed_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);
 } IdemIpPhyDriver;
 
 /** @brief What bind takes. */
@@ -211,16 +211,15 @@ void idemip_phy_mdio_write(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const PhyNs Phy IDEMIP_UNUSED = {
-    .bind = idemip_phy_bind,
-    .poll_link = idemip_phy_poll_link,
-    .rx_claim = idemip_phy_rx_claim,
-    .rx_release = idemip_phy_rx_release,
-    .tx_claim = idemip_phy_tx_claim,
-    .tx_commit = idemip_phy_tx_commit,
-    .mdio_read = idemip_phy_mdio_read,
-    .mdio_write = idemip_phy_mdio_write};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE PhyNs Phy EMBED_UNUSED = {.bind = idemip_phy_bind,
+                                              .poll_link = idemip_phy_poll_link,
+                                              .rx_claim = idemip_phy_rx_claim,
+                                              .rx_release = idemip_phy_rx_release,
+                                              .tx_claim = idemip_phy_tx_claim,
+                                              .tx_commit = idemip_phy_tx_commit,
+                                              .mdio_read = idemip_phy_mdio_read,
+                                              .mdio_write = idemip_phy_mdio_write};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET
 

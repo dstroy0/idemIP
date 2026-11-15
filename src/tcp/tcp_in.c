@@ -18,7 +18,7 @@
 #include "src/common_defines.h"
 #include "src/tcp/tcp_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The one definition, private to this TU. A borrow that was never cleared carries no mark, so every
 // entry refuses it. The two counters are RFC 5961 sec 7's throttle, which that section says needs "no
@@ -39,8 +39,8 @@ IDEMIP_ASSERT_REGION(IDEMIP_TCP_IN_OFF_CTX, sizeof(TcpInCtx), IDEMIP_TCP_IN_BORR
 
 // The caller's borrow, split: the operand block, then the context. tcp_in.h publishes the offsets;
 // the assert below proves the span covers them before anything runs.
-static_assert(IDEMIP_TCP_IN_OFF_CTX + sizeof(TcpInCtx) <= IDEMIP_TCP_IN_BORROW,
-              "IDEMIP_TCP_IN_BORROW is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_IN_OFF_CTX + sizeof(TcpInCtx) <= IDEMIP_TCP_IN_BORROW,
+                    "IDEMIP_TCP_IN_BORROW is short of the operand block and the context - raise it in idemip_config.h");
 
 // The regions, at their offsets in the caller's borrow.
 #define TCP_IN_CTX(w) ((TcpInCtx *)(void *)((w) + IDEMIP_TCP_IN_OFF_CTX))
@@ -58,58 +58,58 @@ static uint32_t tcp_in_from(uint32_t seq, uint32_t edge)
 }
 
 // RFC 9293 sec 3.4's "acceptable ack": "SND.UNA < SEG.ACK =< SND.NXT".
-static idemip_bool tcp_in_ack_new(uint32_t ack, uint32_t una, uint32_t nxt)
+static embed_bool tcp_in_ack_new(uint32_t ack, uint32_t una, uint32_t nxt)
 {
     uint32_t at = tcp_in_from(ack, una);
-    return (at != 0u && at <= tcp_in_from(nxt, una)) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (at != 0u && at <= tcp_in_from(nxt, una)) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 9293 sec 3.10.7.4 fifth's window-update guard, "SND.UNA =< SEG.ACK =< SND.NXT".
-static idemip_bool tcp_in_ack_within(uint32_t ack, uint32_t una, uint32_t nxt)
+static embed_bool tcp_in_ack_within(uint32_t ack, uint32_t una, uint32_t nxt)
 {
-    return (tcp_in_from(ack, una) <= tcp_in_from(nxt, una)) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (tcp_in_from(ack, una) <= tcp_in_from(nxt, una)) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 5961 sec 5.2: "The ACK value is considered acceptable only if it is in the range of
 // ((SND.UNA - MAX.SND.WND) <= SEG.ACK <= SND.NXT)", MAX.SND.WND being "the largest window that the
 // local sender has ever received from its peer". The left edge is that subtraction modulo 2^32, and
 // every comparison is a distance from it.
-static idemip_bool tcp_in_ack_in_range(uint32_t ack, uint32_t una, uint32_t nxt, uint32_t max_snd_wnd)
+static embed_bool tcp_in_ack_in_range(uint32_t ack, uint32_t una, uint32_t nxt, uint32_t max_snd_wnd)
 {
     uint32_t left = una - max_snd_wnd;
-    return (tcp_in_from(ack, left) <= tcp_in_from(nxt, left)) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (tcp_in_from(ack, left) <= tcp_in_from(nxt, left)) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 9293 sec 3.10.7.4 Table 6, all four cases of "the acceptability test for an incoming segment".
 // SEG.LEN counts the SYN and FIN that occupy sequence space (sec 3.4).
-static idemip_bool tcp_in_seg_acceptable(uint32_t seq, uint32_t len, uint32_t rcv_nxt, uint32_t rcv_wnd)
+static embed_bool tcp_in_seg_acceptable(uint32_t seq, uint32_t len, uint32_t rcv_nxt, uint32_t rcv_wnd)
 {
     if (len == 0u)
     {
         if (rcv_wnd == 0u)
         {
-            return (seq == rcv_nxt) ? IDEMIP_TRUE : IDEMIP_FALSE; // SEG.SEQ = RCV.NXT
+            return (seq == rcv_nxt) ? EMBED_TRUE : EMBED_FALSE; // SEG.SEQ = RCV.NXT
         }
-        return (tcp_in_from(seq, rcv_nxt) < rcv_wnd) ? IDEMIP_TRUE : IDEMIP_FALSE;
+        return (tcp_in_from(seq, rcv_nxt) < rcv_wnd) ? EMBED_TRUE : EMBED_FALSE;
     }
     if (rcv_wnd == 0u)
     {
-        return IDEMIP_FALSE; // "not acceptable"
+        return EMBED_FALSE; // "not acceptable"
     }
     if (tcp_in_from(seq, rcv_nxt) < rcv_wnd)
     {
-        return IDEMIP_TRUE; // RCV.NXT =< SEG.SEQ < RCV.NXT+RCV.WND
+        return EMBED_TRUE; // RCV.NXT =< SEG.SEQ < RCV.NXT+RCV.WND
     }
     // RCV.NXT =< SEG.SEQ+SEG.LEN-1 < RCV.NXT+RCV.WND
-    return (tcp_in_from(seq + len - 1u, rcv_nxt) < rcv_wnd) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (tcp_in_from(seq + len - 1u, rcv_nxt) < rcv_wnd) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 7323 sec 5.2: "the 'timestamps' are 32-bit unsigned integers in a modular 32-bit space. Thus,
 // 'less than' is defined the same way it is for TCP sequence numbers ... s < t if 0 < (t - s) < 2^31".
-static idemip_bool tcp_in_ts_lt(uint32_t s, uint32_t t)
+static embed_bool tcp_in_ts_lt(uint32_t s, uint32_t t)
 {
     uint32_t d = tcp_in_from(t, s);
-    return (d != 0u && d < 0x80000000u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (d != 0u && d < 0x80000000u) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 5961 sec 3.2 step 3's "within the current receive window (RCV.NXT < SEG.SEQ <
@@ -118,10 +118,10 @@ static idemip_bool tcp_in_ts_lt(uint32_t s, uint32_t t)
 // The open end is written out because sec 3.2's span is open at both ends, and it is not measured:
 // the only caller has already refused SEG.SEQ == RCV.NXT, which is the one sequence number the
 // distance can be zero for.
-static idemip_bool tcp_in_rst_in_window(uint32_t seq, uint32_t rcv_nxt, uint32_t rcv_wnd)
+static embed_bool tcp_in_rst_in_window(uint32_t seq, uint32_t rcv_nxt, uint32_t rcv_wnd)
 {
     uint32_t at = tcp_in_from(seq, rcv_nxt);
-    return (at != 0u && at < rcv_wnd) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
+    return (at != 0u && at < rcv_wnd) ? EMBED_TRUE : EMBED_FALSE; // GCOVR_EXCL_BR_LINE
 }
 
 // --- the replies -----------------------------------------------------------
@@ -201,7 +201,7 @@ static void tcp_in_result_clear(TcpInIo *io)
     io->res.text_seq = 0u;
     io->res.text_off = 0u;
     io->res.text_len = 0u;
-    io->res.acceptable = IDEMIP_FALSE;
+    io->res.acceptable = EMBED_FALSE;
 }
 
 // --- the entries -----------------------------------------------------------
@@ -215,10 +215,11 @@ void idemip_tcp_in_clear(uint8_t *work)
         return; // no borrow, so nowhere to report
     }
     TcpInIo *io = TCP_IN_IO(work);
-    memset(work + IDEMIP_TCP_IN_OFF_CTX, 0, (size_t)IDEMIP_TCP_IN_BORROW - IDEMIP_TCP_IN_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_TCP_IN_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_TCP_IN_BORROW - IDEMIP_TCP_IN_OFF_CTX);
     TCP_IN_CTX(work)->ready = TCP_IN_READY;
-    memset(&io->seg, 0, sizeof io->seg);
-    memset(&io->opts, 0, sizeof io->opts);
+    io->seg = (TcpInSegArgs){0};
+    io->opts = (TcpInOpts){0};
     tcp_in_result_clear(io);
     io->status = IDEMIP_OK;
 }
@@ -237,8 +238,8 @@ void idemip_tcp_in_parse(uint8_t *work)
     }
     TcpInIo *io = TCP_IN_IO(work);
     io->status = IDEMIP_ERR;
-    memset(&io->seg, 0, sizeof io->seg);
-    memset(&io->opts, 0, sizeof io->opts);
+    io->seg = (TcpInSegArgs){0};
+    io->opts = (TcpInOpts){0};
     if (TCP_IN_CTX(work)->ready != TCP_IN_READY || io->parse_args.seg == NULL || io->parse_args.local_ip == NULL ||
         io->parse_args.remote_ip == NULL)
     {
@@ -438,11 +439,11 @@ void idemip_tcp_in_listen(uint8_t *work)
 // TS.Recent and SEG.SEQ <= Last.ACK.sent, then save SEG.TSval in variable TS.Recent." Reports true
 // when R1 rejects the segment, which sec 5.3 says "MUST take precedence over the regular TCP
 // acceptability check".
-static idemip_bool tcp_in_paws(TcpInIo *io)
+static embed_bool tcp_in_paws(TcpInIo *io)
 {
     if ((io->ctl.flags & IDEMIP_TCP_CTL_TS_OK) == 0u || (io->opts.present & IDEMIP_TCP_IN_OPT_TS) == 0u)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (tcp_in_ts_lt(io->opts.tsval, io->ctl.ts_recent) && (io->seg.flags & IDEMIP_TCP_RST) == 0u)
     {
@@ -450,11 +451,11 @@ static idemip_bool tcp_in_paws(TcpInIo *io)
         // check fails ... If TS.Recent is found to be invalid, then the segment is accepted."
         if (tcp_in_from(io->now_ms, io->ctl.ts_recent_ms) <= (uint32_t)IDEMIP_TCP_TS_RECENT_MAX_MS)
         {
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         io->ctl.ts_recent = io->opts.tsval;
         io->ctl.ts_recent_ms = io->now_ms;
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     // R3, over the sec 5.2 comparison. "SEG.SEQ <= Last.ACK.sent" is a distance forward from SEG.SEQ.
     if (!tcp_in_ts_lt(io->opts.tsval, io->ctl.ts_recent) &&
@@ -463,7 +464,7 @@ static idemip_bool tcp_in_paws(TcpInIo *io)
         io->ctl.ts_recent = io->opts.tsval;
         io->ctl.ts_recent_ms = io->now_ms;
     }
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 // sec 3.10.7.4's sixth, seventh and eighth checks, which sec 3.10.7.3's fourth continues into.
@@ -488,7 +489,7 @@ void idemip_tcp_in_syn_sent(uint8_t *work)
     }
     io->status = IDEMIP_OK;
 
-    idemip_bool ack_ok = IDEMIP_FALSE;
+    embed_bool ack_ok = EMBED_FALSE;
     // First: "If SEG.ACK =< ISS or SEG.ACK > SND.NXT, send a reset (unless the RST bit is set, if so
     // drop the segment and return) ... If SND.UNA < SEG.ACK =< SND.NXT, then the ACK is acceptable."
     if ((io->seg.flags & IDEMIP_TCP_ACK) != 0u)
@@ -584,17 +585,17 @@ void idemip_tcp_in_syn_sent(uint8_t *work)
 
 // RFC 9293 sec 3.10.7.4 second, in the three steps that section takes from RFC 5961 sec 3.2.
 // Reports true when processing stops here.
-static idemip_bool tcp_in_check_rst(uint8_t *work, TcpInIo *io)
+static embed_bool tcp_in_check_rst(uint8_t *work, TcpInIo *io)
 {
     if ((io->seg.flags & IDEMIP_TCP_RST) == 0u)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     // 1) "If the RST bit is set and the sequence number is outside the current receive window,
     // silently drop the segment."
     if (io->seg.seq != io->vars.rcv_nxt && !tcp_in_rst_in_window(io->seg.seq, io->vars.rcv_nxt, io->vars.rcv_wnd))
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     // 3) "If the RST bit is set and the sequence number does not exactly match the next expected
     // sequence value, yet is within the current receive window, TCP endpoints MUST send an
@@ -603,7 +604,7 @@ static idemip_bool tcp_in_check_rst(uint8_t *work, TcpInIo *io)
     if (io->seg.seq != io->vars.rcv_nxt)
     {
         tcp_in_put_challenge(work, io);
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     // 2) "If the RST bit is set and the sequence number exactly matches the next expected sequence
     // number (RCV.NXT), then TCP endpoints MUST reset the connection in the manner prescribed below
@@ -631,7 +632,7 @@ static idemip_bool tcp_in_check_rst(uint8_t *work, TcpInIo *io)
             io->state = IDEMIP_TCP_STATE_CLOSED;
             io->res.act |= IDEMIP_TCP_IN_ACT_REFUSED | IDEMIP_TCP_IN_ACT_DELETE;
         }
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     case IDEMIP_TCP_STATE_ESTABLISHED:
     case IDEMIP_TCP_STATE_FIN_WAIT_1:
     case IDEMIP_TCP_STATE_FIN_WAIT_2:
@@ -641,20 +642,20 @@ static idemip_bool tcp_in_check_rst(uint8_t *work, TcpInIo *io)
         // signal. Enter the CLOSED state, delete the TCB, and return."
         io->state = IDEMIP_TCP_STATE_CLOSED;
         io->res.act |= IDEMIP_TCP_IN_ACT_RESET | IDEMIP_TCP_IN_ACT_FLUSH | IDEMIP_TCP_IN_ACT_DELETE;
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     case IDEMIP_TCP_STATE_CLOSING:
     case IDEMIP_TCP_STATE_LAST_ACK:
     case IDEMIP_TCP_STATE_TIME_WAIT:
         // "If the RST bit is set, then enter the CLOSED state, delete the TCB, and return."
         io->state = IDEMIP_TCP_STATE_CLOSED;
         io->res.act |= IDEMIP_TCP_IN_ACT_FLUSH | IDEMIP_TCP_IN_ACT_DELETE;
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     // The eight arms above are the eight states this entry accepts; sec 3.10.7.1, sec 3.10.7.2 and
     // sec 3.10.7.3 hold CLOSED, LISTEN and SYN-SENT and are refused at the door. The arm stays so
     // that a state added later stops here rather than falling out of the switch, and it is not
     // measured, because no call can arrive in a state the guard did not already pass.
     default:                // GCOVR_EXCL_LINE
-        return IDEMIP_TRUE; // GCOVR_EXCL_LINE
+        return EMBED_TRUE;  // GCOVR_EXCL_LINE
     }
 }
 
@@ -662,11 +663,11 @@ static idemip_bool tcp_in_check_rst(uint8_t *work, TcpInIo *io)
 // irrespective of the sequence number, TCP MUST send an ACK (also referred to as challenge ACK) to
 // the remote peer ... After sending the acknowledgment, TCP MUST drop the unacceptable segment and
 // stop processing further." Reports true when processing stops here.
-static idemip_bool tcp_in_check_syn(uint8_t *work, TcpInIo *io)
+static embed_bool tcp_in_check_syn(uint8_t *work, TcpInIo *io)
 {
     if ((io->seg.flags & IDEMIP_TCP_SYN) == 0u)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     // RFC 9293 sec 3.10.7.4: "SYN-RECEIVED STATE: If the connection was initiated with a passive
     // OPEN, then return this connection to the LISTEN state and return. Otherwise, handle per the
@@ -682,20 +683,20 @@ static idemip_bool tcp_in_check_syn(uint8_t *work, TcpInIo *io)
     {
         io->state = IDEMIP_TCP_STATE_LISTEN;
         io->res.act |= IDEMIP_TCP_IN_ACT_LISTEN;
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     tcp_in_put_challenge(work, io);
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // RFC 9293 sec 3.10.7.4 fifth, the ACK field, with RFC 5961 sec 5.2's range check ahead of it.
 // Reports true when processing stops here.
-static idemip_bool tcp_in_check_ack(TcpInIo *io)
+static embed_bool tcp_in_check_ack(TcpInIo *io)
 {
     // "if the ACK bit is off, drop the segment and return"
     if ((io->seg.flags & IDEMIP_TCP_ACK) == 0u)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     // RFC 5961 sec 5.2: "The ACK value is considered acceptable only if it is in the range of
     // ((SND.UNA - MAX.SND.WND) <= SEG.ACK <= SND.NXT). All incoming segments whose ACK value doesn't
@@ -703,7 +704,7 @@ static idemip_bool tcp_in_check_ack(TcpInIo *io)
     if (!tcp_in_ack_in_range(io->seg.ack, io->vars.snd_una, io->vars.snd_nxt, io->ctl.max_snd_wnd))
     {
         tcp_in_put_ack(io);
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     if (io->state == IDEMIP_TCP_STATE_SYN_RECEIVED)
     {
@@ -717,7 +718,7 @@ static idemip_bool tcp_in_check_ack(TcpInIo *io)
             io->reply.ack = 0u;
             io->reply.flags = (uint16_t)IDEMIP_TCP_RST;
             io->res.act |= IDEMIP_TCP_IN_ACT_RST;
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         io->state = IDEMIP_TCP_STATE_ESTABLISHED;
         io->vars.snd_wnd = io->seg.wnd;
@@ -754,11 +755,10 @@ static idemip_bool tcp_in_check_ack(TcpInIo *io)
     if (tcp_in_ack_within(io->seg.ack, io->vars.snd_una, io->vars.snd_nxt))
     {
         uint32_t at = tcp_in_from(io->seg.seq, io->vars.snd_wl1);
-        idemip_bool newer = (at != 0u && at < 0x80000000u) ? IDEMIP_TRUE : IDEMIP_FALSE;
-        idemip_bool same = (io->seg.seq == io->vars.snd_wl1 &&
-                            tcp_in_from(io->seg.ack, io->vars.snd_wl2) < 0x80000000u)
-                               ? IDEMIP_TRUE
-                               : IDEMIP_FALSE;
+        embed_bool newer = (at != 0u && at < 0x80000000u) ? EMBED_TRUE : EMBED_FALSE;
+        embed_bool same = (io->seg.seq == io->vars.snd_wl1 && tcp_in_from(io->seg.ack, io->vars.snd_wl2) < 0x80000000u)
+                              ? EMBED_TRUE
+                              : EMBED_FALSE;
         if (newer || same)
         {
             io->vars.snd_wnd = io->seg.wnd;
@@ -774,7 +774,7 @@ static idemip_bool tcp_in_check_ack(TcpInIo *io)
 
     // Our FIN occupies the last sequence number this side sent, so it is acknowledged exactly when
     // SND.UNA has reached SND.NXT.
-    idemip_bool fin_acked = (io->vars.snd_una == io->vars.snd_nxt) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    embed_bool fin_acked = (io->vars.snd_una == io->vars.snd_nxt) ? EMBED_TRUE : EMBED_FALSE;
     switch (io->state)
     {
     case IDEMIP_TCP_STATE_FIN_WAIT_1:
@@ -784,7 +784,7 @@ static idemip_bool tcp_in_check_ack(TcpInIo *io)
         {
             io->state = IDEMIP_TCP_STATE_FIN_WAIT_2;
         }
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     case IDEMIP_TCP_STATE_CLOSING:
         // "if the ACK acknowledges our FIN, then enter the TIME-WAIT state; otherwise, ignore the
         // segment."
@@ -793,7 +793,7 @@ static idemip_bool tcp_in_check_ack(TcpInIo *io)
             io->state = IDEMIP_TCP_STATE_TIME_WAIT;
             tcp_in_put_2msl(io);
         }
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     case IDEMIP_TCP_STATE_LAST_ACK:
         // "The only thing that can arrive in this state is an acknowledgment of our FIN. If our FIN
         // is now acknowledged, delete the TCB, enter the CLOSED state, and return."
@@ -802,15 +802,15 @@ static idemip_bool tcp_in_check_ack(TcpInIo *io)
             io->state = IDEMIP_TCP_STATE_CLOSED;
             io->res.act |= IDEMIP_TCP_IN_ACT_DELETE;
         }
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     case IDEMIP_TCP_STATE_TIME_WAIT:
         // "The only thing that can arrive in this state is a retransmission of the remote FIN.
         // Acknowledge it, and restart the 2 MSL timeout."
         tcp_in_put_ack(io);
         tcp_in_put_2msl(io);
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     default:
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
 }
 
@@ -1075,4 +1075,4 @@ void idemip_tcp_in_segment(uint8_t *work)
     }
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

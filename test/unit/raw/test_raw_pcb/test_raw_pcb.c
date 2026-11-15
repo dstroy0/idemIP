@@ -19,14 +19,17 @@
 
 #include "src/raw/raw_pcb.h"
 
-#include <string.h>
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
 #include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_RAW_PCB_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_RAW_PCB_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_RAW_PCB_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_RAW_PCB_BORROW + 16))
+static uint8_t *work_b;
 
 #define TAB_BYTES ((size_t)IDEMIP_RAW_PCBS << IDEMIP_RAW_PCB_ENTRY_SHIFT)
 
@@ -35,8 +38,9 @@ static const uint8_t g_remote[IDEMIP_RAW_PCB_ADDR_BYTES] = {192u, 0u, 2u, 9u};
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_RAW_PCB_BORROW, CANARY, cap - IDEMIP_RAW_PCB_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_RAW_PCB_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_RAW_PCB_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -49,14 +53,16 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_raw_pcb);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_raw_pcb);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void call_every_entry(uint8_t *w)
@@ -126,7 +132,8 @@ void test_an_uncleared_borrow_is_refused(void)
 
 void test_clear_zeroes_the_table(void)
 {
-    memset(work_a + IDEMIP_RAW_PCB_OFF_CTX, 0xEE, (size_t)IDEMIP_RAW_PCB_BORROW - IDEMIP_RAW_PCB_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a + IDEMIP_RAW_PCB_OFF_CTX, .val = 0xEE,
+               .bytes = (size_t)IDEMIP_RAW_PCB_BORROW - IDEMIP_RAW_PCB_OFF_CTX);
     RawPcb.clear(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_RAW_PCB_IO(work_a)->status);
     for (size_t i = 0; i < TAB_BYTES; i++)
@@ -186,7 +193,7 @@ void test_two_borrows_share_no_byte(void)
 // A clear on one borrow reaches no byte of the other's table.
 void test_a_clear_on_one_borrow_leaves_the_other_table_untouched(void)
 {
-    memset(work_b + IDEMIP_RAW_PCB_OFF_TAB, 0xC3, TAB_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b + IDEMIP_RAW_PCB_OFF_TAB, .val = 0xC3, .bytes = TAB_BYTES);
     RawPcb.clear(work_a);
     for (size_t i = 0; i < TAB_BYTES; i++)
     {
@@ -385,7 +392,7 @@ static IdemIpStatus do_find_ctx(const DoFindArgs *args)
     return IDEMIP_RAW_PCB_IO(args->w)->status;
 }
 
-#define do_find(...) IDEMIP_CALL(do_find_ctx, DoFindArgs, __VA_ARGS__)
+#define do_find(...) EMBED_CALL(do_find_ctx, DoFindArgs, __VA_ARGS__)
 
 // A v4 datagram addressed to this host from its peer, on no particular interface.
 static IdemIpStatus find4(uint8_t *w, uint8_t proto, const uint8_t *dst, const uint8_t *src)
@@ -429,7 +436,7 @@ void test_a_new_binding_carries_the_rfc_defaults(void)
     TEST_ASSERT_NOT_EQUAL_MESSAGE(0u, IDEMIP_RAW_PCB_IO(work_a)->info.ttl, "RFC 1122 sec 3.2.1.7 bars a zero TTL");
     TEST_ASSERT_EQUAL_INT16_MESSAGE(-1, IDEMIP_RAW_PCB_IO(work_a)->info.cksum_offset,
                                     "RFC 3542 sec 3.1 disables IPV6_CHECKSUM by default");
-    TEST_ASSERT_EQUAL_UINT8(IDEMIP_FALSE, IDEMIP_RAW_PCB_IO(work_a)->info.connected);
+    TEST_ASSERT_EQUAL_UINT8(EMBED_FALSE, IDEMIP_RAW_PCB_IO(work_a)->info.connected);
     TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_RAW_PCB_IO(work_a)->info.netif);
     TEST_ASSERT_EQUAL_MEMORY(v4_any, IDEMIP_RAW_PCB_IO(work_a)->info.local_ip, 4u);
 }
@@ -578,12 +585,12 @@ void test_connect_sets_the_send_dst_and_disconnect_clears_it(void)
     TEST_ASSERT_EQUAL_UINT16(0u, do_open(work_a, PROTO_A, 4u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_connect(work_a, 0u, v4_peer, 0u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_load(work_a, 0u));
-    TEST_ASSERT_EQUAL_UINT8(IDEMIP_TRUE, IDEMIP_RAW_PCB_IO(work_a)->info.connected);
+    TEST_ASSERT_EQUAL_UINT8(EMBED_TRUE, IDEMIP_RAW_PCB_IO(work_a)->info.connected);
     TEST_ASSERT_EQUAL_MEMORY(v4_peer, IDEMIP_RAW_PCB_IO(work_a)->info.remote_ip, 4u);
 
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_disconnect(work_a, 0u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_load(work_a, 0u));
-    TEST_ASSERT_EQUAL_UINT8(IDEMIP_FALSE, IDEMIP_RAW_PCB_IO(work_a)->info.connected);
+    TEST_ASSERT_EQUAL_UINT8(EMBED_FALSE, IDEMIP_RAW_PCB_IO(work_a)->info.connected);
     TEST_ASSERT_EQUAL_MEMORY(v4_any, IDEMIP_RAW_PCB_IO(work_a)->info.remote_ip, 4u);
 }
 
@@ -606,7 +613,7 @@ void test_connect_refuses_the_unspecified_destination(void)
     TEST_ASSERT_EQUAL_UINT16(0u, do_open(work_a, PROTO_A, 4u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, do_connect(work_a, 0u, v4_any, 0u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_load(work_a, 0u));
-    TEST_ASSERT_EQUAL_UINT8(IDEMIP_FALSE, IDEMIP_RAW_PCB_IO(work_a)->info.connected);
+    TEST_ASSERT_EQUAL_UINT8(EMBED_FALSE, IDEMIP_RAW_PCB_IO(work_a)->info.connected);
 
     do_open(work_a, PROTO_B, 6u);
     if (v6_absent())
@@ -776,7 +783,7 @@ void test_a_v4_binding_compares_four_octets(void)
 {
     RawPcb.clear(work_a);
     static uint8_t dirty[IDEMIP_RAW_PCB_ADDR_BYTES];
-    memset(dirty, 0xA7, sizeof dirty);
+    fill_bytes(dirty, 0xA7, sizeof dirty);
     dirty[0] = 192u;
     dirty[1] = 0u;
     dirty[2] = 2u;

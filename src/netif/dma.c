@@ -16,7 +16,7 @@
 #include "src/netif/dma.h"
 #include "src/ethernet/ethernet_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The stamp clear writes into the context. Every other entry refuses a borrow without it, so bytes
 // that were never cleared are refused rather than read as a ring.
@@ -49,35 +49,36 @@ typedef struct
     uint8_t pad[(1u << IDEMIP_DMA_DESC_ENTRY_SHIFT) - (sizeof(uint8_t *) + (2u * 2u) + 1u)];
 } DmaDesc;
 
-static_assert(sizeof(DmaDesc) == (1u << IDEMIP_DMA_DESC_ENTRY_SHIFT),
-              "a DmaDesc is not 1 << IDEMIP_DMA_DESC_ENTRY_SHIFT octets wide - raise the shift in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    sizeof(DmaDesc) == (1u << IDEMIP_DMA_DESC_ENTRY_SHIFT),
+    "a DmaDesc is not 1 << IDEMIP_DMA_DESC_ENTRY_SHIFT octets wide - raise the shift in idemip_config.h");
 
 // The caller's borrow, split: the operand block, the context, the receive ring, then the transmit
 // ring. dma.h publishes the offsets; the asserts below prove the span covers them and that each ring
 // starts aligned before anything runs.
-static_assert(IDEMIP_DMA_OFF_CTX + sizeof(DmaCtx) <= IDEMIP_DMA_CTX_BYTES,
-              "IDEMIP_DMA_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_DMA_OFF_END <= IDEMIP_DMA_BORROW,
-              "IDEMIP_DMA_BORROW is short of the operand block, the context and both rings - raise "
-              "IDEMIP_DMA_CTX_BYTES in idemip_config.h");
-static_assert(((IDEMIP_DMA_OFF_RX | IDEMIP_DMA_OFF_TX) & (IDEMIP_ALIGN - 1u)) == 0u,
-              "a ring does not start on IDEMIP_ALIGN: descriptor i sits at (i << SHIFT) from it");
+EMBED_STATIC_ASSERT(IDEMIP_DMA_OFF_CTX + sizeof(DmaCtx) <= IDEMIP_DMA_CTX_BYTES,
+                    "IDEMIP_DMA_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_DMA_OFF_END <= IDEMIP_DMA_BORROW,
+                    "IDEMIP_DMA_BORROW is short of the operand block, the context and both rings - raise "
+                    "IDEMIP_DMA_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(((IDEMIP_DMA_OFF_RX | IDEMIP_DMA_OFF_TX) & (IDEMIP_ALIGN - 1u)) == 0u,
+                    "a ring does not start on IDEMIP_ALIGN: descriptor i sits at (i << SHIFT) from it");
 
 // A pin count is one octet, so the descriptors every retaining unit can hold at once has to fit in
 // one.
-static_assert(IDEMIP_MAX_PINNED_FRAMES <= 0xFFu,
-              "IDEMIP_MAX_PINNED_FRAMES exceeds a one-octet pin count: widen DmaDesc::pins");
+EMBED_STATIC_ASSERT(IDEMIP_MAX_PINNED_FRAMES <= 0xFFu,
+                    "IDEMIP_MAX_PINNED_FRAMES exceeds a one-octet pin count: widen DmaDesc::pins");
 
 // A descriptor index is the one octet of DmaDescArgs::index, and the entries refuse the first index
 // past a ring, so both counts and the count itself have to fit in one.
-static_assert(IDEMIP_RX_DESCRIPTORS <= 0xFFu && IDEMIP_TX_DESCRIPTORS <= 0xFFu,
-              "a ring count exceeds a one-octet descriptor index: widen DmaDescArgs::index");
+EMBED_STATIC_ASSERT(IDEMIP_RX_DESCRIPTORS <= 0xFFu && IDEMIP_TX_DESCRIPTORS <= 0xFFu,
+                    "a ring count exceeds a one-octet descriptor index: widen DmaDescArgs::index");
 
 // A descriptor length is the 16-bit DmaDesc::len, and tx_post bounds a build against RFC 894's frame
 // while tx_take claims IDEMIP_DMA_FRAME_MAX octets to build into.
-static_assert(IDEMIP_DMA_FRAME_MAX <= 0xFFFFu, "a frame is longer than the 16-bit DmaDesc::len");
-static_assert(IDEMIP_ETH_FRAME_MAX <= IDEMIP_DMA_FRAME_MAX,
-              "tx_post admits a length past the buffer tx_take claimed: raise IDEMIP_DMA_FRAME_MAX");
+EMBED_STATIC_ASSERT(IDEMIP_DMA_FRAME_MAX <= 0xFFFFu, "a frame is longer than the 16-bit DmaDesc::len");
+EMBED_STATIC_ASSERT(IDEMIP_ETH_FRAME_MAX <= IDEMIP_DMA_FRAME_MAX,
+                    "tx_post admits a length past the buffer tx_take claimed: raise IDEMIP_DMA_FRAME_MAX");
 
 // A ring position is the low bits of a monotone count, both counts being powers of two.
 #define DMA_RX_MASK ((uint32_t)IDEMIP_RX_DESCRIPTORS - 1u)
@@ -130,7 +131,8 @@ void idemip_dma_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_DMA_OFF_CTX, 0, (size_t)IDEMIP_DMA_OFF_END - IDEMIP_DMA_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_DMA_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_DMA_OFF_END - IDEMIP_DMA_OFF_CTX);
     DMA_CTX(work)->ready = DMA_READY;
     DMA_IO(work)->status = IDEMIP_OK;
 }
@@ -519,4 +521,4 @@ void idemip_dma_pinned(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

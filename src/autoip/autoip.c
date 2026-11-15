@@ -16,7 +16,7 @@
 #include "src/autoip/autoip.h"
 #include "src/arp/arp_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads something else here and
 // every entry but clear refuses it.
@@ -48,7 +48,7 @@ typedef struct
     IdemIpAutoIpState state;
     uint8_t tried;
     uint8_t conflicts;
-    idemip_bool held;
+    embed_bool held;
 } AutoIpCtx;
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
@@ -58,24 +58,25 @@ IDEMIP_ASSERT_REGION(IDEMIP_AUTOIP_OFF_CTX, sizeof(AutoIpCtx), IDEMIP_AUTOIP_OFF
 // The caller's borrow, split: the operand block, then the context. autoip.h publishes the offsets;
 // these two asserts prove the span covers them before anything runs. The first keeps the context
 // inside the region IDEMIP_AUTOIP_CTX_BYTES names, the second the whole map inside the borrow.
-static_assert(IDEMIP_AUTOIP_OFF_CTX + sizeof(AutoIpCtx) <= IDEMIP_AUTOIP_OFF_END,
-              "IDEMIP_AUTOIP_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_AUTOIP_OFF_END <= IDEMIP_AUTOIP_BORROW,
-              "IDEMIP_AUTOIP_BORROW is short of the map - raise IDEMIP_AUTOIP_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_AUTOIP_OFF_CTX + sizeof(AutoIpCtx) <= IDEMIP_AUTOIP_OFF_END,
+    "IDEMIP_AUTOIP_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_AUTOIP_OFF_END <= IDEMIP_AUTOIP_BORROW,
+                    "IDEMIP_AUTOIP_BORROW is short of the map - raise IDEMIP_AUTOIP_CTX_BYTES in idemip_config.h");
 
 // clear zeroes the context, so the state a cleared borrow reads is the zero one.
-static_assert(IDEMIP_AUTOIP_STATE_OFF == 0, "IDEMIP_AUTOIP_STATE_OFF must be zero: clear zeroes the context");
+EMBED_STATIC_ASSERT(IDEMIP_AUTOIP_STATE_OFF == 0, "IDEMIP_AUTOIP_STATE_OFF must be zero: clear zeroes the context");
 
 // RFC 3927 sec 2.1 draws over "169.254.1.0 to 169.254.254.255 inclusive", which is what the span the
 // fold below adds and subtracts measures.
-static_assert(AUTOIP_SPAN == 254u * 256u, "the fold steps by the whole RFC 3927 sec 2.1 range");
+EMBED_STATIC_ASSERT(AUTOIP_SPAN == 254u * 256u, "the fold steps by the whole RFC 3927 sec 2.1 range");
 
 // The two edges of the fold: the lowest value it can raise lands at or below LAST, and the highest it
 // can lower lands at or above FIRST, so a folded draw is inside sec 2.1's range either way.
-static_assert(IDEMIP_AUTOIP_PREFIX + AUTOIP_SPAN <= IDEMIP_AUTOIP_LAST,
-              "the fold raises 169.254.0.0 into RFC 3927 sec 2.1's range");
-static_assert((IDEMIP_AUTOIP_PREFIX | ~IDEMIP_AUTOIP_NETMASK) - AUTOIP_SPAN >= IDEMIP_AUTOIP_FIRST,
-              "the fold lowers 169.254.255.255 into RFC 3927 sec 2.1's range");
+EMBED_STATIC_ASSERT(IDEMIP_AUTOIP_PREFIX + AUTOIP_SPAN <= IDEMIP_AUTOIP_LAST,
+                    "the fold raises 169.254.0.0 into RFC 3927 sec 2.1's range");
+EMBED_STATIC_ASSERT((IDEMIP_AUTOIP_PREFIX | ~IDEMIP_AUTOIP_NETMASK) - AUTOIP_SPAN >= IDEMIP_AUTOIP_FIRST,
+                    "the fold lowers 169.254.255.255 into RFC 3927 sec 2.1's range");
 
 // The regions, at their offsets in the caller's borrow.
 #define AUTOIP_IO(w) IDEMIP_AUTOIP_IO(w)
@@ -85,9 +86,9 @@ static_assert((IDEMIP_AUTOIP_PREFIX | ~IDEMIP_AUTOIP_NETMASK) - AUTOIP_SPAN >= I
 #define AUTOIP_STATE_BYTES ((size_t)IDEMIP_AUTOIP_OFF_END - (size_t)IDEMIP_AUTOIP_OFF_CTX)
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool autoip_ready(uint8_t *work)
+static embed_bool autoip_ready(uint8_t *work)
 {
-    return (idemip_bool)(AUTOIP_CTX(work)->ready == AUTOIP_READY);
+    return (embed_bool)(AUTOIP_CTX(work)->ready == AUTOIP_READY);
 }
 
 // --- the sec 2.1 generator -------------------------------------------------
@@ -170,7 +171,7 @@ static void autoip_select(uint8_t *work, uint32_t rand)
     {
         ctx->tried = (uint8_t)(ctx->tried + 1u);
     }
-    ctx->held = IDEMIP_FALSE;
+    ctx->held = EMBED_FALSE;
     ctx->deadline_ms = 0;
 }
 
@@ -178,24 +179,24 @@ static void autoip_select(uint8_t *work, uint32_t rand)
 // at which it probes for new addresses to no more than one new address per RATE_LIMIT_INTERVAL". Over
 // that count the draw is stamped RATE_LIMIT_INTERVAL out and the tick releases it; at or under it the
 // draw happens now. Reports whether a candidate is ready to hand to acd.
-static idemip_bool autoip_advance(uint8_t *work, uint32_t rand, uint32_t now_ms)
+static embed_bool autoip_advance(uint8_t *work, uint32_t rand, uint32_t now_ms)
 {
     AutoIpCtx *ctx = AUTOIP_CTX(work);
     if (ctx->conflicts > IDEMIP_ACD_MAX_CONFLICTS)
     {
-        ctx->held = IDEMIP_TRUE;
+        ctx->held = EMBED_TRUE;
         ctx->deadline_ms = now_ms + IDEMIP_ACD_RATE_LIMIT_INTERVAL_MS;
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     autoip_select(work, rand);
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // The difference of two millisecond clocks read as signed, so a clock past its rollover still orders
 // against a deadline stamped before it.
-static idemip_bool autoip_due(uint32_t now_ms, uint32_t deadline_ms)
+static embed_bool autoip_due(uint32_t now_ms, uint32_t deadline_ms)
 {
-    return (idemip_bool)((int32_t)(now_ms - deadline_ms) >= 0);
+    return (embed_bool)((int32_t)(now_ms - deadline_ms) >= 0);
 }
 
 // What the context reports out: the address the interface holds, the mask sec 2.8 fixes at the prefix
@@ -223,7 +224,7 @@ void idemip_autoip_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_AUTOIP_OFF_CTX, 0, AUTOIP_STATE_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_AUTOIP_OFF_CTX, .val = 0, .bytes = AUTOIP_STATE_BYTES);
     AUTOIP_CTX(work)->ready = AUTOIP_READY;
     AUTOIP_IO(work)->status = IDEMIP_OK;
 }
@@ -245,7 +246,7 @@ void idemip_autoip_start(uint8_t *work)
     }
     AutoIpIo *io = AUTOIP_IO(work);
     io->status = IDEMIP_ERR;
-    io->claim = IDEMIP_FALSE;
+    io->claim = EMBED_FALSE;
     if (!autoip_ready(work) || io->start_args.mac == NULL)
     {
         return;
@@ -259,7 +260,7 @@ void idemip_autoip_start(uint8_t *work)
     }
     ctx->seed = autoip_seed(io->start_args.mac, io->start_args.rand);
     ctx->state = IDEMIP_AUTOIP_STATE_CHECKING;
-    idemip_bool ready = IDEMIP_TRUE;
+    embed_bool ready = EMBED_TRUE;
     // Not measured on the last: the address is either the zero a clear left, which the test before it
     // answers, or one autoip_draw handed back - and that one is inside the range whichever way it
     // was drawn. It is written because sec 2.1's "previously recorded address" is kept as the first
@@ -290,7 +291,7 @@ void idemip_autoip_conflict(uint8_t *work)
     }
     AutoIpIo *io = AUTOIP_IO(work);
     io->status = IDEMIP_ERR;
-    io->claim = IDEMIP_FALSE;
+    io->claim = EMBED_FALSE;
     if (!autoip_ready(work))
     {
         return;
@@ -305,7 +306,7 @@ void idemip_autoip_conflict(uint8_t *work)
         ctx->conflicts = (uint8_t)(ctx->conflicts + 1u);
     }
     ctx->state = IDEMIP_AUTOIP_STATE_CHECKING;
-    idemip_bool ready = autoip_advance(work, io->conflict_args.rand, io->conflict_args.now_ms);
+    embed_bool ready = autoip_advance(work, io->conflict_args.rand, io->conflict_args.now_ms);
     autoip_report(work);
     io->claim = ready;
     io->status = ready ? IDEMIP_OK : IDEMIP_BUSY;
@@ -325,7 +326,7 @@ void idemip_autoip_bound(uint8_t *work)
     }
     AutoIpIo *io = AUTOIP_IO(work);
     io->status = IDEMIP_ERR;
-    io->claim = IDEMIP_FALSE;
+    io->claim = EMBED_FALSE;
     if (!autoip_ready(work))
     {
         return;
@@ -355,7 +356,7 @@ void idemip_autoip_stop(uint8_t *work)
     }
     AutoIpIo *io = AUTOIP_IO(work);
     io->status = IDEMIP_ERR;
-    io->claim = IDEMIP_FALSE;
+    io->claim = EMBED_FALSE;
     if (!autoip_ready(work))
     {
         return;
@@ -377,7 +378,7 @@ void idemip_autoip_tick(uint8_t *work)
     }
     AutoIpIo *io = AUTOIP_IO(work);
     io->status = IDEMIP_ERR;
-    io->claim = IDEMIP_FALSE;
+    io->claim = EMBED_FALSE;
     if (!autoip_ready(work))
     {
         return;
@@ -397,8 +398,8 @@ void idemip_autoip_tick(uint8_t *work)
     }
     autoip_select(work, io->tick_args.rand);
     autoip_report(work);
-    io->claim = IDEMIP_TRUE;
+    io->claim = EMBED_TRUE;
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

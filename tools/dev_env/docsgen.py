@@ -70,9 +70,9 @@ ENDMARK = "<!-- /docsgen:{} -->"
 
 LAYER_RULE = re.compile(r"^//\s*---\s*(.+?)\s*-{3,}\s*$")
 INCLUDE = re.compile(r'^#include\s+"(src/[^"]+)"\s*(?://\s*(.*))?$')
-TABLE = re.compile(r"^static const (\w+Ns) (\w+) IDEMIP_UNUSED = \{", re.M)
+TABLE = re.compile(r"^EMBED_TABLE_STORAGE (\w+Ns) (\w+) EMBED_UNUSED = \{", re.M)
 TYPEDEF = re.compile(r"typedef struct\s*\{(.*?)\}\s*(\w+Ns);", re.S)
-ENTRY = re.compile(r"void \(\*const (\w+)\)\(uint8_t \*restrict work\);")
+ENTRY = re.compile(r"void \(\*const (\w+)\)\(uint8_t \*(?:restrict )?work\);")
 BRIEF = re.compile(r"@brief\s+(.+?)(?:\n\s*\*\s*\n|\n\s*\*/)", re.S)
 # A header MENTIONS several borrows - tick.h names the dma and nd6 ones its bind takes, rdnss.h and
 # slaac.h name the phy one describing the shape - and none of them is defined here, because all 46
@@ -391,7 +391,10 @@ def region_units(data):
                 '<a class="rfc" href="learn/RFC/rfc{n}.txt">RFC {n}</a>'.format(n=n)
                 for n in list(dict.fromkeys(refs))[:4] if n in data["have_rfc"])
             size = data["sizes"]["bytes"].get(u["borrow"]) if u["borrow"] else None
-            if u["ns"]:
+            # A table of helpers takes no work borrow and owns no borrow, so its header holds no
+            # state. The page shows it as header only, the same as a header with no table.
+            unit_card = u["ns"] and (u["entries"] or u["borrow"])
+            if unit_card:
                 head = '<b>{}</b><span class="hdr">{}</span>'.format(E(u["ns"]), E(rel))
                 body = '<div class="entries">{}</div>'.format(
                     "".join('<code>{}</code>'.format(E(e)) for e in u["entries"]))
@@ -405,7 +408,7 @@ def region_units(data):
                 foot = ""
             out.append('<article class="card{}"><header>{}</header>{}{}'
                        '<footer>{}</footer></article>'.format(
-                           "" if u["ns"] else " plain", head, body, foot, chips))
+                           "" if unit_card else " plain", head, body, foot, chips))
         out.append("</div>")
     return "\n".join(out)
 

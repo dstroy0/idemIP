@@ -20,7 +20,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief What a header build takes.
@@ -86,10 +86,10 @@ typedef struct
     size_t next_hdr_off;
     uint8_t next_hdr;
     uint16_t hops;
-    idemip_bool fragmented;
-    idemip_bool routed;
-    idemip_bool refused;
-    idemip_bool ok;
+    embed_bool fragmented;
+    embed_bool routed;
+    embed_bool refused;
+    embed_bool ok;
 } IdemIpIp6Chain;
 
 // ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ typedef struct
     const uint8_t *(*src)(const uint8_t *h);
     const uint8_t *(*dst)(const uint8_t *h);
 } Ip6ReadNs;
-IDEMIP_NS_LAYOUT(Ip6ReadNs, version, traffic_class, flow_label, payload_len, next_hdr, hop_limit, src, dst);
+EMBED_TABLE_LAYOUT(Ip6ReadNs, version, traffic_class, flow_label, payload_len, next_hdr, hop_limit, src, dst);
 
 /** @brief Writing the fixed header, and the three fields a forwarder rewrites. */
 typedef struct
@@ -127,28 +127,28 @@ typedef struct
     void (*set_next_hdr)(uint8_t *h, uint8_t nh);
     void (*set_hop_limit)(uint8_t *h, uint8_t hop_limit);
 } Ip6WriteNs;
-IDEMIP_NS_LAYOUT(Ip6WriteNs, build, set_payload_len, set_next_hdr, set_hop_limit);
+EMBED_TABLE_LAYOUT(Ip6WriteNs, build, set_payload_len, set_next_hdr, set_hop_limit);
 
 /** @brief The extension headers of RFC 8200 sec 4, and the options of sec 4.2. */
 typedef struct
 {
-    idemip_bool (*nh_is_ext)(uint8_t nh);
+    embed_bool (*nh_is_ext)(uint8_t nh);
     uint8_t (*next_hdr)(const uint8_t *e);
     size_t (*len)(const uint8_t *e);
     size_t (*opt_len)(const uint8_t *o);
-    idemip_bool (*opts_refused)(const uint8_t *p, size_t first, size_t last, size_t *bad);
+    embed_bool (*opts_refused)(const uint8_t *p, size_t first, size_t last, size_t *bad);
 } Ip6ExtNs;
-IDEMIP_NS_LAYOUT(Ip6ExtNs, nh_is_ext, next_hdr, len, opt_len, opts_refused);
+EMBED_TABLE_LAYOUT(Ip6ExtNs, nh_is_ext, next_hdr, len, opt_len, opts_refused);
 
 /** @brief The Fragment header, RFC 8200 sec 4.5. */
 typedef struct
 {
     uint16_t (*offset_bytes)(const uint8_t *f);
-    idemip_bool (*more)(const uint8_t *f);
+    embed_bool (*more)(const uint8_t *f);
     uint32_t (*ident)(const uint8_t *f);
-    void (*build)(uint8_t *f, uint8_t next_hdr, uint16_t offset_bytes, idemip_bool more, uint32_t ident);
+    void (*build)(uint8_t *f, uint8_t next_hdr, uint16_t offset_bytes, embed_bool more, uint32_t ident);
 } Ip6FragHdrNs;
-IDEMIP_NS_LAYOUT(Ip6FragHdrNs, offset_bytes, more, ident, build);
+EMBED_TABLE_LAYOUT(Ip6FragHdrNs, offset_bytes, more, ident, build);
 
 /** @brief The Routing header, RFC 8200 sec 4.4. */
 typedef struct
@@ -156,7 +156,7 @@ typedef struct
     uint8_t (*segs_left)(const uint8_t *r);
     uint8_t (*type)(const uint8_t *r);
 } Ip6RouteNs;
-IDEMIP_NS_LAYOUT(Ip6RouteNs, segs_left, type);
+EMBED_TABLE_LAYOUT(Ip6RouteNs, segs_left, type);
 
 /** @brief The chain walk of RFC 8200 sec 4, and what it stepped over. */
 typedef struct
@@ -164,7 +164,7 @@ typedef struct
     IdemIpIp6Chain (*walk)(const uint8_t *p, size_t len);
     size_t (*ext_bytes)(const IdemIpIp6Chain *c);
 } Ip6ChainNs;
-IDEMIP_NS_LAYOUT(Ip6ChainNs, walk, ext_bytes);
+EMBED_TABLE_LAYOUT(Ip6ChainNs, walk, ext_bytes);
 
 /** @brief The upper-layer pseudo-header, RFC 8200 sec 8.1. Summed, never sent. */
 typedef struct
@@ -172,7 +172,7 @@ typedef struct
     uint32_t (*accum)(uint32_t sum, const uint8_t *src, const uint8_t *dst, uint32_t upper_len, uint8_t next_hdr);
     uint32_t (*upper_len)(const uint8_t *h, const IdemIpIp6Chain *c);
 } Ip6PseudoNs;
-IDEMIP_NS_LAYOUT(Ip6PseudoNs, accum, upper_len);
+EMBED_TABLE_LAYOUT(Ip6PseudoNs, accum, upper_len);
 
 /** @name The entries the tables point at.
  *  @brief Nameable so a static const table can name them, and for no other reason. The tables are
@@ -192,16 +192,16 @@ void idemip_ip6_set_payload_len(uint8_t *h, uint16_t len);
 void idemip_ip6_set_next_hdr(uint8_t *h, uint8_t nh);
 void idemip_ip6_set_hop_limit(uint8_t *h, uint8_t hop_limit);
 
-idemip_bool idemip_ip6_nh_is_ext(uint8_t nh);
+embed_bool idemip_ip6_nh_is_ext(uint8_t nh);
 uint8_t idemip_ip6_ext_next_hdr(const uint8_t *e);
 size_t idemip_ip6_ext_len(const uint8_t *e);
 size_t idemip_ip6_opt_len(const uint8_t *o);
-idemip_bool idemip_ip6_opts_refused(const uint8_t *p, size_t first, size_t last, size_t *bad);
+embed_bool idemip_ip6_opts_refused(const uint8_t *p, size_t first, size_t last, size_t *bad);
 
 uint16_t idemip_ip6_frag_offset_bytes(const uint8_t *f);
-idemip_bool idemip_ip6_frag_more(const uint8_t *f);
+embed_bool idemip_ip6_frag_more(const uint8_t *f);
 uint32_t idemip_ip6_frag_ident(const uint8_t *f);
-void idemip_ip6_frag_build(uint8_t *f, uint8_t next_hdr, uint16_t offset_bytes, idemip_bool more, uint32_t ident);
+void idemip_ip6_frag_build(uint8_t *f, uint8_t next_hdr, uint16_t offset_bytes, embed_bool more, uint32_t ident);
 
 uint8_t idemip_ip6_rt_segs_left(const uint8_t *r);
 uint8_t idemip_ip6_rt_type(const uint8_t *r);
@@ -221,7 +221,7 @@ uint32_t idemip_ip6_upper_len(const uint8_t *h, const IdemIpIp6Chain *c);
  * inlined body and cannot do that through an extern one, where the table is in another
  * translation unit and every call is a load and an indirect jump.
  */
-IDEMIP_NS Ip6ReadNs ip6_read IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Ip6ReadNs ip6_read EMBED_UNUSED = {
     .version = idemip_ip6_version,
     .traffic_class = idemip_ip6_traffic_class,
     .flow_label = idemip_ip6_flow_label,
@@ -232,14 +232,14 @@ IDEMIP_NS Ip6ReadNs ip6_read IDEMIP_UNUSED = {
     .dst = idemip_ip6_dst,
 };
 
-IDEMIP_NS Ip6WriteNs ip6_write IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Ip6WriteNs ip6_write EMBED_UNUSED = {
     .build = idemip_ip6_build,
     .set_payload_len = idemip_ip6_set_payload_len,
     .set_next_hdr = idemip_ip6_set_next_hdr,
     .set_hop_limit = idemip_ip6_set_hop_limit,
 };
 
-IDEMIP_NS Ip6ExtNs ip6_ext IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Ip6ExtNs ip6_ext EMBED_UNUSED = {
     .nh_is_ext = idemip_ip6_nh_is_ext,
     .next_hdr = idemip_ip6_ext_next_hdr,
     .len = idemip_ip6_ext_len,
@@ -247,29 +247,29 @@ IDEMIP_NS Ip6ExtNs ip6_ext IDEMIP_UNUSED = {
     .opts_refused = idemip_ip6_opts_refused,
 };
 
-IDEMIP_NS Ip6FragHdrNs ip6_frag_hdr IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Ip6FragHdrNs ip6_frag_hdr EMBED_UNUSED = {
     .offset_bytes = idemip_ip6_frag_offset_bytes,
     .more = idemip_ip6_frag_more,
     .ident = idemip_ip6_frag_ident,
     .build = idemip_ip6_frag_build,
 };
 
-IDEMIP_NS Ip6RouteNs ip6_route IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Ip6RouteNs ip6_route EMBED_UNUSED = {
     .segs_left = idemip_ip6_rt_segs_left,
     .type = idemip_ip6_rt_type,
 };
 
-IDEMIP_NS Ip6ChainNs ip6_chain IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Ip6ChainNs ip6_chain EMBED_UNUSED = {
     .walk = idemip_ip6_walk,
     .ext_bytes = idemip_ip6_chain_ext_bytes,
 };
 
-IDEMIP_NS Ip6PseudoNs ip6_pseudo IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Ip6PseudoNs ip6_pseudo EMBED_UNUSED = {
     .accum = idemip_ip6_pseudo_accum,
     .upper_len = idemip_ip6_upper_len,
 };
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

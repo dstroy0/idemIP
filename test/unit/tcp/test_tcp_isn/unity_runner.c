@@ -3,7 +3,7 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/tcp/tcp_isn.h"
-#include <string.h>
+#include "support/borrows.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);
@@ -104,41 +104,41 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/tcp/test_tcp_isn/test_tcp_isn.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 84);
-  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 94);
-  run_test(test_the_connection_id_block_holds_the_prf_inputs, "test_the_connection_id_block_holds_the_prf_inputs", 112);
-  run_test(test_the_four_microsecond_timer_scales_from_milliseconds, "test_the_four_microsecond_timer_scales_from_milliseconds", 122);
-  run_test(test_an_unreset_borrow_is_refused, "test_an_unreset_borrow_is_refused", 128);
-  run_test(test_reset_zeroes_the_block_and_the_working_set, "test_reset_zeroes_the_block_and_the_working_set", 145);
-  run_test(test_reset_repeats, "test_reset_repeats", 157);
-  run_test(test_reset_leaves_the_operands_alone, "test_reset_leaves_the_operands_alone", 167);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 181);
-  run_test(test_a_reset_on_one_borrow_leaves_the_other_regions_untouched, "test_a_reset_on_one_borrow_leaves_the_other_regions_untouched", 199);
-  run_test(test_a_key_shorter_than_the_secret_is_refused, "test_a_key_shorter_than_the_secret_is_refused", 216);
-  run_test(test_generate_before_a_seed_is_refused, "test_generate_before_a_seed_is_refused", 232);
-  run_test(test_a_missing_address_operand_is_refused, "test_a_missing_address_operand_is_refused", 242);
-  run_test(test_the_isn_is_m_plus_f_over_the_connection_id, "test_the_isn_is_m_plus_f_over_the_connection_id", 325);
-  run_test(test_the_isn_is_m_plus_f_over_an_ipv6_connection_id, "test_the_isn_is_m_plus_f_over_an_ipv6_connection_id", 333);
-  run_test(test_m_advances_two_hundred_fifty_ticks_per_millisecond, "test_m_advances_two_hundred_fifty_ticks_per_millisecond", 344);
-  run_test(test_m_counts_from_the_seeded_base, "test_m_counts_from_the_seeded_base", 358);
-  run_test(test_m_wraps_as_a_thirty_two_bit_counter, "test_m_wraps_as_a_thirty_two_bit_counter", 371);
-  run_test(test_generate_repeats_on_the_same_borrow, "test_generate_repeats_on_the_same_borrow", 383);
-  run_test(test_each_leg_of_the_four_tuple_changes_the_isn, "test_each_leg_of_the_four_tuple_changes_the_isn", 399);
-  run_test(test_the_ipv4_and_ipv6_spaces_are_disjoint, "test_the_ipv4_and_ipv6_spaces_are_disjoint", 436);
-  run_test(test_two_tuples_keep_a_constant_offset_across_time, "test_two_tuples_keep_a_constant_offset_across_time", 458);
-  run_test(test_a_different_secret_moves_the_isn_space, "test_a_different_secret_moves_the_isn_space", 478);
-  run_test(test_the_isn_is_not_the_connection_id_alone, "test_the_isn_is_not_the_connection_id_alone", 495);
-  run_test(test_the_isn_carries_no_window_of_the_secret, "test_the_isn_carries_no_window_of_the_secret", 511);
-  run_test(test_generate_leaves_no_octet_of_the_secret_in_the_working_regions, "test_generate_leaves_no_octet_of_the_secret_in_the_working_regions", 530);
-  run_test(test_a_reseed_leaves_m_rising, "test_a_reseed_leaves_m_rising", 548);
-  run_test(test_a_longer_key_contributes_its_leading_octets, "test_a_longer_key_contributes_its_leading_octets", 566);
-  run_test(test_reset_unkeys_the_generator, "test_reset_unkeys_the_generator", 581);
-  run_test(test_an_unknown_ip_version_is_refused, "test_an_unknown_ip_version_is_refused", 599);
-  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 616);
-  run_test(test_a_refused_seed_leaves_the_generator_unkeyed, "test_a_refused_seed_leaves_the_generator_unkeyed", 640);
-  run_test(test_generate_reports_only_through_status_and_isn, "test_generate_reports_only_through_status_and_isn", 658);
-  run_test(test_two_borrows_generate_in_their_own_spaces, "test_two_borrows_generate_in_their_own_spaces", 676);
-  run_test(test_a_generation_that_names_no_address_is_refused, "test_a_generation_that_names_no_address_is_refused", 692);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 89);
+  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 99);
+  run_test(test_the_connection_id_block_holds_the_prf_inputs, "test_the_connection_id_block_holds_the_prf_inputs", 117);
+  run_test(test_the_four_microsecond_timer_scales_from_milliseconds, "test_the_four_microsecond_timer_scales_from_milliseconds", 127);
+  run_test(test_an_unreset_borrow_is_refused, "test_an_unreset_borrow_is_refused", 133);
+  run_test(test_reset_zeroes_the_block_and_the_working_set, "test_reset_zeroes_the_block_and_the_working_set", 150);
+  run_test(test_reset_repeats, "test_reset_repeats", 163);
+  run_test(test_reset_leaves_the_operands_alone, "test_reset_leaves_the_operands_alone", 173);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 187);
+  run_test(test_a_reset_on_one_borrow_leaves_the_other_regions_untouched, "test_a_reset_on_one_borrow_leaves_the_other_regions_untouched", 205);
+  run_test(test_a_key_shorter_than_the_secret_is_refused, "test_a_key_shorter_than_the_secret_is_refused", 222);
+  run_test(test_generate_before_a_seed_is_refused, "test_generate_before_a_seed_is_refused", 238);
+  run_test(test_a_missing_address_operand_is_refused, "test_a_missing_address_operand_is_refused", 248);
+  run_test(test_the_isn_is_m_plus_f_over_the_connection_id, "test_the_isn_is_m_plus_f_over_the_connection_id", 331);
+  run_test(test_the_isn_is_m_plus_f_over_an_ipv6_connection_id, "test_the_isn_is_m_plus_f_over_an_ipv6_connection_id", 339);
+  run_test(test_m_advances_two_hundred_fifty_ticks_per_millisecond, "test_m_advances_two_hundred_fifty_ticks_per_millisecond", 350);
+  run_test(test_m_counts_from_the_seeded_base, "test_m_counts_from_the_seeded_base", 364);
+  run_test(test_m_wraps_as_a_thirty_two_bit_counter, "test_m_wraps_as_a_thirty_two_bit_counter", 377);
+  run_test(test_generate_repeats_on_the_same_borrow, "test_generate_repeats_on_the_same_borrow", 389);
+  run_test(test_each_leg_of_the_four_tuple_changes_the_isn, "test_each_leg_of_the_four_tuple_changes_the_isn", 405);
+  run_test(test_the_ipv4_and_ipv6_spaces_are_disjoint, "test_the_ipv4_and_ipv6_spaces_are_disjoint", 442);
+  run_test(test_two_tuples_keep_a_constant_offset_across_time, "test_two_tuples_keep_a_constant_offset_across_time", 464);
+  run_test(test_a_different_secret_moves_the_isn_space, "test_a_different_secret_moves_the_isn_space", 484);
+  run_test(test_the_isn_is_not_the_connection_id_alone, "test_the_isn_is_not_the_connection_id_alone", 501);
+  run_test(test_the_isn_carries_no_window_of_the_secret, "test_the_isn_carries_no_window_of_the_secret", 517);
+  run_test(test_generate_leaves_no_octet_of_the_secret_in_the_working_regions, "test_generate_leaves_no_octet_of_the_secret_in_the_working_regions", 536);
+  run_test(test_a_reseed_leaves_m_rising, "test_a_reseed_leaves_m_rising", 554);
+  run_test(test_a_longer_key_contributes_its_leading_octets, "test_a_longer_key_contributes_its_leading_octets", 572);
+  run_test(test_reset_unkeys_the_generator, "test_reset_unkeys_the_generator", 587);
+  run_test(test_an_unknown_ip_version_is_refused, "test_an_unknown_ip_version_is_refused", 605);
+  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 622);
+  run_test(test_a_refused_seed_leaves_the_generator_unkeyed, "test_a_refused_seed_leaves_the_generator_unkeyed", 646);
+  run_test(test_generate_reports_only_through_status_and_isn, "test_generate_reports_only_through_status_and_isn", 664);
+  run_test(test_two_borrows_generate_in_their_own_spaces, "test_two_borrows_generate_in_their_own_spaces", 682);
+  run_test(test_a_generation_that_names_no_address_is_refused, "test_a_generation_that_names_no_address_is_refused", 698);
 
   return UNITY_END();
 }

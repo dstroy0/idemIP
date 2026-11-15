@@ -3,7 +3,7 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/core/timeouts.h"
-#include <string.h>
+#include "support/borrows.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);
@@ -121,58 +121,58 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/core/test_timeouts/test_timeouts.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 83);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 95);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 118);
-  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 137);
-  run_test(test_clear_zeroes_the_table_region, "test_clear_zeroes_the_table_region", 155);
-  run_test(test_clear_reports_an_empty_list, "test_clear_reports_an_empty_list", 163);
-  run_test(test_clear_is_repeatable, "test_clear_is_repeatable", 172);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 186);
-  run_test(test_a_dirty_borrow_is_refused, "test_a_dirty_borrow_is_refused", 200);
-  run_test(test_arm_refuses_a_unit_the_list_does_not_carry, "test_arm_refuses_a_unit_the_list_does_not_carry", 212);
-  run_test(test_cancel_refuses_a_unit_the_list_does_not_carry, "test_cancel_refuses_a_unit_the_list_does_not_carry", 226);
-  run_test(test_every_entry_stays_inside_the_borrow, "test_every_entry_stays_inside_the_borrow", 244);
-  run_test(test_a_tick_on_an_empty_list_reports_forever, "test_a_tick_on_an_empty_list_reports_forever", 313);
-  run_test(test_clear_reports_forever, "test_clear_reports_forever", 321);
-  run_test(test_a_tick_reports_the_wait_to_the_earliest_deadline, "test_a_tick_reports_the_wait_to_the_earliest_deadline", 329);
-  run_test(test_a_tick_at_the_deadline_reports_a_zero_wait, "test_a_tick_at_the_deadline_reports_a_zero_wait", 339);
-  run_test(test_a_tick_reports_the_earliest_of_several, "test_a_tick_reports_the_earliest_of_several", 350);
-  run_test(test_a_tick_drops_nothing, "test_a_tick_drops_nothing", 362);
-  run_test(test_expire_before_the_deadline_is_busy, "test_expire_before_the_deadline_is_busy", 375);
-  run_test(test_expire_on_an_empty_list_is_busy, "test_expire_on_an_empty_list_is_busy", 386);
-  run_test(test_expire_at_the_deadline_reports_the_pair_that_armed_it, "test_expire_at_the_deadline_reports_the_pair_that_armed_it", 395);
-  run_test(test_expire_past_the_deadline_still_reports_it, "test_expire_past_the_deadline_still_reports_it", 407);
-  run_test(test_expire_uses_the_count_the_last_tick_recorded, "test_expire_uses_the_count_the_last_tick_recorded", 421);
-  run_test(test_expire_reports_deadlines_in_deadline_order, "test_expire_reports_deadlines_in_deadline_order", 431);
-  run_test(test_expire_drains_only_what_is_due, "test_expire_drains_only_what_is_due", 456);
-  run_test(test_two_deadlines_on_the_same_millisecond_both_fire, "test_two_deadlines_on_the_same_millisecond_both_fire", 475);
-  run_test(test_arm_rearms_the_same_pair_in_place, "test_arm_rearms_the_same_pair_in_place", 492);
-  run_test(test_a_rearm_earlier_reorders_the_list, "test_a_rearm_earlier_reorders_the_list", 509);
-  run_test(test_the_same_unit_at_two_argument_indices_holds_two_deadlines, "test_the_same_unit_at_two_argument_indices_holds_two_deadlines", 525);
-  run_test(test_arm_accepts_every_unit_the_enum_names, "test_arm_accepts_every_unit_the_enum_names", 539);
-  run_test(test_a_full_list_is_busy_and_the_retry_succeeds, "test_a_full_list_is_busy_and_the_retry_succeeds", 563);
-  run_test(test_a_full_list_still_rearms_a_pair_it_holds, "test_a_full_list_still_rearms_a_pair_it_holds", 581);
-  run_test(test_cancel_drops_the_deadline, "test_cancel_drops_the_deadline", 597);
-  run_test(test_cancel_zeroes_the_slot_it_freed, "test_cancel_zeroes_the_slot_it_freed", 609);
-  run_test(test_expire_frees_the_slot_it_took, "test_expire_frees_the_slot_it_took", 618);
-  run_test(test_cancel_of_a_deadline_the_list_does_not_hold_is_busy, "test_cancel_of_a_deadline_the_list_does_not_hold_is_busy", 628);
-  run_test(test_a_second_cancel_is_busy, "test_a_second_cancel_is_busy", 639);
-  run_test(test_cancel_keeps_the_order_of_the_rest, "test_cancel_keeps_the_order_of_the_rest", 648);
-  run_test(test_cancel_of_the_head_moves_the_wait_to_the_next, "test_cancel_of_the_head_moves_the_wait_to_the_next", 664);
-  run_test(test_slots_are_reused_across_cancel_and_arm, "test_slots_are_reused_across_cancel_and_arm", 676);
-  run_test(test_a_deadline_past_the_wrap_is_not_due_before_it, "test_a_deadline_past_the_wrap_is_not_due_before_it", 701);
-  run_test(test_a_deadline_past_the_wrap_is_not_due_one_millisecond_early, "test_a_deadline_past_the_wrap_is_not_due_one_millisecond_early", 712);
-  run_test(test_a_deadline_past_the_wrap_fires_after_the_wrap, "test_a_deadline_past_the_wrap_fires_after_the_wrap", 722);
-  run_test(test_the_order_holds_across_the_wrap, "test_the_order_holds_across_the_wrap", 738);
-  run_test(test_a_tick_that_steps_over_the_wrap_drains_in_order, "test_a_tick_that_steps_over_the_wrap_drains_in_order", 756);
-  run_test(test_a_deadline_at_the_recorded_count_is_due, "test_a_deadline_at_the_recorded_count_is_due", 776);
-  run_test(test_the_forward_window_is_one_half_period, "test_the_forward_window_is_one_half_period", 788);
-  run_test(test_an_armed_deadline_never_reports_forever, "test_an_armed_deadline_never_reports_forever", 805);
-  run_test(test_two_borrows_hold_independent_lists, "test_two_borrows_hold_independent_lists", 826);
-  run_test(test_an_expire_is_a_function_of_its_borrow_alone, "test_an_expire_is_a_function_of_its_borrow_alone", 839);
-  run_test(test_a_tick_in_one_borrow_does_not_advance_the_other, "test_a_tick_in_one_borrow_does_not_advance_the_other", 856);
-  run_test(test_a_deadline_is_cancelled_from_behind_the_front_of_the_list, "test_a_deadline_is_cancelled_from_behind_the_front_of_the_list", 869);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 88);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 100);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 123);
+  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 142);
+  run_test(test_clear_zeroes_the_table_region, "test_clear_zeroes_the_table_region", 160);
+  run_test(test_clear_reports_an_empty_list, "test_clear_reports_an_empty_list", 168);
+  run_test(test_clear_is_repeatable, "test_clear_is_repeatable", 177);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 191);
+  run_test(test_a_dirty_borrow_is_refused, "test_a_dirty_borrow_is_refused", 205);
+  run_test(test_arm_refuses_a_unit_the_list_does_not_carry, "test_arm_refuses_a_unit_the_list_does_not_carry", 217);
+  run_test(test_cancel_refuses_a_unit_the_list_does_not_carry, "test_cancel_refuses_a_unit_the_list_does_not_carry", 231);
+  run_test(test_every_entry_stays_inside_the_borrow, "test_every_entry_stays_inside_the_borrow", 249);
+  run_test(test_a_tick_on_an_empty_list_reports_forever, "test_a_tick_on_an_empty_list_reports_forever", 318);
+  run_test(test_clear_reports_forever, "test_clear_reports_forever", 326);
+  run_test(test_a_tick_reports_the_wait_to_the_earliest_deadline, "test_a_tick_reports_the_wait_to_the_earliest_deadline", 334);
+  run_test(test_a_tick_at_the_deadline_reports_a_zero_wait, "test_a_tick_at_the_deadline_reports_a_zero_wait", 344);
+  run_test(test_a_tick_reports_the_earliest_of_several, "test_a_tick_reports_the_earliest_of_several", 355);
+  run_test(test_a_tick_drops_nothing, "test_a_tick_drops_nothing", 367);
+  run_test(test_expire_before_the_deadline_is_busy, "test_expire_before_the_deadline_is_busy", 380);
+  run_test(test_expire_on_an_empty_list_is_busy, "test_expire_on_an_empty_list_is_busy", 391);
+  run_test(test_expire_at_the_deadline_reports_the_pair_that_armed_it, "test_expire_at_the_deadline_reports_the_pair_that_armed_it", 400);
+  run_test(test_expire_past_the_deadline_still_reports_it, "test_expire_past_the_deadline_still_reports_it", 412);
+  run_test(test_expire_uses_the_count_the_last_tick_recorded, "test_expire_uses_the_count_the_last_tick_recorded", 426);
+  run_test(test_expire_reports_deadlines_in_deadline_order, "test_expire_reports_deadlines_in_deadline_order", 436);
+  run_test(test_expire_drains_only_what_is_due, "test_expire_drains_only_what_is_due", 461);
+  run_test(test_two_deadlines_on_the_same_millisecond_both_fire, "test_two_deadlines_on_the_same_millisecond_both_fire", 480);
+  run_test(test_arm_rearms_the_same_pair_in_place, "test_arm_rearms_the_same_pair_in_place", 497);
+  run_test(test_a_rearm_earlier_reorders_the_list, "test_a_rearm_earlier_reorders_the_list", 514);
+  run_test(test_the_same_unit_at_two_argument_indices_holds_two_deadlines, "test_the_same_unit_at_two_argument_indices_holds_two_deadlines", 530);
+  run_test(test_arm_accepts_every_unit_the_enum_names, "test_arm_accepts_every_unit_the_enum_names", 544);
+  run_test(test_a_full_list_is_busy_and_the_retry_succeeds, "test_a_full_list_is_busy_and_the_retry_succeeds", 568);
+  run_test(test_a_full_list_still_rearms_a_pair_it_holds, "test_a_full_list_still_rearms_a_pair_it_holds", 586);
+  run_test(test_cancel_drops_the_deadline, "test_cancel_drops_the_deadline", 602);
+  run_test(test_cancel_zeroes_the_slot_it_freed, "test_cancel_zeroes_the_slot_it_freed", 614);
+  run_test(test_expire_frees_the_slot_it_took, "test_expire_frees_the_slot_it_took", 623);
+  run_test(test_cancel_of_a_deadline_the_list_does_not_hold_is_busy, "test_cancel_of_a_deadline_the_list_does_not_hold_is_busy", 633);
+  run_test(test_a_second_cancel_is_busy, "test_a_second_cancel_is_busy", 644);
+  run_test(test_cancel_keeps_the_order_of_the_rest, "test_cancel_keeps_the_order_of_the_rest", 653);
+  run_test(test_cancel_of_the_head_moves_the_wait_to_the_next, "test_cancel_of_the_head_moves_the_wait_to_the_next", 669);
+  run_test(test_slots_are_reused_across_cancel_and_arm, "test_slots_are_reused_across_cancel_and_arm", 681);
+  run_test(test_a_deadline_past_the_wrap_is_not_due_before_it, "test_a_deadline_past_the_wrap_is_not_due_before_it", 706);
+  run_test(test_a_deadline_past_the_wrap_is_not_due_one_millisecond_early, "test_a_deadline_past_the_wrap_is_not_due_one_millisecond_early", 717);
+  run_test(test_a_deadline_past_the_wrap_fires_after_the_wrap, "test_a_deadline_past_the_wrap_fires_after_the_wrap", 727);
+  run_test(test_the_order_holds_across_the_wrap, "test_the_order_holds_across_the_wrap", 743);
+  run_test(test_a_tick_that_steps_over_the_wrap_drains_in_order, "test_a_tick_that_steps_over_the_wrap_drains_in_order", 761);
+  run_test(test_a_deadline_at_the_recorded_count_is_due, "test_a_deadline_at_the_recorded_count_is_due", 781);
+  run_test(test_the_forward_window_is_one_half_period, "test_the_forward_window_is_one_half_period", 793);
+  run_test(test_an_armed_deadline_never_reports_forever, "test_an_armed_deadline_never_reports_forever", 810);
+  run_test(test_two_borrows_hold_independent_lists, "test_two_borrows_hold_independent_lists", 831);
+  run_test(test_an_expire_is_a_function_of_its_borrow_alone, "test_an_expire_is_a_function_of_its_borrow_alone", 844);
+  run_test(test_a_tick_in_one_borrow_does_not_advance_the_other, "test_a_tick_in_one_borrow_does_not_advance_the_other", 861);
+  run_test(test_a_deadline_is_cancelled_from_behind_the_front_of_the_list, "test_a_deadline_is_cancelled_from_behind_the_front_of_the_list", 874);
 
   return UNITY_END();
 }

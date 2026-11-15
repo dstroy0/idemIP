@@ -176,36 +176,38 @@
  */
 #define IDEMIP_TCP_PROTO 6u
 
-static_assert(IDEMIP_TCP_OFF_OPTIONS == IDEMIP_TCP_HDR_LEN,
-              "the RFC 9293 field offsets must sum to the option-free header length");
-static_assert(IDEMIP_TCP_HDR_BYTES(IDEMIP_TCP_DOFF_MIN) == IDEMIP_TCP_HDR_LEN,
-              "the minimum Data Offset of 5 words is the option-free header (RFC 9293 sec 3.1)");
-static_assert((1u << IDEMIP_TCP_WORD_SHIFT) == 4u,
-              "Data Offset counts 32-bit words, so words to octets is a shift by two (RFC 9293 sec 3.1)");
-static_assert(IDEMIP_TCP_DOFF_FROM_BYTES(IDEMIP_TCP_HDR_LEN) == IDEMIP_TCP_DOFF_MIN,
-              "the option-free header is a Data Offset of five words (RFC 9293 sec 3.1)");
-static_assert(IDEMIP_TCP_OPTS_MAX == 40u,
-              "the largest Data Offset leaves ten words of options, RFC 2018 sec 3's \"40 bytes available\"");
-static_assert((IDEMIP_TCP_CWR | IDEMIP_TCP_ECE | IDEMIP_TCP_URG | IDEMIP_TCP_ACK | IDEMIP_TCP_PSH | IDEMIP_TCP_RST |
-               IDEMIP_TCP_SYN | IDEMIP_TCP_FIN) == 0xFFu,
-              "the eight assigned control bits fill the low octet of the word at offset 12 (RFC 9293 sec 3.1 Fig 1)");
-static_assert((((uint32_t)IDEMIP_TCP_DOFF_MASK << IDEMIP_TCP_DOFF_SHIFT) | IDEMIP_TCP_RSRVD_MASK | 0xFFu) == 0xFFFFu,
-              "Data Offset, Reserved and the control bits fill the 16-bit word at offset 12 (RFC 9293 sec 3.1)");
-static_assert((IDEMIP_TCP_RSRVD_MASK & 0xFFu) == 0u,
-              "Reserved sits above the control bits and never overlaps one (RFC 9293 sec 3.1)");
-static_assert(IDEMIP_TCP_OPT_OFF_DATA + 2u == IDEMIP_TCP_OPT_MSS_LEN,
-              "kind 2 is two header octets and a 16-bit value (RFC 9293 sec 3.2)");
-static_assert(IDEMIP_TCP_OPT_OFF_WS_SHIFT + 1u == IDEMIP_TCP_OPT_WS_LEN,
-              "kind 3 is two header octets and shift.cnt (RFC 7323 sec 2.2)");
-static_assert(IDEMIP_TCP_OPT_OFF_TSECR + 4u == IDEMIP_TCP_OPT_TS_LEN,
-              "kind 8 is two header octets and two four-byte timestamps (RFC 7323 sec 3.2)");
-static_assert(((uint32_t)1u << (IDEMIP_TCP_WS_MAX + 16u)) == 0x40000000u,
-              "RFC 7323 sec 2.2 caps the scale exponent at 14 for a 1 GiB receive window, 2^(14+16)");
-static_assert((1u << IDEMIP_TCP_SACK_BLOCK_SHIFT) == IDEMIP_TCP_SACK_BLOCK_LEN,
-              "a SACK block is two 32-bit edges, so a block index is a shift by three (RFC 2018 sec 3)");
-static_assert(IDEMIP_TCP_SACK_BYTES(IDEMIP_TCP_SACK_BLOCKS_MAX) <= IDEMIP_TCP_OPTS_MAX,
-              "four SACK blocks fit the options, at 8*n+2 bytes (RFC 2018 sec 3)");
-static_assert(IDEMIP_TCP_SACK_BYTES(IDEMIP_TCP_SACK_BLOCKS_MAX + 1u) > IDEMIP_TCP_OPTS_MAX,
-              "four is the most 40 bytes of options hold, so a fifth block must not fit (RFC 2018 sec 3)");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_OFF_OPTIONS == IDEMIP_TCP_HDR_LEN,
+                    "the RFC 9293 field offsets must sum to the option-free header length");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_HDR_BYTES(IDEMIP_TCP_DOFF_MIN) == IDEMIP_TCP_HDR_LEN,
+                    "the minimum Data Offset of 5 words is the option-free header (RFC 9293 sec 3.1)");
+EMBED_STATIC_ASSERT((1u << IDEMIP_TCP_WORD_SHIFT) == 4u,
+                    "Data Offset counts 32-bit words, so words to octets is a shift by two (RFC 9293 sec 3.1)");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_DOFF_FROM_BYTES(IDEMIP_TCP_HDR_LEN) == IDEMIP_TCP_DOFF_MIN,
+                    "the option-free header is a Data Offset of five words (RFC 9293 sec 3.1)");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_OPTS_MAX == 40u,
+                    "the largest Data Offset leaves ten words of options, RFC 2018 sec 3's \"40 bytes available\"");
+EMBED_STATIC_ASSERT(
+    (IDEMIP_TCP_CWR | IDEMIP_TCP_ECE | IDEMIP_TCP_URG | IDEMIP_TCP_ACK | IDEMIP_TCP_PSH | IDEMIP_TCP_RST |
+     IDEMIP_TCP_SYN | IDEMIP_TCP_FIN) == 0xFFu,
+    "the eight assigned control bits fill the low octet of the word at offset 12 (RFC 9293 sec 3.1 Fig 1)");
+EMBED_STATIC_ASSERT((((uint32_t)IDEMIP_TCP_DOFF_MASK << IDEMIP_TCP_DOFF_SHIFT) | IDEMIP_TCP_RSRVD_MASK | 0xFFu) ==
+                        0xFFFFu,
+                    "Data Offset, Reserved and the control bits fill the 16-bit word at offset 12 (RFC 9293 sec 3.1)");
+EMBED_STATIC_ASSERT((IDEMIP_TCP_RSRVD_MASK & 0xFFu) == 0u,
+                    "Reserved sits above the control bits and never overlaps one (RFC 9293 sec 3.1)");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_OPT_OFF_DATA + 2u == IDEMIP_TCP_OPT_MSS_LEN,
+                    "kind 2 is two header octets and a 16-bit value (RFC 9293 sec 3.2)");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_OPT_OFF_WS_SHIFT + 1u == IDEMIP_TCP_OPT_WS_LEN,
+                    "kind 3 is two header octets and shift.cnt (RFC 7323 sec 2.2)");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_OPT_OFF_TSECR + 4u == IDEMIP_TCP_OPT_TS_LEN,
+                    "kind 8 is two header octets and two four-byte timestamps (RFC 7323 sec 3.2)");
+EMBED_STATIC_ASSERT(((uint32_t)1u << (IDEMIP_TCP_WS_MAX + 16u)) == 0x40000000u,
+                    "RFC 7323 sec 2.2 caps the scale exponent at 14 for a 1 GiB receive window, 2^(14+16)");
+EMBED_STATIC_ASSERT((1u << IDEMIP_TCP_SACK_BLOCK_SHIFT) == IDEMIP_TCP_SACK_BLOCK_LEN,
+                    "a SACK block is two 32-bit edges, so a block index is a shift by three (RFC 2018 sec 3)");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_SACK_BYTES(IDEMIP_TCP_SACK_BLOCKS_MAX) <= IDEMIP_TCP_OPTS_MAX,
+                    "four SACK blocks fit the options, at 8*n+2 bytes (RFC 2018 sec 3)");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_SACK_BYTES(IDEMIP_TCP_SACK_BLOCKS_MAX + 1u) > IDEMIP_TCP_OPTS_MAX,
+                    "four is the most 40 bytes of options hold, so a fifth block must not fit (RFC 2018 sec 3)");
 
 #endif // IDEMIP_TCP_DEFINES_H

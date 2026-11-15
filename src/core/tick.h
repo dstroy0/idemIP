@@ -39,7 +39,7 @@
 
 #if IDEMIP_ENABLE_ETHERNET
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief Which phase of the fixed order the tick has reached.
@@ -50,14 +50,8 @@ IDEMIP_BEGIN_DECLS
  * @var IDEMIP_TICK_PHASE_FLUSH   the deferred work the services released
  * @var IDEMIP_TICK_PHASE_DONE    the tick is through; the next @ref TickNs::open starts another
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_TICK_PHASE_IDLE = 0,
-    IDEMIP_TICK_PHASE_DRAIN,
-    IDEMIP_TICK_PHASE_SERVICE,
-    IDEMIP_TICK_PHASE_FLUSH,
-    IDEMIP_TICK_PHASE_DONE,
-} IdemIpTickPhase;
+EMBED_ENUM_BYTE(IdemIpTickPhase, IDEMIP_TICK_PHASE_IDLE = 0, IDEMIP_TICK_PHASE_DRAIN, IDEMIP_TICK_PHASE_SERVICE,
+                IDEMIP_TICK_PHASE_FLUSH, IDEMIP_TICK_PHASE_DONE, );
 
 /**
  * @brief Which unit a service or flush step ran, so a caller can see the order it ran them in.
@@ -66,23 +60,21 @@ typedef enum IDEMIP_ENUM_PACKED
  * readable: a resolver runs before the queue that waits on it, and a reassembler before whatever
  * reads a completed datagram.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_TICK_UNIT_NONE = 0,
-    IDEMIP_TICK_UNIT_ARP,       ///< RFC 826 resolution, before the queues that wait on it
-    IDEMIP_TICK_UNIT_ND6,       ///< RFC 4861 sec 7.3 resolution, per interface, for the same reason
-    IDEMIP_TICK_UNIT_IP4_REASS, ///< RFC 791 sec 3.2, before the protocols that read a datagram
-    IDEMIP_TICK_UNIT_IP6_REASS, ///< RFC 8200 sec 4.5
-    IDEMIP_TICK_UNIT_IGMP,      ///< RFC 2236 report delays
-    IDEMIP_TICK_UNIT_MLD6,      ///< RFC 2710 report delays
-    IDEMIP_TICK_UNIT_NETIF,     ///< RFC 4862 sec 5.5.4 address lifetimes
-    IDEMIP_TICK_UNIT_TIMEOUTS,  ///< the deadline list, whose expiries name the units above and below
-    IDEMIP_TICK_UNIT_ARP_HOLD,  ///< a frame ARP held until resolution finished
-    IDEMIP_TICK_UNIT_IP4_RECLAIM, ///< a descriptor IPv4 reassembly is done with
-    IDEMIP_TICK_UNIT_IP6_DROP,    ///< a datagram IPv6 reassembly gave up, and the descriptors it held
-    IDEMIP_TICK_UNIT_TCP_ACK,     ///< the aggregate acknowledgment of RFC 9293 sec 3.10.7.4 MUST-58
-    IDEMIP_TICK_UNIT_COUNT,       ///< one past the last, so a cursor is bounded by a constant
-} IdemIpTickUnit;
+EMBED_ENUM_BYTE(IdemIpTickUnit, IDEMIP_TICK_UNIT_NONE = 0,
+                IDEMIP_TICK_UNIT_ARP,         ///< RFC 826 resolution, before the queues that wait on it
+                IDEMIP_TICK_UNIT_ND6,         ///< RFC 4861 sec 7.3 resolution, per interface, for the same reason
+                IDEMIP_TICK_UNIT_IP4_REASS,   ///< RFC 791 sec 3.2, before the protocols that read a datagram
+                IDEMIP_TICK_UNIT_IP6_REASS,   ///< RFC 8200 sec 4.5
+                IDEMIP_TICK_UNIT_IGMP,        ///< RFC 2236 report delays
+                IDEMIP_TICK_UNIT_MLD6,        ///< RFC 2710 report delays
+                IDEMIP_TICK_UNIT_NETIF,       ///< RFC 4862 sec 5.5.4 address lifetimes
+                IDEMIP_TICK_UNIT_TIMEOUTS,    ///< the deadline list, whose expiries name the units above and below
+                IDEMIP_TICK_UNIT_ARP_HOLD,    ///< a frame ARP held until resolution finished
+                IDEMIP_TICK_UNIT_IP4_RECLAIM, ///< a descriptor IPv4 reassembly is done with
+                IDEMIP_TICK_UNIT_IP6_DROP,    ///< a datagram IPv6 reassembly gave up, and the descriptors it held
+                IDEMIP_TICK_UNIT_TCP_ACK,     ///< the aggregate acknowledgment of RFC 9293 sec 3.10.7.4 MUST-58
+                IDEMIP_TICK_UNIT_COUNT,       ///< one past the last, so a cursor is bounded by a constant
+);
 
 /**
  * @brief The borrows the scheduler drives, each the caller's own.
@@ -216,8 +208,8 @@ typedef struct
     uint16_t frames;
     uint16_t steps;
     uint32_t reasm_src;
-    idemip_bool reasm_timeout;
-    idemip_bool reasm_frag_zero;
+    embed_bool reasm_timeout;
+    embed_bool reasm_frag_zero;
 } TickIo;
 
 // ---------------------------------------------------------------------------
@@ -306,15 +298,14 @@ void idemip_tick_flush(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const TickNs Tick IDEMIP_UNUSED = {
-    .clear = idemip_tick_clear,
-    .bind = idemip_tick_bind,
-    .if_bind = idemip_tick_if_bind,
-    .open = idemip_tick_open,
-    .drain = idemip_tick_drain,
-    .service = idemip_tick_service,
-    .flush = idemip_tick_flush};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE TickNs Tick EMBED_UNUSED = {.clear = idemip_tick_clear,
+                                                .bind = idemip_tick_bind,
+                                                .if_bind = idemip_tick_if_bind,
+                                                .open = idemip_tick_open,
+                                                .drain = idemip_tick_drain,
+                                                .service = idemip_tick_service,
+                                                .flush = idemip_tick_flush};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET
 

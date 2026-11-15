@@ -19,7 +19,6 @@
 
 #include <stdint.h>
 #include <stdio.h>
-#include <string.h>
 
 /** libpcap header sizes. */
 #define IDEMIP_PCAP_GLOBAL_HDR_LEN 24u
@@ -98,7 +97,7 @@ static inline int idemip_pcap_open(IdemIpPcap *p, const char *path)
 {
     uint8_t hdr[IDEMIP_PCAP_GLOBAL_HDR_LEN];
 
-    memset(p, 0, sizeof *p);
+    *p = (IdemIpPcap){0};
     p->fp = fopen(path, "wb");
     if (p->fp == NULL)
     {
@@ -114,8 +113,8 @@ static inline int idemip_pcap_open(IdemIpPcap *p, const char *path)
     return 1;
 }
 
-// Append one whole Ethernet II frame, stamped at @p ms milliseconds from the start of the capture.
-static inline int idemip_pcap_frame(IdemIpPcap *p, const uint8_t *frame, size_t len, uint32_t ms)
+// Append one whole Ethernet II frame, stamped at @p stamp_ms milliseconds from the start of the capture.
+static inline int idemip_pcap_frame(IdemIpPcap *p, const uint8_t *frame, size_t len, uint32_t stamp_ms)
 {
     uint8_t hdr[IDEMIP_PCAP_REC_HDR_LEN];
 
@@ -123,7 +122,7 @@ static inline int idemip_pcap_frame(IdemIpPcap *p, const uint8_t *frame, size_t 
     {
         return 0;
     }
-    if (idemip_pcap_record_header(hdr, sizeof hdr, ms / 1000u, (ms % 1000u) * 1000u, (uint32_t)len,
+    if (idemip_pcap_record_header(hdr, sizeof hdr, stamp_ms / 1000u, (stamp_ms % 1000u) * 1000u, (uint32_t)len,
                                   (uint32_t)len) != sizeof hdr)
     {
         return 0;

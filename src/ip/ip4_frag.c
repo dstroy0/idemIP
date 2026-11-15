@@ -16,7 +16,7 @@
 #include "src/common_defines.h"
 #include "src/ip/ipv4_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads zero here and every
 // entry but clear refuses it.
@@ -40,10 +40,10 @@ typedef struct
     uint16_t index;
     uint8_t hdr_len;
     uint8_t hdr2_len;
-    idemip_bool omf;
-    idemip_bool split;
-    idemip_bool open;
-    idemip_bool done;
+    embed_bool omf;
+    embed_bool split;
+    embed_bool open;
+    embed_bool done;
 } Ip4FragCtx;
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
@@ -53,22 +53,22 @@ IDEMIP_ASSERT_REGION(IDEMIP_IP4_FRAG_OFF_CTX, sizeof(Ip4FragCtx), IDEMIP_IP4_FRA
 // The head region carries the operand block and the context, and this unit holds no table, so the
 // pair is the whole borrow. ip4_frag.h publishes the offsets; the assert proves the span covers them
 // before anything runs.
-static_assert(IDEMIP_IP4_FRAG_OFF_CTX + sizeof(Ip4FragCtx) <= IDEMIP_IP4_FRAG_BORROW,
-              "IDEMIP_IP4_FRAG_BORROW is short of the operand block and the context - raise it in "
-              "idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_FRAG_OFF_CTX + sizeof(Ip4FragCtx) <= IDEMIP_IP4_FRAG_BORROW,
+                    "IDEMIP_IP4_FRAG_BORROW is short of the operand block and the context - raise it in "
+                    "idemip_config.h");
 
 // The context starts at the end of the operand block, so its offset carries the borrow's alignment.
-static_assert((IDEMIP_IP4_FRAG_CTX_BYTES & (IDEMIP_ALIGN - 1u)) == 0u,
-              "IDEMIP_IP4_FRAG_CTX_BYTES must be a multiple of IDEMIP_ALIGN");
+EMBED_STATIC_ASSERT((IDEMIP_IP4_FRAG_CTX_BYTES & (IDEMIP_ALIGN - 1u)) == 0u,
+                    "IDEMIP_IP4_FRAG_CTX_BYTES must be a multiple of IDEMIP_ALIGN");
 
 // The regions, at their offsets in the caller's borrow.
 #define IP4_FRAG_IO(w) IDEMIP_IP4_FRAG_IO(w)
 #define IP4_FRAG_CTX(w) ((Ip4FragCtx *)(void *)((w) + IDEMIP_IP4_FRAG_OFF_CTX))
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool ip4_frag_ready(uint8_t *work)
+static embed_bool ip4_frag_ready(uint8_t *work)
 {
-    return (idemip_bool)(IP4_FRAG_CTX(work)->ready == IP4_FRAG_READY);
+    return (embed_bool)(IP4_FRAG_CTX(work)->ready == IP4_FRAG_READY);
 }
 
 // --- the option area (RFC 791 sec 3.1) -------------------------------------
@@ -110,7 +110,7 @@ static uint16_t ip4_frag_copy_options(const uint8_t *dgram, size_t hdr_len, uint
         {
             if (out != NULL)
             {
-                memcpy(out + copied, dgram + i, step);
+                EMBED_CALL(proxim.read, ProximusCfg, .dst = out + copied, .at = dgram + i, .size = step);
             }
             copied = (uint16_t)(copied + step);
         }
@@ -132,8 +132,8 @@ static void ip4_frag_take(uint8_t *work)
     const uint8_t *dgram = io->begin_args.dgram;
     const uint16_t mtu = io->begin_args.mtu;
 
-    ctx->open = IDEMIP_FALSE;
-    ctx->done = IDEMIP_FALSE;
+    ctx->open = EMBED_FALSE;
+    ctx->done = EMBED_FALSE;
     ctx->dgram = NULL;
 
     if (dgram == NULL || io->begin_args.len < IDEMIP_IPV4_HDR_LEN ||
@@ -172,7 +172,7 @@ static void ip4_frag_take(uint8_t *work)
     ctx->index = 0u;
     ctx->chunk0 = ctx->data_len;
     ctx->chunk = ctx->data_len;
-    ctx->split = IDEMIP_FALSE;
+    ctx->split = EMBED_FALSE;
 
     if (total_len > mtu)
     {
@@ -195,20 +195,20 @@ static void ip4_frag_take(uint8_t *work)
         // steps (3) and (4): "NFB <- (MTU-IHL*4)/8" then "Attach the first NFB*8 data octets".
         ctx->chunk0 = (uint16_t)((mtu - hdr_len) & (uint16_t)~IP4_FRAG_UNIT_MASK);
         ctx->chunk = (uint16_t)((mtu - ctx->hdr2_len) & (uint16_t)~IP4_FRAG_UNIT_MASK);
-        ctx->split = IDEMIP_TRUE;
+        ctx->split = EMBED_TRUE;
 
         // "This format allows 2**13 = 8192 fragments of 8 octets each for a total of 65,536 octets."
         // The last fragment's "FO <- OFO + NFB" has to land inside that field.
         if ((uint32_t)ctx->units + ((uint32_t)ctx->data_len >> IDEMIP_IP4_FRAG_SHIFT) > IDEMIP_IP4_FRAG_OFF_MASK)
         {
             ctx->dgram = NULL;
-            ctx->split = IDEMIP_FALSE;
+            ctx->split = EMBED_FALSE;
             io->err = IDEMIP_IP4_FRAG_ERR_OFFSET;
             return;
         }
     }
 
-    ctx->open = IDEMIP_TRUE;
+    ctx->open = EMBED_TRUE;
     io->split = ctx->split;
     io->status = IDEMIP_OK;
 }
@@ -220,11 +220,11 @@ static void ip4_frag_take(uint8_t *work)
 // where it already sat.
 static void ip4_frag_emit_first(const Ip4FragCtx *ctx, uint8_t *out, uint16_t chunk)
 {
-    memcpy(out, ctx->dgram, ctx->hdr_len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = out, .at = ctx->dgram, .size = ctx->hdr_len);
     idemip_ip4_set_total_len(out, (uint16_t)(ctx->hdr_len + chunk));
     idemip_ip4_set_flags_frag(out, (uint16_t)(IDEMIP_IP4_FLAG_MF | ctx->units));
     idemip_ip4_recksum(out);
-    memcpy(out + ctx->hdr_len, ctx->dgram + ctx->hdr_len, chunk);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = out + ctx->hdr_len, .at = ctx->dgram + ctx->hdr_len, .size = chunk);
 }
 
 // Steps (7) through (9): "Selectively copy the internet header (some options are not copied)",
@@ -232,17 +232,19 @@ static void ip4_frag_emit_first(const Ip4FragCtx *ctx, uint8_t *out, uint16_t ch
 // checksum. The octets between the last copied option and the end of the reduced header are End of
 // Option List, which sec 3.1 uses "if the end of the options would not otherwise coincide with the
 // end of the internet header".
-static void ip4_frag_emit_rest(const Ip4FragCtx *ctx, uint8_t *out, uint16_t chunk, uint16_t units, idemip_bool more)
+static void ip4_frag_emit_rest(const Ip4FragCtx *ctx, uint8_t *out, uint16_t chunk, uint16_t units, embed_bool more)
 {
-    memcpy(out, ctx->dgram, IDEMIP_IPV4_HDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = out, .at = ctx->dgram, .size = IDEMIP_IPV4_HDR_LEN);
     const uint16_t kept = ip4_frag_copy_options(ctx->dgram, ctx->hdr_len, out + IDEMIP_IPV4_HDR_LEN);
-    memset(out + IDEMIP_IPV4_HDR_LEN + kept, IDEMIP_IP4_FRAG_OPT_EOL,
-           (size_t)ctx->hdr2_len - IDEMIP_IPV4_HDR_LEN - kept);
+    // End of Option List is octet 0, so the fill is a clear of frame bytes off the grain.
+    EMBED_STATIC_ASSERT(IDEMIP_IP4_FRAG_OPT_EOL == 0u, "the End of Option List fill must be a clear");
+    mmgr_zero_buf(out + IDEMIP_IPV4_HDR_LEN + kept, (size_t)ctx->hdr2_len - IDEMIP_IPV4_HDR_LEN - kept);
     idemip_ip4_set_ver_ihl(out, (uint8_t)(ctx->hdr2_len >> IDEMIP_IP4_IHL_SHIFT));
     idemip_ip4_set_total_len(out, (uint16_t)(ctx->hdr2_len + chunk));
     idemip_ip4_set_flags_frag(out, (uint16_t)((more ? IDEMIP_IP4_FLAG_MF : 0u) | units));
     idemip_ip4_recksum(out);
-    memcpy(out + ctx->hdr2_len, ctx->dgram + ctx->hdr_len + ctx->cursor, chunk);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = out + ctx->hdr2_len, .at = ctx->dgram + ctx->hdr_len + ctx->cursor,
+               .size = chunk);
 }
 
 // The fragment the cursor stands on, into the caller's buffer. A datagram that passed the sec 3.2
@@ -265,7 +267,7 @@ static void ip4_frag_write(uint8_t *work)
         return;
     }
 
-    const idemip_bool first = (idemip_bool)(ctx->index == 0u);
+    const embed_bool first = (embed_bool)(ctx->index == 0u);
     const uint8_t hdr_len = (uint8_t)((!ctx->split || first) ? ctx->hdr_len : ctx->hdr2_len);
     uint16_t chunk = ctx->data_len;
     if (ctx->split)
@@ -282,12 +284,11 @@ static void ip4_frag_write(uint8_t *work)
     }
 
     const uint16_t units = (uint16_t)(ctx->units + (ctx->cursor >> IDEMIP_IP4_FRAG_SHIFT));
-    const idemip_bool more =
-        (idemip_bool)(((uint32_t)ctx->cursor + chunk < ctx->data_len) ? IDEMIP_TRUE : ctx->omf);
+    const embed_bool more = (embed_bool)(((uint32_t)ctx->cursor + chunk < ctx->data_len) ? EMBED_TRUE : ctx->omf);
 
     if (!ctx->split)
     {
-        memcpy(out, ctx->dgram, len);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = out, .at = ctx->dgram, .size = len);
     }
     else if (first)
     {
@@ -309,7 +310,7 @@ static void ip4_frag_write(uint8_t *work)
 
     ctx->cursor = (uint16_t)(ctx->cursor + chunk);
     ctx->index = (uint16_t)(ctx->index + 1u);
-    ctx->done = (idemip_bool)(ctx->cursor >= ctx->data_len);
+    ctx->done = (embed_bool)(ctx->cursor >= ctx->data_len);
 }
 
 // --- the entries -----------------------------------------------------------
@@ -320,7 +321,8 @@ void idemip_ip4_frag_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IP4_FRAG_OFF_CTX, 0, (size_t)IDEMIP_IP4_FRAG_BORROW - IDEMIP_IP4_FRAG_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_IP4_FRAG_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_IP4_FRAG_BORROW - IDEMIP_IP4_FRAG_OFF_CTX);
     IP4_FRAG_CTX(work)->ready = IP4_FRAG_READY;
     IP4_FRAG_IO(work)->status = IDEMIP_OK;
 }
@@ -334,8 +336,8 @@ void idemip_ip4_frag_begin(uint8_t *work)
     Ip4FragIo *io = IP4_FRAG_IO(work);
     io->status = IDEMIP_ERR;
     io->err = IDEMIP_IP4_FRAG_ERR_STATE;
-    io->split = IDEMIP_FALSE;
-    io->more = IDEMIP_FALSE;
+    io->split = EMBED_FALSE;
+    io->more = EMBED_FALSE;
     io->index = 0u;
     io->units = 0u;
     io->offset = 0u;
@@ -359,7 +361,7 @@ void idemip_ip4_frag_next(uint8_t *work)
     Ip4FragIo *io = IP4_FRAG_IO(work);
     io->status = IDEMIP_ERR;
     io->err = IDEMIP_IP4_FRAG_ERR_STATE;
-    io->more = IDEMIP_FALSE;
+    io->more = EMBED_FALSE;
     io->index = 0u;
     io->units = 0u;
     io->offset = 0u;
@@ -374,4 +376,4 @@ void idemip_ip4_frag_next(uint8_t *work)
     ip4_frag_write(work);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

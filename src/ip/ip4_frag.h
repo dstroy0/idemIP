@@ -37,7 +37,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
 // The option-type octet (RFC 791 sec 3.1)
@@ -74,17 +74,16 @@ IDEMIP_BEGIN_DECLS
  * Only DF names a message. RFC 791 sec 3.2 discards a DF datagram that will not fit, and RFC 1191
  * sec 4 requires Destination Unreachable Type 3 Code 4 with the next-hop MTU in reply.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IP4_FRAG_ERR_NONE = 0, ///< nothing refused
-    IDEMIP_IP4_FRAG_ERR_DF,       ///< DF set on a datagram larger than the MTU: RFC 1191 sec 4
-    IDEMIP_IP4_FRAG_ERR_HEADER,   ///< the datagram's own header did not verify (RFC 1122 sec 3.2.1)
-    IDEMIP_IP4_FRAG_ERR_MTU,      ///< an MTU below RFC 791 sec 3.2's 68-octet floor
-    IDEMIP_IP4_FRAG_ERR_OFFSET,   ///< the split would run past the 13-bit Fragment Offset field
-    IDEMIP_IP4_FRAG_ERR_ROOM,     ///< the caller's buffer is short of this fragment
-    IDEMIP_IP4_FRAG_ERR_DONE,     ///< every fragment of this datagram has been written
-    IDEMIP_IP4_FRAG_ERR_STATE,    ///< no split is open, or clear has not run on this borrow
-} IdemIpIp4FragError;
+EMBED_ENUM_BYTE(IdemIpIp4FragError,
+                IDEMIP_IP4_FRAG_ERR_NONE = 0, ///< nothing refused
+                IDEMIP_IP4_FRAG_ERR_DF,       ///< DF set on a datagram larger than the MTU: RFC 1191 sec 4
+                IDEMIP_IP4_FRAG_ERR_HEADER,   ///< the datagram's own header did not verify (RFC 1122 sec 3.2.1)
+                IDEMIP_IP4_FRAG_ERR_MTU,      ///< an MTU below RFC 791 sec 3.2's 68-octet floor
+                IDEMIP_IP4_FRAG_ERR_OFFSET,   ///< the split would run past the 13-bit Fragment Offset field
+                IDEMIP_IP4_FRAG_ERR_ROOM,     ///< the caller's buffer is short of this fragment
+                IDEMIP_IP4_FRAG_ERR_DONE,     ///< every fragment of this datagram has been written
+                IDEMIP_IP4_FRAG_ERR_STATE,    ///< no split is open, or clear has not run on this borrow
+);
 
 /**
  * @brief What begin takes: the datagram to split, and the MTU it has to fit.
@@ -139,8 +138,8 @@ typedef struct
 
     IdemIpStatus status;
     IdemIpIp4FragError err;
-    idemip_bool split;
-    idemip_bool more;
+    embed_bool split;
+    embed_bool more;
     uint16_t index;
     uint16_t units;
     uint16_t offset;
@@ -166,20 +165,22 @@ typedef struct
 // further fragmentation. This is because an internet header may be up to 60 octets, and the minimum
 // fragment is 8 octets." At that floor even the widest header leaves one whole 8-octet unit, so
 // NFB is never zero and the split always advances.
-static_assert(IDEMIP_IP4_MIN_FORWARD_MTU >= IDEMIP_IP4_HDR_MAX + IDEMIP_IP4_FRAG_UNIT,
-              "RFC 791 sec 3.2's 68-octet floor must leave one 8-octet fragment behind a 60-octet header");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_MIN_FORWARD_MTU >= IDEMIP_IP4_HDR_MAX + IDEMIP_IP4_FRAG_UNIT,
+                    "RFC 791 sec 3.2's 68-octet floor must leave one 8-octet fragment behind a 60-octet header");
 
 // The three fields of the option-type octet fill it and do not overlap (RFC 791 sec 3.1).
-static_assert((IDEMIP_IP4_FRAG_OPT_COPIED | IDEMIP_IP4_FRAG_OPT_CLASS_MASK | IDEMIP_IP4_FRAG_OPT_NUMBER_MASK) == 0xFFu,
-              "the copied flag, the 2 class bits and the 5 number bits fill the option-type octet");
-static_assert((IDEMIP_IP4_FRAG_OPT_COPIED & (IDEMIP_IP4_FRAG_OPT_CLASS_MASK | IDEMIP_IP4_FRAG_OPT_NUMBER_MASK)) == 0u,
-              "the copied flag must not overlap the class or number fields");
+EMBED_STATIC_ASSERT((IDEMIP_IP4_FRAG_OPT_COPIED | IDEMIP_IP4_FRAG_OPT_CLASS_MASK | IDEMIP_IP4_FRAG_OPT_NUMBER_MASK) ==
+                        0xFFu,
+                    "the copied flag, the 2 class bits and the 5 number bits fill the option-type octet");
+EMBED_STATIC_ASSERT((IDEMIP_IP4_FRAG_OPT_COPIED & (IDEMIP_IP4_FRAG_OPT_CLASS_MASK | IDEMIP_IP4_FRAG_OPT_NUMBER_MASK)) ==
+                        0u,
+                    "the copied flag must not overlap the class or number fields");
 
 // End of Option List and No Operation both read with the copied flag clear, so the flag alone drops
 // them and no type is special-cased when a reduced header is built (RFC 791 sec 3.1).
-static_assert((IDEMIP_IP4_FRAG_OPT_EOL & IDEMIP_IP4_FRAG_OPT_COPIED) == 0u &&
-                  (IDEMIP_IP4_FRAG_OPT_NOP & IDEMIP_IP4_FRAG_OPT_COPIED) == 0u,
-              "RFC 791 sec 3.1 leaves End of Option List and No Operation not copied");
+EMBED_STATIC_ASSERT((IDEMIP_IP4_FRAG_OPT_EOL & IDEMIP_IP4_FRAG_OPT_COPIED) == 0u &&
+                        (IDEMIP_IP4_FRAG_OPT_NOP & IDEMIP_IP4_FRAG_OPT_COPIED) == 0u,
+                    "RFC 791 sec 3.1 leaves End of Option List and No Operation not copied");
 
 /**
  * @brief The fragmenter, RFC 791 sec 3.2.
@@ -241,11 +242,9 @@ void idemip_ip4_frag_next(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Ip4FragNs Ip4Frag IDEMIP_UNUSED = {
-    .clear = idemip_ip4_frag_clear,
-    .begin = idemip_ip4_frag_begin,
-    .next = idemip_ip4_frag_next};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE Ip4FragNs Ip4Frag EMBED_UNUSED = {
+    .clear = idemip_ip4_frag_clear, .begin = idemip_ip4_frag_begin, .next = idemip_ip4_frag_next};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

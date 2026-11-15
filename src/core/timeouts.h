@@ -35,7 +35,7 @@
 
 #if IDEMIP_ENABLE_ETHERNET
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief The unit a deadline belongs to, which is the unit whose tick runs the work.
@@ -44,31 +44,19 @@ IDEMIP_BEGIN_DECLS
  * and DAD under IPv6; DNS; and ACD, AutoIP, DHCPv4 and DHCPv6 on each interface. That sum is what
  * IDEMIP_TIMEOUTS counts.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_TIMEOUT_UNIT_NONE = 0, ///< the slot holds no deadline
-    IDEMIP_TIMEOUT_UNIT_TCP,
-    IDEMIP_TIMEOUT_UNIT_ARP,
-    IDEMIP_TIMEOUT_UNIT_IP4_REASS,
-    IDEMIP_TIMEOUT_UNIT_IGMP,
-    IDEMIP_TIMEOUT_UNIT_ND6,
-    IDEMIP_TIMEOUT_UNIT_IP6_REASS,
-    IDEMIP_TIMEOUT_UNIT_MLD6,
-    IDEMIP_TIMEOUT_UNIT_DAD,
-    IDEMIP_TIMEOUT_UNIT_DNS,
-    IDEMIP_TIMEOUT_UNIT_ACD,
-    IDEMIP_TIMEOUT_UNIT_AUTOIP,
-    IDEMIP_TIMEOUT_UNIT_DHCP4,
-    IDEMIP_TIMEOUT_UNIT_DHCP6,
-    IDEMIP_TIMEOUT_UNIT_COUNT, ///< one past the last unit, so a bad id is one compare
-} IdemIpTimeoutUnit;
+EMBED_ENUM_BYTE(IdemIpTimeoutUnit,
+                IDEMIP_TIMEOUT_UNIT_NONE = 0, ///< the slot holds no deadline
+                IDEMIP_TIMEOUT_UNIT_TCP, IDEMIP_TIMEOUT_UNIT_ARP, IDEMIP_TIMEOUT_UNIT_IP4_REASS,
+                IDEMIP_TIMEOUT_UNIT_IGMP, IDEMIP_TIMEOUT_UNIT_ND6, IDEMIP_TIMEOUT_UNIT_IP6_REASS,
+                IDEMIP_TIMEOUT_UNIT_MLD6, IDEMIP_TIMEOUT_UNIT_DAD, IDEMIP_TIMEOUT_UNIT_DNS, IDEMIP_TIMEOUT_UNIT_ACD,
+                IDEMIP_TIMEOUT_UNIT_AUTOIP, IDEMIP_TIMEOUT_UNIT_DHCP4, IDEMIP_TIMEOUT_UNIT_DHCP6,
+                IDEMIP_TIMEOUT_UNIT_COUNT, ///< one past the last unit, so a bad id is one compare
+);
 
 /** @brief What a slot carries besides its deadline. */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_TIMEOUT_FLAG_NONE = 0,
-    IDEMIP_TIMEOUT_FLAG_ARMED = 1u, ///< the slot holds a deadline; clear means the slot is free
-} IdemIpTimeoutFlag;
+EMBED_ENUM_BYTE(IdemIpTimeoutFlag, IDEMIP_TIMEOUT_FLAG_NONE = 0,
+                IDEMIP_TIMEOUT_FLAG_ARMED = 1u, ///< the slot holds a deadline; clear means the slot is free
+);
 
 /** @brief What @ref TimeoutsNs::tick reports in @ref TimeoutsIo::until_ms for an empty list. */
 #define IDEMIP_TIMEOUT_FOREVER 0xFFFFFFFFu
@@ -205,13 +193,12 @@ void idemip_timeouts_expire(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const TimeoutsNs Timeouts IDEMIP_UNUSED = {
-    .clear = idemip_timeouts_clear,
-    .arm = idemip_timeouts_arm,
-    .cancel = idemip_timeouts_cancel,
-    .tick = idemip_timeouts_tick,
-    .expire = idemip_timeouts_expire};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE TimeoutsNs Timeouts EMBED_UNUSED = {.clear = idemip_timeouts_clear,
+                                                        .arm = idemip_timeouts_arm,
+                                                        .cancel = idemip_timeouts_cancel,
+                                                        .tick = idemip_timeouts_tick,
+                                                        .expire = idemip_timeouts_expire};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET
 

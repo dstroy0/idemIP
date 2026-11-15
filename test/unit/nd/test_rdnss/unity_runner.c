@@ -4,7 +4,7 @@
 #include "unity.h"
 #include "src/nd/rdnss.h"
 #include "src/ip/ipv6_defines.h"
-#include <string.h>
+#include "support/borrows.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);
@@ -115,51 +115,51 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/nd/test_rdnss/test_rdnss.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 150);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 158);
-  run_test(test_clear_on_one_borrow_leaves_the_other_untouched, "test_clear_on_one_borrow_leaves_the_other_untouched", 174);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 186);
-  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 202);
-  run_test(test_every_published_offset_is_aligned, "test_every_published_offset_is_aligned", 212);
-  run_test(test_the_io_macro_reaches_the_operand_block, "test_the_io_macro_reaches_the_operand_block", 218);
-  run_test(test_clear_reports_ok, "test_clear_reports_ok", 226);
-  run_test(test_clear_zeroes_the_list, "test_clear_zeroes_the_list", 232);
-  run_test(test_clear_zeroes_the_context_apart_from_the_mark, "test_clear_zeroes_the_context_apart_from_the_mark", 242);
-  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 257);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 268);
-  run_test(test_option_in_refuses_a_null_option, "test_option_in_refuses_a_null_option", 283);
-  run_test(test_option_in_refuses_fewer_octets_than_the_header, "test_option_in_refuses_fewer_octets_than_the_header", 293);
-  run_test(test_another_option_type_is_discarded, "test_another_option_type_is_discarded", 303);
-  run_test(test_a_length_below_three_is_discarded, "test_a_length_below_three_is_discarded", 316);
-  run_test(test_an_even_length_is_discarded, "test_an_even_length_is_discarded", 328);
-  run_test(test_an_option_longer_than_the_octets_available_is_discarded, "test_an_option_longer_than_the_octets_available_is_discarded", 340);
-  run_test(test_a_multicast_address_discards_the_whole_option, "test_a_multicast_address_discards_the_whole_option", 353);
-  run_test(test_the_unspecified_address_discards_the_option, "test_the_unspecified_address_discards_the_option", 363);
-  run_test(test_the_address_count_comes_from_the_length_field, "test_the_address_count_comes_from_the_length_field", 373);
-  run_test(test_the_list_holds_at_least_three, "test_the_list_holds_at_least_three", 384);
-  run_test(test_the_expiration_is_the_lifetime_plus_the_current_time, "test_the_expiration_is_the_lifetime_plus_the_current_time", 394);
-  run_test(test_an_infinite_lifetime_never_expires, "test_an_infinite_lifetime_never_expires", 406);
-  run_test(test_a_repeated_address_updates_the_expiration, "test_a_repeated_address_updates_the_expiration", 422);
-  run_test(test_a_zero_lifetime_deletes_a_held_address, "test_a_zero_lifetime_deletes_a_held_address", 437);
-  run_test(test_a_zero_lifetime_registers_nothing_for_an_address_not_held, "test_a_zero_lifetime_registers_nothing_for_an_address_not_held", 453);
-  run_test(test_the_option_order_is_the_list_order, "test_the_option_order_is_the_list_order", 466);
-  run_test(test_a_new_address_is_inserted_at_the_head, "test_a_new_address_is_inserted_at_the_head", 482);
-  run_test(test_a_full_list_evicts_the_entry_that_expires_first, "test_a_full_list_evicts_the_entry_that_expires_first", 502);
-  run_test(test_eviction_prefers_a_finite_entry_over_an_infinite_one, "test_eviction_prefers_a_finite_entry_over_an_infinite_one", 526);
-  run_test(test_an_expired_entry_is_deleted, "test_an_expired_entry_is_deleted", 544);
-  run_test(test_an_entry_stamped_before_the_clock_wraps_still_expires, "test_an_entry_stamped_before_the_clock_wraps_still_expires", 571);
-  run_test(test_a_lifetime_past_the_thirty_two_bit_millisecond_range_still_expires, "test_a_lifetime_past_the_thirty_two_bit_millisecond_range_still_expires", 596);
-  run_test(test_a_tick_reports_one_expiry_per_call, "test_a_tick_reports_one_expiry_per_call", 616);
-  run_test(test_a_tick_with_nothing_expired_is_busy, "test_a_tick_with_nothing_expired_is_busy", 633);
-  run_test(test_an_expiry_closes_the_gap, "test_an_expiry_closes_the_gap", 643);
-  run_test(test_get_refuses_a_slot_that_holds_nothing, "test_get_refuses_a_slot_that_holds_nothing", 667);
-  run_test(test_find_refuses_an_address_that_is_not_held, "test_find_refuses_an_address_that_is_not_held", 676);
-  run_test(test_remove_deletes_one_entry, "test_remove_deletes_one_entry", 686);
-  run_test(test_remove_refuses_an_address_that_is_not_held, "test_remove_refuses_an_address_that_is_not_held", 699);
-  run_test(test_the_address_entries_refuse_what_names_no_address, "test_the_address_entries_refuse_what_names_no_address", 711);
-  run_test(test_the_eviction_takes_the_server_with_the_least_left_on_it, "test_the_eviction_takes_the_server_with_the_least_left_on_it", 736);
-  run_test(test_a_server_already_in_the_list_can_be_updated_to_infinity, "test_a_server_already_in_the_list_can_be_updated_to_infinity", 770);
-  run_test(test_the_place_the_next_address_goes_follows_an_eviction_in_front_of_it, "test_the_place_the_next_address_goes_follows_an_eviction_in_front_of_it", 791);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 157);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 165);
+  run_test(test_clear_on_one_borrow_leaves_the_other_untouched, "test_clear_on_one_borrow_leaves_the_other_untouched", 181);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 193);
+  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 209);
+  run_test(test_every_published_offset_is_aligned, "test_every_published_offset_is_aligned", 219);
+  run_test(test_the_io_macro_reaches_the_operand_block, "test_the_io_macro_reaches_the_operand_block", 225);
+  run_test(test_clear_reports_ok, "test_clear_reports_ok", 233);
+  run_test(test_clear_zeroes_the_list, "test_clear_zeroes_the_list", 239);
+  run_test(test_clear_zeroes_the_context_apart_from_the_mark, "test_clear_zeroes_the_context_apart_from_the_mark", 249);
+  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 264);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 275);
+  run_test(test_option_in_refuses_a_null_option, "test_option_in_refuses_a_null_option", 290);
+  run_test(test_option_in_refuses_fewer_octets_than_the_header, "test_option_in_refuses_fewer_octets_than_the_header", 300);
+  run_test(test_another_option_type_is_discarded, "test_another_option_type_is_discarded", 310);
+  run_test(test_a_length_below_three_is_discarded, "test_a_length_below_three_is_discarded", 323);
+  run_test(test_an_even_length_is_discarded, "test_an_even_length_is_discarded", 335);
+  run_test(test_an_option_longer_than_the_octets_available_is_discarded, "test_an_option_longer_than_the_octets_available_is_discarded", 347);
+  run_test(test_a_multicast_address_discards_the_whole_option, "test_a_multicast_address_discards_the_whole_option", 360);
+  run_test(test_the_unspecified_address_discards_the_option, "test_the_unspecified_address_discards_the_option", 370);
+  run_test(test_the_address_count_comes_from_the_length_field, "test_the_address_count_comes_from_the_length_field", 380);
+  run_test(test_the_list_holds_at_least_three, "test_the_list_holds_at_least_three", 391);
+  run_test(test_the_expiration_is_the_lifetime_plus_the_current_time, "test_the_expiration_is_the_lifetime_plus_the_current_time", 401);
+  run_test(test_an_infinite_lifetime_never_expires, "test_an_infinite_lifetime_never_expires", 413);
+  run_test(test_a_repeated_address_updates_the_expiration, "test_a_repeated_address_updates_the_expiration", 429);
+  run_test(test_a_zero_lifetime_deletes_a_held_address, "test_a_zero_lifetime_deletes_a_held_address", 444);
+  run_test(test_a_zero_lifetime_registers_nothing_for_an_address_not_held, "test_a_zero_lifetime_registers_nothing_for_an_address_not_held", 460);
+  run_test(test_the_option_order_is_the_list_order, "test_the_option_order_is_the_list_order", 473);
+  run_test(test_a_new_address_is_inserted_at_the_head, "test_a_new_address_is_inserted_at_the_head", 489);
+  run_test(test_a_full_list_evicts_the_entry_that_expires_first, "test_a_full_list_evicts_the_entry_that_expires_first", 509);
+  run_test(test_eviction_prefers_a_finite_entry_over_an_infinite_one, "test_eviction_prefers_a_finite_entry_over_an_infinite_one", 533);
+  run_test(test_an_expired_entry_is_deleted, "test_an_expired_entry_is_deleted", 551);
+  run_test(test_an_entry_stamped_before_the_clock_wraps_still_expires, "test_an_entry_stamped_before_the_clock_wraps_still_expires", 578);
+  run_test(test_a_lifetime_past_the_thirty_two_bit_millisecond_range_still_expires, "test_a_lifetime_past_the_thirty_two_bit_millisecond_range_still_expires", 603);
+  run_test(test_a_tick_reports_one_expiry_per_call, "test_a_tick_reports_one_expiry_per_call", 623);
+  run_test(test_a_tick_with_nothing_expired_is_busy, "test_a_tick_with_nothing_expired_is_busy", 640);
+  run_test(test_an_expiry_closes_the_gap, "test_an_expiry_closes_the_gap", 650);
+  run_test(test_get_refuses_a_slot_that_holds_nothing, "test_get_refuses_a_slot_that_holds_nothing", 674);
+  run_test(test_find_refuses_an_address_that_is_not_held, "test_find_refuses_an_address_that_is_not_held", 683);
+  run_test(test_remove_deletes_one_entry, "test_remove_deletes_one_entry", 693);
+  run_test(test_remove_refuses_an_address_that_is_not_held, "test_remove_refuses_an_address_that_is_not_held", 706);
+  run_test(test_the_address_entries_refuse_what_names_no_address, "test_the_address_entries_refuse_what_names_no_address", 718);
+  run_test(test_the_eviction_takes_the_server_with_the_least_left_on_it, "test_the_eviction_takes_the_server_with_the_least_left_on_it", 743);
+  run_test(test_a_server_already_in_the_list_can_be_updated_to_infinity, "test_a_server_already_in_the_list_can_be_updated_to_infinity", 777);
+  run_test(test_the_place_the_next_address_goes_follows_an_eviction_in_front_of_it, "test_the_place_the_next_address_goes_follows_an_eviction_in_front_of_it", 798);
 
   return UNITY_END();
 }

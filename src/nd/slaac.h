@@ -31,7 +31,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief No entry. Every index below is a table slot, so this names none of them. */
 #define IDEMIP_SLAAC_NONE 0xFFu
@@ -51,12 +51,11 @@ IDEMIP_BEGIN_DECLS
  * "deprecated address" is one "whose use is discouraged, but not forbidden"; and an "invalid address"
  * is "an address that is not assigned to any interface", which is what a freed slot is.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_SLAAC_ADDR_FREE = 0,   ///< the slot holds no address, which is what clear leaves
-    IDEMIP_SLAAC_ADDR_PREFERRED,  ///< inside its preferred lifetime
-    IDEMIP_SLAAC_ADDR_DEPRECATED, ///< the preferred lifetime expired, the valid one has not
-} IdemIpSlaacAddrState;
+EMBED_ENUM_BYTE(IdemIpSlaacAddrState,
+                IDEMIP_SLAAC_ADDR_FREE = 0,   ///< the slot holds no address, which is what clear leaves
+                IDEMIP_SLAAC_ADDR_PREFERRED,  ///< inside its preferred lifetime
+                IDEMIP_SLAAC_ADDR_DEPRECATED, ///< the preferred lifetime expired, the valid one has not
+);
 
 /**
  * @brief What link_local takes (RFC 4862 sec 5.3).
@@ -109,8 +108,8 @@ typedef struct
     uint32_t now_ms;
     uint8_t prefix_len;
     uint8_t iid_bits;
-    idemip_bool autonomous;
-    idemip_bool authenticated;
+    embed_bool autonomous;
+    embed_bool authenticated;
 } SlaacPrefixArgs;
 
 /**
@@ -182,14 +181,14 @@ typedef struct
     IdemIpSlaacAddrState state;
     uint8_t prefix_len;
     uint8_t addresses;
-    idemip_bool valid_infinite;
-    idemip_bool preferred_infinite;
-    idemip_bool created;
-    idemip_bool updated;
-    idemip_bool ignored;
-    idemip_bool two_hour;
-    idemip_bool deprecated;
-    idemip_bool invalidated;
+    embed_bool valid_infinite;
+    embed_bool preferred_infinite;
+    embed_bool created;
+    embed_bool updated;
+    embed_bool ignored;
+    embed_bool two_hour;
+    embed_bool deprecated;
+    embed_bool invalidated;
 } SlaacIo;
 
 // ---------------------------------------------------------------------------
@@ -282,23 +281,22 @@ void idemip_slaac_tick(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const SlaacNs Slaac IDEMIP_UNUSED = {
-    .clear = idemip_slaac_clear,
-    .link_local = idemip_slaac_link_local,
-    .prefix_in = idemip_slaac_prefix_in,
-    .find = idemip_slaac_find,
-    .get = idemip_slaac_get,
-    .remove = idemip_slaac_remove,
-    .tick = idemip_slaac_tick};
+EMBED_TABLE_STORAGE SlaacNs Slaac EMBED_UNUSED = {.clear = idemip_slaac_clear,
+                                                  .link_local = idemip_slaac_link_local,
+                                                  .prefix_in = idemip_slaac_prefix_in,
+                                                  .find = idemip_slaac_find,
+                                                  .get = idemip_slaac_get,
+                                                  .remove = idemip_slaac_remove,
+                                                  .tick = idemip_slaac_tick};
 // Every slot index counts the addresses the borrow holds, so IDEMIP_SLAAC_NONE names none of them.
-static_assert(IDEMIP_IP6_ADDRESSES < IDEMIP_SLAAC_NONE,
-              "the list is wider than the index a result member carries");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_ADDRESSES < IDEMIP_SLAAC_NONE,
+                    "the list is wider than the index a result member carries");
 
 // RFC 4862 sec 5.5.3 (e) 3: "reset the valid lifetime of the corresponding address to 2 hours".
-static_assert(IDEMIP_SLAAC_TWO_HOURS_MS == 7200u * 1000u,
-              "RFC 4862 sec 5.5.3 (e) states two hours: 7200 seconds of milliseconds");
+EMBED_STATIC_ASSERT(IDEMIP_SLAAC_TWO_HOURS_MS == 7200u * 1000u,
+                    "RFC 4862 sec 5.5.3 (e) states two hours: 7200 seconds of milliseconds");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

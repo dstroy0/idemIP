@@ -319,7 +319,7 @@ dl.io dd { margin:2px 0 0; color:var(--muted); font-size:.9rem; }
       <h3>Deterministic in space</h3>
       <span class="big" id="hero-total">&mdash;</span>
       <p>Every borrow is a formula over compile-time counts, and each unit's <code>.c</code> carries
-      <code>static_assert(sizeof(Ctx) &lt;= CTX_BYTES)</code>. The footprint is a number the linker
+      <code>EMBED_STATIC_ASSERT(sizeof(Ctx) &lt;= CTX_BYTES)</code>. The footprint is a number the linker
       places, not a number you hope for.</p>
     </div>
     <div class="claim">
@@ -344,10 +344,10 @@ dl.io dd { margin:2px 0 0; color:var(--muted); font-size:.9rem; }
 <!-- docsgen:stats -->
 <div class="stat"><b>31,624</b><span>bytes of .bss</span><em>IDEMIP_TOTAL_BORROW, at the counts in idemip_config.h</em></div>
 <div class="stat"><b>0</b><span>heap allocations</span><em>there is no <code>&lt;stdlib.h&gt;</code> anywhere in <code>src/</code></em></div>
-<div class="stat"><b>48</b><span>translation units</span><em>59 headers, 50,052 lines</em></div>
-<div class="stat"><b>59,555</b><span>lines of test</span><em>against 50,052 lines of library</em></div>
-<div class="stat"><b>56</b><span>CTest suites</span><em>2,737 cases</em></div>
-<div class="stat"><b>100</b><span>RFCs vendored</span><em>the text every rule is written against</em></div>
+<div class="stat"><b>64</b><span>translation units</span><em>74 headers, 54,800 lines</em></div>
+<div class="stat"><b>71,054</b><span>lines of test</span><em>against 54,800 lines of library</em></div>
+<div class="stat"><b>56</b><span>CTest suites</span><em>3,085 cases</em></div>
+<div class="stat"><b>111</b><span>RFCs vendored</span><em>the text every rule is written against</em></div>
 <!-- /docsgen:stats -->
   </div>
 </section>
@@ -365,10 +365,15 @@ dl.io dd { margin:2px 0 0; color:var(--muted); font-size:.9rem; }
 <pre><span class="c">// the only header an application includes</span>
 <span class="k">#include</span> <span class="s">"src/idemip.h"</span>
 
-<span class="c">// one array per unit, all .bss, sized by the macro that unit publishes</span>
-<span class="k">static</span> _Alignas(IDEMIP_ALIGN) uint8_t netif_w[IDEMIP_NETIF_BORROW];
-<span class="k">static</span> _Alignas(IDEMIP_ALIGN) uint8_t arp_w[IDEMIP_ARP_BORROW];
-<span class="k">static</span> _Alignas(IDEMIP_ALIGN) uint8_t udp_w[IDEMIP_UDP_PCB_BORROW];</pre>
+<span class="c">// one MMgr pool, one site over it, and the owner table with idemIP's owners</span>
+ParsMemoriaeInternae(net_pool, IDEMIP_TOTAL_BORROW + 1024u);
+LocusCarcerum(net_site, MMGR_MINIMUM_SECURITY(net_pool));
+MMGR_OWNERS(IDEMIP_OWNERS)
+
+<span class="c">// one cell per unit, sized by the macro that unit publishes</span>
+uint8_t *netif_w = net_site.net_pool.persistent_buf_alloc(IDEMIP_NETIF_BORROW, idemip_owner_netif);
+uint8_t *arp_w = net_site.net_pool.persistent_buf_alloc(IDEMIP_ARP_BORROW, idemip_owner_arp);
+uint8_t *udp_w = net_site.net_pool.persistent_buf_alloc(IDEMIP_UDP_PCB_BORROW, idemip_owner_udp_pcb);</pre>
   </div>
 
   <p><code>src/idemip.h</code> is the only header an application includes. It adds no type, macro or
@@ -495,11 +500,11 @@ ctest --test-dir ../build --output-on-failure</pre>
 size_t   (*rx_claim)(<span class="k">const</span> uint8_t **frame);
 <span class="k">void</span>     (*rx_release)(<span class="k">void</span>);
 uint8_t *(*tx_claim)(size_t len);
-idemip_bool (*tx_commit)(size_t len);
+embed_bool  (*tx_commit)(size_t len);
 <span class="k">void</span> (*cache_invalidate)(<span class="k">const</span> <span class="k">void</span> *p, size_t len);  <span class="c">// required, even if a no-op</span>
 <span class="k">void</span> (*cache_clean)(<span class="k">const</span> <span class="k">void</span> *p, size_t len);       <span class="c">// required, even if a no-op</span>
-idemip_bool (*mdio_read)(uint8_t phy_addr, uint8_t reg, uint16_t *out);
-idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
+embed_bool  (*mdio_read)(uint8_t phy_addr, uint8_t reg, uint16_t *out);
+embed_bool  (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
   </div>
 </section>
 
@@ -715,7 +720,7 @@ idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <pre>cmake -S . -B ../build -G Ninja -DCMAKE_C_FLAGS=-DIDEMIP_TCP_PCBS=2</pre>
   </div>
   <p>Each borrow is a formula over the counts, never a number, and each unit's <code>.c</code>
-  carries <code>static_assert(sizeof(&lt;Unit&gt;Ctx) &lt;= IDEMIP_&lt;UNIT&gt;_CTX_BYTES)</code>, so a
+  carries <code>EMBED_STATIC_ASSERT(sizeof(&lt;Unit&gt;Ctx) &lt;= IDEMIP_&lt;UNIT&gt;_CTX_BYTES)</code>, so a
   context that outgrows its budget fails the build naming the macro to raise.</p>
 
   <h3>The receive ring cannot starve</h3>
@@ -724,8 +729,8 @@ idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
   compile time, so the worst case is a number rather than a risk &mdash; and it is asserted:</p>
   <div class="code">
     <div class="cap"><span>src/idemip_config.h</span><button class="copy" type="button">COPY</button></div>
-<pre><span class="k">static_assert</span>(IDEMIP_RX_DESCRIPTORS &gt; IDEMIP_MAX_PINNED_FRAMES,
-              <span class="s">"the receive ring starves when every retaining unit is full"</span>);</pre>
+<pre>EMBED_STATIC_ASSERT(IDEMIP_RX_DESCRIPTORS &gt; IDEMIP_MAX_PINNED_FRAMES,
+                    <span class="s">"the receive ring starves when every retaining unit is full"</span>);</pre>
   </div>
 </section>
 
@@ -741,14 +746,15 @@ idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <!-- docsgen:units -->
 <h3 class="layer">base</h3><div class="cards">
 <article class="card plain"><header><b>checksum.h</b><span class="hdr">src/checksum.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc1071.txt">RFC 1071</a></footer></article>
-<article class="card plain"><header><b>common.h</b><span class="hdr">src/common.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc8200.txt">RFC 8200</a><a class="rfc" href="learn/RFC/rfc9293.txt">RFC 9293</a><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a></footer></article>
+<article class="card plain"><header><b>common.h</b><span class="hdr">src/common.h</span></header><div class="entries none">header only - no state, no borrow</div><footer></footer></article>
 <article class="card plain"><header><b>endian.h</b><span class="hdr">src/endian.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc826.txt">RFC 826</a><a class="rfc" href="learn/RFC/rfc791.txt">RFC 791</a></footer></article>
+<article class="card plain"><header><b>time_determinism.h</b><span class="hdr">src/time_determinism.h</span></header><div class="entries none">header only - no state, no borrow</div><footer></footer></article>
 </div>
 <h3 class="layer">link</h3><div class="cards">
 <article class="card plain"><header><b>ethernet.h</b><span class="hdr">src/ethernet/ethernet.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc894.txt">RFC 894</a></footer></article>
 <article class="card plain"><header><b>mii.h</b><span class="hdr">src/ethernet/mii.h</span></header><div class="entries none">header only - no state, no borrow</div><footer></footer></article>
 <article class="card"><header><b>Phy</b><span class="hdr">src/ethernet/phy.h</span></header><div class="entries"><code>bind</code><code>poll_link</code><code>rx_claim</code><code>rx_release</code><code>tx_claim</code><code>tx_commit</code><code>mdio_read</code><code>mdio_write</code></div><div class="borrow"><code>IDEMIP_PHY_BORROW</code><span>128 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc894.txt">RFC 894</a></footer></article>
-<article class="card"><header><b>Vlan</b><span class="hdr">src/ethernet/vlan.h</span></header><div class="entries"><code>clear</code><code>parse</code><code>build</code><code>pack</code><code>split</code></div><div class="borrow"><code>IDEMIP_VLAN_BORROW</code><span>96 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc6325.txt">RFC 6325</a><a class="rfc" href="learn/RFC/rfc7042.txt">RFC 7042</a><a class="rfc" href="learn/RFC/rfc5342.txt">RFC 5342</a></footer></article>
+<article class="card"><header><b>Vlan</b><span class="hdr">src/ethernet/vlan.h</span></header><div class="entries"><code>clear</code><code>parse</code><code>build</code><code>pack</code><code>split</code></div><div class="borrow"><code>IDEMIP_VLAN_BORROW</code><span>96 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc6325.txt">RFC 6325</a><a class="rfc" href="learn/RFC/rfc1042.txt">RFC 1042</a><a class="rfc" href="learn/RFC/rfc7042.txt">RFC 7042</a></footer></article>
 <article class="card"><header><b>Dma</b><span class="hdr">src/netif/dma.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>rx_take</code><code>rx_post</code><code>pin</code><code>unpin</code><code>tx_take</code><code>tx_post</code><code>tx_reap</code><code>pinned</code></div><div class="borrow"><code>IDEMIP_DMA_BORROW</code><span>1,248 bytes</span></div><footer></footer></article>
 <article class="card"><header><b>Loopif</b><span class="hdr">src/netif/loopif.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>output</code><code>claim</code><code>release</code><code>owns4</code><code>owns6</code></div><div class="borrow"><code>IDEMIP_LOOPIF_BORROW</code><span>4,248 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a><a class="rfc" href="learn/RFC/rfc4291.txt">RFC 4291</a></footer></article>
 <article class="card"><header><b>Netif</b><span class="hdr">src/netif/netif.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>unbind</code><code>set_addr4</code><code>set_mtu</code><code>set_flags</code><code>set_offload</code><code>get</code><code>find4</code><code>local4</code><code>add_addr6</code><code>remove_addr6</code><code>find_addr6</code><code>get_addr6</code><code>tick</code></div><div class="borrow"><code>IDEMIP_NETIF_BORROW</code><span>832 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a><a class="rfc" href="learn/RFC/rfc4862.txt">RFC 4862</a><a class="rfc" href="learn/RFC/rfc4861.txt">RFC 4861</a></footer></article>
@@ -793,6 +799,7 @@ idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <article class="card"><header><b>Pmtu6</b><span class="hdr">src/pmtu/pmtu6.h</span></header><div class="entries"><code>clear</code><code>too_big</code><code>tick</code><code>forget</code></div><div class="borrow"><code>IDEMIP_PMTU6_BORROW</code><span>416 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc8201.txt">RFC 8201</a></footer></article>
 </div>
 <h3 class="layer">transport</h3><div class="cards">
+<article class="card plain"><header><b>pseudo.h</b><span class="hdr">src/ip/pseudo.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc768.txt">RFC 768</a><a class="rfc" href="learn/RFC/rfc9293.txt">RFC 9293</a><a class="rfc" href="learn/RFC/rfc8200.txt">RFC 8200</a></footer></article>
 <article class="card"><header><b>RawPcb</b><span class="hdr">src/raw/raw_pcb.h</span></header><div class="entries"><code>clear</code><code>open</code><code>close</code><code>bind</code><code>connect</code><code>disconnect</code><code>set_opts</code><code>load</code><code>find</code></div><div class="borrow"><code>IDEMIP_RAW_PCB_BORROW</code><span>288 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a></footer></article>
 <article class="card plain"><header><b>tcp.h</b><span class="hdr">src/tcp/tcp.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc9293.txt">RFC 9293</a></footer></article>
 <article class="card"><header><b>TcpIn</b><span class="hdr">src/tcp/tcp_in.h</span></header><div class="entries"><code>clear</code><code>parse</code><code>acceptable</code><code>closed</code><code>listen</code><code>syn_sent</code><code>segment</code></div><div class="borrow"><code>IDEMIP_TCP_IN_BORROW</code><span>304 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc9293.txt">RFC 9293</a></footer></article>
@@ -809,6 +816,7 @@ idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <h3 class="layer">scheduling</h3><div class="cards">
 <article class="card"><header><b>Dispatch</b><span class="hdr">src/core/dispatch.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>if_bind</code><code>if_get</code><code>input</code><code>tcp_deliver</code><code>tcp_ack</code></div><div class="borrow"><code>IDEMIP_DISPATCH_BORROW</code><span>584 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1122.txt">RFC 1122</a><a class="rfc" href="learn/RFC/rfc9293.txt">RFC 9293</a><a class="rfc" href="learn/RFC/rfc6325.txt">RFC 6325</a></footer></article>
 <article class="card"><header><b>Tick</b><span class="hdr">src/core/tick.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>if_bind</code><code>open</code><code>drain</code><code>service</code><code>flush</code></div><div class="borrow"><code>IDEMIP_TICK_BORROW</code><span>320 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc791.txt">RFC 791</a><a class="rfc" href="learn/RFC/rfc8200.txt">RFC 8200</a><a class="rfc" href="learn/RFC/rfc826.txt">RFC 826</a></footer></article>
+<article class="card plain"><header><b>ethernet_defines.h</b><span class="hdr">src/ethernet/ethernet_defines.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc1042.txt">RFC 1042</a></footer></article>
 </div>
 <!-- /docsgen:units -->
 </section>
@@ -827,12 +835,14 @@ idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <a class="lex hot" href="learn/RFC/rfc768.txt" title="User Datagram Protocol"><b>768</b><span>User Datagram Protocol</span></a>
 <a class="lex hot" href="learn/RFC/rfc791.txt" title="Internet Protocol"><b>791</b><span>Internet Protocol</span></a>
 <a class="lex hot" href="learn/RFC/rfc792.txt" title="Internet Control Message Protocol"><b>792</b><span>Internet Control Message Protocol</span></a>
+<a class="lex" href="learn/RFC/rfc793.txt" title="Transmission Control Protocol"><b>793</b><span>Transmission Control Protocol</span></a>
 <a class="lex hot" href="learn/RFC/rfc815.txt" title="IP Datagram Reassembly Algorithms"><b>815</b><span>IP Datagram Reassembly Algorithms</span></a>
 <a class="lex hot" href="learn/RFC/rfc826.txt" title="An Ethernet Address Resolution Protocol -- or -- Converting Network Protocol Addresses to 48.bit Ethernet Address for Transmission on Ethernet Hardware"><b>826</b><span>An Ethernet Address Resolution Protocol -- or -- Converting Network Protocol Addresses to…</span></a>
 <a class="lex hot" href="learn/RFC/rfc894.txt" title="A Standard for the Transmission of IP Datagrams over Ethernet Networks"><b>894</b><span>A Standard for the Transmission of IP Datagrams over Ethernet Networks</span></a>
 <a class="lex" href="learn/RFC/rfc907.txt" title="Host Access Protocol Specification"><b>907</b><span>Host Access Protocol Specification</span></a>
 <a class="lex" href="learn/RFC/rfc919.txt" title="BROADCASTING INTERNET DATAGRAMS"><b>919</b><span>BROADCASTING INTERNET DATAGRAMS</span></a>
 <a class="lex" href="learn/RFC/rfc950.txt" title="Internet Standard Subnetting Procedure"><b>950</b><span>Internet Standard Subnetting Procedure</span></a>
+<a class="lex" href="learn/RFC/rfc1034.txt" title="Domain Names - Concepts and Facilities"><b>1034</b><span>Domain Names - Concepts and Facilities</span></a>
 <a class="lex hot" href="learn/RFC/rfc1035.txt" title="Domain Names - Implementation and Specification"><b>1035</b><span>Domain Names - Implementation and Specification</span></a>
 <a class="lex hot" href="learn/RFC/rfc1042.txt" title="A Standard for the Transmission of IP Datagrams over IEEE 802 Networks"><b>1042</b><span>A Standard for the Transmission of IP Datagrams over IEEE 802 Networks</span></a>
 <a class="lex" href="learn/RFC/rfc1044.txt" title="Internet Protocol on Network Systems HYPERchannel Protocol Specification"><b>1044</b><span>Internet Protocol on Network Systems HYPERchannel Protocol Specification</span></a>
@@ -851,6 +861,7 @@ idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <a class="lex" href="learn/RFC/rfc1542.txt" title="Clarifications and Extensions for the Bootstrap Protocol"><b>1542</b><span>Clarifications and Extensions for the Bootstrap Protocol</span></a>
 <a class="lex hot" href="learn/RFC/rfc1812.txt" title="Requirements for IP Version 4 Routers"><b>1812</b><span>Requirements for IP Version 4 Routers</span></a>
 <a class="lex" href="learn/RFC/rfc1858.txt" title="Security Considerations for IP Fragment Filtering"><b>1858</b><span>Security Considerations for IP Fragment Filtering</span></a>
+<a class="lex" href="learn/RFC/rfc1918.txt" title="Address Allocation for Private Internets"><b>1918</b><span>Address Allocation for Private Internets</span></a>
 <a class="lex" href="learn/RFC/rfc2011.txt" title="SNMPv2 Management Information Base for the Internet Protocol using SMIv2"><b>2011</b><span>SNMPv2 Management Information Base for the Internet Protocol using SMIv2</span></a>
 <a class="lex hot" href="learn/RFC/rfc2018.txt" title="TCP Selective Acknowledgment Options"><b>2018</b><span>TCP Selective Acknowledgment Options</span></a>
 <a class="lex" href="learn/RFC/rfc2113.txt" title="IP Router Alert Option"><b>2113</b><span>IP Router Alert Option</span></a>
@@ -862,20 +873,26 @@ idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <a class="lex hot" href="learn/RFC/rfc2464.txt" title="Transmission of IPv6 Packets over Ethernet Networks"><b>2464</b><span>Transmission of IPv6 Packets over Ethernet Networks</span></a>
 <a class="lex hot" href="learn/RFC/rfc2465.txt" title="Management Information Base for IP Version 6: Textual Conventions and General Group"><b>2465</b><span>Management Information Base for IP Version 6: Textual Conventions and General Group</span></a>
 <a class="lex hot" href="learn/RFC/rfc2466.txt" title="Management Information Base for IP Version 6: ICMPv6 Group"><b>2466</b><span>Management Information Base for IP Version 6: ICMPv6 Group</span></a>
+<a class="lex" href="learn/RFC/rfc2474.txt" title="Definition of the Differentiated Services Field (DS Field) in the IPv4 and IPv6 Headers"><b>2474</b><span>Definition of the Differentiated Services Field (DS Field) in the IPv4 and IPv6 Headers</span></a>
 <a class="lex" href="learn/RFC/rfc2578.txt" title="Structure of Management Information Version 2 (SMIv2)"><b>2578</b><span>Structure of Management Information Version 2 (SMIv2)</span></a>
 <a class="lex" href="learn/RFC/rfc2579.txt" title="Textual Conventions for SMIv2"><b>2579</b><span>Textual Conventions for SMIv2</span></a>
 <a class="lex hot" href="learn/RFC/rfc2710.txt" title="Multicast Listener Discovery (MLD) for IPv6"><b>2710</b><span>Multicast Listener Discovery (MLD) for IPv6</span></a>
+<a class="lex" href="learn/RFC/rfc2711.txt" title="IPv6 Router Alert Option"><b>2711</b><span>IPv6 Router Alert Option</span></a>
 <a class="lex" href="learn/RFC/rfc2827.txt" title="Network Ingress Filtering: Defeating Denial of Service Attacks which employ IP Source Address Spoofing"><b>2827</b><span>Network Ingress Filtering: Defeating Denial of Service Attacks which employ IP Source…</span></a>
 <a class="lex" href="learn/RFC/rfc3021.txt" title="Using 31-Bit Prefixes on IPv4 Point-to-Point Links"><b>3021</b><span>Using 31-Bit Prefixes on IPv4 Point-to-Point Links</span></a>
 <a class="lex" href="learn/RFC/rfc3128.txt" title="Protection Against a Variant of the Tiny Fragment Attack"><b>3128</b><span>Protection Against a Variant of the Tiny Fragment Attack</span></a>
 <a class="lex" href="learn/RFC/rfc3306.txt" title="Unicast-Prefix-based IPv6 Multicast Addresses"><b>3306</b><span>Unicast-Prefix-based IPv6 Multicast Addresses</span></a>
 <a class="lex" href="learn/RFC/rfc3376.txt" title="Internet Group Management Protocol, Version 3"><b>3376</b><span>Internet Group Management Protocol, Version 3</span></a>
+<a class="lex" href="learn/RFC/rfc3390.txt" title="Increasing TCP&#x27;s Initial Window"><b>3390</b><span>Increasing TCP&#x27;s Initial Window</span></a>
 <a class="lex" href="learn/RFC/rfc3465.txt" title="TCP Congestion Control with Appropriate Byte Counting (ABC)"><b>3465</b><span>TCP Congestion Control with Appropriate Byte Counting (ABC)</span></a>
 <a class="lex hot" href="learn/RFC/rfc3542.txt" title="Advanced Sockets Application Program Interface (API) for IPv6"><b>3542</b><span>Advanced Sockets Application Program Interface (API) for IPv6</span></a>
 <a class="lex" href="learn/RFC/rfc3596.txt" title="DNS Extensions to Support IP Version 6"><b>3596</b><span>DNS Extensions to Support IP Version 6</span></a>
 <a class="lex" href="learn/RFC/rfc3646.txt" title="DNS Configuration options for Dynamic Host Configuration Protocol for IPv6 (DHCPv6)"><b>3646</b><span>DNS Configuration options for Dynamic Host Configuration Protocol for IPv6 (DHCPv6)</span></a>
+<a class="lex" href="learn/RFC/rfc3692.txt" title="Assigning Experimental and Testing Numbers Considered Useful"><b>3692</b><span>Assigning Experimental and Testing Numbers Considered Useful</span></a>
 <a class="lex" href="learn/RFC/rfc3810.txt" title="Multicast Listener Discovery Version 2 (MLDv2) for IPv6"><b>3810</b><span>Multicast Listener Discovery Version 2 (MLDv2) for IPv6</span></a>
 <a class="lex hot" href="learn/RFC/rfc3828.txt" title="The Lightweight User Datagram Protocol (UDP-Lite)"><b>3828</b><span>The Lightweight User Datagram Protocol (UDP-Lite)</span></a>
+<a class="lex" href="learn/RFC/rfc3849.txt" title="IPv6 Address Prefix Reserved for Documentation"><b>3849</b><span>IPv6 Address Prefix Reserved for Documentation</span></a>
+<a class="lex" href="learn/RFC/rfc3879.txt" title="Deprecating Site Local Addresses"><b>3879</b><span>Deprecating Site Local Addresses</span></a>
 <a class="lex hot" href="learn/RFC/rfc3927.txt" title="Dynamic Configuration of IPv4 Link-Local Addresses"><b>3927</b><span>Dynamic Configuration of IPv4 Link-Local Addresses</span></a>
 <a class="lex" href="learn/RFC/rfc3956.txt" title="Embedding the Rendezvous Point (RP) Address in an IPv6 Multicast Address"><b>3956</b><span>Embedding the Rendezvous Point (RP) Address in an IPv6 Multicast Address</span></a>
 <a class="lex hot" href="learn/RFC/rfc4007.txt" title="IPv6 Scoped Address Architecture"><b>4007</b><span>IPv6 Scoped Address Architecture</span></a>
@@ -896,6 +913,7 @@ idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <a class="lex hot" href="learn/RFC/rfc5452.txt" title="Measures for Making DNS More Resilient against Forged Answers"><b>5452</b><span>Measures for Making DNS More Resilient against Forged Answers</span></a>
 <a class="lex hot" href="learn/RFC/rfc5681.txt" title="TCP Congestion Control"><b>5681</b><span>TCP Congestion Control</span></a>
 <a class="lex" href="learn/RFC/rfc5722.txt" title="Handling of Overlapping IPv6 Fragments"><b>5722</b><span>Handling of Overlapping IPv6 Fragments</span></a>
+<a class="lex" href="learn/RFC/rfc5737.txt" title="IPv4 Address Blocks Reserved for Documentation"><b>5737</b><span>IPv4 Address Blocks Reserved for Documentation</span></a>
 <a class="lex" href="learn/RFC/rfc5942.txt" title="IPv6 Subnet Model: The Relationship between Links and Subnet Prefixes"><b>5942</b><span>IPv6 Subnet Model: The Relationship between Links and Subnet Prefixes</span></a>
 <a class="lex" href="learn/RFC/rfc5952.txt" title="A Recommendation for IPv6 Address Text Representation"><b>5952</b><span>A Recommendation for IPv6 Address Text Representation</span></a>
 <a class="lex hot" href="learn/RFC/rfc5961.txt" title="Improving TCP&#x27;s Robustness to Blind In-Window Attacks"><b>5961</b><span>Improving TCP&#x27;s Robustness to Blind In-Window Attacks</span></a>
@@ -909,6 +927,7 @@ idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <a class="lex hot" href="learn/RFC/rfc6528.txt" title="Defending against Sequence Number Attacks"><b>6528</b><span>Defending against Sequence Number Attacks</span></a>
 <a class="lex hot" href="learn/RFC/rfc6724.txt" title="Default Address Selection for Internet Protocol Version 6 (IPv6)"><b>6724</b><span>Default Address Selection for Internet Protocol Version 6 (IPv6)</span></a>
 <a class="lex" href="learn/RFC/rfc6890.txt" title="Special-Purpose IP Address Registries"><b>6890</b><span>Special-Purpose IP Address Registries</span></a>
+<a class="lex" href="learn/RFC/rfc6946.txt" title="Processing of IPv6 &quot;Atomic&quot; Fragments"><b>6946</b><span>Processing of IPv6 &quot;Atomic&quot; Fragments</span></a>
 <a class="lex" href="learn/RFC/rfc6980.txt" title="Security Implications of IPv6 Fragmentation with IPv6 Neighbor Discovery"><b>6980</b><span>Security Implications of IPv6 Fragmentation with IPv6 Neighbor Discovery</span></a>
 <a class="lex" href="learn/RFC/rfc7042.txt" title="IANA Considerations and IETF Protocol and Documentation Usage for IEEE 802 Parameters"><b>7042</b><span>IANA Considerations and IETF Protocol and Documentation Usage for IEEE 802 Parameters</span></a>
 <a class="lex" href="learn/RFC/rfc7112.txt" title="Implications of Oversized IPv6 Header Chains"><b>7112</b><span>Implications of Oversized IPv6 Header Chains</span></a>
@@ -979,62 +998,62 @@ idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <!-- docsgen:suites -->
 <table class="suites"><thead><tr><th>suite</th><th class="n">cases</th><th>capabilities it drives</th></tr></thead><tbody>
 <tr><td><code>test/integration/test_loopback</code></td><td class="n">49</td><td><span class="cc">IPV4</span><span class="cc">TCP</span><span class="cc">UDP</span></td></tr>
-<tr><td><code>test/unit/acd/test_acd</code></td><td class="n">70</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/acd/test_acd</code></td><td class="n">71</td><td><span class="cc">IPV4</span></td></tr>
 <tr><td><code>test/unit/arp/test_arp</code></td><td class="n">18</td><td><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/arp/test_arp_table</code></td><td class="n">52</td><td><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/autoip/test_autoip</code></td><td class="n">47</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/arp/test_arp_table</code></td><td class="n">54</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/autoip/test_autoip</code></td><td class="n">52</td><td><span class="cc">IPV4</span></td></tr>
 <tr><td><code>test/unit/base/test_checksum</code></td><td class="n">9</td><td><span class="cc any">any build</span></td></tr>
 <tr><td><code>test/unit/base/test_clock</code></td><td class="n">27</td><td><span class="cc any">any build</span></td></tr>
 <tr><td><code>test/unit/base/test_span</code></td><td class="n">5</td><td><span class="cc any">any build</span></td></tr>
-<tr><td><code>test/unit/core/test_dispatch</code></td><td class="n">131</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span><span class="cc">TCP</span><span class="cc">UDP</span></td></tr>
+<tr><td><code>test/unit/core/test_dispatch</code></td><td class="n">179</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span><span class="cc">TCP</span><span class="cc">UDP</span></td></tr>
 <tr><td><code>test/unit/core/test_stats</code></td><td class="n">52</td><td><span class="cc">ETHERNET</span></td></tr>
-<tr><td><code>test/unit/core/test_tick</code></td><td class="n">37</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/core/test_timeouts</code></td><td class="n">51</td><td><span class="cc">ETHERNET</span></td></tr>
-<tr><td><code>test/unit/dhcp/test_dhcp4</code></td><td class="n">69</td><td><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/dhcp/test_dhcp6</code></td><td class="n">72</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/dns/test_dns</code></td><td class="n">87</td><td><span class="cc">UDP</span></td></tr>
-<tr><td><code>test/unit/ethernet/test_ethernet</code></td><td class="n">15</td><td><span class="cc">ETHERNET</span></td></tr>
+<tr><td><code>test/unit/core/test_tick</code></td><td class="n">41</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/core/test_timeouts</code></td><td class="n">52</td><td><span class="cc">ETHERNET</span></td></tr>
+<tr><td><code>test/unit/dhcp/test_dhcp4</code></td><td class="n">86</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/dhcp/test_dhcp6</code></td><td class="n">107</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/dns/test_dns</code></td><td class="n">114</td><td><span class="cc">UDP</span></td></tr>
+<tr><td><code>test/unit/ethernet/test_ethernet</code></td><td class="n">16</td><td><span class="cc">ETHERNET</span></td></tr>
 <tr><td><code>test/unit/ethernet/test_ethip6</code></td><td class="n">36</td><td><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/ethernet/test_mii</code></td><td class="n">34</td><td><span class="cc">ETHERNET</span></td></tr>
-<tr><td><code>test/unit/ethernet/test_phy</code></td><td class="n">22</td><td><span class="cc">ETHERNET</span></td></tr>
-<tr><td><code>test/unit/ethernet/test_vlan</code></td><td class="n">49</td><td><span class="cc">ETHERNET</span></td></tr>
+<tr><td><code>test/unit/ethernet/test_phy</code></td><td class="n">24</td><td><span class="cc">ETHERNET</span></td></tr>
+<tr><td><code>test/unit/ethernet/test_vlan</code></td><td class="n">50</td><td><span class="cc">ETHERNET</span></td></tr>
 <tr><td><code>test/unit/icmp/test_icmp</code></td><td class="n">27</td><td><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/icmp/test_icmp6_in</code></td><td class="n">60</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/icmp/test_icmp_in</code></td><td class="n">58</td><td><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/icmp/test_icmpv6</code></td><td class="n">34</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/igmp/test_igmp</code></td><td class="n">67</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/icmp/test_icmp6_in</code></td><td class="n">69</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/icmp/test_icmp_in</code></td><td class="n">65</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/icmp/test_icmpv6</code></td><td class="n">36</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/igmp/test_igmp</code></td><td class="n">70</td><td><span class="cc">IPV4</span></td></tr>
 <tr><td><code>test/unit/ip/test_ip4_addr</code></td><td class="n">28</td><td><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/ip/test_ip4_forward</code></td><td class="n">57</td><td><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/ip/test_ip4_frag</code></td><td class="n">36</td><td><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/ip/test_ip4_reass</code></td><td class="n">55</td><td><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/ip/test_ip4_route</code></td><td class="n">65</td><td><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/ip/test_ip6_addr</code></td><td class="n">33</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/ip/test_ip6_forward</code></td><td class="n">49</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip4_forward</code></td><td class="n">63</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip4_frag</code></td><td class="n">37</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip4_reass</code></td><td class="n">59</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip4_route</code></td><td class="n">67</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip6_addr</code></td><td class="n">37</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip6_forward</code></td><td class="n">52</td><td><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/ip/test_ip6_frag</code></td><td class="n">37</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/ip/test_ip6_reass</code></td><td class="n">74</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/ip/test_ip6_select</code></td><td class="n">47</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/ip/test_ipv4</code></td><td class="n">39</td><td><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/ip/test_ipv6</code></td><td class="n">45</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/mld/test_mld6</code></td><td class="n">64</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/nd/test_dad</code></td><td class="n">51</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/nd/test_nd6</code></td><td class="n">81</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/nd/test_rdnss</code></td><td class="n">41</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/nd/test_slaac</code></td><td class="n">53</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/netif/test_dma</code></td><td class="n">49</td><td><span class="cc">ETHERNET</span></td></tr>
-<tr><td><code>test/unit/netif/test_loopif</code></td><td class="n">49</td><td><span class="cc">ETHERNET</span><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/netif/test_netif</code></td><td class="n">72</td><td><span class="cc">ETHERNET</span><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/pmtu/test_pmtu4</code></td><td class="n">29</td><td><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/pmtu/test_pmtu6</code></td><td class="n">25</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/raw/test_raw_pcb</code></td><td class="n">48</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/tcp/test_tcp</code></td><td class="n">30</td><td><span class="cc">TCP</span></td></tr>
-<tr><td><code>test/unit/tcp/test_tcp_in</code></td><td class="n">92</td><td><span class="cc">TCP</span><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/tcp/test_tcp_isn</code></td><td class="n">34</td><td><span class="cc">TCP</span></td></tr>
-<tr><td><code>test/unit/tcp/test_tcp_out</code></td><td class="n">57</td><td><span class="cc">TCP</span><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/tcp/test_tcp_pcb</code></td><td class="n">88</td><td><span class="cc">TCP</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip6_reass</code></td><td class="n">78</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/ip/test_ip6_select</code></td><td class="n">85</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/ip/test_ipv4</code></td><td class="n">40</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/ip/test_ipv6</code></td><td class="n">47</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/mld/test_mld6</code></td><td class="n">67</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/nd/test_dad</code></td><td class="n">58</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/nd/test_nd6</code></td><td class="n">109</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/nd/test_rdnss</code></td><td class="n">45</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/nd/test_slaac</code></td><td class="n">63</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/netif/test_dma</code></td><td class="n">54</td><td><span class="cc">ETHERNET</span></td></tr>
+<tr><td><code>test/unit/netif/test_loopif</code></td><td class="n">50</td><td><span class="cc">ETHERNET</span><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/netif/test_netif</code></td><td class="n">74</td><td><span class="cc">ETHERNET</span><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/pmtu/test_pmtu4</code></td><td class="n">33</td><td><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/pmtu/test_pmtu6</code></td><td class="n">27</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/raw/test_raw_pcb</code></td><td class="n">50</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/tcp/test_tcp</code></td><td class="n">31</td><td><span class="cc">TCP</span></td></tr>
+<tr><td><code>test/unit/tcp/test_tcp_in</code></td><td class="n">103</td><td><span class="cc">TCP</span><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/tcp/test_tcp_isn</code></td><td class="n">35</td><td><span class="cc">TCP</span></td></tr>
+<tr><td><code>test/unit/tcp/test_tcp_out</code></td><td class="n">71</td><td><span class="cc">TCP</span><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/tcp/test_tcp_pcb</code></td><td class="n">101</td><td><span class="cc">TCP</span></td></tr>
 <tr><td><code>test/unit/udp/test_udp</code></td><td class="n">43</td><td><span class="cc">UDP</span></td></tr>
-<tr><td><code>test/unit/udp/test_udp_pcb</code></td><td class="n">54</td><td><span class="cc">UDP</span></td></tr>
-<tr><td><code>test/unit/udp/test_udplite</code></td><td class="n">34</td><td><span class="cc">UDP</span><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
-<tr class="total"><td>56 suites</td><td class="n">2,737</td><td></td></tr>
+<tr><td><code>test/unit/udp/test_udp_pcb</code></td><td class="n">62</td><td><span class="cc">UDP</span></td></tr>
+<tr><td><code>test/unit/udp/test_udplite</code></td><td class="n">36</td><td><span class="cc">UDP</span><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
+<tr class="total"><td>56 suites</td><td class="n">3,085</td><td></td></tr>
 </tbody></table>
 <!-- /docsgen:suites -->
 </section>
@@ -1046,11 +1065,12 @@ idemip_bool (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
   <div class="two">
     <div>
       <p><code>src/</code> is C11 with no heap, no <code>auto</code>, and no array with automatic
-      storage duration. The only system headers it takes are <code>&lt;assert.h&gt;</code> for
-      <code>static_assert</code>, <code>&lt;stddef.h&gt;</code>, <code>&lt;stdint.h&gt;</code> for the
-      fixed widths, and <code>&lt;string.h&gt;</code> for <code>memcpy</code>, <code>memset</code> and
-      <code>memcmp</code>. There is no <code>&lt;stdlib.h&gt;</code>, and nothing is parsed by the
-      library.</p>
+      storage duration. The only system headers it takes are <code>&lt;stddef.h&gt;</code> and
+      <code>&lt;stdint.h&gt;</code> for the fixed widths. There is no <code>&lt;stdlib.h&gt;</code>,
+      and nothing is parsed by the library. <code>memcpy</code>, <code>memset</code> and
+      <code>memcmp</code> are MMgr's, from <code>include/MMgr</code>. The dispatch tables,
+      <code>EMBED_CALL</code>, <code>EMBED_STATIC_ASSERT</code>, <code>embed_bool</code> and
+      <code>embed_word</code> are embedded_types', which <code>deps/</code> fetches.</p>
       <p>Names are flat <code>idemip_snake_case</code> in one namespace. Sizes are powers of two so an
       index is a shift, because hardware divide is not on every target in the list. Word width is
       taken from <code>UINTPTR_MAX</code>, and 16-bit targets are supported. Wire fields are never

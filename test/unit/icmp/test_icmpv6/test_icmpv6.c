@@ -14,11 +14,11 @@
 
 #include "src/icmp/icmpv6.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
-#include "src/ip/ipv6_defines.h"
 #include "src/icmp/icmpv6_defines.h"
+#include "src/ip/ipv6_defines.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // Big enough for a full error message: eight octets plus the largest quote sec 2.4 (c) allows.
 static uint8_t msg[IDEMIP_ICMP6_ERR_HDR_LEN + IDEMIP_ICMP6_ERR_QUOTE_MAX + 64];
@@ -31,7 +31,7 @@ static const uint8_t dst6[16] = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0,
 
 void setUp(void)
 {
-    memset(msg, 0xEE, sizeof msg);
+    fill_bytes(msg, 0xEE, sizeof msg);
     for (size_t i = 0; i < sizeof invoking; i++)
     {
         invoking[i] = (uint8_t)(i & 0xFFu);
@@ -374,7 +374,7 @@ void test_rfc4443_sec23_checksum_verifies_over_an_odd_length_message(void)
 void test_rfc4443_sec23_checksum_covers_the_addresses(void)
 {
     uint8_t other[16];
-    memcpy(other, dst6, sizeof other);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = other, .at = dst6, .size = sizeof other);
     other[15] = 0x03u;
 
     size_t len = idemip_icmp6_echo_reply_build(msg, 1u, 1u, invoking, 8u);
@@ -426,11 +426,11 @@ void test_rfc2710_sec3_mld_field_offsets(void)
     TEST_ASSERT_EQUAL_UINT(8u, IDEMIP_ICMP6_OFF_MLD_GROUP);
     TEST_ASSERT_EQUAL_UINT(24u, IDEMIP_ICMP6_MLD_MSG_LEN);
 
-    memset(msg, 0, IDEMIP_ICMP6_MLD_MSG_LEN);
+    mmgr_zero_buf(msg, IDEMIP_ICMP6_MLD_MSG_LEN);
     msg[IDEMIP_ICMP6_OFF_TYPE] = (uint8_t)IDEMIP_ICMP6_MLD_QUERY;
     idemip_wr16(msg + IDEMIP_ICMP6_OFF_MLD_MAX_RESP, 10000u); // sec 7.3's default, in milliseconds
     idemip_wr16(msg + IDEMIP_ICMP6_OFF_MLD_RESERVED, 0xFFFFu);
-    memcpy(msg + IDEMIP_ICMP6_OFF_MLD_GROUP, group, 16u);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg + IDEMIP_ICMP6_OFF_MLD_GROUP, .at = group, .size = 16u);
 
     TEST_ASSERT_EQUAL_UINT16(10000u, idemip_icmp6_mld_max_resp(msg));
     TEST_ASSERT_EQUAL_UINT8_ARRAY(group, idemip_icmp6_mld_group(msg), 16u);
@@ -453,7 +453,7 @@ void test_rfc4861_sec42_router_advertisement_field_offsets(void)
     TEST_ASSERT_EQUAL_HEX8(0x80u, IDEMIP_ICMP6_RA_FLAG_M);
     TEST_ASSERT_EQUAL_HEX8(0x40u, IDEMIP_ICMP6_RA_FLAG_O);
 
-    memset(msg, 0, IDEMIP_ICMP6_RA_HDR_LEN);
+    mmgr_zero_buf(msg, IDEMIP_ICMP6_RA_HDR_LEN);
     msg[IDEMIP_ICMP6_OFF_TYPE] = (uint8_t)IDEMIP_ICMP6_ROUTER_ADVERT;
     msg[IDEMIP_ICMP6_OFF_RA_CUR_HOP] = 64u;
     msg[IDEMIP_ICMP6_OFF_RA_FLAGS] = (uint8_t)(IDEMIP_ICMP6_RA_FLAG_M | IDEMIP_ICMP6_RA_FLAG_O);
@@ -488,10 +488,10 @@ void test_rfc4861_sec44_neighbor_advertisement_field_offsets(void)
     TEST_ASSERT_EQUAL_HEX8(0x40u, IDEMIP_ICMP6_NA_FLAG_S);
     TEST_ASSERT_EQUAL_HEX8(0x20u, IDEMIP_ICMP6_NA_FLAG_O);
 
-    memset(msg, 0, IDEMIP_ICMP6_NA_HDR_LEN);
+    mmgr_zero_buf(msg, IDEMIP_ICMP6_NA_HDR_LEN);
     msg[IDEMIP_ICMP6_OFF_TYPE] = (uint8_t)IDEMIP_ICMP6_NEIGHBOR_ADVERT;
     msg[IDEMIP_ICMP6_OFF_NA_FLAGS] = (uint8_t)(IDEMIP_ICMP6_NA_FLAG_S | IDEMIP_ICMP6_NA_FLAG_O);
-    memcpy(msg + IDEMIP_ICMP6_OFF_NA_TARGET, target, 16u);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg + IDEMIP_ICMP6_OFF_NA_TARGET, .at = target, .size = 16u);
 
     TEST_ASSERT_EQUAL_HEX8(0x60u, idemip_icmp6_na_flags(msg));
     TEST_ASSERT_FALSE_MESSAGE((idemip_icmp6_na_flags(msg) & IDEMIP_ICMP6_NA_FLAG_R) != 0u,
@@ -511,10 +511,10 @@ void test_rfc4861_sec45_redirect_field_offsets(void)
     TEST_ASSERT_EQUAL_UINT(24u, IDEMIP_ICMP6_OFF_RD_DEST);
     TEST_ASSERT_EQUAL_UINT(40u, IDEMIP_ICMP6_RD_HDR_LEN);
 
-    memset(msg, 0, IDEMIP_ICMP6_RD_HDR_LEN);
+    mmgr_zero_buf(msg, IDEMIP_ICMP6_RD_HDR_LEN);
     msg[IDEMIP_ICMP6_OFF_TYPE] = (uint8_t)IDEMIP_ICMP6_REDIRECT;
-    memcpy(msg + IDEMIP_ICMP6_OFF_RD_TARGET, target, 16u);
-    memcpy(msg + IDEMIP_ICMP6_OFF_RD_DEST, dest, 16u);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg + IDEMIP_ICMP6_OFF_RD_TARGET, .at = target, .size = 16u);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg + IDEMIP_ICMP6_OFF_RD_DEST, .at = dest, .size = 16u);
 
     TEST_ASSERT_EQUAL_UINT8_ARRAY(target, idemip_icmp6_nd_target(msg), 16u);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(dest, idemip_icmp6_rd_dest(msg), 16u);
@@ -547,7 +547,7 @@ void test_rfc4861_sec46_option_length_counts_eight_octet_units(void)
     TEST_ASSERT_EQUAL_UINT(2u, IDEMIP_ICMP6_ND_OPT_HDR_LEN);
 
     uint8_t opt[16];
-    memset(opt, 0, sizeof opt);
+    mmgr_zero_buf(opt, sizeof opt);
     opt[IDEMIP_ICMP6_ND_OPT_OFF_TYPE] = IDEMIP_ICMP6_ND_OPT_SLLA;
     opt[IDEMIP_ICMP6_ND_OPT_OFF_LEN] = 1u;
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP6_ND_OPT_SLLA, idemip_icmp6_nd_opt_type(opt));
@@ -566,7 +566,7 @@ void test_rfc4861_sec46_option_length_counts_eight_octet_units(void)
 void test_rfc4861_sec46_the_option_walk_refuses_zero_and_overrun(void)
 {
     uint8_t opts[24];
-    memset(opts, 0, sizeof opts);
+    mmgr_zero_buf(opts, sizeof opts);
 
     // Two well-formed options, eight octets each.
     opts[0] = IDEMIP_ICMP6_ND_OPT_SLLA;
@@ -611,7 +611,7 @@ void test_an_error_about_a_packet_of_no_octets_carries_no_quote(void)
 {
     uint8_t out[IDEMIP_ICMP6_ERR_HDR_LEN + 8u];
     static const uint8_t no_octets[8] = {0};
-    memset(out, 0xEE, sizeof out);
+    fill_bytes(out, 0xEE, sizeof out);
 
     const size_t len = idemip_icmp6_err_build(out, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH,
                                               0u, no_octets, 0u);

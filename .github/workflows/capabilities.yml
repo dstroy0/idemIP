@@ -91,6 +91,39 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure --timeout 120
 
+  # idemIP takes every machine word whose width is a power of two, as MMgr and embedded_types do. Each
+  # word builds the full set with the same -Werror flags and runs every suite, so a defect at one word
+  # fails the run at that word.
+  words:
+    name: word ${{ matrix.bits }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        bits: ["16", "32", "64"]
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: true # include/MMgr, which this tree tracks as a commit and not as files
+
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_C_FLAGS="-Werror -Wno-error=unused-function -Wno-error=unused-variable"
+          -DIDEMIP_WORD_BITS=${{ matrix.bits }}
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --timeout 120
+
   guards:
     name: source guards
     runs-on: ubuntu-latest

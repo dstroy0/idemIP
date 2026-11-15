@@ -89,20 +89,20 @@
 // The map closes on itself
 // ---------------------------------------------------------------------------
 
-static_assert(IDEMIP_UDP_OFF_SRC_PORT + 2u == IDEMIP_UDP_OFF_DST_PORT,
-              "Source Port is 16 bits and Destination Port follows it (RFC 768, Format)");
-static_assert(IDEMIP_UDP_OFF_DST_PORT + 2u == IDEMIP_UDP_OFF_LEN,
-              "Destination Port is 16 bits and Length follows it (RFC 768, Format)");
-static_assert(IDEMIP_UDP_OFF_LEN + 2u == IDEMIP_UDP_OFF_CKSUM,
-              "Length is 16 bits and Checksum follows it (RFC 768, Format)");
-static_assert(IDEMIP_UDP_OFF_CKSUM + 2u == IDEMIP_UDP_HDR_LEN,
-              "the RFC 768 field offsets must sum to the header length");
-static_assert(IDEMIP_UDP_LEN_MIN == 8u, "RFC 768: \"the minimum value of the length is eight\"");
-static_assert(IDEMIP_UDP_CKSUM_NONE != IDEMIP_UDP_CKSUM_ZERO_AS,
-              "RFC 768's two checksum special cases are the two representations of zero, not one");
-static_assert(IDEMIP_UDPLITE_OFF_COV == IDEMIP_UDP_OFF_LEN,
-              "RFC 3828 sec 3 replaces Length with Checksum Coverage in place");
-static_assert(IDEMIP_UDPLITE_COV_MIN == IDEMIP_UDPLITE_HDR_LEN,
-              "RFC 3828 sec 3.1: the smallest nonzero Coverage is the header it must always cover");
+EMBED_STATIC_ASSERT(IDEMIP_UDP_OFF_SRC_PORT + 2u == IDEMIP_UDP_OFF_DST_PORT,
+                    "Source Port is 16 bits and Destination Port follows it (RFC 768, Format)");
+EMBED_STATIC_ASSERT(IDEMIP_UDP_OFF_DST_PORT + 2u == IDEMIP_UDP_OFF_LEN,
+                    "Destination Port is 16 bits and Length follows it (RFC 768, Format)");
+EMBED_STATIC_ASSERT(IDEMIP_UDP_OFF_LEN + 2u == IDEMIP_UDP_OFF_CKSUM,
+                    "Length is 16 bits and Checksum follows it (RFC 768, Format)");
+EMBED_STATIC_ASSERT(IDEMIP_UDP_OFF_CKSUM + 2u == IDEMIP_UDP_HDR_LEN,
+                    "the RFC 768 field offsets must sum to the header length");
+EMBED_STATIC_ASSERT(IDEMIP_UDP_LEN_MIN == 8u, "RFC 768: \"the minimum value of the length is eight\"");
+EMBED_STATIC_ASSERT(IDEMIP_UDP_CKSUM_NONE != IDEMIP_UDP_CKSUM_ZERO_AS,
+                    "RFC 768's two checksum special cases are the two representations of zero, not one");
+EMBED_STATIC_ASSERT(IDEMIP_UDPLITE_OFF_COV == IDEMIP_UDP_OFF_LEN,
+                    "RFC 3828 sec 3 replaces Length with Checksum Coverage in place");
+EMBED_STATIC_ASSERT(IDEMIP_UDPLITE_COV_MIN == IDEMIP_UDPLITE_HDR_LEN,
+                    "RFC 3828 sec 3.1: the smallest nonzero Coverage is the header it must always cover");
 
 #endif // IDEMIP_UDP_DEFINES_H

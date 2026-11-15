@@ -17,7 +17,7 @@
 #include "src/nd/dad.h"
 #include "src/ip/ipv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads something else here and
 // every entry but clear refuses it.
@@ -38,10 +38,10 @@ typedef struct
     IdemIpDadState state;
     uint8_t sent;
     uint8_t received;
-    idemip_bool hw_derived;
-    idemip_bool used;
+    embed_bool hw_derived;
+    embed_bool used;
     uint8_t pad[(1u << IDEMIP_DAD_ENTRY_SHIFT) -
-                (sizeof(IdemIpMs) + 4u + IDEMIP_IP6_ADDR_LEN + sizeof(IdemIpDadState) + (4u * sizeof(idemip_bool)))];
+                (sizeof(IdemIpMs) + 4u + IDEMIP_IP6_ADDR_LEN + sizeof(IdemIpDadState) + (4u * sizeof(embed_bool)))];
 } DadEntry;
 
 // The running context: the sec 5.1 configuration this interface was bound to, and the mark.
@@ -58,24 +58,24 @@ typedef struct
 IDEMIP_ASSERT_REGION(IDEMIP_DAD_OFF_CTX, sizeof(DadCtx), IDEMIP_DAD_OFF_ENTRIES, "dad's context");
 
 // An index is (i << SHIFT), so each entry is exactly its width.
-static_assert(sizeof(DadEntry) == (1u << IDEMIP_DAD_ENTRY_SHIFT),
-              "a DAD entry must be 1 << IDEMIP_DAD_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(DadEntry) == (1u << IDEMIP_DAD_ENTRY_SHIFT),
+                    "a DAD entry must be 1 << IDEMIP_DAD_ENTRY_SHIFT wide");
 
 // The caller's borrow, split: the operand block, the context, then the table. dad.h publishes the
 // offsets; these two asserts prove the span covers them before anything runs. The first keeps the
 // context inside the region ahead of the table, the second the whole map inside the borrow.
-static_assert(IDEMIP_DAD_OFF_CTX + sizeof(DadCtx) <= IDEMIP_DAD_OFF_ENTRIES,
-              "IDEMIP_DAD_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_DAD_OFF_END <= IDEMIP_DAD_BORROW,
-              "IDEMIP_DAD_BORROW is short of the map - raise IDEMIP_DAD_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_DAD_OFF_CTX + sizeof(DadCtx) <= IDEMIP_DAD_OFF_ENTRIES,
+                    "IDEMIP_DAD_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_DAD_OFF_END <= IDEMIP_DAD_BORROW,
+                    "IDEMIP_DAD_BORROW is short of the map - raise IDEMIP_DAD_CTX_BYTES in idemip_config.h");
 
 // clear zeroes the table, so the state a cleared slot reads is the free one.
-static_assert(IDEMIP_DAD_STATE_FREE == 0, "IDEMIP_DAD_STATE_FREE must be zero: clear zeroes the table");
+EMBED_STATIC_ASSERT(IDEMIP_DAD_STATE_FREE == 0, "IDEMIP_DAD_STATE_FREE must be zero: clear zeroes the table");
 
 // The sec 5.4.2 delay is drawn over [0, MAX_RTR_SOLICITATION_DELAY] by scaling a 16-bit slice of a
 // random word, so that bound times 2^16 stays inside 32 bits.
-static_assert(IDEMIP_ND6_MAX_RTR_SOLICITATION_DELAY_MS < 0x10000u,
-              "the [0, MAX_RTR_SOLICITATION_DELAY] draw multiplies a 16-bit word by the bound + 1 in 32 bits");
+EMBED_STATIC_ASSERT(IDEMIP_ND6_MAX_RTR_SOLICITATION_DELAY_MS < 0x10000u,
+                    "the [0, MAX_RTR_SOLICITATION_DELAY] draw multiplies a 16-bit word by the bound + 1 in 32 bits");
 
 // The regions, at their offsets in the caller's borrow.
 #define DAD_IO(w) IDEMIP_DAD_IO(w)
@@ -94,40 +94,40 @@ static_assert(IDEMIP_ND6_MAX_RTR_SOLICITATION_DELAY_MS < 0x10000u,
 static const uint8_t dad_solicited_prefix[13] = {0xFFu, 0x02u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0x01u, 0xFFu};
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool dad_ready(uint8_t *work)
+static embed_bool dad_ready(uint8_t *work)
 {
-    return (idemip_bool)(DAD_CTX(work)->ready == DAD_READY);
+    return (embed_bool)(DAD_CTX(work)->ready == DAD_READY);
 }
 
 // --- addresses -------------------------------------------------------------
 
-static idemip_bool dad_addr_eq(const uint8_t *a, const uint8_t *b)
+static embed_bool dad_addr_eq(const uint8_t *a, const uint8_t *b)
 {
     return (idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
 }
 
 // RFC 4291 sec 2.7: a multicast address begins with FF.
-static idemip_bool dad_is_multicast(const uint8_t *addr)
+static embed_bool dad_is_multicast(const uint8_t *addr)
 {
-    return (idemip_bool)(addr[0] == 0xFFu);
+    return (embed_bool)(addr[0] == 0xFFu);
 }
 
 // RFC 4291 sec 2.5.2: "The address 0:0:0:0:0:0:0:0 is called the unspecified address."
-static idemip_bool dad_is_unspecified(const uint8_t *addr)
+static embed_bool dad_is_unspecified(const uint8_t *addr)
 {
     return idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN);
 }
 
 // RFC 4291 sec 2.5.6: the first ten bits of a link-local address are 1111111010.
-static idemip_bool dad_is_link_local(const uint8_t *addr)
+static embed_bool dad_is_link_local(const uint8_t *addr)
 {
-    return (idemip_bool)(addr[0] == 0xFEu && (uint8_t)(addr[1] & 0xC0u) == 0x80u);
+    return (embed_bool)(addr[0] == 0xFEu && (uint8_t)(addr[1] & 0xC0u) == 0x80u);
 }
 
 // RFC 4291 sec 2.7.1's FF02:0:0:0:0:1:FFXX:XXXX over the low-order 24 bits of @p addr.
 static void dad_solicited(uint8_t *out, const uint8_t *addr)
 {
-    memcpy(out, dad_solicited_prefix, sizeof dad_solicited_prefix);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = out, .at = dad_solicited_prefix, .size = sizeof dad_solicited_prefix);
     out[13] = addr[13];
     out[14] = addr[14];
     out[15] = addr[15];
@@ -137,17 +137,17 @@ static void dad_solicited(uint8_t *out, const uint8_t *addr)
 
 // True once @p now has reached @p deadline. Both sit on the same 64-bit millisecond clock, so this is
 // one comparison and nothing wraps under it.
-static idemip_bool dad_due(IdemIpMs now, IdemIpMs deadline)
+static embed_bool dad_due(IdemIpMs now, IdemIpMs deadline)
 {
-    return (now >= deadline) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (now >= deadline) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // A draw over [0, span]. sec 5.4.2 delays "by a random delay between 0 and
 // MAX_RTR_SOLICITATION_DELAY". The low 16 bits scale by span + 1 and shift back, so the result covers
 // 0 through span and no divide runs.
-static uint32_t dad_draw(uint32_t rand, uint32_t span)
+static uint32_t dad_draw(uint32_t rand, uint32_t range)
 {
-    return (uint32_t)(((rand & 0xFFFFu) * (span + 1u)) >> 16);
+    return (uint32_t)(((rand & 0xFFFFu) * (range + 1u)) >> 16);
 }
 
 // --- the table -------------------------------------------------------------
@@ -185,17 +185,17 @@ static void dad_clear_results(DadIo *io)
 {
     io->target = NULL;
     io->deadline = 0;
-    memset(io->solicited, 0, sizeof io->solicited);
+    mmgr_zero_buf(io->solicited, sizeof io->solicited);
     io->entry = (uint8_t)IDEMIP_DAD_NONE;
     io->state = IDEMIP_DAD_STATE_FREE;
     io->sent = 0u;
     io->received = 0u;
-    io->join = IDEMIP_FALSE;
-    io->send_ns = IDEMIP_FALSE;
-    io->unique = IDEMIP_FALSE;
-    io->duplicate = IDEMIP_FALSE;
-    io->disable_ip = IDEMIP_FALSE;
-    io->tentative = IDEMIP_FALSE;
+    io->join = EMBED_FALSE;
+    io->send_ns = EMBED_FALSE;
+    io->unique = EMBED_FALSE;
+    io->duplicate = EMBED_FALSE;
+    io->disable_ip = EMBED_FALSE;
+    io->tentative = EMBED_FALSE;
 }
 
 // One entry, into the result members of the operand block. target and solicited are what sec 5.4.2
@@ -225,8 +225,8 @@ static void dad_fail(uint8_t *work, uint8_t index)
     DadEntry *e = DAD_AT(work, index);
     e->state = IDEMIP_DAD_STATE_DUPLICATE;
     e->deadline = 0;
-    io->duplicate = IDEMIP_TRUE;
-    io->disable_ip = (idemip_bool)(e->hw_derived && dad_is_link_local(e->addr));
+    io->duplicate = EMBED_TRUE;
+    io->disable_ip = (embed_bool)(e->hw_derived && dad_is_link_local(e->addr));
 }
 
 // sec 5.4: the procedure ends when "none of the tests indicate the presence of a duplicate address
@@ -237,7 +237,7 @@ static void dad_pass(uint8_t *work, uint8_t index)
     DadEntry *e = DAD_AT(work, index);
     e->state = IDEMIP_DAD_STATE_UNIQUE;
     e->deadline = 0;
-    DAD_IO(work)->unique = IDEMIP_TRUE;
+    DAD_IO(work)->unique = EMBED_TRUE;
 }
 
 // sec 5.4.2: "To check an address, a node sends DupAddrDetectTransmits Neighbor Solicitations, each
@@ -249,7 +249,7 @@ static void dad_send(uint8_t *work, uint8_t index, IdemIpMs now)
     DadIo *io = DAD_IO(work);
     DadEntry *e = DAD_AT(work, index);
     const DadCtx *ctx = DAD_CTX(work);
-    io->send_ns = IDEMIP_TRUE;
+    io->send_ns = EMBED_TRUE;
     e->sent++;
     e->deadline = now + (IdemIpMs)e->retrans_ms;
     e->state = (e->sent >= ctx->cfg->transmits) ? IDEMIP_DAD_STATE_WAIT : IDEMIP_DAD_STATE_PROBING;
@@ -290,7 +290,7 @@ static void dad_fire(uint8_t *work)
             // sec 5.4.2: "Before sending a Neighbor Solicitation, an interface MUST join the
             // all-nodes multicast address and the solicited-node multicast address of the tentative
             // address", the delay above having held the join back.
-            io->join = IDEMIP_TRUE;
+            io->join = EMBED_TRUE;
             dad_send(work, i, now);
             break;
         case IDEMIP_DAD_STATE_PROBING:
@@ -347,7 +347,7 @@ void idemip_dad_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_DAD_OFF_CTX, 0, DAD_STATE_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_DAD_OFF_CTX, .val = 0, .bytes = DAD_STATE_BYTES);
     DAD_CTX(work)->ready = DAD_READY;
     DAD_IO(work)->status = IDEMIP_OK;
 }
@@ -410,14 +410,14 @@ void idemip_dad_start(uint8_t *work)
     }
 
     DadEntry *e = DAD_AT(work, index);
-    memcpy(e->addr, io->start_args.addr, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = e->addr, .at = io->start_args.addr, .size = IDEMIP_IP6_ADDR_LEN);
     const uint32_t retrans =
         (io->start_args.retrans_ms != 0u) ? io->start_args.retrans_ms : (uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS;
     e->retrans_ms = retrans;
     e->sent = 0u;
     e->received = 0u;
     e->hw_derived = io->start_args.hw_derived;
-    e->used = IDEMIP_TRUE;
+    e->used = EMBED_TRUE;
     if (ctx->cfg->transmits == 0u)
     {
         dad_pass(work, index);
@@ -458,7 +458,7 @@ void idemip_dad_stop(uint8_t *work)
         return;
     }
     io->entry = index;
-    memset(DAD_AT(work, index), 0, sizeof(DadEntry));
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = DAD_AT(work, index), .val = 0, .bytes = sizeof(DadEntry));
     io->status = IDEMIP_OK;
 }
 
@@ -481,8 +481,8 @@ void idemip_dad_find(uint8_t *work)
         return;
     }
     dad_publish(work, index);
-    io->tentative = (idemip_bool)(io->state == IDEMIP_DAD_STATE_DELAY || io->state == IDEMIP_DAD_STATE_PROBING ||
-                                  io->state == IDEMIP_DAD_STATE_WAIT);
+    io->tentative = (embed_bool)(io->state == IDEMIP_DAD_STATE_DELAY || io->state == IDEMIP_DAD_STATE_PROBING ||
+                                 io->state == IDEMIP_DAD_STATE_WAIT);
     io->status = IDEMIP_OK;
 }
 
@@ -511,8 +511,8 @@ void idemip_dad_ns_in(uint8_t *work)
         return;
     }
     IdemIpDadState state = DAD_AT(work, index)->state;
-    idemip_bool tentative = (idemip_bool)(state == IDEMIP_DAD_STATE_DELAY || state == IDEMIP_DAD_STATE_PROBING ||
-                                          state == IDEMIP_DAD_STATE_WAIT);
+    embed_bool tentative = (embed_bool)(state == IDEMIP_DAD_STATE_DELAY || state == IDEMIP_DAD_STATE_PROBING ||
+                                        state == IDEMIP_DAD_STATE_WAIT);
     if (tentative && io->ns_in_args.unspecified)
     {
         dad_solicitation(work, index);
@@ -545,8 +545,8 @@ void idemip_dad_na_in(uint8_t *work)
         return;
     }
     IdemIpDadState state = DAD_AT(work, index)->state;
-    idemip_bool tentative = (idemip_bool)(state == IDEMIP_DAD_STATE_DELAY || state == IDEMIP_DAD_STATE_PROBING ||
-                                          state == IDEMIP_DAD_STATE_WAIT);
+    embed_bool tentative = (embed_bool)(state == IDEMIP_DAD_STATE_DELAY || state == IDEMIP_DAD_STATE_PROBING ||
+                                        state == IDEMIP_DAD_STATE_WAIT);
     if (tentative)
     {
         dad_fail(work, index);
@@ -572,4 +572,4 @@ void idemip_dad_tick(uint8_t *work)
     dad_fire(work);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

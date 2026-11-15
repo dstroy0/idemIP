@@ -23,14 +23,13 @@
 #include "src/time_determinism.h"
 #include "src/time_determinism_defines.h" // the pad word's layout, composed by hand below
 
-#include <string.h>
 #include <unity.h>
 
 static IdemIpClock c;
 
 void setUp(void)
 {
-    memset(&c, 0, sizeof c);
+    c = (IdemIpClock){0};
 }
 
 void tearDown(void)

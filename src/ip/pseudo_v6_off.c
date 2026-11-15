@@ -16,7 +16,7 @@
 
 #include "src/ip/pseudo.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief One accumulate that has no form in this build. */
 typedef struct
@@ -31,25 +31,25 @@ typedef struct
 /**
  * @brief Report that this build has no IPv6 pseudo-header.
  * @param c The accumulate, unread.
- * @return IDEMIP_FALSE always.
+ * @return EMBED_FALSE always.
  *
  * The sum is left as it was, so a caller that goes on to carry it over the header and data carries
  * a sum nothing was added to.
  */
-IDEMIP_INLINE idemip_bool pseudo6_accum(const Pseudo6Ctx *c)
+EMBED_INLINE embed_bool pseudo6_accum(const Pseudo6Ctx *c)
 {
     (void)c;
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 /* The namespace is a table of function pointers with the caller's argument lists in their types,
    so this is what it points at. It builds the context and hands it to the body above. */
 
-idemip_bool idemip_pseudo6_accum(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst,
-                                 uint32_t upper_len)
+embed_bool idemip_pseudo6_accum(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst,
+                                uint32_t upper_len)
 {
-    return IDEMIP_CALL(pseudo6_accum, Pseudo6Ctx, .sum = sum, .proto = proto, .src = src, .dst = dst,
-                       .upper_len = upper_len);
+    return EMBED_CALL(pseudo6_accum, Pseudo6Ctx, .sum = sum, .proto = proto, .src = src, .dst = dst,
+                      .upper_len = upper_len);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

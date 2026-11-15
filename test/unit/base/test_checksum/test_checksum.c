@@ -62,7 +62,7 @@ void test_rfc1071_byte_order_independence(void)
 void test_checksum_over_itself_is_zero(void)
 {
     uint8_t buf[10];
-    memcpy(buf, rfc1071_example, sizeof rfc1071_example);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = rfc1071_example, .size = sizeof rfc1071_example);
     idemip_wr16(buf + 8, idemip_cksum(rfc1071_example, sizeof rfc1071_example));
     TEST_ASSERT_TRUE(idemip_cksum_valid(buf, sizeof buf));
 }

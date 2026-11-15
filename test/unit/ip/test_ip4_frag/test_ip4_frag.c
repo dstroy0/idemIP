@@ -23,21 +23,25 @@
 
 #include "src/ip/ip4_frag.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
 #include "src/ip/ipv4_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // --- the borrow, the caller's ------------------------------------------------
 
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_IP4_FRAG_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_IP4_FRAG_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_IP4_FRAG_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_IP4_FRAG_BORROW + 16))
+static uint8_t *work_b;
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_IP4_FRAG_BORROW, CANARY, cap - IDEMIP_IP4_FRAG_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_IP4_FRAG_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_IP4_FRAG_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -79,7 +83,7 @@ static uint16_t make_dgram(uint16_t data_len, const uint8_t *opts, size_t opt_le
     const uint8_t ihl = (uint8_t)(IDEMIP_IP4_IHL_MIN + opt_len / 4u);
     const uint16_t hdr = (uint16_t)(ihl * 4u);
     IdemIpIp4Fields f;
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.tos = 0x10u;
     f.total_len = (uint16_t)(hdr + data_len);
     f.id = 0xBEEFu;
@@ -91,7 +95,7 @@ static uint16_t make_dgram(uint16_t data_len, const uint8_t *opts, size_t opt_le
     idemip_ip4_build(g_dgram, &f);
     if (opt_len != 0u)
     {
-        memcpy(g_dgram + IDEMIP_IPV4_HDR_LEN, opts, opt_len);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = g_dgram + IDEMIP_IPV4_HDR_LEN, .at = opts, .size = opt_len);
     }
     idemip_ip4_set_ver_ihl(g_dgram, ihl);
     idemip_ip4_recksum(g_dgram);
@@ -130,7 +134,7 @@ static void drain(uint8_t *w)
         }
         TEST_ASSERT_LESS_THAN_INT(FRAGS_MAX, g_frags);
         g_frag_len[g_frags] = IDEMIP_IP4_FRAG_IO(w)->len;
-        memcpy(g_frag[g_frags], g_out, g_frag_len[g_frags]);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = g_frag[g_frags], .at = g_out, .size = g_frag_len[g_frags]);
         g_frags++;
     }
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FRAG_ERR_DONE, IDEMIP_IP4_FRAG_IO(w)->err);
@@ -138,10 +142,12 @@ static void drain(uint8_t *w)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(g_dgram, 0, sizeof g_dgram);
-    memset(g_out, 0, sizeof g_out);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_ip4_frag);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_ip4_frag);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(g_dgram, sizeof g_dgram);
+    mmgr_zero_buf(g_out, sizeof g_out);
     g_frags = 0;
     g_dgram_len = 0;
     g_dgram_hdr = 0;
@@ -152,8 +158,8 @@ void setUp(void)
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // --- the borrow --------------------------------------------------------------
@@ -168,7 +174,7 @@ void test_every_entry_survives_a_null_borrow(void)
 
 void test_an_uncleared_borrow_refuses_work(void)
 {
-    arm(work_a, sizeof work_a); // zeroed, so the mark clear leaves is absent
+    arm(work_a, WORK_A_BYTES); // zeroed, so the mark clear leaves is absent
     IDEMIP_IP4_FRAG_IO(work_a)->begin_args.dgram = g_dgram;
     IDEMIP_IP4_FRAG_IO(work_a)->begin_args.len = 20u;
     IDEMIP_IP4_FRAG_IO(work_a)->begin_args.mtu = 576u;
@@ -448,12 +454,13 @@ void test_the_fragments_carry_the_whole_datagram(void)
     begin_ok(work_a, 300u);
     drain(work_a);
     uint8_t rebuilt[DGRAM_MAX];
-    memset(rebuilt, 0, sizeof rebuilt);
+    mmgr_zero_buf(rebuilt, sizeof rebuilt);
     for (int i = 0; i < g_frags; i++)
     {
         const size_t hdr = idemip_ip4_hdr_len(g_frag[i]);
         const uint32_t off = idemip_ip4_frag_offset_bytes(g_frag[i]);
-        memcpy(rebuilt + off, g_frag[i] + hdr, idemip_ip4_payload_len(g_frag[i]));
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = rebuilt + off, .at = g_frag[i] + hdr,
+                   .size = idemip_ip4_payload_len(g_frag[i]));
     }
     TEST_ASSERT_EQUAL_UINT8_ARRAY(g_dgram + g_dgram_hdr, rebuilt, g_dgram_data);
 }
@@ -549,7 +556,7 @@ void test_a_split_past_the_thirteen_bit_offset_is_refused(void)
 void test_the_widest_header_at_the_floor_still_advances(void)
 {
     uint8_t wide[40];
-    memset(wide, IDEMIP_IP4_FRAG_OPT_EOL, sizeof wide);
+    fill_bytes(wide, IDEMIP_IP4_FRAG_OPT_EOL, sizeof wide);
     make_dgram(64u, wide, sizeof wide, 0u);
     TEST_ASSERT_EQUAL_UINT16(IDEMIP_IP4_HDR_MAX, g_dgram_hdr);
     begin_ok(work_a, IDEMIP_IP4_MIN_FORWARD_MTU);

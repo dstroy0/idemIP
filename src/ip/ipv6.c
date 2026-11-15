@@ -20,7 +20,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief One header, extension header, option or pseudo-header access. */
 typedef struct
@@ -40,25 +40,25 @@ typedef struct
     uint16_t v16;                  /**< A 16-bit field a write sends. */
     uint8_t v8;                    /**< An 8-bit field a write sends. */
     uint8_t nh;                    /**< A Next Header value. */
-    idemip_bool more;              /**< The sec 4.5 M flag a build sets. */
+    embed_bool more;               /**< The sec 4.5 M flag a build sets. */
 } Ip6Ctx;
 
 // --- reading the fixed header ----------------------------------------------
 
 /** @brief Version, the high nibble of the first word. */
-IDEMIP_INLINE uint8_t ip6_version(const Ip6Ctx *c)
+EMBED_INLINE uint8_t ip6_version(const Ip6Ctx *c)
 {
     return (uint8_t)((idemip_rd32(c->h + IDEMIP_IP6_OFF_VER_TC_FLOW) >> IDEMIP_IP6_VER_SHIFT) & IDEMIP_IP6_VER_MASK);
 }
 
 /** @brief Traffic Class, the octet below the version. */
-IDEMIP_INLINE uint8_t ip6_traffic_class(const Ip6Ctx *c)
+EMBED_INLINE uint8_t ip6_traffic_class(const Ip6Ctx *c)
 {
     return (uint8_t)((idemip_rd32(c->h + IDEMIP_IP6_OFF_VER_TC_FLOW) >> IDEMIP_IP6_TC_SHIFT) & IDEMIP_IP6_TC_MASK);
 }
 
 /** @brief Flow Label, the low twenty bits of the first word. */
-IDEMIP_INLINE uint32_t ip6_flow_label(const Ip6Ctx *c)
+EMBED_INLINE uint32_t ip6_flow_label(const Ip6Ctx *c)
 {
     return idemip_rd32(c->h + IDEMIP_IP6_OFF_VER_TC_FLOW) & IDEMIP_IP6_FLOW_MASK;
 }
@@ -69,31 +69,31 @@ IDEMIP_INLINE uint32_t ip6_flow_label(const Ip6Ctx *c)
  * RFC 8200 sec 3: "Length of the IPv6 payload, i.e., the rest of the packet following this IPv6
  * header, in octets." Unlike IPv4's Total Length, the fixed header is not counted.
  */
-IDEMIP_INLINE uint16_t ip6_payload_len(const Ip6Ctx *c)
+EMBED_INLINE uint16_t ip6_payload_len(const Ip6Ctx *c)
 {
     return idemip_rd16(c->h + IDEMIP_IP6_OFF_PAYLOAD_LEN);
 }
 
 /** @brief Next Header: the type of the header immediately following. */
-IDEMIP_INLINE uint8_t ip6_next_hdr(const Ip6Ctx *c)
+EMBED_INLINE uint8_t ip6_next_hdr(const Ip6Ctx *c)
 {
     return c->h[IDEMIP_IP6_OFF_NEXT_HDR];
 }
 
 /** @brief Hop Limit, decremented by each forwarding node. */
-IDEMIP_INLINE uint8_t ip6_hop_limit(const Ip6Ctx *c)
+EMBED_INLINE uint8_t ip6_hop_limit(const Ip6Ctx *c)
 {
     return c->h[IDEMIP_IP6_OFF_HOP_LIMIT];
 }
 
 /** @brief The sixteen octets of the source address, in place. */
-IDEMIP_INLINE const uint8_t *ip6_src(const Ip6Ctx *c)
+EMBED_INLINE const uint8_t *ip6_src(const Ip6Ctx *c)
 {
     return c->h + IDEMIP_IP6_OFF_SRC;
 }
 
 /** @brief The sixteen octets of the destination address, in place. */
-IDEMIP_INLINE const uint8_t *ip6_dst(const Ip6Ctx *c)
+EMBED_INLINE const uint8_t *ip6_dst(const Ip6Ctx *c)
 {
     return c->h + IDEMIP_IP6_OFF_DST;
 }
@@ -108,7 +108,7 @@ IDEMIP_INLINE const uint8_t *ip6_dst(const Ip6Ctx *c)
  * three. Payload Length, Next Header and Hop Limit follow, then the two addresses are copied where
  * they lie.
  */
-IDEMIP_INLINE void ip6_build(const Ip6Ctx *c)
+EMBED_INLINE void ip6_build(const Ip6Ctx *c)
 {
     idemip_wr32(c->w + IDEMIP_IP6_OFF_VER_TC_FLOW,
                 ((uint32_t)IDEMIP_IP6_VERSION << IDEMIP_IP6_VER_SHIFT) |
@@ -117,24 +117,26 @@ IDEMIP_INLINE void ip6_build(const Ip6Ctx *c)
     idemip_wr16(c->w + IDEMIP_IP6_OFF_PAYLOAD_LEN, c->a->payload_len);
     c->w[IDEMIP_IP6_OFF_NEXT_HDR] = c->a->next_hdr;
     c->w[IDEMIP_IP6_OFF_HOP_LIMIT] = c->a->hop_limit;
-    memcpy(c->w + IDEMIP_IP6_OFF_SRC, c->a->src, IDEMIP_IP6_ADDR_LEN);
-    memcpy(c->w + IDEMIP_IP6_OFF_DST, c->a->dst, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = c->w + IDEMIP_IP6_OFF_SRC, .at = c->a->src,
+               .size = IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = c->w + IDEMIP_IP6_OFF_DST, .at = c->a->dst,
+               .size = IDEMIP_IP6_ADDR_LEN);
 }
 
 /** @brief Write Payload Length (RFC 8200 sec 3). */
-IDEMIP_INLINE void ip6_set_payload_len(const Ip6Ctx *c)
+EMBED_INLINE void ip6_set_payload_len(const Ip6Ctx *c)
 {
     idemip_wr16(c->w + IDEMIP_IP6_OFF_PAYLOAD_LEN, c->v16);
 }
 
 /** @brief Write Next Header (RFC 8200 sec 3). */
-IDEMIP_INLINE void ip6_set_next_hdr(const Ip6Ctx *c)
+EMBED_INLINE void ip6_set_next_hdr(const Ip6Ctx *c)
 {
     c->w[IDEMIP_IP6_OFF_NEXT_HDR] = c->v8;
 }
 
 /** @brief Write Hop Limit (RFC 8200 sec 3). */
-IDEMIP_INLINE void ip6_set_hop_limit(const Ip6Ctx *c)
+EMBED_INLINE void ip6_set_hop_limit(const Ip6Ctx *c)
 {
     c->w[IDEMIP_IP6_OFF_HOP_LIMIT] = c->v8;
 }
@@ -151,28 +153,28 @@ IDEMIP_INLINE void ip6_set_hop_limit(const Ip6Ctx *c)
  * RFC 4303 rather than by sec 4's 8-octet rule, so neither is stepped over here; sec 4.5 already
  * counts ESP as an upper-layer header.
  */
-IDEMIP_INLINE idemip_bool ip6_nh_is_ext(const Ip6Ctx *c)
+EMBED_INLINE embed_bool ip6_nh_is_ext(const Ip6Ctx *c)
 {
     return (c->nh == IDEMIP_IP6_NH_HOPOPT || c->nh == IDEMIP_IP6_NH_ROUTING || c->nh == IDEMIP_IP6_NH_FRAGMENT ||
             c->nh == IDEMIP_IP6_NH_DSTOPTS)
-               ? IDEMIP_TRUE
-               : IDEMIP_FALSE;
+               ? EMBED_TRUE
+               : EMBED_FALSE;
 }
 
 /** @brief Next Header of an extension header carrying the common two octets. */
-IDEMIP_INLINE uint8_t ip6_ext_next_hdr(const Ip6Ctx *c)
+EMBED_INLINE uint8_t ip6_ext_next_hdr(const Ip6Ctx *c)
 {
     return c->h[IDEMIP_IP6_EXT_OFF_NEXT_HDR];
 }
 
 /** @brief Bytes this extension header occupies. */
-IDEMIP_INLINE size_t ip6_ext_len(const Ip6Ctx *c)
+EMBED_INLINE size_t ip6_ext_len(const Ip6Ctx *c)
 {
     return IDEMIP_IP6_EXT_BYTES(c->h[IDEMIP_IP6_EXT_OFF_LEN]);
 }
 
 /** @brief Bytes an option occupies: Pad1 is one octet, every other type carries its length. */
-IDEMIP_INLINE size_t ip6_opt_len(const Ip6Ctx *c)
+EMBED_INLINE size_t ip6_opt_len(const Ip6Ctx *c)
 {
     return (c->h[IDEMIP_IP6_OPT_OFF_TYPE] == IDEMIP_IP6_OPT_PAD1) ? 1u
                                                                   : ((size_t)c->h[IDEMIP_IP6_OPT_OFF_LEN] + 2u);
@@ -190,7 +192,7 @@ IDEMIP_INLINE size_t ip6_opt_len(const Ip6Ctx *c)
  * all discard, and differ only in whether the caller owes a Parameter Problem, which it reads back
  * off the Option Type octet this reports.
  */
-IDEMIP_INLINE idemip_bool ip6_opts_refused(const Ip6Ctx *c)
+EMBED_INLINE embed_bool ip6_opts_refused(const Ip6Ctx *c)
 {
     const uint8_t *p = c->h;
     const size_t last = c->len;
@@ -200,7 +202,7 @@ IDEMIP_INLINE idemip_bool ip6_opts_refused(const Ip6Ctx *c)
         const uint8_t type = p[at + IDEMIP_IP6_OPT_OFF_TYPE];
         if (type != IDEMIP_IP6_OPT_PAD1 && at + 2u > last)
         {
-            return IDEMIP_TRUE; // the length octet is not inside the header
+            return EMBED_TRUE; // the length octet is not inside the header
         }
         const size_t step = idemip_ip6_opt_len(p + at);
         // Not measured on the first: idemip_ip6_opt_len reports one octet for a Pad1 and two more
@@ -208,35 +210,35 @@ IDEMIP_INLINE idemip_bool ip6_opts_refused(const Ip6Ctx *c)
         // because the walk advances by it, and a walk that advanced by nothing would not end.
         if (step == 0u || at + step > last) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         if (type != IDEMIP_IP6_OPT_PAD1 && type != IDEMIP_IP6_OPT_PADN &&
             (type & IDEMIP_IP6_OPT_ACT_MASK) != IDEMIP_IP6_OPT_ACT_SKIP)
         {
             *c->bad = at;
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         at += step;
     }
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 // --- the Fragment header (RFC 8200 sec 4.5) --------------------------------
 
 /** @brief Offset of this fragment's data, in bytes, from the start of the fragmentable part. */
-IDEMIP_INLINE uint16_t ip6_frag_offset_bytes(const Ip6Ctx *c)
+EMBED_INLINE uint16_t ip6_frag_offset_bytes(const Ip6Ctx *c)
 {
     return (uint16_t)(idemip_rd16(c->h + IDEMIP_IP6_FRAG_OFF_OFFS_M) & IDEMIP_IP6_FRAG_OFF_MASK);
 }
 
 /** @brief True when more fragments follow this one. */
-IDEMIP_INLINE idemip_bool ip6_frag_more(const Ip6Ctx *c)
+EMBED_INLINE embed_bool ip6_frag_more(const Ip6Ctx *c)
 {
     return (idemip_rd16(c->h + IDEMIP_IP6_FRAG_OFF_OFFS_M) & IDEMIP_IP6_FRAG_M) != 0u;
 }
 
 /** @brief Identification: the fragments of one original packet share it. */
-IDEMIP_INLINE uint32_t ip6_frag_ident(const Ip6Ctx *c)
+EMBED_INLINE uint32_t ip6_frag_ident(const Ip6Ctx *c)
 {
     return idemip_rd32(c->h + IDEMIP_IP6_FRAG_OFF_IDENT);
 }
@@ -247,7 +249,7 @@ IDEMIP_INLINE uint32_t ip6_frag_ident(const Ip6Ctx *c)
  * Reserved is zeroed, the byte offset is masked to the thirteen bits three places up, which drops
  * any remainder below an 8-octet unit and leaves Res clear, and the M flag is set in the low bit.
  */
-IDEMIP_INLINE void ip6_frag_build(const Ip6Ctx *c)
+EMBED_INLINE void ip6_frag_build(const Ip6Ctx *c)
 {
     c->w[IDEMIP_IP6_FRAG_OFF_NEXT_HDR] = c->nh;
     c->w[IDEMIP_IP6_FRAG_OFF_RESERVED] = 0u;
@@ -263,13 +265,13 @@ IDEMIP_INLINE void ip6_frag_build(const Ip6Ctx *c)
  * Segments Left is zero, the node must ignore the Routing header and proceed to process the next
  * header"; if it is not, the packet is discarded and Parameter Problem Code 0 is sent.
  */
-IDEMIP_INLINE uint8_t ip6_rt_segs_left(const Ip6Ctx *c)
+EMBED_INLINE uint8_t ip6_rt_segs_left(const Ip6Ctx *c)
 {
     return c->h[IDEMIP_IP6_RT_OFF_SEGS_LEFT];
 }
 
 /** @brief RFC 8200 sec 4.4 Routing Type: "8-bit identifier of a particular Routing header variant." */
-IDEMIP_INLINE uint8_t ip6_rt_type(const Ip6Ctx *c)
+EMBED_INLINE uint8_t ip6_rt_type(const Ip6Ctx *c)
 {
     return c->h[IDEMIP_IP6_RT_OFF_TYPE];
 }
@@ -293,7 +295,7 @@ IDEMIP_INLINE uint8_t ip6_rt_type(const Ip6Ctx *c)
  * IPv6 header only", and sec 4 answers "a Next Header value of zero in any header other than an IPv6
  * header" the same way as an unrecognized one.
  */
-IDEMIP_INLINE IdemIpIp6Chain ip6_walk(const Ip6Ctx *ctx)
+EMBED_INLINE IdemIpIp6Chain ip6_walk(const Ip6Ctx *ctx)
 {
     const uint8_t *p = ctx->h;
     const size_t len = ctx->len;
@@ -305,10 +307,10 @@ IDEMIP_INLINE IdemIpIp6Chain ip6_walk(const Ip6Ctx *ctx)
     c.opt_hdr = 0u;
     c.next_hdr = IDEMIP_IP6_NH_NONE;
     c.hops = 0u;
-    c.fragmented = IDEMIP_FALSE;
-    c.routed = IDEMIP_FALSE;
-    c.refused = IDEMIP_FALSE;
-    c.ok = IDEMIP_FALSE;
+    c.fragmented = EMBED_FALSE;
+    c.routed = EMBED_FALSE;
+    c.refused = EMBED_FALSE;
+    c.ok = EMBED_FALSE;
 
     if (len < IDEMIP_IPV6_HDR_LEN)
     {
@@ -336,7 +338,7 @@ IDEMIP_INLINE IdemIpIp6Chain ip6_walk(const Ip6Ctx *ctx)
         }
         if (c.next_hdr == IDEMIP_IP6_NH_FRAGMENT)
         {
-            c.fragmented = IDEMIP_TRUE;
+            c.fragmented = EMBED_TRUE;
             c.frag_hdr = c.offset;
             // sec 4.5 lays a fragment packet out as "(1) The Per-Fragment headers ... (2) A Fragment
             // header ... (3) The fragment itself", and puts the Extension and Upper-Layer headers
@@ -347,7 +349,7 @@ IDEMIP_INLINE IdemIpIp6Chain ip6_walk(const Ip6Ctx *ctx)
             {
                 c.offset += step;
                 c.hops = (uint16_t)(c.hops + 1u);
-                c.ok = IDEMIP_TRUE;
+                c.ok = EMBED_TRUE;
                 return c;
             }
         }
@@ -355,7 +357,7 @@ IDEMIP_INLINE IdemIpIp6Chain ip6_walk(const Ip6Ctx *ctx)
         // the same section ignores, so only a non-zero one is recorded.
         if (c.next_hdr == IDEMIP_IP6_NH_ROUTING && !c.routed && idemip_ip6_rt_segs_left(p + c.offset) != 0u)
         {
-            c.routed = IDEMIP_TRUE;
+            c.routed = EMBED_TRUE;
             c.routing_hdr = c.offset;
         }
         // sec 4.2, over the two headers that carry options. An option that runs past its header is a
@@ -369,7 +371,7 @@ IDEMIP_INLINE IdemIpIp6Chain ip6_walk(const Ip6Ctx *ctx)
                 {
                     return c; // malformed, and c.ok is still false
                 }
-                c.refused = IDEMIP_TRUE;
+                c.refused = EMBED_TRUE;
                 c.opt_hdr = bad;
             }
         }
@@ -378,12 +380,12 @@ IDEMIP_INLINE IdemIpIp6Chain ip6_walk(const Ip6Ctx *ctx)
         c.offset += step;
         c.hops = (uint16_t)(c.hops + 1u);
     }
-    c.ok = IDEMIP_TRUE;
+    c.ok = EMBED_TRUE;
     return c;
 }
 
 /** @brief Octets of extension headers the walk stepped over, and zero for a walk that stopped short. */
-IDEMIP_INLINE size_t ip6_chain_ext_bytes(const Ip6Ctx *c)
+EMBED_INLINE size_t ip6_chain_ext_bytes(const Ip6Ctx *c)
 {
     return (c->chain->offset > IDEMIP_IP6_OFF_PAYLOAD) ? (c->chain->offset - IDEMIP_IP6_OFF_PAYLOAD) : 0u;
 }
@@ -401,7 +403,7 @@ IDEMIP_INLINE size_t ip6_chain_ext_bytes(const Ip6Ctx *c)
  * The addresses are summed where they lie, sixteen octets each, which is the same word pairing the
  * figure lays out. Not part of the packet: it is summed, never sent.
  */
-IDEMIP_INLINE uint32_t ip6_pseudo_accum(const Ip6Ctx *c)
+EMBED_INLINE uint32_t ip6_pseudo_accum(const Ip6Ctx *c)
 {
     uint32_t sum = c->sum;
     sum = idemip_cksum_accum(sum, c->src, IDEMIP_IP6_ADDR_LEN);
@@ -420,7 +422,7 @@ IDEMIP_INLINE uint32_t ip6_pseudo_accum(const Ip6Ctx *c)
  * present between the IPv6 header and the upper-layer header". A Payload Length shorter than the
  * headers the walk stepped gives zero rather than wrapping.
  */
-IDEMIP_INLINE uint32_t ip6_upper_len(const Ip6Ctx *c)
+EMBED_INLINE uint32_t ip6_upper_len(const Ip6Ctx *c)
 {
     uint32_t payload = (uint32_t)idemip_ip6_payload_len(c->h);
     uint32_t ext = (uint32_t)idemip_ip6_chain_ext_bytes(c->chain);
@@ -432,141 +434,141 @@ IDEMIP_INLINE uint32_t ip6_upper_len(const Ip6Ctx *c)
 
 uint8_t idemip_ip6_version(const uint8_t *h)
 {
-    return IDEMIP_CALL(ip6_version, Ip6Ctx, .h = h);
+    return EMBED_CALL(ip6_version, Ip6Ctx, .h = h);
 }
 
 uint8_t idemip_ip6_traffic_class(const uint8_t *h)
 {
-    return IDEMIP_CALL(ip6_traffic_class, Ip6Ctx, .h = h);
+    return EMBED_CALL(ip6_traffic_class, Ip6Ctx, .h = h);
 }
 
 uint32_t idemip_ip6_flow_label(const uint8_t *h)
 {
-    return IDEMIP_CALL(ip6_flow_label, Ip6Ctx, .h = h);
+    return EMBED_CALL(ip6_flow_label, Ip6Ctx, .h = h);
 }
 
 uint16_t idemip_ip6_payload_len(const uint8_t *h)
 {
-    return IDEMIP_CALL(ip6_payload_len, Ip6Ctx, .h = h);
+    return EMBED_CALL(ip6_payload_len, Ip6Ctx, .h = h);
 }
 
 uint8_t idemip_ip6_next_hdr(const uint8_t *h)
 {
-    return IDEMIP_CALL(ip6_next_hdr, Ip6Ctx, .h = h);
+    return EMBED_CALL(ip6_next_hdr, Ip6Ctx, .h = h);
 }
 
 uint8_t idemip_ip6_hop_limit(const uint8_t *h)
 {
-    return IDEMIP_CALL(ip6_hop_limit, Ip6Ctx, .h = h);
+    return EMBED_CALL(ip6_hop_limit, Ip6Ctx, .h = h);
 }
 
 const uint8_t *idemip_ip6_src(const uint8_t *h)
 {
-    return IDEMIP_CALL(ip6_src, Ip6Ctx, .h = h);
+    return EMBED_CALL(ip6_src, Ip6Ctx, .h = h);
 }
 
 const uint8_t *idemip_ip6_dst(const uint8_t *h)
 {
-    return IDEMIP_CALL(ip6_dst, Ip6Ctx, .h = h);
+    return EMBED_CALL(ip6_dst, Ip6Ctx, .h = h);
 }
 
 void idemip_ip6_build(uint8_t *h, const IdemIpIp6BuildArgs *a)
 {
-    IDEMIP_CALL(ip6_build, Ip6Ctx, .w = h, .a = a);
+    EMBED_CALL(ip6_build, Ip6Ctx, .w = h, .a = a);
 }
 
 void idemip_ip6_set_payload_len(uint8_t *h, uint16_t len)
 {
-    IDEMIP_CALL(ip6_set_payload_len, Ip6Ctx, .w = h, .v16 = len);
+    EMBED_CALL(ip6_set_payload_len, Ip6Ctx, .w = h, .v16 = len);
 }
 
 void idemip_ip6_set_next_hdr(uint8_t *h, uint8_t nh)
 {
-    IDEMIP_CALL(ip6_set_next_hdr, Ip6Ctx, .w = h, .v8 = nh);
+    EMBED_CALL(ip6_set_next_hdr, Ip6Ctx, .w = h, .v8 = nh);
 }
 
 void idemip_ip6_set_hop_limit(uint8_t *h, uint8_t hop_limit)
 {
-    IDEMIP_CALL(ip6_set_hop_limit, Ip6Ctx, .w = h, .v8 = hop_limit);
+    EMBED_CALL(ip6_set_hop_limit, Ip6Ctx, .w = h, .v8 = hop_limit);
 }
 
-idemip_bool idemip_ip6_nh_is_ext(uint8_t nh)
+embed_bool idemip_ip6_nh_is_ext(uint8_t nh)
 {
-    return IDEMIP_CALL(ip6_nh_is_ext, Ip6Ctx, .nh = nh);
+    return EMBED_CALL(ip6_nh_is_ext, Ip6Ctx, .nh = nh);
 }
 
 uint8_t idemip_ip6_ext_next_hdr(const uint8_t *e)
 {
-    return IDEMIP_CALL(ip6_ext_next_hdr, Ip6Ctx, .h = e);
+    return EMBED_CALL(ip6_ext_next_hdr, Ip6Ctx, .h = e);
 }
 
 size_t idemip_ip6_ext_len(const uint8_t *e)
 {
-    return IDEMIP_CALL(ip6_ext_len, Ip6Ctx, .h = e);
+    return EMBED_CALL(ip6_ext_len, Ip6Ctx, .h = e);
 }
 
 size_t idemip_ip6_opt_len(const uint8_t *o)
 {
-    return IDEMIP_CALL(ip6_opt_len, Ip6Ctx, .h = o);
+    return EMBED_CALL(ip6_opt_len, Ip6Ctx, .h = o);
 }
 
-idemip_bool idemip_ip6_opts_refused(const uint8_t *p, size_t first, size_t last, size_t *bad)
+embed_bool idemip_ip6_opts_refused(const uint8_t *p, size_t first, size_t last, size_t *bad)
 {
-    return IDEMIP_CALL(ip6_opts_refused, Ip6Ctx, .h = p, .first = first, .len = last, .bad = bad);
+    return EMBED_CALL(ip6_opts_refused, Ip6Ctx, .h = p, .first = first, .len = last, .bad = bad);
 }
 
 uint16_t idemip_ip6_frag_offset_bytes(const uint8_t *f)
 {
-    return IDEMIP_CALL(ip6_frag_offset_bytes, Ip6Ctx, .h = f);
+    return EMBED_CALL(ip6_frag_offset_bytes, Ip6Ctx, .h = f);
 }
 
-idemip_bool idemip_ip6_frag_more(const uint8_t *f)
+embed_bool idemip_ip6_frag_more(const uint8_t *f)
 {
-    return IDEMIP_CALL(ip6_frag_more, Ip6Ctx, .h = f);
+    return EMBED_CALL(ip6_frag_more, Ip6Ctx, .h = f);
 }
 
 uint32_t idemip_ip6_frag_ident(const uint8_t *f)
 {
-    return IDEMIP_CALL(ip6_frag_ident, Ip6Ctx, .h = f);
+    return EMBED_CALL(ip6_frag_ident, Ip6Ctx, .h = f);
 }
 
-void idemip_ip6_frag_build(uint8_t *f, uint8_t next_hdr, uint16_t offset_bytes, idemip_bool more, uint32_t ident)
+void idemip_ip6_frag_build(uint8_t *f, uint8_t next_hdr, uint16_t offset_bytes, embed_bool more, uint32_t ident)
 {
-    IDEMIP_CALL(ip6_frag_build, Ip6Ctx, .w = f, .nh = next_hdr, .v16 = offset_bytes, .more = more, .ident = ident);
+    EMBED_CALL(ip6_frag_build, Ip6Ctx, .w = f, .nh = next_hdr, .v16 = offset_bytes, .more = more, .ident = ident);
 }
 
 uint8_t idemip_ip6_rt_segs_left(const uint8_t *r)
 {
-    return IDEMIP_CALL(ip6_rt_segs_left, Ip6Ctx, .h = r);
+    return EMBED_CALL(ip6_rt_segs_left, Ip6Ctx, .h = r);
 }
 
 uint8_t idemip_ip6_rt_type(const uint8_t *r)
 {
-    return IDEMIP_CALL(ip6_rt_type, Ip6Ctx, .h = r);
+    return EMBED_CALL(ip6_rt_type, Ip6Ctx, .h = r);
 }
 
 IdemIpIp6Chain idemip_ip6_walk(const uint8_t *p, size_t len)
 {
-    return IDEMIP_CALL(ip6_walk, Ip6Ctx, .h = p, .len = len);
+    return EMBED_CALL(ip6_walk, Ip6Ctx, .h = p, .len = len);
 }
 
 size_t idemip_ip6_chain_ext_bytes(const IdemIpIp6Chain *c)
 {
-    return IDEMIP_CALL(ip6_chain_ext_bytes, Ip6Ctx, .chain = c);
+    return EMBED_CALL(ip6_chain_ext_bytes, Ip6Ctx, .chain = c);
 }
 
 uint32_t idemip_ip6_pseudo_accum(uint32_t sum, const uint8_t *src, const uint8_t *dst, uint32_t upper_len,
                                  uint8_t next_hdr)
 {
-    return IDEMIP_CALL(ip6_pseudo_accum, Ip6Ctx, .sum = sum, .src = src, .dst = dst, .upper_len = upper_len,
-                       .nh = next_hdr);
+    return EMBED_CALL(ip6_pseudo_accum, Ip6Ctx, .sum = sum, .src = src, .dst = dst, .upper_len = upper_len,
+                      .nh = next_hdr);
 }
 
 uint32_t idemip_ip6_upper_len(const uint8_t *h, const IdemIpIp6Chain *c)
 {
-    return IDEMIP_CALL(ip6_upper_len, Ip6Ctx, .h = h, .chain = c);
+    return EMBED_CALL(ip6_upper_len, Ip6Ctx, .h = h, .chain = c);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6

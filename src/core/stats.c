@@ -16,12 +16,13 @@
 
 #include "src/core/stats.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The pad below is the width left over, so the width has to cover the counters first.
-static_assert((size_t)(1u << IDEMIP_STATS_IF_ENTRY_SHIFT) >= ((size_t)IDEMIP_STAT_IF_COUNT << IDEMIP_STATS_CTR_SHIFT),
-              "an interface entry is narrower than the RFC 1213 sec 6.4 ifEntry counters - raise "
-              "IDEMIP_STATS_IF_ENTRY_SHIFT in idemip_config.h");
+EMBED_STATIC_ASSERT((size_t)(1u << IDEMIP_STATS_IF_ENTRY_SHIFT) >=
+                        ((size_t)IDEMIP_STAT_IF_COUNT << IDEMIP_STATS_CTR_SHIFT),
+                    "an interface entry is narrower than the RFC 1213 sec 6.4 ifEntry counters - raise "
+                    "IDEMIP_STATS_IF_ENTRY_SHIFT in idemip_config.h");
 
 // One interface's counters, padded to the published width so interface i sits at (i << SHIFT) and no
 // index multiplies. RFC 1213 sec 6.4: the 13 counters and gauges of ifEntry, at the id's index.
@@ -47,31 +48,33 @@ IDEMIP_ASSERT_REGION(IDEMIP_STATS_OFF_CTX, sizeof(StatsCtx), IDEMIP_STATS_BORROW
 #define STATS_IF_BYTES ((size_t)(IDEMIP_NETIF_COUNT) << IDEMIP_STATS_IF_ENTRY_SHIFT)
 
 // A counter is read and written as a uint32_t at (id << IDEMIP_STATS_CTR_SHIFT).
-static_assert(sizeof(uint32_t) == (1u << IDEMIP_STATS_CTR_SHIFT),
-              "IDEMIP_STATS_CTR_SHIFT is not the width of a counter");
+EMBED_STATIC_ASSERT(sizeof(uint32_t) == (1u << IDEMIP_STATS_CTR_SHIFT),
+                    "IDEMIP_STATS_CTR_SHIFT is not the width of a counter");
 
 // Interface i sits at (i << IDEMIP_STATS_IF_ENTRY_SHIFT), so the width is a power of two.
-static_assert(sizeof(StatsIfEntry) == (1u << IDEMIP_STATS_IF_ENTRY_SHIFT),
-              "StatsIfEntry is not 1 << IDEMIP_STATS_IF_ENTRY_SHIFT wide - pad it, or raise the shift in "
-              "idemip_config.h");
+EMBED_STATIC_ASSERT(sizeof(StatsIfEntry) == (1u << IDEMIP_STATS_IF_ENTRY_SHIFT),
+                    "StatsIfEntry is not 1 << IDEMIP_STATS_IF_ENTRY_SHIFT wide - pad it, or raise the shift in "
+                    "idemip_config.h");
 
 // The six field sets, each from the MIB that defines it: 17 in RFC 1213's IP group (sec 6.6) and 26
 // in its ICMP group (sec 6.7), both IPv4; 20 in RFC 2465's ipv6IfStatsEntry and 34 in RFC 2466's
 // ipv6IfIcmpEntry; then 10 in RFC 1213's TCP group (sec 6.8) and 4 in its UDP group (sec 6.9), which
 // both versions share. The two IPv6 sets are not the IPv4 sets over again, so this is a sum and not
 // a product.
-static_assert((size_t)IDEMIP_STAT_COUNT == 17u + 26u + 20u + 34u + 10u + 4u,
-              "the counter ids are not the RFC 1213, RFC 2465 and RFC 2466 group field sets");
-static_assert((size_t)IDEMIP_STAT_IF_COUNT == 13u, "the interface ids are not the RFC 1213 sec 6.4 ifEntry counters");
+EMBED_STATIC_ASSERT((size_t)IDEMIP_STAT_COUNT == 17u + 26u + 20u + 34u + 10u + 4u,
+                    "the counter ids are not the RFC 1213, RFC 2465 and RFC 2466 group field sets");
+EMBED_STATIC_ASSERT((size_t)IDEMIP_STAT_IF_COUNT == 13u,
+                    "the interface ids are not the RFC 1213 sec 6.4 ifEntry counters");
 
 // The caller's borrow, split: the operand block, the counters, the context, then the interface
 // table. stats.h publishes the offsets; the asserts below prove the span covers them before anything
 // runs.
-static_assert(IDEMIP_STATS_OFF_CTX + sizeof(StatsCtx) <= IDEMIP_STATS_OFF_IF,
-              "the operand block, the counters and the context overrun the interface table's offset - raise "
-              "IDEMIP_STATS_CTX_BYTES in idemip_config.h");
-static_assert(IDEMIP_STATS_OFF_IF + STATS_IF_BYTES <= IDEMIP_STATS_BORROW,
-              "IDEMIP_STATS_BORROW is short of the context and the interface table - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_STATS_OFF_CTX + sizeof(StatsCtx) <= IDEMIP_STATS_OFF_IF,
+                    "the operand block, the counters and the context overrun the interface table's offset - raise "
+                    "IDEMIP_STATS_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_STATS_OFF_IF + STATS_IF_BYTES <= IDEMIP_STATS_BORROW,
+    "IDEMIP_STATS_BORROW is short of the context and the interface table - raise it in idemip_config.h");
 
 // The regions, at their offsets in the caller's borrow.
 #define STATS_IO(w) IDEMIP_STATS_IO(w)
@@ -84,16 +87,16 @@ static_assert(IDEMIP_STATS_OFF_IF + STATS_IF_BYTES <= IDEMIP_STATS_BORROW,
 
 // RFC 1213 sec 6.8 gives tcpCurrEstab SYNTAX Gauge. Every other object of sec 6.6 through sec 6.9 is
 // SYNTAX Counter.
-static idemip_bool stats_group_is_gauge(IdemIpStatsCounter id)
+static embed_bool stats_group_is_gauge(IdemIpStatsCounter id)
 {
-    return (id == IDEMIP_STAT_TCP_CURR_ESTAB) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (id == IDEMIP_STAT_TCP_CURR_ESTAB) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 1213 sec 6.4 gives ifSpeed and ifOutQLen SYNTAX Gauge. The other eleven ifEntry objects here
 // are SYNTAX Counter.
-static idemip_bool stats_if_is_gauge(IdemIpStatsIfCounter id)
+static embed_bool stats_if_is_gauge(IdemIpStatsIfCounter id)
 {
-    return (id == IDEMIP_STAT_IF_SPEED || id == IDEMIP_STAT_IF_OUT_QLEN) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (id == IDEMIP_STAT_IF_SPEED || id == IDEMIP_STAT_IF_OUT_QLEN) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // --- the counter a call names ----------------------------------------------
@@ -119,9 +122,9 @@ void idemip_stats_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_STATS_OFF_CTR, 0, STATS_CTR_BYTES);
-    memset(work + IDEMIP_STATS_OFF_CTX, 0, sizeof(StatsCtx));
-    memset(work + IDEMIP_STATS_OFF_IF, 0, STATS_IF_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_STATS_OFF_CTR, .val = 0, .bytes = STATS_CTR_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_STATS_OFF_CTX, .val = 0, .bytes = sizeof(StatsCtx));
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_STATS_OFF_IF, .val = 0, .bytes = STATS_IF_BYTES);
     StatsCtx *ctx = STATS_CTX(work);
     ctx->magic = STATS_MAGIC;
     StatsIo *io = STATS_IO(work);
@@ -253,4 +256,4 @@ void idemip_stats_if_read(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

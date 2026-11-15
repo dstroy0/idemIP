@@ -37,8 +37,6 @@
 #include "src/ethernet/phy.h"
 #include "src/ethernet/mii_defines.h" // the Clause 22 register set this fake answers with
 
-#include <string.h>
-
 // Frames the wire holds in each direction. A power of two, so the index is a mask.
 #ifndef IDEMIP_FAKE_PHY_SLOTS
 #define IDEMIP_FAKE_PHY_SLOTS 16u
@@ -140,30 +138,30 @@ static inline void idemip_fake_phy_ev(IdemIpFakePhy *f, uint8_t what)
 // 100 Mbit full duplex, which is what a case that does not drive the link reads.
 static inline void idemip_fake_phy_attach(IdemIpFakePhy *f, uint8_t *rx_base, uint8_t *tx_base, const uint8_t *mac)
 {
-    memset(f, 0, sizeof *f);
+    *f = (IdemIpFakePhy){0};
     f->rx_base = rx_base;
     f->tx_base = tx_base;
-    memcpy(f->mac, mac, IDEMIP_MAC_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = f->mac, .at = mac, .size = IDEMIP_MAC_LEN);
     f->link.speed = IDEMIP_PHY_SPEED_100;
-    f->link.full_duplex = IDEMIP_TRUE;
-    f->link.up = IDEMIP_TRUE;
+    f->link.full_duplex = EMBED_TRUE;
+    f->link.up = EMBED_TRUE;
 }
 
 // Put @p len octets on the wire, as if the far end had just sent them. They reach a receive buffer
 // on the next poll, never before it.
-static inline idemip_bool idemip_fake_phy_feed(IdemIpFakePhy *f, const uint8_t *bytes, size_t len)
+static inline embed_bool idemip_fake_phy_feed(IdemIpFakePhy *f, const uint8_t *bytes, size_t len)
 {
     if (bytes == NULL || len == 0u || len > IDEMIP_DMA_FRAME_MAX ||
         (f->in_head - f->in_tail) >= IDEMIP_FAKE_PHY_SLOTS)
     {
         f->dropped_feeds++;
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     uint32_t slot = f->in_head & IDEMIP_FAKE_PHY_SLOT_MASK;
-    memcpy(f->in[slot], bytes, len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = f->in[slot], .at = bytes, .size = len);
     f->in_len[slot] = (uint16_t)len;
     f->in_head++;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // Transmitted frames waiting to be read back.
@@ -210,7 +208,7 @@ static inline size_t idemip_fake_phy_capture(IdemIpFakePhy *f, uint8_t *out, siz
     {
         return 0u;
     }
-    memcpy(out, frame, len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = out, .at = frame, .size = len);
     idemip_fake_phy_tx_drop(f);
     return len;
 }
@@ -238,8 +236,9 @@ static inline void idemip_fake_phy_poll(IdemIpFakePhy *f)
     {
         uint32_t from = f->tx_flight_tail & IDEMIP_FAKE_PHY_TX_MASK;
         uint32_t slot = f->out_head & IDEMIP_FAKE_PHY_SLOT_MASK;
-        memcpy(f->out[slot], f->tx_base + ((size_t)f->tx_flight_slot[from] * IDEMIP_DMA_BUF_STRIDE),
-               f->tx_flight_len[from]);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = f->out[slot],
+                   .at = f->tx_base + ((size_t)f->tx_flight_slot[from] * IDEMIP_DMA_BUF_STRIDE),
+                   .size = f->tx_flight_len[from]);
         f->out_len[slot] = f->tx_flight_len[from];
         f->out_head++;
         f->tx_flight_tail++;
@@ -249,7 +248,8 @@ static inline void idemip_fake_phy_poll(IdemIpFakePhy *f)
     {
         uint32_t src = f->in_tail & IDEMIP_FAKE_PHY_SLOT_MASK;
         uint32_t dst = f->rx_fill & IDEMIP_FAKE_PHY_RX_MASK;
-        memcpy(f->rx_base + ((size_t)dst * IDEMIP_DMA_BUF_STRIDE), f->in[src], f->in_len[src]);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = f->rx_base + ((size_t)dst * IDEMIP_DMA_BUF_STRIDE),
+                   .at = f->in[src], .size = f->in_len[src]);
         f->rx_len[dst] = f->in_len[src];
         f->rx_fill++;
         f->in_tail++;
@@ -310,21 +310,21 @@ static inline void idemip_fake_phy_poll(IdemIpFakePhy *f)
         f->tx_claims++;                                                                                                \
         return f->tx_base + ((size_t)slot * IDEMIP_DMA_BUF_STRIDE);                                                    \
     }                                                                                                                  \
-    static idemip_bool idemip_fake_phy_tx_commit_##port(size_t len)                                                    \
+    static embed_bool idemip_fake_phy_tx_commit_##port(size_t len)                                                     \
     {                                                                                                                  \
         IdemIpFakePhy *f = &g_idemip_fake_phy[port];                                                                   \
         idemip_fake_phy_ev(f, IDEMIP_FAKE_PHY_EV_TX_COMMIT);                                                           \
         if (f->tx_fails || len == 0u || len > IDEMIP_DMA_FRAME_MAX ||                                                  \
             (f->tx_flight_head - f->tx_flight_tail) >= IDEMIP_TX_DESCRIPTORS)                                          \
         {                                                                                                              \
-            return IDEMIP_FALSE;                                                                                       \
+            return EMBED_FALSE;                                                                                        \
         }                                                                                                              \
         uint32_t at = f->tx_flight_head & IDEMIP_FAKE_PHY_TX_MASK;                                                     \
         f->tx_flight_slot[at] = (f->tx_head - 1u) & IDEMIP_FAKE_PHY_TX_MASK;                                           \
         f->tx_flight_len[at] = (uint16_t)len;                                                                          \
         f->tx_flight_head++;                                                                                           \
         f->tx_commits++;                                                                                               \
-        return IDEMIP_TRUE;                                                                                            \
+        return EMBED_TRUE;                                                                                             \
     }                                                                                                                  \
     static void idemip_fake_phy_invalidate_##port(const void *p, size_t len)                                           \
     {                                                                                                                  \
@@ -342,28 +342,27 @@ static inline void idemip_fake_phy_poll(IdemIpFakePhy *f)
         f->last_clean = p;                                                                                             \
         f->last_clean_len = len;                                                                                       \
     }                                                                                                                  \
-    static idemip_bool idemip_fake_phy_mdio_read_##port(uint8_t addr, uint8_t reg, uint16_t *out)                       \
+    static embed_bool idemip_fake_phy_mdio_read_##port(uint8_t addr, uint8_t reg, uint16_t *out)                       \
     {                                                                                                                  \
         (void)addr;                                                                                                    \
         *out = g_idemip_fake_phy[port].regs[reg];                                                                      \
-        return IDEMIP_TRUE;                                                                                            \
+        return EMBED_TRUE;                                                                                             \
     }                                                                                                                  \
-    static idemip_bool idemip_fake_phy_mdio_write_##port(uint8_t addr, uint8_t reg, uint16_t val)                       \
+    static embed_bool idemip_fake_phy_mdio_write_##port(uint8_t addr, uint8_t reg, uint16_t val)                       \
     {                                                                                                                  \
         (void)addr;                                                                                                    \
         g_idemip_fake_phy[port].regs[reg] = val;                                                                       \
-        return IDEMIP_TRUE;                                                                                            \
+        return EMBED_TRUE;                                                                                             \
     }                                                                                                                  \
-    static const IdemIpPhyDriver idemip_fake_phy_drv_##port = {                                                        \
-        .link = idemip_fake_phy_link_##port,                                                                           \
-        .mac = idemip_fake_phy_mac_##port,                                                                             \
-        .rx_claim = idemip_fake_phy_rx_claim_##port,                                                                   \
-        .rx_release = idemip_fake_phy_rx_release_##port,                                                               \
-        .tx_claim = idemip_fake_phy_tx_claim_##port,                                                                   \
-        .tx_commit = idemip_fake_phy_tx_commit_##port,                                                                 \
-        .cache_invalidate = idemip_fake_phy_invalidate_##port,                                                         \
-        .cache_clean = idemip_fake_phy_clean_##port,                                                                   \
-        .mdio_read = idemip_fake_phy_mdio_read_##port,                                                                 \
-        .mdio_write = idemip_fake_phy_mdio_write_##port}
+    static const IdemIpPhyDriver idemip_fake_phy_drv_##port = {.link = idemip_fake_phy_link_##port,                    \
+                                                               .mac = idemip_fake_phy_mac_##port,                      \
+                                                               .rx_claim = idemip_fake_phy_rx_claim_##port,            \
+                                                               .rx_release = idemip_fake_phy_rx_release_##port,        \
+                                                               .tx_claim = idemip_fake_phy_tx_claim_##port,            \
+                                                               .tx_commit = idemip_fake_phy_tx_commit_##port,          \
+                                                               .cache_invalidate = idemip_fake_phy_invalidate_##port,  \
+                                                               .cache_clean = idemip_fake_phy_clean_##port,            \
+                                                               .mdio_read = idemip_fake_phy_mdio_read_##port,          \
+                                                               .mdio_write = idemip_fake_phy_mdio_write_##port}
 
 #endif // IDEMIP_TEST_FAKE_PHY_H

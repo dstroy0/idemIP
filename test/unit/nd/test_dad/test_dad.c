@@ -24,15 +24,17 @@
 
 #include "src/nd/dad.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because RFC 4862 sec 5 performs autoconfiguration "on a
 // per-interface basis". A canary follows each so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(IDEMIP_ALIGN) uint8_t work_a[IDEMIP_DAD_BORROW + 16];
-static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_DAD_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_DAD_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_DAD_BORROW + 16))
+static uint8_t *work_b;
 
 #define STATE_OFF ((size_t)IDEMIP_DAD_OFF_CTX)
 #define TABLE_OFF ((size_t)IDEMIP_DAD_OFF_ENTRIES)
@@ -52,15 +54,15 @@ static const uint8_t g_multicast[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0,
 static const uint8_t g_unspecified[IDEMIP_IP6_ADDR_LEN] = {0};
 
 // RFC 4862 sec 5.1: DupAddrDetectTransmits, "Default: 1", and a value of zero turns the procedure off.
-static const IdemIpDadCfg g_cfg_one = {1u, IDEMIP_FALSE};
-static const IdemIpDadCfg g_cfg_three = {3u, IDEMIP_FALSE};
-static const IdemIpDadCfg g_cfg_off = {0u, IDEMIP_FALSE};
-static const IdemIpDadCfg g_cfg_loopback = {1u, IDEMIP_TRUE};
+static const IdemIpDadCfg g_cfg_one = {1u, EMBED_FALSE};
+static const IdemIpDadCfg g_cfg_three = {3u, EMBED_FALSE};
+static const IdemIpDadCfg g_cfg_off = {0u, EMBED_FALSE};
+static const IdemIpDadCfg g_cfg_loopback = {1u, EMBED_TRUE};
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_DAD_BORROW, CANARY, cap - IDEMIP_DAD_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_DAD_BORROW, .val = CANARY, .bytes = cap - IDEMIP_DAD_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -73,14 +75,16 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_dad);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_dad);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // Every entry, in namespace order, so a new one added to DadNs is added here too.
@@ -104,7 +108,7 @@ static void bind_cfg(uint8_t *w, const IdemIpDadCfg *cfg)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(w)->status);
 }
 
-static void start_at(uint8_t *w, const uint8_t *addr, uint32_t now_ms, idemip_bool delay, idemip_bool hw_derived,
+static void start_at(uint8_t *w, const uint8_t *addr, uint32_t now_ms, embed_bool delay, embed_bool hw_derived,
                      uint32_t retrans_ms, uint32_t rand)
 {
     IO(w)->start_args.addr = addr;
@@ -122,7 +126,7 @@ static void tick_at(uint8_t *w, uint32_t now_ms)
     Dad.tick(w);
 }
 
-static void ns_in(uint8_t *w, const uint8_t *target, idemip_bool unspecified)
+static void ns_in(uint8_t *w, const uint8_t *target, embed_bool unspecified)
 {
     IO(w)->ns_in_args.target = target;
     IO(w)->ns_in_args.unspecified = unspecified;
@@ -151,9 +155,9 @@ void test_two_borrows_share_no_byte(void)
     bind_cfg(work_a, &g_cfg_one);
     bind_cfg(work_b, &g_cfg_three);
 
-    start_at(work_a, g_ll_hw, 0u, IDEMIP_FALSE, IDEMIP_TRUE, 1000u, 0u);
+    start_at(work_a, g_ll_hw, 0u, EMBED_FALSE, EMBED_TRUE, 1000u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-    start_at(work_b, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_b, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_b)->status);
 
     // a's machine is still a's after b's call.
@@ -169,7 +173,7 @@ void test_two_borrows_share_no_byte(void)
 // this module has.
 void test_clear_on_one_borrow_leaves_the_other_untouched(void)
 {
-    memset(work_b + STATE_OFF, 0xC3, STATE_END - STATE_OFF);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b + STATE_OFF, .val = 0xC3, .bytes = STATE_END - STATE_OFF);
     Dad.clear(work_a);
     for (size_t i = STATE_OFF; i < STATE_END; i++)
     {
@@ -183,8 +187,8 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
 {
     bind_cfg(work_a, &g_cfg_three);
     bind_cfg(work_b, &g_cfg_three);
-    start_at(work_a, g_global, 100u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
-    start_at(work_b, g_global, 100u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_global, 100u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
+    start_at(work_b, g_global, 100u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
 
     IO(work_a)->addr_args.addr = g_global;
     Dad.find(work_a);
@@ -229,7 +233,7 @@ void test_clear_reports_ok(void)
 
 void test_clear_zeroes_the_table(void)
 {
-    memset(work_a, 0xFF, IDEMIP_DAD_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_DAD_BORROW);
     Dad.clear(work_a);
     for (size_t i = TABLE_OFF; i < STATE_END; i++)
     {
@@ -241,7 +245,7 @@ void test_clear_zeroes_the_table(void)
 // cleared, so no bound configuration survives into the next use of the borrow.
 void test_clear_zeroes_the_context_apart_from_the_mark(void)
 {
-    memset(work_a, 0xFF, IDEMIP_DAD_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_DAD_BORROW);
     Dad.clear(work_a);
     size_t set = 0;
     for (size_t i = STATE_OFF; i < TABLE_OFF; i++)
@@ -272,11 +276,11 @@ void test_an_uncleared_borrow_is_refused(void)
     IO(work_a)->bind_args.cfg = &g_cfg_one;
     Dad.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 0u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
     tick_at(work_a, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
-    ns_in(work_a, g_global, IDEMIP_TRUE);
+    ns_in(work_a, g_global, EMBED_TRUE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
     na_in(work_a, g_global);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
@@ -294,7 +298,7 @@ void test_bind_refuses_a_null_configuration(void)
 void test_start_refuses_an_unbound_borrow(void)
 {
     Dad.clear(work_a);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 0u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
 }
 
@@ -305,7 +309,7 @@ void test_start_refuses_an_unbound_borrow(void)
 void test_start_refuses_a_multicast_address(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_multicast, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0u, 0u);
+    start_at(work_a, g_multicast, 0u, EMBED_FALSE, EMBED_FALSE, 0u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
 }
 
@@ -319,13 +323,13 @@ void test_start_refuses_an_anycast_address(void)
     IO(work_a)->start_args.retrans_ms = 0u;
     IO(work_a)->start_args.rand = 0u;
     IO(work_a)->start_args.now_ms = 0u;
-    IO(work_a)->start_args.delay = IDEMIP_FALSE;
-    IO(work_a)->start_args.hw_derived = IDEMIP_FALSE;
-    IO(work_a)->start_args.anycast = IDEMIP_TRUE;
+    IO(work_a)->start_args.delay = EMBED_FALSE;
+    IO(work_a)->start_args.hw_derived = EMBED_FALSE;
+    IO(work_a)->start_args.anycast = EMBED_TRUE;
     Dad.start(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "DAD was started on an anycast address");
     // No slot was taken, so the same address opens as a unicast one.
-    IO(work_a)->start_args.anycast = IDEMIP_FALSE;
+    IO(work_a)->start_args.anycast = EMBED_FALSE;
     Dad.start(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 }
@@ -338,7 +342,7 @@ void test_a_retrans_timer_past_a_32_bit_deadline_is_served_whole(void)
     const uint32_t retrans = 0xFFFFFFFFu; // 49.7 days, past what a 32-bit deadline could arm
 
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, retrans, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, retrans, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
     // The first tick sends the solicitation and arms the wait at the advertised RetransTimer.
@@ -355,14 +359,14 @@ void test_a_retrans_timer_past_a_32_bit_deadline_is_served_whole(void)
 void test_start_refuses_the_unspecified_address(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_unspecified, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0u, 0u);
+    start_at(work_a, g_unspecified, 0u, EMBED_FALSE, EMBED_FALSE, 0u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
 }
 
 void test_start_refuses_a_null_address(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, NULL, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0u, 0u);
+    start_at(work_a, NULL, 0u, EMBED_FALSE, EMBED_FALSE, 0u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
 }
 
@@ -371,9 +375,9 @@ void test_start_refuses_a_null_address(void)
 void test_start_refuses_an_address_already_in_the_table(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 0u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 0u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
 }
 
@@ -382,26 +386,26 @@ void test_a_full_table_is_busy_and_a_stop_frees_a_slot(void)
 {
     bind_cfg(work_a, &g_cfg_one);
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
-    memcpy(addr, g_global, sizeof addr);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = addr, .at = g_global, .size = sizeof addr);
     for (uint8_t i = 0; i < (uint8_t)IDEMIP_IP6_ADDRESSES; i++)
     {
         addr[15] = (uint8_t)(0x10u + i);
-        start_at(work_a, addr, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0u, 0u);
+        start_at(work_a, addr, 0u, EMBED_FALSE, EMBED_FALSE, 0u, 0u);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     }
     addr[15] = 0xEE;
-    start_at(work_a, addr, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0u, 0u);
+    start_at(work_a, addr, 0u, EMBED_FALSE, EMBED_FALSE, 0u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
 
     uint8_t freed[IDEMIP_IP6_ADDR_LEN];
-    memcpy(freed, g_global, sizeof freed);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = freed, .at = g_global, .size = sizeof freed);
     freed[15] = 0x10u;
     IO(work_a)->addr_args.addr = freed;
     Dad.stop(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
     addr[15] = 0xEE;
-    start_at(work_a, addr, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0u, 0u);
+    start_at(work_a, addr, 0u, EMBED_FALSE, EMBED_FALSE, 0u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 }
 
@@ -426,7 +430,7 @@ void test_find_refuses_an_address_that_is_not_in_the_table(void)
 void test_zero_transmits_skips_the_procedure(void)
 {
     bind_cfg(work_a, &g_cfg_off);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 0u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->unique, "a zero DupAddrDetectTransmits leaves the address unique at once");
     TEST_ASSERT_EQUAL_INT(IDEMIP_DAD_STATE_UNIQUE, IO(work_a)->state);
@@ -444,7 +448,7 @@ void test_zero_transmits_skips_the_procedure(void)
 void test_the_first_tick_joins_and_solicits(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_ll_hw, 0u, IDEMIP_FALSE, IDEMIP_TRUE, 1000u, 0u);
+    start_at(work_a, g_ll_hw, 0u, EMBED_FALSE, EMBED_TRUE, 1000u, 0u);
     tick_at(work_a, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->join, "sec 5.4.2 joins before the first solicitation");
@@ -456,7 +460,7 @@ void test_the_first_tick_joins_and_solicits(void)
 void test_the_solicitation_target_is_the_address_being_checked(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_ll_hw, 0u, IDEMIP_FALSE, IDEMIP_TRUE, 1000u, 0u);
+    start_at(work_a, g_ll_hw, 0u, EMBED_FALSE, EMBED_TRUE, 1000u, 0u);
     tick_at(work_a, 0u);
     TEST_ASSERT_NOT_NULL(IO(work_a)->target);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(g_ll_hw, IO(work_a)->target, IDEMIP_IP6_ADDR_LEN);
@@ -471,7 +475,7 @@ void test_the_solicited_node_address_is_the_prefix_and_the_low_24_bits(void)
     static const uint8_t expected[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0,    0,    0,    0,
                                                           0,    0,    0, 1, 0xFF, 0x9A, 0xBC, 0xDE};
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_ll_hw, 0u, IDEMIP_FALSE, IDEMIP_TRUE, 1000u, 0u);
+    start_at(work_a, g_ll_hw, 0u, EMBED_FALSE, EMBED_TRUE, 1000u, 0u);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, IO(work_a)->solicited, IDEMIP_IP6_ADDR_LEN);
 }
 
@@ -482,9 +486,11 @@ void test_the_solicited_node_address_lies_in_the_printed_range(void)
     static const uint8_t low[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0xFF, 0, 0, 0};
     static const uint8_t high[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0xFF, 0xFF, 0xFF, 0xFF};
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
-    TEST_ASSERT_TRUE(memcmp(IO(work_a)->solicited, low, IDEMIP_IP6_ADDR_LEN) >= 0);
-    TEST_ASSERT_TRUE(memcmp(IO(work_a)->solicited, high, IDEMIP_IP6_ADDR_LEN) <= 0);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
+    TEST_ASSERT_TRUE(EMBED_CALL(memor.cmp, MemoriaCfg, .src = IO(work_a)->solicited, .other = low,
+                                .bytes = IDEMIP_IP6_ADDR_LEN) >= 0);
+    TEST_ASSERT_TRUE(EMBED_CALL(memor.cmp, MemoriaCfg, .src = IO(work_a)->solicited, .other = high,
+                                .bytes = IDEMIP_IP6_ADDR_LEN) <= 0);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(low, IO(work_a)->solicited, 13);
 }
 
@@ -498,7 +504,7 @@ void test_the_delay_is_drawn_between_zero_and_max_rtr_solicitation_delay(void)
         Dad.clear(work_a);
         IO(work_a)->bind_args.cfg = &g_cfg_one;
         Dad.bind(work_a);
-        start_at(work_a, g_global, 1000u, IDEMIP_TRUE, IDEMIP_FALSE, 1000u, r);
+        start_at(work_a, g_global, 1000u, EMBED_TRUE, EMBED_FALSE, 1000u, r);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
         TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->deadline >= 1000u, "the delay ran backwards");
         TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->deadline <= 1000u + IDEMIP_ND6_MAX_RTR_SOLICITATION_DELAY_MS,
@@ -511,7 +517,7 @@ void test_the_delay_is_drawn_between_zero_and_max_rtr_solicitation_delay(void)
 void test_the_delay_holds_the_first_solicitation_back(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_TRUE, IDEMIP_FALSE, 1000u, 0xFFFFu);
+    start_at(work_a, g_global, 0u, EMBED_TRUE, EMBED_FALSE, 1000u, 0xFFFFu);
     // The deadline is a 64-bit stamp; tick takes the 32-bit clock the API is stated in, and this
     // one was computed from a 32-bit now_ms, so the narrowing is exact and is spelled out.
     IdemIpMs due = IO(work_a)->deadline;
@@ -528,7 +534,7 @@ void test_the_delay_holds_the_first_solicitation_back(void)
 void test_no_delay_solicits_on_the_next_tick(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 500u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0xFFFFu);
+    start_at(work_a, g_global, 500u, EMBED_FALSE, EMBED_FALSE, 1000u, 0xFFFFu);
     TEST_ASSERT_EQUAL_UINT32(500u, IO(work_a)->deadline);
     tick_at(work_a, 500u);
     TEST_ASSERT_TRUE(IO(work_a)->send_ns);
@@ -539,7 +545,7 @@ void test_no_delay_solicits_on_the_next_tick(void)
 void test_solicitations_are_spaced_by_retrans_timer(void)
 {
     bind_cfg(work_a, &g_cfg_three);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 700u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 700u, 0u);
     for (uint8_t i = 1; i <= 3u; i++)
     {
         // A millisecond before the deadline nothing is due, so the spacing is a floor and not just
@@ -620,7 +626,7 @@ void test_solicitations_are_spaced_by_retrans_timer(void)
 void test_the_procedure_ends_one_retrans_timer_after_the_last_solicitation(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 700u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 700u, 0u);
     tick_at(work_a, 0u);
     TEST_ASSERT_TRUE(IO(work_a)->send_ns);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DAD_STATE_WAIT, IO(work_a)->state);
@@ -644,7 +650,7 @@ void test_the_procedure_ends_one_retrans_timer_after_the_last_solicitation(void)
 void test_a_retrans_timer_past_the_deadline_span_still_waits(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0xFFFFFFFFu, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 0xFFFFFFFFu, 0u);
     tick_at(work_a, 0u);
     TEST_ASSERT_TRUE(IO(work_a)->send_ns);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DAD_STATE_WAIT, IO(work_a)->state);
@@ -660,7 +666,7 @@ void test_a_retrans_timer_past_the_deadline_span_still_waits(void)
 void test_a_zero_retrans_timer_takes_the_rfc_4861_default(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 0u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 0u, 0u);
     tick_at(work_a, 0u);
     TEST_ASSERT_EQUAL_UINT32(IDEMIP_ND6_RETRANS_TIMER_MS, IO(work_a)->deadline);
 }
@@ -677,8 +683,8 @@ void test_a_tick_with_nothing_due_is_busy(void)
 void test_a_tick_reports_one_event_per_call(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
-    start_at(work_a, g_global2, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
+    start_at(work_a, g_global2, 0u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
 
     tick_at(work_a, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -697,8 +703,8 @@ void test_a_tick_reports_one_event_per_call(void)
 void test_a_solicitation_received_before_one_is_sent_is_a_duplicate(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
-    ns_in(work_a, g_global, IDEMIP_TRUE);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
+    ns_in(work_a, g_global, EMBED_TRUE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->duplicate, "a solicitation before one was sent is a duplicate");
     TEST_ASSERT_EQUAL_INT(IDEMIP_DAD_STATE_DUPLICATE, IO(work_a)->state);
@@ -710,12 +716,12 @@ void test_a_solicitation_received_before_one_is_sent_is_a_duplicate(void)
 void test_a_solicitation_beyond_the_loopback_expectation_is_a_duplicate(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
     tick_at(work_a, 0u);
     TEST_ASSERT_TRUE(IO(work_a)->send_ns);
 
     // This interface does not loop back, so one received solicitation is one too many.
-    ns_in(work_a, g_global, IDEMIP_TRUE);
+    ns_in(work_a, g_global, EMBED_TRUE);
     TEST_ASSERT_TRUE(IO(work_a)->duplicate);
     TEST_ASSERT_EQUAL_UINT8(1u, IO(work_a)->received);
 }
@@ -725,15 +731,15 @@ void test_a_solicitation_beyond_the_loopback_expectation_is_a_duplicate(void)
 void test_a_looped_back_solicitation_is_not_a_duplicate(void)
 {
     bind_cfg(work_a, &g_cfg_loopback);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
     tick_at(work_a, 0u);
     TEST_ASSERT_TRUE(IO(work_a)->send_ns);
 
-    ns_in(work_a, g_global, IDEMIP_TRUE);
+    ns_in(work_a, g_global, EMBED_TRUE);
     TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->duplicate, "the node's own looped-back solicitation is not a duplicate");
     TEST_ASSERT_TRUE(IO(work_a)->tentative);
 
-    ns_in(work_a, g_global, IDEMIP_TRUE);
+    ns_in(work_a, g_global, EMBED_TRUE);
     TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->duplicate, "a second solicitation exceeds what loopback explains");
 }
 
@@ -743,9 +749,9 @@ void test_a_looped_back_solicitation_is_not_a_duplicate(void)
 void test_a_solicitation_from_a_unicast_source_is_ignored(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
     tick_at(work_a, 0u);
-    ns_in(work_a, g_global, IDEMIP_FALSE);
+    ns_in(work_a, g_global, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->duplicate, "a unicast-sourced solicitation is not a duplicate test");
     TEST_ASSERT_EQUAL_UINT8(0u, IO(work_a)->received);
@@ -758,7 +764,7 @@ void test_a_solicitation_from_a_unicast_source_is_ignored(void)
 void test_a_solicitation_for_an_unknown_target_is_not_tentative(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    ns_in(work_a, g_global, IDEMIP_TRUE);
+    ns_in(work_a, g_global, EMBED_TRUE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_FALSE(IO(work_a)->tentative);
     TEST_ASSERT_FALSE(IO(work_a)->duplicate);
@@ -769,11 +775,11 @@ void test_a_solicitation_for_an_unknown_target_is_not_tentative(void)
 void test_a_solicitation_for_a_unique_address_is_not_tentative(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 700u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 700u, 0u);
     tick_at(work_a, 0u);
     tick_at(work_a, 700u);
     TEST_ASSERT_TRUE(IO(work_a)->unique);
-    ns_in(work_a, g_global, IDEMIP_TRUE);
+    ns_in(work_a, g_global, EMBED_TRUE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_FALSE(IO(work_a)->tentative);
     TEST_ASSERT_FALSE(IO(work_a)->duplicate);
@@ -785,7 +791,7 @@ void test_a_solicitation_for_a_unique_address_is_not_tentative(void)
 void test_an_advertisement_for_a_tentative_address_is_a_duplicate(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
     tick_at(work_a, 0u);
     na_in(work_a, g_global);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -811,7 +817,7 @@ void test_an_advertisement_for_an_unknown_target_is_not_tentative(void)
 void test_a_duplicate_hardware_derived_link_local_disables_ip(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_ll_hw, 0u, IDEMIP_FALSE, IDEMIP_TRUE, 1000u, 0u);
+    start_at(work_a, g_ll_hw, 0u, EMBED_FALSE, EMBED_TRUE, 1000u, 0u);
     na_in(work_a, g_ll_hw);
     TEST_ASSERT_TRUE(IO(work_a)->duplicate);
     TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->disable_ip, "sec 5.4.5 disables IP operation on this one");
@@ -823,7 +829,7 @@ void test_a_duplicate_hardware_derived_link_local_disables_ip(void)
 void test_a_duplicate_link_local_that_is_not_hardware_derived_leaves_ip_up(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_ll_other, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_ll_other, 0u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
     na_in(work_a, g_ll_other);
     TEST_ASSERT_TRUE(IO(work_a)->duplicate);
     TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->disable_ip, "only a hardware-derived link-local disables IP operation");
@@ -834,7 +840,7 @@ void test_a_duplicate_link_local_that_is_not_hardware_derived_leaves_ip_up(void)
 void test_a_duplicate_global_address_does_not_disable_ip(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_TRUE, 1000u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_TRUE, 1000u, 0u);
     na_in(work_a, g_global);
     TEST_ASSERT_TRUE(IO(work_a)->duplicate);
     TEST_ASSERT_FALSE(IO(work_a)->disable_ip);
@@ -845,7 +851,7 @@ void test_a_duplicate_global_address_does_not_disable_ip(void)
 void test_a_duplicate_never_becomes_unique(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 700u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 700u, 0u);
     tick_at(work_a, 0u);
     na_in(work_a, g_global);
     TEST_ASSERT_TRUE(IO(work_a)->duplicate);
@@ -861,7 +867,7 @@ void test_a_duplicate_never_becomes_unique(void)
 void test_a_duplicate_holds_its_answer_until_it_is_stopped(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 700u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 700u, 0u);
     na_in(work_a, g_global);
     IO(work_a)->addr_args.addr = g_global;
     Dad.find(work_a);
@@ -882,8 +888,8 @@ void test_two_borrows_run_independent_machines(void)
 {
     bind_cfg(work_a, &g_cfg_one);
     bind_cfg(work_b, &g_cfg_one);
-    start_at(work_a, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 700u, 0u);
-    start_at(work_b, g_global, 0u, IDEMIP_FALSE, IDEMIP_FALSE, 700u, 0u);
+    start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 700u, 0u);
+    start_at(work_b, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 700u, 0u);
 
     na_in(work_a, g_global);
     TEST_ASSERT_TRUE(IO(work_a)->duplicate);
@@ -908,7 +914,7 @@ void test_two_borrows_run_independent_machines(void)
 void test_the_entries_refuse_a_call_that_names_no_address(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_global, 1000u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
     IO(work_a)->addr_args.addr = NULL;
@@ -917,19 +923,19 @@ void test_the_entries_refuse_a_call_that_names_no_address(void)
     Dad.stop(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a stop of no address was made");
 
-    ns_in(work_a, NULL, IDEMIP_TRUE);
+    ns_in(work_a, NULL, EMBED_TRUE);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a solicitation for no target was taken");
     na_in(work_a, NULL);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "an advertisement for no target was taken");
 
     // Bytes clear has not run on.
-    memset(work_b, 0xFF, IDEMIP_DAD_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b, .val = 0xFF, .bytes = IDEMIP_DAD_BORROW);
     IO(work_b)->addr_args.addr = g_global;
     Dad.find(work_b);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "find read an uncleared borrow");
     Dad.stop(work_b);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "stop read an uncleared borrow");
-    ns_in(work_b, g_global, IDEMIP_TRUE);
+    ns_in(work_b, g_global, EMBED_TRUE);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "ns_in read an uncleared borrow");
     na_in(work_b, g_global);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "na_in read an uncleared borrow");
@@ -949,7 +955,7 @@ void test_the_link_local_test_is_the_first_ten_bits(void)
 {
     static const uint8_t site_local[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0xC0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, site_local, 1000u, IDEMIP_FALSE, IDEMIP_TRUE, 1000u, 0u);
+    start_at(work_a, site_local, 1000u, EMBED_FALSE, EMBED_TRUE, 1000u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
     na_in(work_a, site_local);
@@ -965,7 +971,7 @@ void test_the_link_local_test_is_the_first_ten_bits(void)
 void test_an_advertisement_about_an_address_already_unique_is_not_a_duplicate(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_global, 1000u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
     tick_at(work_a, 1000u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     tick_at(work_a, 3000u);
@@ -991,9 +997,9 @@ void test_an_advertisement_about_an_address_already_unique_is_not_a_duplicate(vo
 // rather than turning over and reading as fewer than were sent.
 void test_the_count_of_looped_back_solicitations_holds_at_the_top_of_its_width(void)
 {
-    static const IdemIpDadCfg cfg_many = {0xFFu, IDEMIP_TRUE};
+    static const IdemIpDadCfg cfg_many = {0xFFu, EMBED_TRUE};
     bind_cfg(work_a, &cfg_many);
-    start_at(work_a, g_global, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_global, 1000u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
     // One solicitation out and the same one back, as many times as the octet holds.
@@ -1002,16 +1008,16 @@ void test_the_count_of_looped_back_solicitations_holds_at_the_top_of_its_width(v
     {
         tick_at(work_a, now);
         now += 1000u;
-        ns_in(work_a, g_global, IDEMIP_TRUE);
+        ns_in(work_a, g_global, EMBED_TRUE);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     }
 
     // The count is at the top of its octet now, and the address is still waiting out the last
     // solicitation. Two more loopbacks land on a count that cannot rise, and do not read as
     // solicitations from somebody else.
-    ns_in(work_a, g_global, IDEMIP_TRUE);
+    ns_in(work_a, g_global, EMBED_TRUE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-    ns_in(work_a, g_global, IDEMIP_TRUE);
+    ns_in(work_a, g_global, EMBED_TRUE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
     // Every solicitation it saw was one of its own, so the address is still tentative and not a
@@ -1031,7 +1037,7 @@ void test_the_sweep_passes_over_an_address_it_has_already_decided(void)
     bind_cfg(work_a, &g_cfg_one);
 
     // One address made a duplicate by an advertisement while it was tentative.
-    start_at(work_a, g_global, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_global, 1000u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     tick_at(work_a, 1000u);
     na_in(work_a, g_global);
@@ -1041,7 +1047,7 @@ void test_the_sweep_passes_over_an_address_it_has_already_decided(void)
                                   "the advertisement was not a duplicate");
 
     // A second address behind it, which the sweep does reach.
-    start_at(work_a, g_global2, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_global2, 1000u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     tick_at(work_a, 2000u);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IO(work_a)->status,
@@ -1057,7 +1063,7 @@ void test_the_sweep_passes_over_an_address_it_has_already_decided(void)
 void test_an_advertisement_inside_the_last_interval_is_still_about_a_tentative_address(void)
 {
     bind_cfg(work_a, &g_cfg_one);
-    start_at(work_a, g_global, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_global, 1000u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
     tick_at(work_a, 1000u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 
@@ -1081,7 +1087,7 @@ void test_an_advertisement_inside_the_last_interval_is_still_about_a_tentative_a
 void test_an_advertisement_between_two_solicitations_is_about_a_tentative_address(void)
 {
     bind_cfg(work_a, &g_cfg_three);
-    start_at(work_a, g_global, 1000u, IDEMIP_FALSE, IDEMIP_FALSE, 1000u, 0u);
+    start_at(work_a, g_global, 1000u, EMBED_FALSE, EMBED_FALSE, 1000u, 0u);
     tick_at(work_a, 1000u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
 

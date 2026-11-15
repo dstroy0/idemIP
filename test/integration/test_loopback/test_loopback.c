@@ -26,15 +26,16 @@
 #include "support/fake_phy.h"
 #include "support/pcap.h"
 
-#include <string.h>
-#include <unity.h>
+#include "src/arp/arp_defines.h"
 #include "src/common_defines.h"
 #include "src/ethernet/ethernet_defines.h"
-#include "src/arp/arp_defines.h"
-#include "src/ip/ipv4_defines.h"
 #include "src/icmp/icmp_defines.h"
+#include "src/ip/ipv4_defines.h"
 #include "src/tcp/tcp_defines.h"
 #include "src/udp/udp_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 IDEMIP_FAKE_PHY_STORAGE;
 IDEMIP_FAKE_PHY_DRIVER(0);
@@ -99,7 +100,7 @@ typedef struct
 
 typedef struct
 {
-    Borrows b;
+    Borrows *b;
     IdemIpFakePhy *rig;
     const IdemIpPhyDriver *drv;
     uint8_t mac[IDEMIP_MAC_LEN];
@@ -147,12 +148,22 @@ typedef struct
 
 // The driver's frame storage: not a borrow, so IDEMIP_TOTAL_BORROW does not count it. A base has to
 // start on a cache line, which is what Dma.bind checks.
-static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t g_rx_bufs[2][IDEMIP_RX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE];
-static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t g_tx_bufs[2][IDEMIP_TX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE];
+// Each set is its own MMgr pool, which MMGR_ALIGN_BYTES puts on a cache line. The writable bytes are the
+// pool's storage array.
+#define RX_BUFS_BYTES ((size_t)IDEMIP_RX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE)
+#define TX_BUFS_BYTES ((size_t)IDEMIP_TX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE)
+ParsMemoriaeInternae(g_rx_bufs_a, RX_BUFS_BYTES);
+ParsMemoriaeInternae(g_rx_bufs_b, RX_BUFS_BYTES);
+ParsMemoriaeInternae(g_tx_bufs_a, TX_BUFS_BYTES);
+ParsMemoriaeInternae(g_tx_bufs_b, TX_BUFS_BYTES);
 
 static Node g_a;
 static Node g_b;
 static Borrows g_snapshot;
+
+// The cell of each instance, taken once for the whole run. node_setup clears the node and hands it
+// the cell again.
+static Borrows *g_node_borrows[2];
 
 static uint32_t g_now_ms;
 static IdemIpPcap g_pcap;
@@ -182,19 +193,19 @@ static const uint8_t ISN_SECRET_B[IDEMIP_TCP_ISN_SECRET_BYTES] = {0xF1, 0xE2, 0x
 
 static void arm_canaries(Borrows *w)
 {
-    memset(w->k_phy, CANARY, CANARY_LEN);
-    memset(w->k_dma, CANARY, CANARY_LEN);
-    memset(w->k_netif, CANARY, CANARY_LEN);
-    memset(w->k_arp, CANARY, CANARY_LEN);
-    memset(w->k_reass, CANARY, CANARY_LEN);
-    memset(w->k_frag, CANARY, CANARY_LEN);
-    memset(w->k_icmp, CANARY, CANARY_LEN);
-    memset(w->k_udp, CANARY, CANARY_LEN);
-    memset(w->k_tpcb, CANARY, CANARY_LEN);
-    memset(w->k_tin, CANARY, CANARY_LEN);
-    memset(w->k_tout, CANARY, CANARY_LEN);
-    memset(w->k_isn, CANARY, CANARY_LEN);
-    memset(w->k_stats, CANARY, CANARY_LEN);
+    fill_bytes(w->k_phy, CANARY, CANARY_LEN);
+    fill_bytes(w->k_dma, CANARY, CANARY_LEN);
+    fill_bytes(w->k_netif, CANARY, CANARY_LEN);
+    fill_bytes(w->k_arp, CANARY, CANARY_LEN);
+    fill_bytes(w->k_reass, CANARY, CANARY_LEN);
+    fill_bytes(w->k_frag, CANARY, CANARY_LEN);
+    fill_bytes(w->k_icmp, CANARY, CANARY_LEN);
+    fill_bytes(w->k_udp, CANARY, CANARY_LEN);
+    fill_bytes(w->k_tpcb, CANARY, CANARY_LEN);
+    fill_bytes(w->k_tin, CANARY, CANARY_LEN);
+    fill_bytes(w->k_tout, CANARY, CANARY_LEN);
+    fill_bytes(w->k_isn, CANARY, CANARY_LEN);
+    fill_bytes(w->k_stats, CANARY, CANARY_LEN);
 }
 
 static void check_one_canary(const uint8_t *k, const char *what)
@@ -227,27 +238,27 @@ static void check_canaries(const Borrows *w)
 // A transmit descriptor to build into, with its index. Null when the ring had no room.
 static uint8_t *node_tx_claim(Node *n, uint8_t *desc)
 {
-    Dma.tx_take(n->b.dma);
-    if (IDEMIP_DMA_IO(n->b.dma)->status != IDEMIP_OK)
+    Dma.tx_take(n->b->dma);
+    if (IDEMIP_DMA_IO(n->b->dma)->status != IDEMIP_OK)
     {
         return NULL;
     }
-    *desc = IDEMIP_DMA_IO(n->b.dma)->index;
-    return IDEMIP_DMA_IO(n->b.dma)->buf;
+    *desc = IDEMIP_DMA_IO(n->b->dma)->index;
+    return IDEMIP_DMA_IO(n->b->dma)->buf;
 }
 
-static idemip_bool node_tx_post(Node *n, uint8_t desc, size_t frame_len)
+static embed_bool node_tx_post(Node *n, uint8_t desc, size_t frame_len)
 {
-    IDEMIP_DMA_IO(n->b.dma)->desc_args.index = desc;
-    IDEMIP_DMA_IO(n->b.dma)->desc_args.len = (uint16_t)frame_len;
-    Dma.tx_post(n->b.dma);
-    return (idemip_bool)(IDEMIP_DMA_IO(n->b.dma)->status == IDEMIP_OK);
+    IDEMIP_DMA_IO(n->b->dma)->desc_args.index = desc;
+    IDEMIP_DMA_IO(n->b->dma)->desc_args.len = (uint16_t)frame_len;
+    Dma.tx_post(n->b->dma);
+    return (embed_bool)(IDEMIP_DMA_IO(n->b->dma)->status == IDEMIP_OK);
 }
 
 // Frame an IPv4 datagram already written at @p frame + IDEMIP_ETH_HDR_LEN and post it. Its Total
 // Length is the datagram's own, RFC 894's pad being no part of it.
-static idemip_bool node_send_frame(Node *n, uint8_t *frame, uint8_t desc, const uint8_t *dst_mac, uint16_t ethertype,
-                                   size_t payload_len)
+static embed_bool node_send_frame(Node *n, uint8_t *frame, uint8_t desc, const uint8_t *dst_mac, uint16_t ethertype,
+                                  size_t payload_len)
 {
     idemip_eth_build(frame, dst_mac, n->mac, ethertype);
     size_t padded = idemip_eth_pad(frame, payload_len);
@@ -268,11 +279,11 @@ typedef struct
     size_t plen;
 } NodeSendIp4Args;
 
-static idemip_bool node_send_ip4_ctx(const NodeSendIp4Args *args)
+static embed_bool node_send_ip4_ctx(const NodeSendIp4Args *args)
 {
     IdemIpIp4Fields f;
 
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.total_len = (uint16_t)(IDEMIP_IPV4_HDR_LEN + args->plen);
     f.id = args->id;
     f.ttl = (uint8_t)IDEMIP_IP_DEFAULT_TTL;
@@ -283,18 +294,18 @@ static idemip_bool node_send_ip4_ctx(const NodeSendIp4Args *args)
     return node_send_frame(args->n, args->frame, args->desc, args->dst_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4, IDEMIP_IPV4_HDR_LEN + args->plen);
 }
 
-#define node_send_ip4(...) IDEMIP_CALL(node_send_ip4_ctx, NodeSendIp4Args, __VA_ARGS__)
+#define node_send_ip4(...) EMBED_CALL(node_send_ip4_ctx, NodeSendIp4Args, __VA_ARGS__)
 
 // The RFC 826 REQUEST for @p tpa, broadcast, which "Packet Generation" sends when the pair is
 // missing from the translation table.
-static idemip_bool node_send_arp_request(Node *n, uint32_t tpa)
+static embed_bool node_send_arp_request(Node *n, uint32_t tpa)
 {
     uint8_t desc = 0;
     uint8_t *frame = node_tx_claim(n, &desc);
 
     if (frame == NULL)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     idemip_arp_build_request(frame + IDEMIP_ETH_HDR_LEN, n->mac, n->ip, tpa);
     n->arp_requests_out++;
@@ -306,13 +317,13 @@ static idemip_bool node_send_arp_request(Node *n, uint32_t tpa)
 // the packet will be retransmitted by a higher network layer".
 static const uint8_t *node_resolve(Node *n, uint32_t ip)
 {
-    IDEMIP_ARP_IO(n->b.arp)->now_ms = g_now_ms;
-    IDEMIP_ARP_IO(n->b.arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
-    IDEMIP_ARP_IO(n->b.arp)->find_args.spa = ip;
-    ArpTable.find(n->b.arp);
-    if (IDEMIP_ARP_IO(n->b.arp)->status == IDEMIP_OK)
+    IDEMIP_ARP_IO(n->b->arp)->now_ms = g_now_ms;
+    IDEMIP_ARP_IO(n->b->arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
+    IDEMIP_ARP_IO(n->b->arp)->find_args.spa = ip;
+    ArpTable.find(n->b->arp);
+    if (IDEMIP_ARP_IO(n->b->arp)->status == IDEMIP_OK)
     {
-        return IDEMIP_ARP_IO(n->b.arp)->mac;
+        return IDEMIP_ARP_IO(n->b->arp)->mac;
     }
     (void)node_send_arp_request(n, ip);
     return NULL;
@@ -322,13 +333,13 @@ static const uint8_t *node_resolve(Node *n, uint32_t ip)
 
 static void node_arp_in(Node *n, const uint8_t *packet)
 {
-    ArpTableIo *io = IDEMIP_ARP_IO(n->b.arp);
+    ArpTableIo *io = IDEMIP_ARP_IO(n->b->arp);
 
     io->now_ms = g_now_ms;
     io->input_args.packet = packet;
     io->input_args.local_pa = n->ip;
     io->input_args.netif = 0u;
-    ArpTable.input(n->b.arp);
+    ArpTable.input(n->b->arp);
     if (io->status != IDEMIP_OK || !io->reply_owed)
     {
         return;
@@ -342,7 +353,7 @@ static void node_arp_in(Node *n, const uint8_t *packet)
     {
         return;
     }
-    memcpy(frame + IDEMIP_ETH_HDR_LEN, packet, IDEMIP_ARP_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = frame + IDEMIP_ETH_HDR_LEN, .at = packet, .size = IDEMIP_ARP_LEN);
     idemip_arp_reply_in_place(frame + IDEMIP_ETH_HDR_LEN, n->mac);
     n->arp_replies_out++;
     (void)node_send_frame(n, frame, desc, idemip_arp_sha(packet), (uint16_t)IDEMIP_ETHERTYPE_ARP, IDEMIP_ARP_LEN);
@@ -350,7 +361,7 @@ static void node_arp_in(Node *n, const uint8_t *packet)
 
 static void node_icmp_in(Node *n, const uint8_t *ip, size_t len)
 {
-    IcmpInIo *io = IDEMIP_ICMP_IN_IO(n->b.icmp);
+    IcmpInIo *io = IDEMIP_ICMP_IN_IO(n->b->icmp);
     uint8_t desc = 0;
 
     io->recv_args.datagram = ip;
@@ -359,8 +370,8 @@ static void node_icmp_in(Node *n, const uint8_t *ip, size_t len)
     io->recv_args.out_cap = IDEMIP_ETH_MAX_PAYLOAD - IDEMIP_IPV4_HDR_LEN;
     io->recv_args.if_addr = n->ip;
     io->recv_args.if_mask = n->mask;
-    io->recv_args.link_bcast = IDEMIP_FALSE;
-    IcmpIn.recv(n->b.icmp);
+    io->recv_args.link_bcast = EMBED_FALSE;
+    IcmpIn.recv(n->b->icmp);
     if (io->status != IDEMIP_OK)
     {
         return;
@@ -389,7 +400,8 @@ static void node_icmp_in(Node *n, const uint8_t *ip, size_t len)
     {
         return;
     }
-    memcpy(frame + IDEMIP_ETH_HDR_LEN + IDEMIP_IPV4_HDR_LEN, n->scratch, out_len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = frame + IDEMIP_ETH_HDR_LEN + IDEMIP_IPV4_HDR_LEN, .at = n->scratch,
+               .size = out_len);
     (void)node_send_ip4(n, frame, desc, dst_mac, dst, (uint8_t)IDEMIP_IP4_PROTO_ICMP, 0x1234u, out_len);
 }
 
@@ -410,12 +422,12 @@ static void node_udp_in(Node *n, const uint8_t *ip, size_t len)
     {
         return;
     }
-    memset(local16, 0, sizeof local16);
-    memset(remote16, 0, sizeof remote16);
+    mmgr_zero_buf(local16, sizeof local16);
+    mmgr_zero_buf(remote16, sizeof remote16);
     idemip_wr32(local16, idemip_ip4_dst(ip));
     idemip_wr32(remote16, idemip_ip4_src(ip));
 
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(n->b.udp);
+    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(n->b->udp);
     io->find_args.local_ip = local16;
     io->find_args.remote_ip = remote16;
     io->find_args.local_port = idemip_udp_dst_port(udp);
@@ -425,7 +437,7 @@ static void node_udp_in(Node *n, const uint8_t *ip, size_t len)
     io->find_args.local_zone = 0u;
     io->find_args.remote_zone = 0u;
     io->find_args.netif = 0u;
-    UdpPcb.find(n->b.udp);
+    UdpPcb.find(n->b->udp);
     if (io->status != IDEMIP_OK)
     {
         // RFC 1122 sec 4.1.3.1: no binding is where "UDP SHOULD send an ICMP Port Unreachable".
@@ -437,7 +449,7 @@ static void node_udp_in(Node *n, const uint8_t *ip, size_t len)
     {
         plen = sizeof n->udp_rx;
     }
-    memcpy(n->udp_rx, udp + IDEMIP_UDP_HDR_LEN, plen);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = n->udp_rx, .at = udp + IDEMIP_UDP_HDR_LEN, .size = plen);
     n->udp_rx_len = plen;
     n->udp_rx_src_port = idemip_udp_src_port(udp);
     n->udp_rx_src_ip = idemip_ip4_src(ip);
@@ -458,7 +470,7 @@ typedef struct
     uint16_t data_len;
 } NodeTcpSendArgs;
 
-static idemip_bool node_tcp_send_ctx(const NodeTcpSendArgs *args)
+static embed_bool node_tcp_send_ctx(const NodeTcpSendArgs *args)
 {
     uint8_t local16[IDEMIP_TCP_PCB_ADDR_BYTES];
     uint8_t remote16[IDEMIP_TCP_PCB_ADDR_BYTES];
@@ -467,15 +479,15 @@ static idemip_bool node_tcp_send_ctx(const NodeTcpSendArgs *args)
 
     if (dst_mac == NULL)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    memset(local16, 0, sizeof local16);
-    memset(remote16, 0, sizeof remote16);
+    mmgr_zero_buf(local16, sizeof local16);
+    mmgr_zero_buf(remote16, sizeof remote16);
     idemip_wr32(local16, args->n->ip);
     idemip_wr32(remote16, args->n->tcp.remote_ip);
 
-    TcpOutIo *io = IDEMIP_TCP_OUT_IO(args->n->b.tout);
-    memset(&io->build_args, 0, sizeof io->build_args);
+    TcpOutIo *io = IDEMIP_TCP_OUT_IO(args->n->b->tout);
+    io->build_args = (TcpOutBuildArgs){0};
     io->build_args.buf = args->n->scratch;
     io->build_args.cap = (uint16_t)(IDEMIP_ETH_MAX_PAYLOAD - IDEMIP_IPV4_HDR_LEN);
     io->build_args.data = args->data;
@@ -491,22 +503,23 @@ static idemip_bool node_tcp_send_ctx(const NodeTcpSendArgs *args)
     io->build_args.opts = args->opts;
     io->build_args.flags = args->flags;
     io->build_args.ip_version = 4u;
-    TcpOut.build(args->n->b.tout);
+    TcpOut.build(args->n->b->tout);
     if (io->status != IDEMIP_OK)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     uint16_t built = io->res.built;
     uint8_t *frame = node_tx_claim(args->n, &desc);
     if (frame == NULL)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    memcpy(frame + IDEMIP_ETH_HDR_LEN + IDEMIP_IPV4_HDR_LEN, args->n->scratch, built);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = frame + IDEMIP_ETH_HDR_LEN + IDEMIP_IPV4_HDR_LEN,
+               .at = args->n->scratch, .size = built);
     return node_send_ip4(args->n, frame, desc, dst_mac, args->n->tcp.remote_ip, (uint8_t)IDEMIP_IP4_PROTO_TCP, 0x2000u, built);
 }
 
-#define node_tcp_send(...) IDEMIP_CALL(node_tcp_send_ctx, NodeTcpSendArgs, __VA_ARGS__)
+#define node_tcp_send(...) EMBED_CALL(node_tcp_send_ctx, NodeTcpSendArgs, __VA_ARGS__)
 
 // The ISS RFC 6528 sec 3 draws for this four-tuple.
 static uint32_t node_isn(Node *n, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port)
@@ -514,19 +527,19 @@ static uint32_t node_isn(Node *n, uint32_t remote_ip, uint16_t local_port, uint1
     uint8_t local16[IDEMIP_TCP_PCB_ADDR_BYTES];
     uint8_t remote16[IDEMIP_TCP_PCB_ADDR_BYTES];
 
-    memset(local16, 0, sizeof local16);
-    memset(remote16, 0, sizeof remote16);
+    mmgr_zero_buf(local16, sizeof local16);
+    mmgr_zero_buf(remote16, sizeof remote16);
     idemip_wr32(local16, n->ip);
     idemip_wr32(remote16, remote_ip);
 
-    TcpIsnIo *io = IDEMIP_TCP_ISN_IO(n->b.isn);
+    TcpIsnIo *io = IDEMIP_TCP_ISN_IO(n->b->isn);
     io->gen_args.local_ip = local16;
     io->gen_args.remote_ip = remote16;
     io->gen_args.local_port = local_port;
     io->gen_args.remote_port = remote_port;
     io->gen_args.ip_version = 4u;
     io->gen_args.now_ms = g_now_ms;
-    TcpIsn.generate(n->b.isn);
+    TcpIsn.generate(n->b->isn);
     return (io->status == IDEMIP_OK) ? io->isn : 0x01000000u;
 }
 
@@ -541,15 +554,15 @@ static const uint8_t *node_rx_buf(const Node *n, uint16_t desc)
 // receive buffer the engine wrote them to, so the descriptor is pinned and the queue entry names it.
 static void node_tcp_hold(Node *n, uint16_t index, const uint8_t *ip, const uint8_t *seg, uint16_t desc, const TcpInIo *ti)
 {
-    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b->tpcb);
 
     if (desc >= IDEMIP_RX_DESCRIPTORS)
     {
         return; // a reassembled datagram is in this node's own storage and pins no descriptor
     }
-    IDEMIP_DMA_IO(n->b.dma)->desc_args.index = (uint8_t)desc;
-    Dma.pin(n->b.dma);
-    if (IDEMIP_DMA_IO(n->b.dma)->status != IDEMIP_OK)
+    IDEMIP_DMA_IO(n->b->dma)->desc_args.index = (uint8_t)desc;
+    Dma.pin(n->b->dma);
+    if (IDEMIP_DMA_IO(n->b->dma)->status != IDEMIP_OK)
     {
         return;
     }
@@ -559,11 +572,11 @@ static void node_tcp_hold(Node *n, uint16_t index, const uint8_t *ip, const uint
     tp->oos_args.desc = desc;
     tp->oos_args.offset = (uint16_t)(IDEMIP_ETH_HDR_LEN + idemip_ip4_hdr_len(ip) + idemip_tcp_hdr_len(seg));
     tp->oos_args.len = ti->res.text_len;
-    TcpPcb.oos_alloc(n->b.tpcb);
+    TcpPcb.oos_alloc(n->b->tpcb);
     if (tp->status != IDEMIP_OK)
     {
-        IDEMIP_DMA_IO(n->b.dma)->desc_args.index = (uint8_t)desc;
-        Dma.unpin(n->b.dma);
+        IDEMIP_DMA_IO(n->b->dma)->desc_args.index = (uint8_t)desc;
+        Dma.unpin(n->b->dma);
         return;
     }
     n->oos_held++;
@@ -578,9 +591,9 @@ static void node_tcp_hold(Node *n, uint16_t index, const uint8_t *ip, const uint
 static uint16_t node_tcp_oos_head_in_order(Node *n, uint16_t index, IdemIpTcpVars *vars, TcpPcbCtl *ctl,
                                            IdemIpTcpState *state)
 {
-    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b->tpcb);
     tp->pcb_args.index = index;
-    TcpPcb.load(n->b.tpcb);
+    TcpPcb.load(n->b->tpcb);
     if (tp->status != IDEMIP_OK || tp->info.ooseq == IDEMIP_TCP_PCB_NONE)
     {
         return IDEMIP_TCP_PCB_NONE;
@@ -591,7 +604,7 @@ static uint16_t node_tcp_oos_head_in_order(Node *n, uint16_t index, IdemIpTcpVar
     *state = tp->state;
 
     tp->oos_args.index = at;
-    TcpPcb.oos_load(n->b.tpcb);
+    TcpPcb.oos_load(n->b->tpcb);
     if (tp->status != IDEMIP_OK || tp->oos.seq != vars->rcv_nxt)
     {
         return IDEMIP_TCP_PCB_NONE;
@@ -601,7 +614,7 @@ static uint16_t node_tcp_oos_head_in_order(Node *n, uint16_t index, IdemIpTcpVar
 
 static int node_tcp_deliver_oos(Node *n, uint16_t index)
 {
-    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b->tpcb);
     int moved = 0;
 
     for (unsigned guard = 0u; guard < IDEMIP_TCP_OOSEQ_SEGS; guard++)
@@ -623,7 +636,8 @@ static int node_tcp_deliver_oos(Node *n, uint16_t index)
         {
             take = sizeof n->tcp.rx - n->tcp.rx_len;
         }
-        memcpy(n->tcp.rx + n->tcp.rx_len, node_rx_buf(n, desc) + off, take);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = n->tcp.rx + n->tcp.rx_len, .at = node_rx_buf(n, desc) + off,
+                   .size = take);
         n->tcp.rx_len += take;
 
         vars.rcv_nxt += seg_len;
@@ -631,13 +645,13 @@ static int node_tcp_deliver_oos(Node *n, uint16_t index)
         tp->vars = vars;
         tp->ctl = ctl;
         tp->state = state;
-        TcpPcb.store(n->b.tpcb);
+        TcpPcb.store(n->b->tpcb);
 
         tp->oos_args.pcb = index;
         tp->oos_args.index = at;
-        TcpPcb.oos_free(n->b.tpcb);
-        IDEMIP_DMA_IO(n->b.dma)->desc_args.index = (uint8_t)desc;
-        Dma.unpin(n->b.dma);
+        TcpPcb.oos_free(n->b->tpcb);
+        IDEMIP_DMA_IO(n->b->dma)->desc_args.index = (uint8_t)desc;
+        Dma.unpin(n->b->dma);
         n->oos_held--;
         n->oos_delivered++;
         moved++;
@@ -654,25 +668,25 @@ static void node_tcp_in(Node *n, const uint8_t *ip, size_t len, uint16_t desc)
     uint8_t remote16[IDEMIP_TCP_PCB_ADDR_BYTES];
 
     (void)len;
-    memset(local16, 0, sizeof local16);
-    memset(remote16, 0, sizeof remote16);
+    mmgr_zero_buf(local16, sizeof local16);
+    mmgr_zero_buf(remote16, sizeof remote16);
     idemip_wr32(local16, idemip_ip4_dst(ip));
     idemip_wr32(remote16, idemip_ip4_src(ip));
 
-    TcpInIo *ti = IDEMIP_TCP_IN_IO(n->b.tin);
+    TcpInIo *ti = IDEMIP_TCP_IN_IO(n->b->tin);
     ti->parse_args.seg = seg;
     ti->parse_args.len = seg_len;
     ti->parse_args.local_ip = local16;
     ti->parse_args.remote_ip = remote16;
     ti->parse_args.ip_version = 4u;
     ti->parse_args.snd_scale = 0u;
-    TcpIn.parse(n->b.tin);
+    TcpIn.parse(n->b->tin);
     if (ti->status != IDEMIP_OK)
     {
         return;
     }
 
-    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b->tpcb);
     tp->find_args.local_ip = local16;
     tp->find_args.remote_ip = remote16;
     tp->find_args.local_port = idemip_tcp_dst_port(seg);
@@ -681,7 +695,7 @@ static void node_tcp_in(Node *n, const uint8_t *ip, size_t len, uint16_t desc)
     tp->find_args.local_zone = 0u;
     tp->find_args.remote_zone = 0u;
     tp->find_args.netif = 0u;
-    TcpPcb.find(n->b.tpcb);
+    TcpPcb.find(n->b->tpcb);
 
     uint16_t index = IDEMIP_TCP_PCB_NONE;
     if (tp->status == IDEMIP_OK)
@@ -693,14 +707,14 @@ static void node_tcp_in(Node *n, const uint8_t *ip, size_t len, uint16_t desc)
         // RFC 9293 sec 3.10.7.2 creates the connection out of the LISTEN state.
         tp->find_args.local_ip = local16;
         tp->find_args.remote_ip = remote16;
-        TcpPcb.find_listener(n->b.tpcb);
+        TcpPcb.find_listener(n->b->tpcb);
         if (tp->status != IDEMIP_OK)
         {
             return;
         }
         uint16_t listener = tp->index;
         tp->open_args.ip_version = 4u;
-        TcpPcb.open(n->b.tpcb);
+        TcpPcb.open(n->b->tpcb);
         if (tp->status != IDEMIP_OK)
         {
             return;
@@ -711,16 +725,16 @@ static void node_tcp_in(Node *n, const uint8_t *ip, size_t len, uint16_t desc)
         tp->bind_args.port = idemip_tcp_dst_port(seg);
         tp->bind_args.zone = 0u;
         tp->bind_args.netif = 0u;
-        TcpPcb.bind(n->b.tpcb);
+        TcpPcb.bind(n->b->tpcb);
         tp->connect_args.index = index;
         tp->connect_args.ip = remote16;
         tp->connect_args.port = idemip_tcp_src_port(seg);
         tp->connect_args.zone = 0u;
         tp->connect_args.netif = 0u;
-        TcpPcb.connect(n->b.tpcb);
+        TcpPcb.connect(n->b->tpcb);
         tp->accept_args.index = index;
         tp->accept_args.listener = listener;
-        TcpPcb.accept(n->b.tpcb);
+        TcpPcb.accept(n->b->tpcb);
 
         n->tcp.tcb = index;
         n->tcp.local_port = idemip_tcp_dst_port(seg);
@@ -729,7 +743,7 @@ static void node_tcp_in(Node *n, const uint8_t *ip, size_t len, uint16_t desc)
     }
 
     tp->pcb_args.index = index;
-    TcpPcb.load(n->b.tpcb);
+    TcpPcb.load(n->b->tpcb);
     if (tp->status != IDEMIP_OK)
     {
         return;
@@ -746,22 +760,22 @@ static void node_tcp_in(Node *n, const uint8_t *ip, size_t len, uint16_t desc)
         ti->state = IDEMIP_TCP_STATE_LISTEN;
         ti->vars.iss = node_isn(n, idemip_ip4_src(ip), idemip_tcp_dst_port(seg), idemip_tcp_src_port(seg));
         ti->vars.rcv_wnd = (uint32_t)IDEMIP_TCP_WND;
-        TcpIn.listen(n->b.tin);
+        TcpIn.listen(n->b->tin);
     }
     else if (tp->state == IDEMIP_TCP_STATE_SYN_SENT)
     {
-        TcpIn.syn_sent(n->b.tin);
+        TcpIn.syn_sent(n->b->tin);
     }
     else
     {
-        TcpIn.segment(n->b.tin);
+        TcpIn.segment(n->b->tin);
     }
     if (ti->status != IDEMIP_OK)
     {
         return;
     }
 
-    idemip_bool advanced = IDEMIP_FALSE;
+    embed_bool advanced = EMBED_FALSE;
     if ((ti->res.act & IDEMIP_TCP_IN_ACT_TEXT) != 0u && ti->res.text_len > 0u)
     {
         size_t off = idemip_tcp_hdr_len(seg) + ti->res.text_off;
@@ -770,12 +784,12 @@ static void node_tcp_in(Node *n, const uint8_t *ip, size_t len, uint16_t desc)
         {
             take = sizeof n->tcp.rx - n->tcp.rx_len;
         }
-        memcpy(n->tcp.rx + n->tcp.rx_len, seg + off, take);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = n->tcp.rx + n->tcp.rx_len, .at = seg + off, .size = take);
         n->tcp.rx_len += take;
         // sec 3.10.7.4 seventh: RCV.WND is adjusted "as appropriate to the current buffer
         // availability", and this user took the octets in the same call, so the window re-opens.
         ti->vars.rcv_wnd += ti->res.text_len;
-        advanced = IDEMIP_TRUE;
+        advanced = EMBED_TRUE;
     }
     if ((ti->res.act & IDEMIP_TCP_IN_ACT_ESTABLISHED) != 0u)
     {
@@ -790,7 +804,7 @@ static void node_tcp_in(Node *n, const uint8_t *ip, size_t len, uint16_t desc)
     tp->vars = ti->vars;
     tp->ctl = ti->ctl;
     tp->state = ti->state;
-    TcpPcb.store(n->b.tpcb);
+    TcpPcb.store(n->b->tpcb);
     n->tcp.state = ti->state;
 
     if ((ti->res.act & IDEMIP_TCP_IN_ACT_HOLD) != 0u)
@@ -830,7 +844,7 @@ static void node_tcp_in(Node *n, const uint8_t *ip, size_t len, uint16_t desc)
     if ((ti->res.act & IDEMIP_TCP_IN_ACT_DELETE) != 0u)
     {
         tp->pcb_args.index = index;
-        TcpPcb.close(n->b.tpcb);
+        TcpPcb.close(n->b->tpcb);
         n->tcp.deleted++;
         n->tcp.tcb = IDEMIP_TCP_PCB_NONE;
     }
@@ -855,9 +869,9 @@ static void node_deliver_ip4(Node *n, const uint8_t *ip, size_t len, uint16_t de
         // RFC 1213 sec 6.6 ipInUnknownProtos, "locally-addressed datagrams received successfully but
         // discarded because of an unknown or unsupported protocol". The interface counter of sec 6.4
         // is the EtherType case and is not this one.
-        IDEMIP_STATS_IO(n->b.stats)->ctr_args.id = IDEMIP_STAT_IP4_IN_UNKNOWN_PROTOS;
-        IDEMIP_STATS_IO(n->b.stats)->ctr_args.value = 1u;
-        Stats.bump(n->b.stats);
+        IDEMIP_STATS_IO(n->b->stats)->ctr_args.id = IDEMIP_STAT_IP4_IN_UNKNOWN_PROTOS;
+        IDEMIP_STATS_IO(n->b->stats)->ctr_args.value = 1u;
+        Stats.bump(n->b->stats);
         return;
     }
 }
@@ -867,29 +881,29 @@ static void node_deliver_ip4(Node *n, const uint8_t *ip, size_t len, uint16_t de
 // one back.
 static void node_fragment_in(Node *n, const uint8_t *ip, size_t avail, uint8_t desc)
 {
-    Ip4ReassIo *io = IDEMIP_IP4_REASS_IO(n->b.reass);
+    Ip4ReassIo *io = IDEMIP_IP4_REASS_IO(n->b->reass);
 
-    IDEMIP_DMA_IO(n->b.dma)->desc_args.index = desc;
-    Dma.pin(n->b.dma);
-    if (IDEMIP_DMA_IO(n->b.dma)->status != IDEMIP_OK)
+    IDEMIP_DMA_IO(n->b->dma)->desc_args.index = desc;
+    Dma.pin(n->b->dma);
+    if (IDEMIP_DMA_IO(n->b->dma)->status != IDEMIP_OK)
     {
         return;
     }
     n->fragments_held++;
-    if (IDEMIP_DMA_IO(n->b.dma)->pinned > n->max_pinned)
+    if (IDEMIP_DMA_IO(n->b->dma)->pinned > n->max_pinned)
     {
-        n->max_pinned = IDEMIP_DMA_IO(n->b.dma)->pinned;
+        n->max_pinned = IDEMIP_DMA_IO(n->b->dma)->pinned;
     }
 
     io->now_ms = g_now_ms;
     io->hold_args.hdr = ip;
     io->hold_args.desc = desc;
     io->hold_args.len = (uint16_t)avail;
-    Ip4Reass.hold(n->b.reass);
+    Ip4Reass.hold(n->b->reass);
     if (io->status != IDEMIP_OK)
     {
-        IDEMIP_DMA_IO(n->b.dma)->desc_args.index = desc;
-        Dma.unpin(n->b.dma);
+        IDEMIP_DMA_IO(n->b->dma)->desc_args.index = desc;
+        Dma.unpin(n->b->dma);
         n->fragments_held--;
         return;
     }
@@ -902,11 +916,11 @@ static void node_fragment_in(Node *n, const uint8_t *ip, size_t avail, uint8_t d
     uint16_t total = io->total_len;
     size_t hdr_len = 0;
 
-    memset(n->big_rx, 0, sizeof n->big_rx);
+    mmgr_zero_buf(n->big_rx, sizeof n->big_rx);
     for (;;)
     {
         io->next_args.index = row;
-        Ip4Reass.next(n->b.reass);
+        Ip4Reass.next(n->b->reass);
         if (io->status != IDEMIP_OK)
         {
             break;
@@ -915,12 +929,13 @@ static void node_fragment_in(Node *n, const uint8_t *ip, size_t avail, uint8_t d
         if (io->off == 0u)
         {
             hdr_len = io->hdr_len;
-            memcpy(n->big_rx, frag, hdr_len);
+            EMBED_CALL(proxim.read, ProximusCfg, .dst = n->big_rx, .at = frag, .size = hdr_len);
         }
         size_t at = (size_t)io->hdr_len + (size_t)0u;
         if (hdr_len + (size_t)io->off + (size_t)io->len <= sizeof n->big_rx)
         {
-            memcpy(n->big_rx + hdr_len + io->off, frag + at, io->len);
+            EMBED_CALL(proxim.read, ProximusCfg, .dst = n->big_rx + hdr_len + io->off, .at = frag + at,
+                       .size = io->len);
         }
     }
     if (hdr_len == 0u)
@@ -934,16 +949,16 @@ static void node_fragment_in(Node *n, const uint8_t *ip, size_t avail, uint8_t d
     n->reassembled++;
 
     io->release_args.index = row;
-    Ip4Reass.release(n->b.reass);
+    Ip4Reass.release(n->b->reass);
     for (;;)
     {
-        Ip4Reass.reclaim(n->b.reass);
+        Ip4Reass.reclaim(n->b->reass);
         if (io->status != IDEMIP_OK)
         {
             break;
         }
-        IDEMIP_DMA_IO(n->b.dma)->desc_args.index = (uint8_t)io->desc;
-        Dma.unpin(n->b.dma);
+        IDEMIP_DMA_IO(n->b->dma)->desc_args.index = (uint8_t)io->desc;
+        Dma.unpin(n->b->dma);
         n->fragments_held--;
     }
     node_deliver_ip4(n, n->big_rx, n->big_rx_len, DESC_NONE);
@@ -951,18 +966,18 @@ static void node_fragment_in(Node *n, const uint8_t *ip, size_t avail, uint8_t d
 
 static void node_frame_in(Node *n, const uint8_t *frame, size_t len, uint8_t desc)
 {
-    StatsIo *st = IDEMIP_STATS_IO(n->b.stats);
+    StatsIo *st = IDEMIP_STATS_IO(n->b->stats);
 
     st->if_args.netif = 0u;
     st->if_args.value = 1u;
     if (len < IDEMIP_ETH_HDR_LEN)
     {
         st->if_args.id = IDEMIP_STAT_IF_IN_ERRORS;
-        Stats.if_bump(n->b.stats);
+        Stats.if_bump(n->b->stats);
         return;
     }
     st->if_args.id = IDEMIP_STAT_IF_IN_UCAST_PKTS;
-    Stats.if_bump(n->b.stats);
+    Stats.if_bump(n->b->stats);
 
     const uint8_t *payload = idemip_eth_payload(frame);
     size_t avail = len - IDEMIP_ETH_HDR_LEN;
@@ -979,13 +994,13 @@ static void node_frame_in(Node *n, const uint8_t *frame, size_t len, uint8_t des
         if (idemip_ip4_verify(payload, avail) != IDEMIP_OK)
         {
             st->if_args.id = IDEMIP_STAT_IF_IN_ERRORS;
-            Stats.if_bump(n->b.stats);
+            Stats.if_bump(n->b->stats);
             return;
         }
         if (idemip_ip4_dst(payload) != n->ip)
         {
             st->if_args.id = IDEMIP_STAT_IF_IN_DISCARDS;
-            Stats.if_bump(n->b.stats);
+            Stats.if_bump(n->b->stats);
             return;
         }
         if (idemip_ip4_is_fragment(payload))
@@ -997,7 +1012,7 @@ static void node_frame_in(Node *n, const uint8_t *frame, size_t len, uint8_t des
         return;
     default:
         st->if_args.id = IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS;
-        Stats.if_bump(n->b.stats);
+        Stats.if_bump(n->b->stats);
         return;
     }
 }
@@ -1010,7 +1025,7 @@ static void node_frame_in(Node *n, const uint8_t *frame, size_t len, uint8_t des
 // "<SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK>".
 static void node_flush_ack(Node *n)
 {
-    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b->tpcb);
 
     if (!n->ack_owed)
     {
@@ -1022,7 +1037,7 @@ static void node_flush_ack(Node *n)
         return;
     }
     tp->pcb_args.index = n->ack_tcb;
-    TcpPcb.load(n->b.tpcb);
+    TcpPcb.load(n->b->tpcb);
     if (tp->status != IDEMIP_OK)
     {
         return;
@@ -1040,19 +1055,19 @@ static void node_drain(Node *n)
 {
     for (;;)
     {
-        Dma.rx_take(n->b.dma);
-        if (IDEMIP_DMA_IO(n->b.dma)->status != IDEMIP_OK)
+        Dma.rx_take(n->b->dma);
+        if (IDEMIP_DMA_IO(n->b->dma)->status != IDEMIP_OK)
         {
             break;
         }
-        uint8_t desc = IDEMIP_DMA_IO(n->b.dma)->index;
-        const uint8_t *frame = IDEMIP_DMA_IO(n->b.dma)->buf;
-        size_t len = IDEMIP_DMA_IO(n->b.dma)->len;
+        uint8_t desc = IDEMIP_DMA_IO(n->b->dma)->index;
+        const uint8_t *frame = IDEMIP_DMA_IO(n->b->dma)->buf;
+        size_t len = IDEMIP_DMA_IO(n->b->dma)->len;
 
         node_frame_in(n, frame, len, desc);
 
-        IDEMIP_DMA_IO(n->b.dma)->desc_args.index = desc;
-        Dma.rx_post(n->b.dma);
+        IDEMIP_DMA_IO(n->b->dma)->desc_args.index = desc;
+        Dma.rx_post(n->b->dma);
     }
     node_flush_ack(n);
 }
@@ -1061,37 +1076,37 @@ static void node_drain(Node *n)
 // runs behind it; reassembly before the protocols that read a completed datagram.
 static void node_timers(Node *n)
 {
-    IDEMIP_ARP_IO(n->b.arp)->now_ms = g_now_ms;
+    IDEMIP_ARP_IO(n->b->arp)->now_ms = g_now_ms;
     for (;;)
     {
-        ArpTable.tick(n->b.arp);
-        if (IDEMIP_ARP_IO(n->b.arp)->status != IDEMIP_OK)
+        ArpTable.tick(n->b->arp);
+        if (IDEMIP_ARP_IO(n->b->arp)->status != IDEMIP_OK)
         {
             break;
         }
-        if (IDEMIP_ARP_IO(n->b.arp)->len == 0u && IDEMIP_ARP_IO(n->b.arp)->ip != 0u)
+        if (IDEMIP_ARP_IO(n->b->arp)->len == 0u && IDEMIP_ARP_IO(n->b->arp)->ip != 0u)
         {
-            (void)node_send_arp_request(n, IDEMIP_ARP_IO(n->b.arp)->ip);
+            (void)node_send_arp_request(n, IDEMIP_ARP_IO(n->b->arp)->ip);
         }
     }
-    IDEMIP_IP4_REASS_IO(n->b.reass)->now_ms = g_now_ms;
+    IDEMIP_IP4_REASS_IO(n->b->reass)->now_ms = g_now_ms;
     for (;;)
     {
-        Ip4Reass.tick(n->b.reass);
-        if (IDEMIP_IP4_REASS_IO(n->b.reass)->status != IDEMIP_OK)
+        Ip4Reass.tick(n->b->reass);
+        if (IDEMIP_IP4_REASS_IO(n->b->reass)->status != IDEMIP_OK)
         {
             break;
         }
     }
     for (;;)
     {
-        Ip4Reass.reclaim(n->b.reass);
-        if (IDEMIP_IP4_REASS_IO(n->b.reass)->status != IDEMIP_OK)
+        Ip4Reass.reclaim(n->b->reass);
+        if (IDEMIP_IP4_REASS_IO(n->b->reass)->status != IDEMIP_OK)
         {
             break;
         }
-        IDEMIP_DMA_IO(n->b.dma)->desc_args.index = (uint8_t)IDEMIP_IP4_REASS_IO(n->b.reass)->desc;
-        Dma.unpin(n->b.dma);
+        IDEMIP_DMA_IO(n->b->dma)->desc_args.index = (uint8_t)IDEMIP_IP4_REASS_IO(n->b->reass)->desc;
+        Dma.unpin(n->b->dma);
         n->fragments_held--;
     }
 }
@@ -1099,7 +1114,7 @@ static void node_timers(Node *n)
 // Stage 3: the engine's finished transmit descriptors, back to buffers this side may build into.
 static void node_flush(Node *n)
 {
-    Dma.tx_reap(n->b.dma);
+    Dma.tx_reap(n->b->dma);
 }
 
 // Every frame that crossed the wire goes into the capture, in the order it crossed.
@@ -1169,6 +1184,7 @@ static void pump(unsigned n)
 typedef struct
 {
     Node *n;
+    Borrows *b;
     IdemIpFakePhy *rig;
     const IdemIpPhyDriver *drv;
     const uint8_t *mac;
@@ -1180,78 +1196,79 @@ typedef struct
 
 static void node_setup_ctx(const NodeSetupArgs *args)
 {
-    memset(args->n, 0, sizeof *args->n);
+    *args->n = (Node){0};
+    args->n->b = args->b;
     args->n->rig = args->rig;
     args->n->drv = args->drv;
-    memcpy(args->n->mac, args->mac, IDEMIP_MAC_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = args->n->mac, .at = args->mac, .size = IDEMIP_MAC_LEN);
     args->n->ip = args->ip;
     args->n->mask = IP_MASK;
     args->n->tcp.tcb = IDEMIP_TCP_PCB_NONE;
     args->n->tcp.listener = IDEMIP_TCP_PCB_NONE;
     args->n->ack_tcb = IDEMIP_TCP_PCB_NONE;
-    arm_canaries(&args->n->b);
+    arm_canaries(args->n->b);
 
     idemip_fake_phy_attach(args->rig, args->rx_base, args->tx_base, args->mac);
 
-    Dma.clear(args->n->b.dma);
-    Netif.clear(args->n->b.netif);
-    ArpTable.clear(args->n->b.arp);
-    Ip4Reass.clear(args->n->b.reass);
-    Ip4Frag.clear(args->n->b.frag);
-    IcmpIn.clear(args->n->b.icmp);
-    UdpPcb.clear(args->n->b.udp);
-    TcpPcb.clear(args->n->b.tpcb);
-    TcpIn.clear(args->n->b.tin);
-    TcpOut.clear(args->n->b.tout);
-    TcpIsn.reset(args->n->b.isn);
-    Stats.clear(args->n->b.stats);
+    Dma.clear(args->n->b->dma);
+    Netif.clear(args->n->b->netif);
+    ArpTable.clear(args->n->b->arp);
+    Ip4Reass.clear(args->n->b->reass);
+    Ip4Frag.clear(args->n->b->frag);
+    IcmpIn.clear(args->n->b->icmp);
+    UdpPcb.clear(args->n->b->udp);
+    TcpPcb.clear(args->n->b->tpcb);
+    TcpIn.clear(args->n->b->tin);
+    TcpOut.clear(args->n->b->tout);
+    TcpIsn.reset(args->n->b->isn);
+    Stats.clear(args->n->b->stats);
 
-    IDEMIP_PHY_IO(args->n->b.phy)->bind_args.drv = args->drv;
-    IDEMIP_PHY_IO(args->n->b.phy)->bind_args.addr = 1u;
-    Phy.bind(args->n->b.phy);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PHY_IO(args->n->b.phy)->status);
+    IDEMIP_PHY_IO(args->n->b->phy)->bind_args.drv = args->drv;
+    IDEMIP_PHY_IO(args->n->b->phy)->bind_args.addr = 1u;
+    Phy.bind(args->n->b->phy);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PHY_IO(args->n->b->phy)->status);
 
-    IDEMIP_DMA_IO(args->n->b.dma)->bind_args.drv = args->drv;
-    IDEMIP_DMA_IO(args->n->b.dma)->bind_args.rx_base = args->rx_base;
-    IDEMIP_DMA_IO(args->n->b.dma)->bind_args.tx_base = args->tx_base;
-    Dma.bind(args->n->b.dma);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(args->n->b.dma)->status);
+    IDEMIP_DMA_IO(args->n->b->dma)->bind_args.drv = args->drv;
+    IDEMIP_DMA_IO(args->n->b->dma)->bind_args.rx_base = args->rx_base;
+    IDEMIP_DMA_IO(args->n->b->dma)->bind_args.tx_base = args->tx_base;
+    Dma.bind(args->n->b->dma);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(args->n->b->dma)->status);
 
-    IDEMIP_NETIF_IO(args->n->b.netif)->bind_args.index = 0u;
-    IDEMIP_NETIF_IO(args->n->b.netif)->bind_args.phy = args->n->b.phy;
-    IDEMIP_NETIF_IO(args->n->b.netif)->bind_args.hwaddr = args->n->mac;
-    IDEMIP_NETIF_IO(args->n->b.netif)->bind_args.mtu = (uint16_t)IDEMIP_ETH_MAX_PAYLOAD;
-    Netif.bind(args->n->b.netif);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(args->n->b.netif)->status);
+    IDEMIP_NETIF_IO(args->n->b->netif)->bind_args.index = 0u;
+    IDEMIP_NETIF_IO(args->n->b->netif)->bind_args.phy = args->n->b->phy;
+    IDEMIP_NETIF_IO(args->n->b->netif)->bind_args.hwaddr = args->n->mac;
+    IDEMIP_NETIF_IO(args->n->b->netif)->bind_args.mtu = (uint16_t)IDEMIP_ETH_MAX_PAYLOAD;
+    Netif.bind(args->n->b->netif);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(args->n->b->netif)->status);
 
-    IDEMIP_NETIF_IO(args->n->b.netif)->addr4_args.index = 0u;
-    IDEMIP_NETIF_IO(args->n->b.netif)->addr4_args.addr = args->ip;
-    IDEMIP_NETIF_IO(args->n->b.netif)->addr4_args.mask = IP_MASK;
-    IDEMIP_NETIF_IO(args->n->b.netif)->addr4_args.gw = 0u;
-    Netif.set_addr4(args->n->b.netif);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(args->n->b.netif)->status);
+    IDEMIP_NETIF_IO(args->n->b->netif)->addr4_args.index = 0u;
+    IDEMIP_NETIF_IO(args->n->b->netif)->addr4_args.addr = args->ip;
+    IDEMIP_NETIF_IO(args->n->b->netif)->addr4_args.mask = IP_MASK;
+    IDEMIP_NETIF_IO(args->n->b->netif)->addr4_args.gw = 0u;
+    Netif.set_addr4(args->n->b->netif);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_NETIF_IO(args->n->b->netif)->status);
 
-    IDEMIP_TCP_ISN_IO(args->n->b.isn)->seed_args.key = args->isn_secret;
-    IDEMIP_TCP_ISN_IO(args->n->b.isn)->seed_args.key_len = IDEMIP_TCP_ISN_SECRET_BYTES;
-    IDEMIP_TCP_ISN_IO(args->n->b.isn)->seed_args.base = 0u;
-    TcpIsn.seed(args->n->b.isn);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_ISN_IO(args->n->b.isn)->status);
+    IDEMIP_TCP_ISN_IO(args->n->b->isn)->seed_args.key = args->isn_secret;
+    IDEMIP_TCP_ISN_IO(args->n->b->isn)->seed_args.key_len = IDEMIP_TCP_ISN_SECRET_BYTES;
+    IDEMIP_TCP_ISN_IO(args->n->b->isn)->seed_args.base = 0u;
+    TcpIsn.seed(args->n->b->isn);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_TCP_ISN_IO(args->n->b->isn)->status);
 }
 
-#define node_setup(...) IDEMIP_CALL(node_setup_ctx, NodeSetupArgs, __VA_ARGS__)
+#define node_setup(...) EMBED_CALL(node_setup_ctx, NodeSetupArgs, __VA_ARGS__)
 
 // One RFC 768 binding per node, so a datagram each way has somewhere to land.
 static void node_open_udp(Node *n, uint16_t port)
 {
     uint8_t local16[IDEMIP_TCP_PCB_ADDR_BYTES];
 
-    memset(local16, 0, sizeof local16);
+    mmgr_zero_buf(local16, sizeof local16);
     idemip_wr32(local16, n->ip);
 
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(n->b.udp);
+    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(n->b->udp);
     io->open_args.ip_version = 4u;
-    io->open_args.lite = IDEMIP_FALSE;
-    UdpPcb.open(n->b.udp);
+    io->open_args.lite = EMBED_FALSE;
+    UdpPcb.open(n->b->udp);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
     n->udp_pcb = io->index;
     io->bind_args.index = n->udp_pcb;
@@ -1259,7 +1276,7 @@ static void node_open_udp(Node *n, uint16_t port)
     io->bind_args.port = port;
     io->bind_args.zone = 0u;
     io->bind_args.netif = 0u;
-    UdpPcb.bind(n->b.udp);
+    UdpPcb.bind(n->b->udp);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
 }
 
@@ -1267,13 +1284,22 @@ void setUp(void)
 {
     g_now_ms = 1000u;
     g_pcap_open = 0;
-    memset(&g_pcap, 0, sizeof g_pcap);
-    memset(g_rx_bufs, 0, sizeof g_rx_bufs);
-    memset(g_tx_bufs, 0, sizeof g_tx_bufs);
-    node_setup(&g_a, &g_idemip_fake_phy[0], &idemip_fake_phy_drv_0, MAC_A, IP_A, g_rx_bufs[0], g_tx_bufs[0],
-               ISN_SECRET_A);
-    node_setup(&g_b, &g_idemip_fake_phy[1], &idemip_fake_phy_drv_1, MAC_B, IP_B, g_rx_bufs[1], g_tx_bufs[1],
-               ISN_SECRET_B);
+    g_pcap = (IdemIpPcap){0};
+    for (size_t node = 0u; node < 2u; node++)
+    {
+        if (g_node_borrows[node] == NULL)
+        {
+            g_node_borrows[node] = idemip_test_take(sizeof(Borrows), idemip_test_owner_node);
+        }
+    }
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = mmgr_pars_storage_g_rx_bufs_a, .val = 0, .bytes = RX_BUFS_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = mmgr_pars_storage_g_rx_bufs_b, .val = 0, .bytes = RX_BUFS_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = mmgr_pars_storage_g_tx_bufs_a, .val = 0, .bytes = TX_BUFS_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = mmgr_pars_storage_g_tx_bufs_b, .val = 0, .bytes = TX_BUFS_BYTES);
+    node_setup(&g_a, g_node_borrows[0], &g_idemip_fake_phy[0], &idemip_fake_phy_drv_0, MAC_A, IP_A,
+               mmgr_pars_storage_g_rx_bufs_a, mmgr_pars_storage_g_tx_bufs_a, ISN_SECRET_A);
+    node_setup(&g_b, g_node_borrows[1], &g_idemip_fake_phy[1], &idemip_fake_phy_drv_1, MAC_B, IP_B,
+               mmgr_pars_storage_g_rx_bufs_b, mmgr_pars_storage_g_tx_bufs_b, ISN_SECRET_B);
 }
 
 void tearDown(void)
@@ -1283,51 +1309,51 @@ void tearDown(void)
         idemip_pcap_close(&g_pcap);
         g_pcap_open = 0;
     }
-    check_canaries(&g_a.b);
-    check_canaries(&g_b.b);
+    check_canaries(g_a.b);
+    check_canaries(g_b.b);
 }
 
 // --- helpers the cases share -------------------------------------------------
 
 // Send one RFC 768 datagram, resolving the destination first. False when the pair is not yet in the
 // translation table, which puts a REQUEST on the wire instead.
-static idemip_bool send_udp(Node *n, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, const uint8_t *data,
-                            size_t len)
+static embed_bool send_udp(Node *n, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, const uint8_t *data,
+                           size_t len)
 {
     const uint8_t *dst_mac = node_resolve(n, dst_ip);
     uint8_t desc = 0;
 
     if (dst_mac == NULL)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     uint8_t *frame = node_tx_claim(n, &desc);
     if (frame == NULL)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     uint8_t *udp = frame + IDEMIP_ETH_HDR_LEN + IDEMIP_IPV4_HDR_LEN;
     idemip_udp_build(udp, src_port, dst_port, (uint16_t)(IDEMIP_UDP_HDR_LEN + len));
-    memcpy(udp + IDEMIP_UDP_HDR_LEN, data, len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = udp + IDEMIP_UDP_HDR_LEN, .at = data, .size = len);
     idemip_udp_cksum_write(udp, IDEMIP_UDP_HDR_LEN + len, n->ip, dst_ip);
     return node_send_ip4(n, frame, desc, dst_mac, dst_ip, (uint8_t)IDEMIP_IP4_PROTO_UDP, 0x3000u,
                          IDEMIP_UDP_HDR_LEN + len);
 }
 
 // One RFC 792 Echo, Identifier and Sequence Number as given.
-static idemip_bool send_echo(Node *n, uint32_t dst_ip, uint16_t id, uint16_t seq, size_t data_len)
+static embed_bool send_echo(Node *n, uint32_t dst_ip, uint16_t id, uint16_t seq, size_t data_len)
 {
     const uint8_t *dst_mac = node_resolve(n, dst_ip);
     uint8_t desc = 0;
 
     if (dst_mac == NULL)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     uint8_t *frame = node_tx_claim(n, &desc);
     if (frame == NULL)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     uint8_t *msg = frame + IDEMIP_ETH_HDR_LEN + IDEMIP_IPV4_HDR_LEN;
     size_t total = IDEMIP_ICMP_ECHO_HDR_LEN + data_len;
@@ -1355,14 +1381,14 @@ static void tcp_connect(Node *n, uint32_t remote_ip, uint16_t local_port, uint16
     uint8_t local16[IDEMIP_TCP_PCB_ADDR_BYTES];
     uint8_t remote16[IDEMIP_TCP_PCB_ADDR_BYTES];
 
-    memset(local16, 0, sizeof local16);
-    memset(remote16, 0, sizeof remote16);
+    mmgr_zero_buf(local16, sizeof local16);
+    mmgr_zero_buf(remote16, sizeof remote16);
     idemip_wr32(local16, n->ip);
     idemip_wr32(remote16, remote_ip);
 
-    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b->tpcb);
     tp->open_args.ip_version = 4u;
-    TcpPcb.open(n->b.tpcb);
+    TcpPcb.open(n->b->tpcb);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
     n->tcp.tcb = tp->index;
 
@@ -1371,7 +1397,7 @@ static void tcp_connect(Node *n, uint32_t remote_ip, uint16_t local_port, uint16
     tp->bind_args.port = local_port;
     tp->bind_args.zone = 0u;
     tp->bind_args.netif = 0u;
-    TcpPcb.bind(n->b.tpcb);
+    TcpPcb.bind(n->b->tpcb);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
     n->tcp.local_port = tp->port;
 
@@ -1380,20 +1406,20 @@ static void tcp_connect(Node *n, uint32_t remote_ip, uint16_t local_port, uint16
     tp->connect_args.port = remote_port;
     tp->connect_args.zone = 0u;
     tp->connect_args.netif = 0u;
-    TcpPcb.connect(n->b.tpcb);
+    TcpPcb.connect(n->b->tpcb);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
     n->tcp.remote_ip = remote_ip;
     n->tcp.remote_port = remote_port;
 
     tp->pcb_args.index = n->tcp.tcb;
-    TcpPcb.load(n->b.tpcb);
+    TcpPcb.load(n->b->tpcb);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
     tp->vars.iss = node_isn(n, remote_ip, n->tcp.local_port, remote_port);
     tp->vars.snd_una = tp->vars.iss;
     tp->vars.snd_nxt = tp->vars.iss + 1u;
     tp->vars.rcv_wnd = (uint32_t)IDEMIP_TCP_WND;
     tp->state = IDEMIP_TCP_STATE_SYN_SENT;
-    TcpPcb.store(n->b.tpcb);
+    TcpPcb.store(n->b->tpcb);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
     n->tcp.state = IDEMIP_TCP_STATE_SYN_SENT;
 
@@ -1406,17 +1432,17 @@ static void tcp_listen(Node *n, uint16_t port)
 {
     uint8_t local16[IDEMIP_TCP_PCB_ADDR_BYTES];
 
-    memset(local16, 0, sizeof local16);
+    mmgr_zero_buf(local16, sizeof local16);
     idemip_wr32(local16, n->ip);
 
-    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b->tpcb);
     tp->listen_args.ip = local16;
     tp->listen_args.port = port;
     tp->listen_args.zone = 0u;
     tp->listen_args.netif = 0u;
     tp->listen_args.backlog = 1u;
     tp->listen_args.ip_version = 4u;
-    TcpPcb.listen(n->b.tpcb);
+    TcpPcb.listen(n->b->tpcb);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
     n->tcp.listener = tp->index;
     n->tcp.local_port = port;
@@ -1429,51 +1455,51 @@ static IdemIpTcpState tcp_state(Node *n)
     {
         return IDEMIP_TCP_STATE_CLOSED;
     }
-    IDEMIP_TCP_PCB_IO(n->b.tpcb)->pcb_args.index = n->tcp.tcb;
-    TcpPcb.load(n->b.tpcb);
-    if (IDEMIP_TCP_PCB_IO(n->b.tpcb)->status != IDEMIP_OK)
+    IDEMIP_TCP_PCB_IO(n->b->tpcb)->pcb_args.index = n->tcp.tcb;
+    TcpPcb.load(n->b->tpcb);
+    if (IDEMIP_TCP_PCB_IO(n->b->tpcb)->status != IDEMIP_OK)
     {
         return IDEMIP_TCP_STATE_CLOSED;
     }
-    return IDEMIP_TCP_PCB_IO(n->b.tpcb)->state;
+    return IDEMIP_TCP_PCB_IO(n->b->tpcb)->state;
 }
 
 // One data segment on an established connection, with the PSH and ACK bits sec 3.7.4 sends it with.
-static idemip_bool tcp_write(Node *n, const uint8_t *data, uint16_t len)
+static embed_bool tcp_write(Node *n, const uint8_t *data, uint16_t len)
 {
-    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b->tpcb);
 
     tp->pcb_args.index = n->tcp.tcb;
-    TcpPcb.load(n->b.tpcb);
+    TcpPcb.load(n->b->tpcb);
     if (tp->status != IDEMIP_OK)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     uint32_t seq = tp->vars.snd_nxt;
     uint32_t ack = tp->vars.rcv_nxt;
     if (!node_tcp_send(n, seq, ack, (uint8_t)(IDEMIP_TCP_PSH | IDEMIP_TCP_ACK), 0u, tp->vars.rcv_wnd, data, len))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     tp->pcb_args.index = n->tcp.tcb;
-    TcpPcb.load(n->b.tpcb);
+    TcpPcb.load(n->b->tpcb);
     tp->vars.snd_nxt = seq + len;
     tp->state = tp->state;
-    TcpPcb.store(n->b.tpcb);
-    return (idemip_bool)(tp->status == IDEMIP_OK);
+    TcpPcb.store(n->b->tpcb);
+    return (embed_bool)(tp->status == IDEMIP_OK);
 }
 
 // One data segment at an explicit Sequence Number, leaving SND.NXT alone, so a case can put
 // segments on the wire out of order.
-static idemip_bool tcp_send_at(Node *n, uint32_t seq, const uint8_t *data, uint16_t len)
+static embed_bool tcp_send_at(Node *n, uint32_t seq, const uint8_t *data, uint16_t len)
 {
-    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b->tpcb);
 
     tp->pcb_args.index = n->tcp.tcb;
-    TcpPcb.load(n->b.tpcb);
+    TcpPcb.load(n->b->tpcb);
     if (tp->status != IDEMIP_OK)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     return node_tcp_send(n, seq, tp->vars.rcv_nxt, (uint8_t)(IDEMIP_TCP_PSH | IDEMIP_TCP_ACK), 0u, tp->vars.rcv_wnd,
                          data, len);
@@ -1482,37 +1508,37 @@ static idemip_bool tcp_send_at(Node *n, uint32_t seq, const uint8_t *data, uint1
 // Move SND.NXT on by @p n octets, which the segments above already put on the wire.
 static void tcp_advance_snd(Node *n, uint32_t by)
 {
-    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b->tpcb);
 
     tp->pcb_args.index = n->tcp.tcb;
-    TcpPcb.load(n->b.tpcb);
+    TcpPcb.load(n->b->tpcb);
     if (tp->status != IDEMIP_OK)
     {
         return;
     }
     tp->vars.snd_nxt += by;
     tp->pcb_args.index = n->tcp.tcb;
-    TcpPcb.store(n->b.tpcb);
+    TcpPcb.store(n->b->tpcb);
 }
 
 // The connection's SND.NXT right now.
 static uint32_t tcp_snd_nxt(Node *n)
 {
-    IDEMIP_TCP_PCB_IO(n->b.tpcb)->pcb_args.index = n->tcp.tcb;
-    TcpPcb.load(n->b.tpcb);
-    return IDEMIP_TCP_PCB_IO(n->b.tpcb)->vars.snd_nxt;
+    IDEMIP_TCP_PCB_IO(n->b->tpcb)->pcb_args.index = n->tcp.tcb;
+    TcpPcb.load(n->b->tpcb);
+    return IDEMIP_TCP_PCB_IO(n->b->tpcb)->vars.snd_nxt;
 }
 
 // RFC 9293 sec 3.10.4 CLOSE: the FIN, and the state it moves this end into.
-static idemip_bool tcp_close(Node *n)
+static embed_bool tcp_close(Node *n)
 {
-    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b.tpcb);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(n->b->tpcb);
 
     tp->pcb_args.index = n->tcp.tcb;
-    TcpPcb.load(n->b.tpcb);
+    TcpPcb.load(n->b->tpcb);
     if (tp->status != IDEMIP_OK)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     IdemIpTcpState from = tp->state;
     uint32_t seq = tp->vars.snd_nxt;
@@ -1520,15 +1546,15 @@ static idemip_bool tcp_close(Node *n)
     uint32_t wnd = tp->vars.rcv_wnd;
     if (!node_tcp_send(n, seq, ack, (uint8_t)(IDEMIP_TCP_FIN | IDEMIP_TCP_ACK), 0u, wnd, NULL, 0u))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     tp->pcb_args.index = n->tcp.tcb;
-    TcpPcb.load(n->b.tpcb);
+    TcpPcb.load(n->b->tpcb);
     tp->vars.snd_nxt = seq + 1u; // the FIN occupies one sequence number
     tp->state = (from == IDEMIP_TCP_STATE_CLOSE_WAIT) ? IDEMIP_TCP_STATE_LAST_ACK : IDEMIP_TCP_STATE_FIN_WAIT_1;
-    TcpPcb.store(n->b.tpcb);
+    TcpPcb.store(n->b->tpcb);
     n->tcp.state = tp->state;
-    return (idemip_bool)(tp->status == IDEMIP_OK);
+    return (embed_bool)(tp->status == IDEMIP_OK);
 }
 
 // =============================================================================
@@ -1539,12 +1565,12 @@ static idemip_bool tcp_close(Node *n)
 // storage model rests on this, so it is asserted directly rather than assumed.
 void test_two_instances_occupy_disjoint_storage(void)
 {
-    const uint8_t *a0 = (const uint8_t *)&g_a.b;
-    const uint8_t *b0 = (const uint8_t *)&g_b.b;
+    const uint8_t *a0 = (const uint8_t *)g_a.b;
+    const uint8_t *b0 = (const uint8_t *)g_b.b;
 
     TEST_ASSERT_TRUE(a0 + sizeof(Borrows) <= b0 || b0 + sizeof(Borrows) <= a0);
-    TEST_ASSERT_NOT_EQUAL(g_a.b.arp, g_b.b.arp);
-    TEST_ASSERT_NOT_EQUAL(g_a.b.tpcb, g_b.b.tpcb);
+    TEST_ASSERT_NOT_EQUAL(g_a.b->arp, g_b.b->arp);
+    TEST_ASSERT_NOT_EQUAL(g_a.b->tpcb, g_b.b->tpcb);
     TEST_ASSERT_NOT_EQUAL(g_a.rig->rx_base, g_b.rig->rx_base);
     TEST_ASSERT_NOT_EQUAL(g_a.rig->tx_base, g_b.rig->tx_base);
 }
@@ -1553,7 +1579,7 @@ void test_two_instances_occupy_disjoint_storage(void)
 // two instances are two sets of borrows and share NOT ONE BYTE.
 void test_driving_a_changes_no_byte_of_b(void)
 {
-    memcpy(&g_snapshot, &g_b.b, sizeof g_snapshot);
+    g_snapshot = *g_b.b;
 
     (void)node_resolve(&g_a, IP_B);
     (void)send_echo(&g_a, IP_B, 1u, 1u, 8u);
@@ -1562,19 +1588,20 @@ void test_driving_a_changes_no_byte_of_b(void)
     node_drain(&g_a);
     idemip_fake_phy_poll(g_a.rig);
 
-    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(&g_snapshot, &g_b.b, sizeof g_snapshot,
+    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(&g_snapshot, g_b.b, sizeof g_snapshot,
                                      "driving A wrote into B's borrows without a frame");
 }
 
 // And a frame IS the one thing that changes it: the same drive, with the wire connected, does.
 void test_a_frame_is_the_only_thing_that_reaches_b(void)
 {
-    memcpy(&g_snapshot, &g_b.b, sizeof g_snapshot);
+    g_snapshot = *g_b.b;
 
     (void)node_resolve(&g_a, IP_B);
     pump(6);
 
-    TEST_ASSERT_TRUE(memcmp(&g_snapshot, &g_b.b, sizeof g_snapshot) != 0);
+    TEST_ASSERT_TRUE(
+        EMBED_CALL(memor.cmp, MemoriaCfg, .src = &g_snapshot, .other = g_b.b, .bytes = sizeof g_snapshot) != 0);
 }
 
 // Every unit's writes stay inside its own IDEMIP_<UNIT>_BORROW, which the canary past each one
@@ -1585,8 +1612,8 @@ void test_no_unit_writes_past_its_borrow(void)
     tcp_listen(&g_b, TCP_PORT_B);
     tcp_connect(&g_a, IP_B, 0u, TCP_PORT_B);
     pump(20);
-    check_canaries(&g_a.b);
-    check_canaries(&g_b.b);
+    check_canaries(g_a.b);
+    check_canaries(g_b.b);
     TEST_PASS();
 }
 
@@ -1600,19 +1627,19 @@ void test_the_engine_advances_only_in_poll(void)
 {
     uint8_t frame[64];
 
-    memset(frame, 0, sizeof frame);
+    mmgr_zero_buf(frame, sizeof frame);
     idemip_eth_build(frame, MAC_A, MAC_B, (uint16_t)IDEMIP_ETHERTYPE_ARP);
     TEST_ASSERT_TRUE(idemip_fake_phy_feed(g_a.rig, frame, sizeof frame));
 
     TEST_ASSERT_EQUAL_size_t(1u, idemip_fake_phy_in_count(g_a.rig));
-    Dma.rx_take(g_a.b.dma);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DMA_IO(g_a.b.dma)->status);
+    Dma.rx_take(g_a.b->dma);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_DMA_IO(g_a.b->dma)->status);
 
     idemip_fake_phy_poll(g_a.rig);
     TEST_ASSERT_EQUAL_size_t(0u, idemip_fake_phy_in_count(g_a.rig));
-    Dma.rx_take(g_a.b.dma);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(g_a.b.dma)->status);
-    TEST_ASSERT_EQUAL_size_t(sizeof frame, IDEMIP_DMA_IO(g_a.b.dma)->len);
+    Dma.rx_take(g_a.b->dma);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(g_a.b->dma)->status);
+    TEST_ASSERT_EQUAL_size_t(sizeof frame, IDEMIP_DMA_IO(g_a.b->dma)->len);
 }
 
 // The engine wrote the buffer, so its stale cached copy is discarded before the frame is read.
@@ -1622,17 +1649,17 @@ void test_receive_invalidates_before_the_frame_is_readable(void)
 {
     uint8_t frame[64];
 
-    memset(frame, 0xA5, sizeof frame);
+    fill_bytes(frame, 0xA5, sizeof frame);
     TEST_ASSERT_TRUE(idemip_fake_phy_feed(g_a.rig, frame, sizeof frame));
     idemip_fake_phy_poll(g_a.rig);
     g_a.rig->ev_n = 0;
 
-    Dma.rx_take(g_a.b.dma);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(g_a.b.dma)->status);
+    Dma.rx_take(g_a.b->dma);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(g_a.b->dma)->status);
     TEST_ASSERT_EQUAL_UINT32(2u, g_a.rig->ev_n);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_FAKE_PHY_EV_RX_CLAIM, g_a.rig->ev[0]);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_FAKE_PHY_EV_INVALIDATE, g_a.rig->ev[1]);
-    TEST_ASSERT_EQUAL_PTR(IDEMIP_DMA_IO(g_a.b.dma)->buf, g_a.rig->last_invalidate);
+    TEST_ASSERT_EQUAL_PTR(IDEMIP_DMA_IO(g_a.b->dma)->buf, g_a.rig->last_invalidate);
     TEST_ASSERT_EQUAL_size_t(sizeof frame, g_a.rig->last_invalidate_len);
 }
 
@@ -1651,7 +1678,7 @@ void test_transmit_cleans_before_the_descriptor_is_handed_over(void)
     TEST_ASSERT_EQUAL_UINT32(2u, g_a.rig->ev_n);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_FAKE_PHY_EV_CLEAN, g_a.rig->ev[0]);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_FAKE_PHY_EV_TX_COMMIT, g_a.rig->ev[1]);
-    TEST_ASSERT_EQUAL_PTR(IDEMIP_DMA_IO(g_a.b.dma)->buf, g_a.rig->last_clean);
+    TEST_ASSERT_EQUAL_PTR(IDEMIP_DMA_IO(g_a.b->dma)->buf, g_a.rig->last_clean);
 }
 
 // A committed frame is readable back only after a poll, so egress completes on the case's clock
@@ -1679,11 +1706,11 @@ void test_a_whole_exchange_leaks_no_transmit_descriptor(void)
     (void)send_echo(&g_a, IP_B, 0x2222u, 3u, 8u);
     pump(12);
 
-    Dma.tx_take(g_a.b.dma);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DMA_IO(g_a.b.dma)->status,
+    Dma.tx_take(g_a.b->dma);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DMA_IO(g_a.b->dma)->status,
                                   "A's transmit ring did not come back after the exchange");
-    Dma.tx_take(g_b.b.dma);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DMA_IO(g_b.b.dma)->status,
+    Dma.tx_take(g_b.b->dma);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_DMA_IO(g_b.b->dma)->status,
                                   "B's transmit ring did not come back after the exchange");
     TEST_ASSERT_TRUE(g_a.rig->tx_claims - g_a.rig->tx_commits <= 1u);
     TEST_ASSERT_TRUE(g_b.rig->tx_claims - g_b.rig->tx_commits <= 1u);
@@ -1734,12 +1761,12 @@ void test_the_answering_side_learns_the_asker(void)
     (void)node_resolve(&g_a, IP_B);
     pump(8);
 
-    IDEMIP_ARP_IO(g_b.b.arp)->now_ms = g_now_ms;
-    IDEMIP_ARP_IO(g_b.b.arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
-    IDEMIP_ARP_IO(g_b.b.arp)->find_args.spa = IP_A;
-    ArpTable.find(g_b.b.arp);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ARP_IO(g_b.b.arp)->status);
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(MAC_A, IDEMIP_ARP_IO(g_b.b.arp)->mac, IDEMIP_MAC_LEN);
+    IDEMIP_ARP_IO(g_b.b->arp)->now_ms = g_now_ms;
+    IDEMIP_ARP_IO(g_b.b->arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
+    IDEMIP_ARP_IO(g_b.b->arp)->find_args.spa = IP_A;
+    ArpTable.find(g_b.b->arp);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ARP_IO(g_b.b->arp)->status);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(MAC_A, IDEMIP_ARP_IO(g_b.b->arp)->mac, IDEMIP_MAC_LEN);
 }
 
 // "If Merge_flag is false, add the triplet ... to the translation table" sits INSIDE the "?Am I the
@@ -1749,17 +1776,17 @@ void test_a_request_for_a_third_party_creates_no_entry(void)
 {
     uint8_t frame[IDEMIP_ETH_FRAME_MIN];
 
-    memset(frame, 0, sizeof frame);
+    mmgr_zero_buf(frame, sizeof frame);
     idemip_eth_build(frame, MAC_BCAST, MAC_A, (uint16_t)IDEMIP_ETHERTYPE_ARP);
     idemip_arp_build_request(frame + IDEMIP_ETH_HDR_LEN, MAC_A, IP_A, IP_C);
     TEST_ASSERT_TRUE(idemip_fake_phy_feed(g_b.rig, frame, sizeof frame));
     pump(4);
 
-    IDEMIP_ARP_IO(g_b.b.arp)->now_ms = g_now_ms;
-    IDEMIP_ARP_IO(g_b.b.arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
-    IDEMIP_ARP_IO(g_b.b.arp)->find_args.spa = IP_A;
-    ArpTable.find(g_b.b.arp);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ARP_IO(g_b.b.arp)->status,
+    IDEMIP_ARP_IO(g_b.b->arp)->now_ms = g_now_ms;
+    IDEMIP_ARP_IO(g_b.b->arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
+    IDEMIP_ARP_IO(g_b.b->arp)->find_args.spa = IP_A;
+    ArpTable.find(g_b.b->arp);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ARP_IO(g_b.b->arp)->status,
                                   "RFC 826 adds the triplet only when this end is the target protocol address");
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, g_b.arp_replies_out, "a request for a third party owes no REPLY");
 }
@@ -1773,22 +1800,22 @@ void test_a_request_for_a_third_party_still_updates_a_known_pair(void)
 
     (void)node_resolve(&g_a, IP_B);
     pump(8);
-    IDEMIP_ARP_IO(g_b.b.arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
-    IDEMIP_ARP_IO(g_b.b.arp)->find_args.spa = IP_A;
-    ArpTable.find(g_b.b.arp);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ARP_IO(g_b.b.arp)->status);
+    IDEMIP_ARP_IO(g_b.b->arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
+    IDEMIP_ARP_IO(g_b.b->arp)->find_args.spa = IP_A;
+    ArpTable.find(g_b.b->arp);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ARP_IO(g_b.b->arp)->status);
 
-    memset(frame, 0, sizeof frame);
+    mmgr_zero_buf(frame, sizeof frame);
     idemip_eth_build(frame, MAC_BCAST, other_mac, (uint16_t)IDEMIP_ETHERTYPE_ARP);
     idemip_arp_build_request(frame + IDEMIP_ETH_HDR_LEN, other_mac, IP_A, IP_C);
     TEST_ASSERT_TRUE(idemip_fake_phy_feed(g_b.rig, frame, sizeof frame));
     pump(4);
 
-    IDEMIP_ARP_IO(g_b.b.arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
-    IDEMIP_ARP_IO(g_b.b.arp)->find_args.spa = IP_A;
-    ArpTable.find(g_b.b.arp);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ARP_IO(g_b.b.arp)->status);
-    TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(other_mac, IDEMIP_ARP_IO(g_b.b.arp)->mac, IDEMIP_MAC_LEN,
+    IDEMIP_ARP_IO(g_b.b->arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
+    IDEMIP_ARP_IO(g_b.b->arp)->find_args.spa = IP_A;
+    ArpTable.find(g_b.b->arp);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ARP_IO(g_b.b->arp)->status);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(other_mac, IDEMIP_ARP_IO(g_b.b->arp)->mac, IDEMIP_MAC_LEN,
                                           "the new hardware address supersedes the old one");
 }
 
@@ -1798,16 +1825,15 @@ void test_the_two_translation_tables_are_two_borrows(void)
     (void)node_resolve(&g_a, IP_C);
     pump(6);
 
-    IDEMIP_ARP_IO(g_a.b.arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
-    IDEMIP_ARP_IO(g_a.b.arp)->find_args.spa = IP_C;
-    ArpTable.find(g_a.b.arp);
-    IdemIpStatus a_status = IDEMIP_ARP_IO(g_a.b.arp)->status;
+    IDEMIP_ARP_IO(g_a.b->arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
+    IDEMIP_ARP_IO(g_a.b->arp)->find_args.spa = IP_C;
+    ArpTable.find(g_a.b->arp);
+    IdemIpStatus a_status = IDEMIP_ARP_IO(g_a.b->arp)->status;
 
-    IDEMIP_ARP_IO(g_b.b.arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
-    IDEMIP_ARP_IO(g_b.b.arp)->find_args.spa = IP_C;
-    ArpTable.find(g_b.b.arp);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ARP_IO(g_b.b.arp)->status,
-                                  "B's table holds a row A opened");
+    IDEMIP_ARP_IO(g_b.b->arp)->find_args.pro = (uint16_t)IDEMIP_ARP_PRO_IPV4;
+    IDEMIP_ARP_IO(g_b.b->arp)->find_args.spa = IP_C;
+    ArpTable.find(g_b.b->arp);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ARP_IO(g_b.b->arp)->status, "B's table holds a row A opened");
     TEST_ASSERT_NOT_EQUAL(IDEMIP_OK, a_status); // A is still waiting on the REPLY that never comes
 }
 
@@ -1821,16 +1847,16 @@ void test_an_unhandled_ethertype_is_an_interface_unknown_proto(void)
 {
     uint8_t frame[IDEMIP_ETH_FRAME_MIN];
 
-    memset(frame, 0, sizeof frame);
+    mmgr_zero_buf(frame, sizeof frame);
     idemip_eth_build(frame, MAC_B, MAC_A, 0x88CCu); // LLDP, which nothing here handles
     TEST_ASSERT_TRUE(idemip_fake_phy_feed(g_b.rig, frame, sizeof frame));
     pump(4);
 
-    IDEMIP_STATS_IO(g_b.b.stats)->if_args.netif = 0u;
-    IDEMIP_STATS_IO(g_b.b.stats)->if_args.id = IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS;
-    Stats.if_read(g_b.b.stats);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_STATS_IO(g_b.b.stats)->status);
-    TEST_ASSERT_EQUAL_UINT32(1u, IDEMIP_STATS_IO(g_b.b.stats)->value);
+    IDEMIP_STATS_IO(g_b.b->stats)->if_args.netif = 0u;
+    IDEMIP_STATS_IO(g_b.b->stats)->if_args.id = IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS;
+    Stats.if_read(g_b.b->stats);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_STATS_IO(g_b.b->stats)->status);
+    TEST_ASSERT_EQUAL_UINT32(1u, IDEMIP_STATS_IO(g_b.b->stats)->value);
 }
 
 // RFC 1213 sec 6.6 ipInUnknownProtos: "locally-addressed datagrams received successfully but
@@ -1841,9 +1867,9 @@ void test_an_unhandled_ip_protocol_is_an_ip_unknown_proto(void)
     uint8_t frame[IDEMIP_ETH_FRAME_MIN];
     IdemIpIp4Fields f;
 
-    memset(frame, 0, sizeof frame);
+    mmgr_zero_buf(frame, sizeof frame);
     idemip_eth_build(frame, MAC_B, MAC_A, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.total_len = (uint16_t)(IDEMIP_IPV4_HDR_LEN + 8u);
     f.ttl = (uint8_t)IDEMIP_IP_DEFAULT_TTL;
     f.proto = 253u; // RFC 3692 experimentation, which nothing here handles
@@ -1853,15 +1879,15 @@ void test_an_unhandled_ip_protocol_is_an_ip_unknown_proto(void)
     TEST_ASSERT_TRUE(idemip_fake_phy_feed(g_b.rig, frame, sizeof frame));
     pump(4);
 
-    IDEMIP_STATS_IO(g_b.b.stats)->ctr_args.id = IDEMIP_STAT_IP4_IN_UNKNOWN_PROTOS;
-    Stats.read(g_b.b.stats);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_STATS_IO(g_b.b.stats)->status);
-    TEST_ASSERT_EQUAL_UINT32(1u, IDEMIP_STATS_IO(g_b.b.stats)->value);
+    IDEMIP_STATS_IO(g_b.b->stats)->ctr_args.id = IDEMIP_STAT_IP4_IN_UNKNOWN_PROTOS;
+    Stats.read(g_b.b->stats);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_STATS_IO(g_b.b->stats)->status);
+    TEST_ASSERT_EQUAL_UINT32(1u, IDEMIP_STATS_IO(g_b.b->stats)->value);
 
-    IDEMIP_STATS_IO(g_b.b.stats)->if_args.netif = 0u;
-    IDEMIP_STATS_IO(g_b.b.stats)->if_args.id = IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS;
-    Stats.if_read(g_b.b.stats);
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, IDEMIP_STATS_IO(g_b.b.stats)->value,
+    IDEMIP_STATS_IO(g_b.b->stats)->if_args.netif = 0u;
+    IDEMIP_STATS_IO(g_b.b->stats)->if_args.id = IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS;
+    Stats.if_read(g_b.b->stats);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, IDEMIP_STATS_IO(g_b.b->stats)->value,
                                      "an unknown IP protocol was counted against the interface object");
 }
 
@@ -1872,9 +1898,9 @@ void test_a_datagram_for_another_address_is_an_interface_discard(void)
     uint8_t frame[IDEMIP_ETH_FRAME_MIN];
     IdemIpIp4Fields f;
 
-    memset(frame, 0, sizeof frame);
+    mmgr_zero_buf(frame, sizeof frame);
     idemip_eth_build(frame, MAC_B, MAC_A, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.total_len = (uint16_t)(IDEMIP_IPV4_HDR_LEN + 8u);
     f.ttl = (uint8_t)IDEMIP_IP_DEFAULT_TTL;
     f.proto = (uint8_t)IDEMIP_IP4_PROTO_UDP;
@@ -1884,14 +1910,14 @@ void test_a_datagram_for_another_address_is_an_interface_discard(void)
     TEST_ASSERT_TRUE(idemip_fake_phy_feed(g_b.rig, frame, sizeof frame));
     pump(4);
 
-    IDEMIP_STATS_IO(g_b.b.stats)->if_args.netif = 0u;
-    IDEMIP_STATS_IO(g_b.b.stats)->if_args.id = IDEMIP_STAT_IF_IN_DISCARDS;
-    Stats.if_read(g_b.b.stats);
-    TEST_ASSERT_EQUAL_UINT32(1u, IDEMIP_STATS_IO(g_b.b.stats)->value);
+    IDEMIP_STATS_IO(g_b.b->stats)->if_args.netif = 0u;
+    IDEMIP_STATS_IO(g_b.b->stats)->if_args.id = IDEMIP_STAT_IF_IN_DISCARDS;
+    Stats.if_read(g_b.b->stats);
+    TEST_ASSERT_EQUAL_UINT32(1u, IDEMIP_STATS_IO(g_b.b->stats)->value);
 
-    IDEMIP_STATS_IO(g_b.b.stats)->if_args.id = IDEMIP_STAT_IF_IN_ERRORS;
-    Stats.if_read(g_b.b.stats);
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, IDEMIP_STATS_IO(g_b.b.stats)->value,
+    IDEMIP_STATS_IO(g_b.b->stats)->if_args.id = IDEMIP_STAT_IF_IN_ERRORS;
+    Stats.if_read(g_b.b->stats);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, IDEMIP_STATS_IO(g_b.b->stats)->value,
                                      "an intact datagram for another address was counted as an error");
 }
 
@@ -1902,9 +1928,9 @@ void test_a_bad_header_is_an_interface_error(void)
     uint8_t frame[IDEMIP_ETH_FRAME_MIN];
     IdemIpIp4Fields f;
 
-    memset(frame, 0, sizeof frame);
+    mmgr_zero_buf(frame, sizeof frame);
     idemip_eth_build(frame, MAC_B, MAC_A, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.total_len = (uint16_t)(IDEMIP_IPV4_HDR_LEN + 8u);
     f.ttl = (uint8_t)IDEMIP_IP_DEFAULT_TTL;
     f.proto = (uint8_t)IDEMIP_IP4_PROTO_UDP;
@@ -1916,10 +1942,10 @@ void test_a_bad_header_is_an_interface_error(void)
     TEST_ASSERT_TRUE(idemip_fake_phy_feed(g_b.rig, frame, sizeof frame));
     pump(4);
 
-    IDEMIP_STATS_IO(g_b.b.stats)->if_args.netif = 0u;
-    IDEMIP_STATS_IO(g_b.b.stats)->if_args.id = IDEMIP_STAT_IF_IN_ERRORS;
-    Stats.if_read(g_b.b.stats);
-    TEST_ASSERT_EQUAL_UINT32(1u, IDEMIP_STATS_IO(g_b.b.stats)->value);
+    IDEMIP_STATS_IO(g_b.b->stats)->if_args.netif = 0u;
+    IDEMIP_STATS_IO(g_b.b->stats)->if_args.id = IDEMIP_STAT_IF_IN_ERRORS;
+    Stats.if_read(g_b.b->stats);
+    TEST_ASSERT_EQUAL_UINT32(1u, IDEMIP_STATS_IO(g_b.b->stats)->value);
 }
 
 // =============================================================================
@@ -2005,12 +2031,12 @@ void test_the_two_binding_tables_are_two_borrows(void)
     uint8_t remote16[IDEMIP_TCP_PCB_ADDR_BYTES];
 
     node_open_udp(&g_a, UDP_PORT_A);
-    memset(local16, 0, sizeof local16);
-    memset(remote16, 0, sizeof remote16);
+    mmgr_zero_buf(local16, sizeof local16);
+    mmgr_zero_buf(remote16, sizeof remote16);
     idemip_wr32(local16, IP_A);
     idemip_wr32(remote16, IP_B);
 
-    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(g_b.b.udp);
+    UdpPcbIo *io = IDEMIP_UDP_PCB_IO(g_b.b->udp);
     io->find_args.local_ip = local16;
     io->find_args.remote_ip = remote16;
     io->find_args.local_port = UDP_PORT_A;
@@ -2018,7 +2044,7 @@ void test_the_two_binding_tables_are_two_borrows(void)
     io->find_args.cksum_len = 0u;
     io->find_args.ip_version = 4u;
     io->find_args.netif = 0u;
-    UdpPcb.find(g_b.b.udp);
+    UdpPcb.find(g_b.b->udp);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, io->status);
 }
 
@@ -2063,13 +2089,13 @@ void test_each_end_took_the_others_initial_sequence_number(void)
     tcp_connect(&g_a, IP_B, 0u, TCP_PORT_B);
     pump(20);
 
-    IDEMIP_TCP_PCB_IO(g_a.b.tpcb)->pcb_args.index = g_a.tcp.tcb;
-    TcpPcb.load(g_a.b.tpcb);
-    IdemIpTcpVars av = IDEMIP_TCP_PCB_IO(g_a.b.tpcb)->vars;
+    IDEMIP_TCP_PCB_IO(g_a.b->tpcb)->pcb_args.index = g_a.tcp.tcb;
+    TcpPcb.load(g_a.b->tpcb);
+    IdemIpTcpVars av = IDEMIP_TCP_PCB_IO(g_a.b->tpcb)->vars;
 
-    IDEMIP_TCP_PCB_IO(g_b.b.tpcb)->pcb_args.index = g_b.tcp.tcb;
-    TcpPcb.load(g_b.b.tpcb);
-    IdemIpTcpVars bv = IDEMIP_TCP_PCB_IO(g_b.b.tpcb)->vars;
+    IDEMIP_TCP_PCB_IO(g_b.b->tpcb)->pcb_args.index = g_b.tcp.tcb;
+    TcpPcb.load(g_b.b->tpcb);
+    IdemIpTcpVars bv = IDEMIP_TCP_PCB_IO(g_b.b->tpcb)->vars;
 
     TEST_ASSERT_EQUAL_HEX32(av.iss, bv.irs);
     TEST_ASSERT_EQUAL_HEX32(bv.iss, av.irs);
@@ -2088,13 +2114,13 @@ void test_the_two_ends_draw_different_initial_sequence_numbers(void)
     tcp_connect(&g_a, IP_B, 0u, TCP_PORT_B);
     pump(20);
 
-    IDEMIP_TCP_PCB_IO(g_a.b.tpcb)->pcb_args.index = g_a.tcp.tcb;
-    TcpPcb.load(g_a.b.tpcb);
-    uint32_t a_iss = IDEMIP_TCP_PCB_IO(g_a.b.tpcb)->vars.iss;
+    IDEMIP_TCP_PCB_IO(g_a.b->tpcb)->pcb_args.index = g_a.tcp.tcb;
+    TcpPcb.load(g_a.b->tpcb);
+    uint32_t a_iss = IDEMIP_TCP_PCB_IO(g_a.b->tpcb)->vars.iss;
 
-    IDEMIP_TCP_PCB_IO(g_b.b.tpcb)->pcb_args.index = g_b.tcp.tcb;
-    TcpPcb.load(g_b.b.tpcb);
-    uint32_t b_iss = IDEMIP_TCP_PCB_IO(g_b.b.tpcb)->vars.iss;
+    IDEMIP_TCP_PCB_IO(g_b.b->tpcb)->pcb_args.index = g_b.tcp.tcb;
+    TcpPcb.load(g_b.b->tpcb);
+    uint32_t b_iss = IDEMIP_TCP_PCB_IO(g_b.b->tpcb)->vars.iss;
 
     TEST_ASSERT_TRUE(a_iss != b_iss);
 }
@@ -2144,16 +2170,16 @@ void test_delivered_data_advances_the_receive_window(void)
     tcp_connect(&g_a, IP_B, 0u, TCP_PORT_B);
     pump(20);
 
-    IDEMIP_TCP_PCB_IO(g_b.b.tpcb)->pcb_args.index = g_b.tcp.tcb;
-    TcpPcb.load(g_b.b.tpcb);
-    uint32_t before = IDEMIP_TCP_PCB_IO(g_b.b.tpcb)->vars.rcv_nxt;
+    IDEMIP_TCP_PCB_IO(g_b.b->tpcb)->pcb_args.index = g_b.tcp.tcb;
+    TcpPcb.load(g_b.b->tpcb);
+    uint32_t before = IDEMIP_TCP_PCB_IO(g_b.b->tpcb)->vars.rcv_nxt;
 
     TEST_ASSERT_TRUE(tcp_write(&g_a, msg, (uint16_t)(sizeof msg - 1u)));
     pump(12);
 
-    IDEMIP_TCP_PCB_IO(g_b.b.tpcb)->pcb_args.index = g_b.tcp.tcb;
-    TcpPcb.load(g_b.b.tpcb);
-    TEST_ASSERT_EQUAL_HEX32(before + (sizeof msg - 1u), IDEMIP_TCP_PCB_IO(g_b.b.tpcb)->vars.rcv_nxt);
+    IDEMIP_TCP_PCB_IO(g_b.b->tpcb)->pcb_args.index = g_b.tcp.tcb;
+    TcpPcb.load(g_b.b->tpcb);
+    TEST_ASSERT_EQUAL_HEX32(before + (sizeof msg - 1u), IDEMIP_TCP_PCB_IO(g_b.b->tpcb)->vars.rcv_nxt);
 }
 
 // sec 3.6 Figure 12 line 2: "FIN-WAIT-1 --> <SEQ=100><ACK=300><CTL=FIN,ACK> --> CLOSE-WAIT".
@@ -2251,8 +2277,8 @@ void test_a_segment_past_rcv_nxt_is_held_on_a_pinned_descriptor(void)
 
     TEST_ASSERT_EQUAL_INT_MESSAGE(1, g_b.oos_held, "the out-of-order segment was not held");
     TEST_ASSERT_EQUAL_size_t_MESSAGE(0u, g_b.tcp.rx_len, "a segment past RCV.NXT was delivered early");
-    Dma.pinned(g_b.b.dma);
-    TEST_ASSERT_EQUAL_UINT16_MESSAGE(1u, IDEMIP_DMA_IO(g_b.b.dma)->pinned, "the held segment pinned no descriptor");
+    Dma.pinned(g_b.b->dma);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(1u, IDEMIP_DMA_IO(g_b.b->dma)->pinned, "the held segment pinned no descriptor");
 }
 
 // The gap closes, RCV.NXT advances over the in-order segment, and every held segment that is now in
@@ -2274,9 +2300,9 @@ void test_re_delivery_hands_every_held_descriptor_back(void)
     tcp_three_out_of_order();
     pump(10);
 
-    Dma.pinned(g_b.b.dma);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(g_b.b.dma)->status);
-    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(g_b.b.dma)->pinned,
+    Dma.pinned(g_b.b->dma);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(g_b.b->dma)->status);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(g_b.b->dma)->pinned,
                                      "a re-delivered segment left its descriptor pinned");
 }
 
@@ -2292,12 +2318,12 @@ void test_a_series_of_queued_segments_draws_one_acknowledgment(void)
     TEST_ASSERT_EQUAL_INT_MESSAGE(2, g_b.acks_aggregated, "three queued segments did not aggregate two ACKs");
     TEST_ASSERT_EQUAL_INT_MESSAGE(1, g_b.acks_sent - before, "the series drew more than one acknowledgment");
 
-    IDEMIP_TCP_PCB_IO(g_b.b.tpcb)->pcb_args.index = g_b.tcp.tcb;
-    TcpPcb.load(g_b.b.tpcb);
-    uint32_t b_rcv_nxt = IDEMIP_TCP_PCB_IO(g_b.b.tpcb)->vars.rcv_nxt;
-    IDEMIP_TCP_PCB_IO(g_a.b.tpcb)->pcb_args.index = g_a.tcp.tcb;
-    TcpPcb.load(g_a.b.tpcb);
-    TEST_ASSERT_EQUAL_HEX32_MESSAGE(b_rcv_nxt, IDEMIP_TCP_PCB_IO(g_a.b.tpcb)->vars.snd_una,
+    IDEMIP_TCP_PCB_IO(g_b.b->tpcb)->pcb_args.index = g_b.tcp.tcb;
+    TcpPcb.load(g_b.b->tpcb);
+    uint32_t b_rcv_nxt = IDEMIP_TCP_PCB_IO(g_b.b->tpcb)->vars.rcv_nxt;
+    IDEMIP_TCP_PCB_IO(g_a.b->tpcb)->pcb_args.index = g_a.tcp.tcb;
+    TcpPcb.load(g_a.b->tpcb);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(b_rcv_nxt, IDEMIP_TCP_PCB_IO(g_a.b->tpcb)->vars.snd_una,
                                     "the one acknowledgment did not carry the RCV.NXT past all three");
 }
 
@@ -2315,16 +2341,16 @@ void test_the_held_segments_are_bs_borrow_alone(void)
     TEST_ASSERT_TRUE(tcp_send_at(&g_a, base + 10u, part2, 10u));
     pump(6);
 
-    IDEMIP_TCP_PCB_IO(g_b.b.tpcb)->pcb_args.index = g_b.tcp.tcb;
-    TcpPcb.load(g_b.b.tpcb);
-    TEST_ASSERT_NOT_EQUAL(IDEMIP_TCP_PCB_NONE, IDEMIP_TCP_PCB_IO(g_b.b.tpcb)->info.ooseq);
+    IDEMIP_TCP_PCB_IO(g_b.b->tpcb)->pcb_args.index = g_b.tcp.tcb;
+    TcpPcb.load(g_b.b->tpcb);
+    TEST_ASSERT_NOT_EQUAL(IDEMIP_TCP_PCB_NONE, IDEMIP_TCP_PCB_IO(g_b.b->tpcb)->info.ooseq);
 
-    IDEMIP_TCP_PCB_IO(g_a.b.tpcb)->pcb_args.index = g_a.tcp.tcb;
-    TcpPcb.load(g_a.b.tpcb);
-    TEST_ASSERT_EQUAL_UINT16_MESSAGE(IDEMIP_TCP_PCB_NONE, IDEMIP_TCP_PCB_IO(g_a.b.tpcb)->info.ooseq,
+    IDEMIP_TCP_PCB_IO(g_a.b->tpcb)->pcb_args.index = g_a.tcp.tcb;
+    TcpPcb.load(g_a.b->tpcb);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(IDEMIP_TCP_PCB_NONE, IDEMIP_TCP_PCB_IO(g_a.b->tpcb)->info.ooseq,
                                      "A's out-of-order queue holds what B held");
-    Dma.pinned(g_a.b.dma);
-    TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_DMA_IO(g_a.b.dma)->pinned);
+    Dma.pinned(g_a.b->dma);
+    TEST_ASSERT_EQUAL_UINT16(0u, IDEMIP_DMA_IO(g_a.b->dma)->pinned);
 }
 
 // The two TCB tables are two borrows: B's connection is not in A's table.
@@ -2338,20 +2364,20 @@ void test_the_two_tcb_tables_are_two_borrows(void)
     tcp_connect(&g_a, IP_B, 0u, TCP_PORT_B);
     pump(20);
 
-    memset(a16, 0, sizeof a16);
-    memset(b16, 0, sizeof b16);
+    mmgr_zero_buf(a16, sizeof a16);
+    mmgr_zero_buf(b16, sizeof b16);
     idemip_wr32(a16, IP_A);
     idemip_wr32(b16, IP_B);
 
     // B's own four-tuple, looked up in A's table: the local end is B's, which A never bound.
-    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(g_a.b.tpcb);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(g_a.b->tpcb);
     tp->find_args.local_ip = b16;
     tp->find_args.remote_ip = a16;
     tp->find_args.local_port = TCP_PORT_B;
     tp->find_args.remote_port = g_a.tcp.local_port;
     tp->find_args.ip_version = 4u;
     tp->find_args.netif = 0u;
-    TcpPcb.find(g_a.b.tpcb);
+    TcpPcb.find(g_a.b->tpcb);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, tp->status);
 }
 
@@ -2364,16 +2390,16 @@ static uint16_t g_frag_payload_len;
 
 // One built fragment, framed and put on the wire. False when there was no transmit descriptor to
 // claim or the MAC refused the frame; either one ends the run with the fragments already sent.
-static idemip_bool node_send_one_fragment(Node *n, const uint8_t *dst_mac, uint16_t frag_len)
+static embed_bool node_send_one_fragment(Node *n, const uint8_t *dst_mac, uint16_t frag_len)
 {
     uint8_t desc = 0;
     uint8_t *frame = node_tx_claim(n, &desc);
 
     if (frame == NULL)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    memcpy(frame + IDEMIP_ETH_HDR_LEN, n->scratch, frag_len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = frame + IDEMIP_ETH_HDR_LEN, .at = n->scratch, .size = frag_len);
     return node_send_frame(n, frame, desc, dst_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4, frag_len);
 }
 
@@ -2388,7 +2414,7 @@ static int send_fragmented(Node *n, uint32_t dst_ip, uint16_t mtu, uint16_t payl
     {
         return 0;
     }
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.total_len = (uint16_t)(IDEMIP_IPV4_HDR_LEN + payload_len);
     f.id = 0x5A5Au;
     f.ttl = (uint8_t)IDEMIP_IP_DEFAULT_TTL;
@@ -2406,11 +2432,11 @@ static int send_fragmented(Node *n, uint32_t dst_ip, uint16_t mtu, uint16_t payl
     idemip_udp_cksum_write(udp, payload_len, n->ip, dst_ip);
     g_frag_payload_len = payload_len;
 
-    Ip4FragIo *io = IDEMIP_IP4_FRAG_IO(n->b.frag);
+    Ip4FragIo *io = IDEMIP_IP4_FRAG_IO(n->b->frag);
     io->begin_args.dgram = dgram;
     io->begin_args.len = (size_t)IDEMIP_IPV4_HDR_LEN + payload_len;
     io->begin_args.mtu = mtu;
-    Ip4Frag.begin(n->b.frag);
+    Ip4Frag.begin(n->b->frag);
     if (io->status != IDEMIP_OK)
     {
         return 0;
@@ -2419,7 +2445,7 @@ static int send_fragmented(Node *n, uint32_t dst_ip, uint16_t mtu, uint16_t payl
     {
         io->next_args.out = n->scratch;
         io->next_args.cap = IDEMIP_ETH_MAX_PAYLOAD;
-        Ip4Frag.next(n->b.frag);
+        Ip4Frag.next(n->b->frag);
         // Three ways to stop, and they are one thing: the builder has no fragment left, or the one
         // it built could not be sent. The length is read only once the status says there is one.
         if (io->status != IDEMIP_OK || !node_send_one_fragment(n, dst_mac, io->len))
@@ -2428,7 +2454,7 @@ static int send_fragmented(Node *n, uint32_t dst_ip, uint16_t mtu, uint16_t payl
         }
         sent++;
         idemip_fake_phy_poll(n->rig);
-        Dma.tx_reap(n->b.dma);
+        Dma.tx_reap(n->b->dma);
     }
     return sent;
 }
@@ -2496,9 +2522,9 @@ void test_reassembly_hands_every_pinned_descriptor_back(void)
     TEST_ASSERT_TRUE_MESSAGE(g_b.max_pinned <= IDEMIP_MAX_PINNED_FRAMES,
                              "the pin count went past IDEMIP_MAX_PINNED_FRAMES");
 
-    Dma.pinned(g_b.b.dma);
-    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(g_b.b.dma)->status);
-    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(g_b.b.dma)->pinned, "a reassembled datagram left a pin behind");
+    Dma.pinned(g_b.b->dma);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(g_b.b->dma)->status);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, IDEMIP_DMA_IO(g_b.b->dma)->pinned, "a reassembled datagram left a pin behind");
     TEST_ASSERT_EQUAL_INT(0, g_b.fragments_held);
 }
 

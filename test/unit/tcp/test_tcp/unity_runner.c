@@ -5,7 +5,7 @@
 #include "src/tcp/tcp.h"
 #include "src/common_defines.h"
 #include "src/tcp/tcp_defines.h"
-#include <string.h>
+#include "support/fill_bytes.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);

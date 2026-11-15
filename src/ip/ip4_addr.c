@@ -17,13 +17,13 @@
 #include "src/ip/ip4_addr.h"
 #include "src/ethernet/ethernet_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The one definition, private to this TU. ready is the mark clear leaves, so a borrow no one
 // cleared is refused rather than answered out of whatever was in those bytes.
 typedef struct
 {
-    idemip_bool ready;
+    embed_bool ready;
 } Ip4AddrCtx;
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
@@ -32,11 +32,11 @@ IDEMIP_ASSERT_REGION(IDEMIP_IP4_ADDR_OFF_CTX, sizeof(Ip4AddrCtx), IDEMIP_IP4_ADD
 
 // The caller's borrow, split: the operand block, then the context. ip4_addr.h publishes the
 // offsets; these two asserts prove the span covers them before anything runs.
-static_assert(IDEMIP_IP4_ADDR_OFF_CTX + sizeof(Ip4AddrCtx) <= IDEMIP_IP4_ADDR_OFF_END,
-              "IDEMIP_IP4_ADDR_CTX_BYTES is short of the operand block and the context - raise it in "
-              "idemip_config.h");
-static_assert(IDEMIP_IP4_ADDR_OFF_END <= IDEMIP_IP4_ADDR_BORROW,
-              "IDEMIP_IP4_ADDR_BORROW is short of the map - raise IDEMIP_IP4_ADDR_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_ADDR_OFF_CTX + sizeof(Ip4AddrCtx) <= IDEMIP_IP4_ADDR_OFF_END,
+                    "IDEMIP_IP4_ADDR_CTX_BYTES is short of the operand block and the context - raise it in "
+                    "idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_ADDR_OFF_END <= IDEMIP_IP4_ADDR_BORROW,
+                    "IDEMIP_IP4_ADDR_BORROW is short of the map - raise IDEMIP_IP4_ADDR_CTX_BYTES in idemip_config.h");
 
 // The regions, at their offsets in the caller's borrow.
 #define IP4_ADDR_IO(w) IDEMIP_IP4_ADDR_IO(w)
@@ -53,8 +53,8 @@ void idemip_ip4_addr_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IP4_ADDR_OFF_CTX, 0, IP4_ADDR_STATE_BYTES);
-    IP4_ADDR_CTX(work)->ready = IDEMIP_TRUE;
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_IP4_ADDR_OFF_CTX, .val = 0, .bytes = IP4_ADDR_STATE_BYTES);
+    IP4_ADDR_CTX(work)->ready = EMBED_TRUE;
     IP4_ADDR_IO(work)->status = IDEMIP_OK;
 }
 
@@ -92,9 +92,9 @@ void idemip_ip4_addr_match(uint8_t *work)
     io->broadcast = 0u;
     io->host = 0u;
     io->prefix_len = 0u;
-    io->on_subnet = IDEMIP_FALSE;
-    io->is_broadcast = IDEMIP_FALSE;
-    io->contiguous = IDEMIP_FALSE;
+    io->on_subnet = EMBED_FALSE;
+    io->is_broadcast = EMBED_FALSE;
+    io->contiguous = EMBED_FALSE;
     if (!IP4_ADDR_CTX(work)->ready)
     {
         return;
@@ -104,16 +104,15 @@ void idemip_ip4_addr_match(uint8_t *work)
     io->network = io->match_args.net & mask;
     // RFC 3021 sec 2.2.1: on a 31-bit prefix a directed broadcast "is not possible", sec 2.1 making
     // both of the link's addresses host addresses. A 32-bit prefix names one host and no subnet.
-    idemip_bool has_bcast = (mask != 0xFFFFFFFFu && mask != 0xFFFFFFFEu) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    embed_bool has_bcast = (mask != 0xFFFFFFFFu && mask != 0xFFFFFFFEu) ? EMBED_TRUE : EMBED_FALSE;
     io->broadcast = has_bcast ? (io->network | (~mask)) : 0u;
     io->host = addr & (~mask);
     io->prefix_len = idemip_ip4_addr_mask_ones(mask);
     io->contiguous = idemip_ip4_addr_mask_contiguous(mask);
-    io->on_subnet = (((addr ^ io->match_args.net) & mask) == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
-    io->is_broadcast =
-        (addr == IDEMIP_IP4_BROADCAST || (has_bcast && io->on_subnet && addr == io->broadcast))
-            ? IDEMIP_TRUE
-            : IDEMIP_FALSE;
+    io->on_subnet = (((addr ^ io->match_args.net) & mask) == 0u) ? EMBED_TRUE : EMBED_FALSE;
+    io->is_broadcast = (addr == IDEMIP_IP4_BROADCAST || (has_bcast && io->on_subnet && addr == io->broadcast))
+                           ? EMBED_TRUE
+                           : EMBED_FALSE;
     io->status = IDEMIP_OK;
 }
 
@@ -127,7 +126,7 @@ void idemip_ip4_addr_mcast_mac_io(uint8_t *work)
     }
     Ip4AddrIo *io = IP4_ADDR_IO(work);
     io->status = IDEMIP_ERR;
-    memset(io->mac, 0, IDEMIP_MAC_LEN);
+    mmgr_zero_buf(io->mac, IDEMIP_MAC_LEN);
     if (!IP4_ADDR_CTX(work)->ready)
     {
         return;
@@ -141,4 +140,4 @@ void idemip_ip4_addr_mcast_mac_io(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

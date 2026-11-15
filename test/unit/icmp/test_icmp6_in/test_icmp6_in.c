@@ -18,22 +18,26 @@
 
 #include "src/icmp/icmp6_in.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
-#include "src/ip/ipv6_defines.h"
 #include "src/icmp/icmpv6_defines.h"
+#include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // --- the borrow, the caller's ------------------------------------------------
 
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_ICMP6_IN_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_ICMP6_IN_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_ICMP6_IN_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_ICMP6_IN_BORROW + 16))
+static uint8_t *work_b;
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_ICMP6_IN_BORROW, CANARY, cap - IDEMIP_ICMP6_IN_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_ICMP6_IN_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_ICMP6_IN_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -62,7 +66,7 @@ static uint8_t out[1600];
 static void put_ip6(const uint8_t *src, const uint8_t *dst, uint8_t nh, size_t payload)
 {
     IdemIpIp6BuildArgs a;
-    memset(&a, 0, sizeof a);
+    a = (IdemIpIp6BuildArgs){0};
     a.src = src;
     a.dst = dst;
     a.payload_len = (uint16_t)payload;
@@ -90,7 +94,7 @@ static size_t put_echo6(const uint8_t *src, const uint8_t *dst, uint8_t type, ui
     idemip_icmp6_hdr_write(m, type, IDEMIP_ICMP6_CODE_ECHO);
     idemip_wr16(m + IDEMIP_ICMP6_OFF_ID, id);
     idemip_wr16(m + IDEMIP_ICMP6_OFF_SEQ, seq);
-    memset(m + IDEMIP_ICMP6_ECHO_HDR_LEN, 0xA5, data_len);
+    fill_bytes(m + IDEMIP_ICMP6_ECHO_HDR_LEN, 0xA5, data_len);
     put_ip6(src, dst, IDEMIP_IP6_NH_ICMPV6, len);
     seal(len);
     return len;
@@ -102,14 +106,14 @@ static size_t put_error6(uint8_t type, uint8_t code, uint32_t word)
     uint8_t *m = pkt + IDEMIP_IPV6_HDR_LEN;
     uint8_t *body = m + IDEMIP_ICMP6_ERR_HDR_LEN;
     IdemIpIp6BuildArgs a;
-    memset(&a, 0, sizeof a);
+    a = (IdemIpIp6BuildArgs){0};
     a.src = HOST6;
     a.dst = PEER6;
     a.payload_len = 8u;
     a.next_hdr = IDEMIP_IP6_NH_UDP;
     a.hop_limit = 64u;
     idemip_ip6_build(body, &a);
-    memset(body + IDEMIP_IPV6_HDR_LEN, 0x11, 8u);
+    fill_bytes(body + IDEMIP_IPV6_HDR_LEN, 0x11, 8u);
     const size_t len = IDEMIP_ICMP6_ERR_HDR_LEN + IDEMIP_IPV6_HDR_LEN + 8u;
     idemip_icmp6_hdr_write(m, type, code);
     idemip_wr32(m + IDEMIP_ICMP6_OFF_BODY, word);
@@ -121,7 +125,7 @@ static size_t put_error6(uint8_t type, uint8_t code, uint32_t word)
 // A whole packet to originate an error about: a UDP one from PEER6 to HOST6.
 static void put_victim6(const uint8_t *src, const uint8_t *dst)
 {
-    memset(pkt + IDEMIP_IPV6_HDR_LEN, 0x33, 16u);
+    fill_bytes(pkt + IDEMIP_IPV6_HDR_LEN, 0x33, 16u);
     put_ip6(src, dst, IDEMIP_IP6_NH_UDP, 16u);
 }
 
@@ -133,7 +137,7 @@ static void load_recv(uint8_t *w)
     io->recv_args.out = out;
     io->recv_args.out_cap = sizeof out;
     io->recv_args.if_addr = IFADDR6;
-    io->recv_args.dst_anycast = IDEMIP_FALSE;
+    io->recv_args.dst_anycast = EMBED_FALSE;
 }
 
 // The invoking packet went to one of this node's own unicast addresses, which is RFC 4443 sec 2.2
@@ -150,10 +154,10 @@ static void load_error(uint8_t *w, uint8_t type, uint8_t code)
     io->err_args.now_ms = 0u;
     io->err_args.type = type;
     io->err_args.code = code;
-    io->err_args.link_mcast = IDEMIP_FALSE;
-    io->err_args.link_bcast = IDEMIP_FALSE;
-    io->err_args.src_anycast = IDEMIP_FALSE;
-    io->err_args.dst_local_unicast = IDEMIP_TRUE;
+    io->err_args.link_mcast = EMBED_FALSE;
+    io->err_args.link_bcast = EMBED_FALSE;
+    io->err_args.src_anycast = EMBED_FALSE;
+    io->err_args.dst_local_unicast = EMBED_TRUE;
 }
 
 // The invoking packet went somewhere sec 2.2 (b) covers: a multicast group, an anycast address the
@@ -161,7 +165,7 @@ static void load_error(uint8_t *w, uint8_t type, uint8_t code)
 static void load_error_foreign(uint8_t *w, uint8_t type, uint8_t code)
 {
     load_error(w, type, code);
-    IDEMIP_ICMP6_IN_IO(w)->err_args.dst_local_unicast = IDEMIP_FALSE;
+    IDEMIP_ICMP6_IN_IO(w)->err_args.dst_local_unicast = EMBED_FALSE;
 }
 
 static uint8_t suppress_of(uint8_t *w)
@@ -173,10 +177,12 @@ static uint8_t suppress_of(uint8_t *w)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(pkt, 0, sizeof pkt);
-    memset(out, 0, sizeof out);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_icmp6_in);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_icmp6_in);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(pkt, sizeof pkt);
+    mmgr_zero_buf(out, sizeof out);
     pkt_len = 0;
     Icmp6In.clear(work_a);
     Icmp6In.clear(work_b);
@@ -184,8 +190,8 @@ void setUp(void)
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // --- the borrow --------------------------------------------------------------
@@ -200,7 +206,7 @@ void test_every_entry_survives_a_null_borrow(void)
 
 void test_uncleared_borrow_refuses_work(void)
 {
-    arm(work_a, sizeof work_a);
+    arm(work_a, WORK_A_BYTES);
     put_echo6(PEER6, HOST6, (uint8_t)IDEMIP_ICMP6_ECHO_REQUEST, 1u, 1u, 8u);
     load_recv(work_a);
     Icmp6In.recv(work_a);
@@ -357,7 +363,7 @@ void test_an_anycast_echo_request_is_answered_from_the_interface_address(void)
 {
     put_echo6(PEER6, HOST6, (uint8_t)IDEMIP_ICMP6_ECHO_REQUEST, 1u, 1u, 4u);
     load_recv(work_a);
-    IDEMIP_ICMP6_IN_IO(work_a)->recv_args.dst_anycast = IDEMIP_TRUE;
+    IDEMIP_ICMP6_IN_IO(work_a)->recv_args.dst_anycast = EMBED_TRUE;
     Icmp6In.recv(work_a);
     TEST_ASSERT_BITS_HIGH(IDEMIP_ICMP6_IN_ACT_REPLY, IDEMIP_ICMP6_IN_IO(work_a)->act);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(IFADDR6, IDEMIP_ICMP6_IN_IO(work_a)->src, IDEMIP_IP6_ADDR_LEN);
@@ -450,7 +456,7 @@ void test_an_error_whose_body_is_shorter_than_an_ipv6_header_is_a_length_error(v
 {
     uint8_t *m = pkt + IDEMIP_IPV6_HDR_LEN;
     const size_t len = IDEMIP_ICMP6_ERR_HDR_LEN + 4u; // less of the invoking packet than a header
-    memset(m + IDEMIP_ICMP6_ERR_HDR_LEN, 0x60, 4u);
+    fill_bytes(m + IDEMIP_ICMP6_ERR_HDR_LEN, 0x60, 4u);
     idemip_icmp6_hdr_write(m, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_NO_ROUTE);
     idemip_wr32(m + IDEMIP_ICMP6_OFF_BODY, 0u);
     put_ip6(PEER6, HOST6, IDEMIP_IP6_NH_ICMPV6, len);
@@ -472,9 +478,9 @@ void test_a_truncated_quote_is_dropped_without_being_counted_an_error(void)
     // A Destination Options header whose Hdr Ext Len runs past the quote the message carries.
     uint8_t *m = pkt + IDEMIP_IPV6_HDR_LEN;
     uint8_t *body = m + IDEMIP_ICMP6_ERR_HDR_LEN;
-    memset(body, 0, IDEMIP_IPV6_HDR_LEN + 8u);
+    mmgr_zero_buf(body, IDEMIP_IPV6_HDR_LEN + 8u);
     IdemIpIp6BuildArgs f;
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp6BuildArgs){0};
     f.src = HOST6;
     f.dst = PEER6;
     f.payload_len = 8u;
@@ -500,7 +506,7 @@ void test_a_truncated_quote_is_dropped_without_being_counted_an_error(void)
     TEST_ASSERT_TRUE_MESSAGE(io->cksum_ok, "the message itself is well formed");
 
     // The same through a quote whose own Next Header is 59, RFC 8200 sec 4.7's No Next Header.
-    memset(body, 0, IDEMIP_IPV6_HDR_LEN + 8u);
+    mmgr_zero_buf(body, IDEMIP_IPV6_HDR_LEN + 8u);
     f.next_hdr = IDEMIP_IP6_NH_NONE;
     idemip_ip6_build(body, &f);
     idemip_icmp6_hdr_write(m, (uint8_t)IDEMIP_ICMP6_PACKET_TOO_BIG, IDEMIP_ICMP6_CODE_PTB);
@@ -569,7 +575,7 @@ void test_the_message_is_found_behind_an_extension_header(void)
     idemip_icmp6_hdr_write(m, (uint8_t)IDEMIP_ICMP6_ECHO_REQUEST, IDEMIP_ICMP6_CODE_ECHO);
     idemip_wr16(m + IDEMIP_ICMP6_OFF_ID, 0x77u);
     idemip_wr16(m + IDEMIP_ICMP6_OFF_SEQ, 0x88u);
-    memset(m + IDEMIP_ICMP6_ECHO_HDR_LEN, 0xA5, 8u);
+    fill_bytes(m + IDEMIP_ICMP6_ECHO_HDR_LEN, 0xA5, 8u);
     put_ip6(PEER6, HOST6, IDEMIP_IP6_NH_HOPOPT, IDEMIP_IP6_EXT_UNIT + msg_len);
     idemip_wr16(m + IDEMIP_ICMP6_OFF_CKSUM, 0u);
     idemip_wr16(m + IDEMIP_ICMP6_OFF_CKSUM,
@@ -708,7 +714,7 @@ void test_an_error_checksum_covers_the_pseudo_header(void)
 // MTU".
 void test_the_quote_is_clamped_to_the_minimum_ipv6_mtu(void)
 {
-    memset(pkt + IDEMIP_IPV6_HDR_LEN, 0x33, 1400u);
+    fill_bytes(pkt + IDEMIP_IPV6_HDR_LEN, 0x33, 1400u);
     put_ip6(PEER6, HOST6, IDEMIP_IP6_NH_UDP, 1400u);
     load_error(work_a, (uint8_t)IDEMIP_ICMP6_PACKET_TOO_BIG, IDEMIP_ICMP6_CODE_PTB);
     IDEMIP_ICMP6_IN_IO(work_a)->err_args.word = 1280u;
@@ -820,7 +826,7 @@ static void put_option_victim(const uint8_t *dst, uint8_t action)
     hop[1] = 0u;
     hop[2] = action;
     hop[3] = 4u;
-    memset(hop + 4, 0, 4u);
+    mmgr_zero_buf(hop + 4, 4u);
     put_ip6(PEER6, dst, IDEMIP_IP6_NH_HOPOPT, IDEMIP_IP6_EXT_UNIT);
 }
 
@@ -862,7 +868,7 @@ void test_no_error_about_a_link_layer_multicast(void)
 {
     put_victim6(PEER6, HOST6);
     load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
-    IDEMIP_ICMP6_IN_IO(work_a)->err_args.link_mcast = IDEMIP_TRUE;
+    IDEMIP_ICMP6_IN_IO(work_a)->err_args.link_mcast = EMBED_TRUE;
     Icmp6In.error(work_a);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP6_IN_SUPPRESS_LINK_MCAST, IDEMIP_ICMP6_IN_IO(work_a)->suppress);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_ICMP6_IN_IO(work_a)->status);
@@ -873,7 +879,7 @@ void test_no_error_about_a_link_layer_broadcast(void)
 {
     put_victim6(PEER6, HOST6);
     load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
-    IDEMIP_ICMP6_IN_IO(work_a)->err_args.link_bcast = IDEMIP_TRUE;
+    IDEMIP_ICMP6_IN_IO(work_a)->err_args.link_bcast = EMBED_TRUE;
     Icmp6In.error(work_a);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP6_IN_SUPPRESS_LINK_BCAST, IDEMIP_ICMP6_IN_IO(work_a)->suppress);
 }
@@ -884,8 +890,8 @@ void test_the_link_layer_exceptions_carry_from_e3(void)
     put_victim6(PEER6, HOST6);
     load_error(work_a, (uint8_t)IDEMIP_ICMP6_PACKET_TOO_BIG, IDEMIP_ICMP6_CODE_PTB);
     IDEMIP_ICMP6_IN_IO(work_a)->err_args.word = 1280u;
-    IDEMIP_ICMP6_IN_IO(work_a)->err_args.link_mcast = IDEMIP_TRUE;
-    IDEMIP_ICMP6_IN_IO(work_a)->err_args.link_bcast = IDEMIP_TRUE;
+    IDEMIP_ICMP6_IN_IO(work_a)->err_args.link_mcast = EMBED_TRUE;
+    IDEMIP_ICMP6_IN_IO(work_a)->err_args.link_bcast = EMBED_TRUE;
     Icmp6In.error(work_a);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP6_IN_SUPPRESS_NONE, IDEMIP_ICMP6_IN_IO(work_a)->suppress);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ICMP6_IN_IO(work_a)->status);
@@ -910,7 +916,7 @@ void test_no_error_about_a_known_anycast_source(void)
 {
     put_victim6(PEER6, HOST6);
     load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
-    IDEMIP_ICMP6_IN_IO(work_a)->err_args.src_anycast = IDEMIP_TRUE;
+    IDEMIP_ICMP6_IN_IO(work_a)->err_args.src_anycast = EMBED_TRUE;
     Icmp6In.error(work_a);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP6_IN_SUPPRESS_SRC, IDEMIP_ICMP6_IN_IO(work_a)->suppress);
 }
@@ -1031,9 +1037,9 @@ void test_a_built_error_repeats(void)
     Icmp6In.error(work_a);
     const size_t first = IDEMIP_ICMP6_IN_IO(work_a)->out_len;
     uint8_t copy[128];
-    memcpy(copy, out, first);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = copy, .at = out, .size = first);
 
-    memset(out, 0, sizeof out);
+    mmgr_zero_buf(out, sizeof out);
     load_error(work_a, (uint8_t)IDEMIP_ICMP6_DEST_UNREACHABLE, IDEMIP_ICMP6_DU_PORT_UNREACH);
     Icmp6In.error(work_a);
     TEST_ASSERT_EQUAL_size_t(first, IDEMIP_ICMP6_IN_IO(work_a)->out_len);
@@ -1116,7 +1122,7 @@ void test_the_invoking_type_is_read_only_where_the_packet_carries_one(void)
     // the error about it.
     Icmp6In.clear(work_a);
     uint8_t *frag = pkt + IDEMIP_IPV6_HDR_LEN;
-    memset(frag, 0, IDEMIP_IP6_FRAG_HDR_LEN);
+    mmgr_zero_buf(frag, IDEMIP_IP6_FRAG_HDR_LEN);
     frag[0] = IDEMIP_IP6_NH_ICMPV6;
     idemip_wr16(frag + 2u, 0u); // offset zero, more fragments clear
     idemip_wr32(frag + 4u, 0x1234u);
@@ -1131,7 +1137,7 @@ void test_the_invoking_type_is_read_only_where_the_packet_carries_one(void)
     // A later fragment of the same: the head is in the fragment before it, so there is no type here.
     Icmp6In.clear(work_a);
     frag = pkt + IDEMIP_IPV6_HDR_LEN;
-    memset(frag, 0, IDEMIP_IP6_FRAG_HDR_LEN);
+    mmgr_zero_buf(frag, IDEMIP_IP6_FRAG_HDR_LEN);
     frag[0] = IDEMIP_IP6_NH_ICMPV6;
     idemip_wr16(frag + 2u, 8u); // offset one unit on
     idemip_wr32(frag + 4u, 0x1234u);
@@ -1201,7 +1207,7 @@ void test_a_header_chain_that_runs_off_the_end_names_no_upper_layer(void)
 {
     // A Hop-by-Hop header with fewer octets behind it than sec 4.3 gives one.
     Icmp6In.clear(work_a);
-    memset(pkt + IDEMIP_IPV6_HDR_LEN, 0, 4u);
+    mmgr_zero_buf(pkt + IDEMIP_IPV6_HDR_LEN, 4u);
     pkt[IDEMIP_IPV6_HDR_LEN] = IDEMIP_IP6_NH_ICMPV6;
     put_ip6(PEER6, HOST6, IDEMIP_IP6_NH_HOPOPT, 4u);
     load_recv(work_a);

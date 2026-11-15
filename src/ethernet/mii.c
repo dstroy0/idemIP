@@ -19,7 +19,7 @@
 
 #if IDEMIP_ENABLE_ETHERNET
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief One decode. */
 typedef struct
@@ -32,19 +32,19 @@ typedef struct
 } MiiCtx;
 
 /** @brief Whether every bit of the mask is set in the register. */
-IDEMIP_INLINE idemip_bool mii_bit(const MiiCtx *c)
+EMBED_INLINE embed_bool mii_bit(const MiiCtx *c)
 {
-    return (idemip_bool)(((c->reg & c->mask) == c->mask) ? IDEMIP_TRUE : IDEMIP_FALSE);
+    return (embed_bool)(((c->reg & c->mask) == c->mask) ? EMBED_TRUE : EMBED_FALSE);
 }
 
 /** @brief The selector field of register 4 or 5, bits 4:0. */
-IDEMIP_INLINE uint8_t mii_selector(const MiiCtx *c)
+EMBED_INLINE uint8_t mii_selector(const MiiCtx *c)
 {
     return (uint8_t)(c->reg & IDEMIP_MII_SELECTOR_MASK);
 }
 
 /** @brief Register 5, field by field. */
-IDEMIP_INLINE IdemIpMiiPartner mii_anlpar_decode(const MiiCtx *c)
+EMBED_INLINE IdemIpMiiPartner mii_anlpar_decode(const MiiCtx *c)
 {
     const uint16_t anlpar = c->anlpar;
     IdemIpMiiPartner p;
@@ -63,7 +63,7 @@ IDEMIP_INLINE IdemIpMiiPartner mii_anlpar_decode(const MiiCtx *c)
 }
 
 /** @brief The abilities both ends advertised: register 4 AND register 5, over bits 9:5. */
-IDEMIP_INLINE uint16_t mii_common_tech(const MiiCtx *c)
+EMBED_INLINE uint16_t mii_common_tech(const MiiCtx *c)
 {
     return (uint16_t)(c->anar & c->anlpar & IDEMIP_MII_TECH_MASK);
 }
@@ -76,19 +76,19 @@ IDEMIP_INLINE uint16_t mii_common_tech(const MiiCtx *c)
  * page resolves in, and 100BASE-T4 is half duplex only. The rate stays NONE while the link is down,
  * while auto-negotiation has not completed, or when the two ability words share no technology bit.
  */
-IDEMIP_INLINE IdemIpMiiResolved mii_resolve(const MiiCtx *c)
+EMBED_INLINE IdemIpMiiResolved mii_resolve(const MiiCtx *c)
 {
     IdemIpMiiResolved r;
     uint16_t common = idemip_mii_common_tech(c->anar, c->anlpar);
 
     r.tech = 0u;
     r.speed_mbps = IDEMIP_MII_SPEED_NONE;
-    r.full_duplex = IDEMIP_FALSE;
+    r.full_duplex = EMBED_FALSE;
     r.up = idemip_mii_bit(c->bmsr, IDEMIP_BMSR_LINK_UP);
     r.aneg_complete = idemip_mii_bit(c->bmsr, IDEMIP_BMSR_ANEG_COMPLETE);
     r.ext_status = idemip_mii_bit(c->bmsr, IDEMIP_BMSR_EXT_STATUS);
 
-    if ((r.up == IDEMIP_FALSE) || (r.aneg_complete == IDEMIP_FALSE))
+    if ((r.up == EMBED_FALSE) || (r.aneg_complete == EMBED_FALSE))
     {
         return r;
     }
@@ -97,7 +97,7 @@ IDEMIP_INLINE IdemIpMiiResolved mii_resolve(const MiiCtx *c)
     {
         r.tech = IDEMIP_ANAR_100BASE_TX_FD;
         r.speed_mbps = IDEMIP_MII_SPEED_100;
-        r.full_duplex = IDEMIP_TRUE;
+        r.full_duplex = EMBED_TRUE;
     }
     else if ((common & IDEMIP_ANAR_100BASE_T4) != 0u)
     {
@@ -113,7 +113,7 @@ IDEMIP_INLINE IdemIpMiiResolved mii_resolve(const MiiCtx *c)
     {
         r.tech = IDEMIP_ANAR_10BASE_T_FD;
         r.speed_mbps = IDEMIP_MII_SPEED_10;
-        r.full_duplex = IDEMIP_TRUE;
+        r.full_duplex = EMBED_TRUE;
     }
     else if ((common & IDEMIP_ANAR_10BASE_T_HD) != 0u)
     {
@@ -127,31 +127,31 @@ IDEMIP_INLINE IdemIpMiiResolved mii_resolve(const MiiCtx *c)
 /* The namespace is a table of function pointers with the caller's argument lists in their types,
    so these are what it points at. Each builds the context and hands it to the body above. */
 
-idemip_bool idemip_mii_bit(uint16_t reg, uint16_t mask)
+embed_bool idemip_mii_bit(uint16_t reg, uint16_t mask)
 {
-    return IDEMIP_CALL(mii_bit, MiiCtx, .reg = reg, .mask = mask);
+    return EMBED_CALL(mii_bit, MiiCtx, .reg = reg, .mask = mask);
 }
 
 uint8_t idemip_mii_selector(uint16_t reg)
 {
-    return IDEMIP_CALL(mii_selector, MiiCtx, .reg = reg);
+    return EMBED_CALL(mii_selector, MiiCtx, .reg = reg);
 }
 
 IdemIpMiiPartner idemip_mii_anlpar_decode(uint16_t anlpar)
 {
-    return IDEMIP_CALL(mii_anlpar_decode, MiiCtx, .anlpar = anlpar);
+    return EMBED_CALL(mii_anlpar_decode, MiiCtx, .anlpar = anlpar);
 }
 
 uint16_t idemip_mii_common_tech(uint16_t anar, uint16_t anlpar)
 {
-    return IDEMIP_CALL(mii_common_tech, MiiCtx, .anar = anar, .anlpar = anlpar);
+    return EMBED_CALL(mii_common_tech, MiiCtx, .anar = anar, .anlpar = anlpar);
 }
 
 IdemIpMiiResolved idemip_mii_resolve(uint16_t bmsr, uint16_t anar, uint16_t anlpar)
 {
-    return IDEMIP_CALL(mii_resolve, MiiCtx, .bmsr = bmsr, .anar = anar, .anlpar = anlpar);
+    return EMBED_CALL(mii_resolve, MiiCtx, .bmsr = bmsr, .anar = anar, .anlpar = anlpar);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET

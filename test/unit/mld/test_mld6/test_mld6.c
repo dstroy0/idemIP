@@ -17,15 +17,17 @@
 
 #include "src/mld/mld6.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each so
 // a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(IDEMIP_ALIGN) uint8_t work_a[IDEMIP_MLD6_BORROW + 16];
-static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_MLD6_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_MLD6_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_MLD6_BORROW + 16))
+static uint8_t *work_b;
 
 // The span clear owns: the context and the group table.
 #define STATE_OFF ((size_t)IDEMIP_MLD6_OFF_CTX)
@@ -39,8 +41,8 @@ static const uint8_t g_group[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_MLD6_BORROW, CANARY, cap - IDEMIP_MLD6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_MLD6_BORROW, .val = CANARY, .bytes = cap - IDEMIP_MLD6_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -53,14 +55,16 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_mld6);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_mld6);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // Every entry, in namespace order, so a new one added to Mld6Ns is added here too.
@@ -106,7 +110,7 @@ void test_two_borrows_share_no_byte(void)
 // this module has.
 void test_clear_on_one_borrow_leaves_the_other_untouched(void)
 {
-    memset(work_b + STATE_OFF, 0xC3, STATE_END - STATE_OFF);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b + STATE_OFF, .val = 0xC3, .bytes = STATE_END - STATE_OFF);
     IDEMIP_MLD6_IO(work_b)->group_args.netif = 1u;
 
     Mld6.clear(work_a);
@@ -159,7 +163,7 @@ void test_clear_reports_ok(void)
 // sec 5 Non-Listener state that "requires no storage in the node".
 void test_clear_zeroes_the_table(void)
 {
-    memset(work_a, 0xFF, IDEMIP_MLD6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_MLD6_BORROW);
     Mld6.clear(work_a);
     for (size_t i = TABLE_OFF; i < STATE_END; i++)
     {
@@ -171,7 +175,7 @@ void test_clear_zeroes_the_table(void)
 // these bytes were cleared.
 void test_clear_zeroes_the_context_apart_from_the_cleared_mark(void)
 {
-    memset(work_a, 0xFF, IDEMIP_MLD6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_MLD6_BORROW);
     Mld6.clear(work_a);
     size_t set = 0;
     for (size_t i = STATE_OFF; i < TABLE_OFF; i++)
@@ -199,9 +203,9 @@ void test_clear_leaves_the_operand_block_alone(void)
 // once.
 void test_clear_is_idempotent(void)
 {
-    memset(work_a, 0xFF, IDEMIP_MLD6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_MLD6_BORROW);
     Mld6.clear(work_a);
-    memcpy(work_b, work_a, IDEMIP_MLD6_BORROW);
+    EMBED_CALL(memor.cpy, MemoriaCfg, .dst = work_b, .src = work_a, .bytes = IDEMIP_MLD6_BORROW);
     Mld6.clear(work_a);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(work_b + STATE_OFF, work_a + STATE_OFF, STATE_END - STATE_OFF);
 }
@@ -319,7 +323,7 @@ static IdemIpStatus do_join_at(uint8_t *w, const uint8_t *grp, uint8_t netif, ui
     IDEMIP_MLD6_IO(w)->group_args.netif = netif;
     IDEMIP_MLD6_IO(w)->group_args.now_ms = now_ms;
     IDEMIP_MLD6_IO(w)->group_args.rand = rand;
-    IDEMIP_MLD6_IO(w)->group_args.done_always = IDEMIP_FALSE;
+    IDEMIP_MLD6_IO(w)->group_args.done_always = EMBED_FALSE;
     Mld6.join(w);
     return IDEMIP_MLD6_IO(w)->status;
 }
@@ -470,7 +474,7 @@ void test_the_done_optimization_can_be_turned_off(void)
 
     IDEMIP_MLD6_IO(work_a)->group_args.group = g_group;
     IDEMIP_MLD6_IO(work_a)->group_args.netif = 0u;
-    IDEMIP_MLD6_IO(work_a)->group_args.done_always = IDEMIP_TRUE;
+    IDEMIP_MLD6_IO(work_a)->group_args.done_always = EMBED_TRUE;
     Mld6.leave(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_MLD6_IO(work_a)->status);
     TEST_ASSERT_TRUE_MESSAGE(IDEMIP_MLD6_IO(work_a)->send_done,
@@ -483,7 +487,7 @@ void test_the_done_optimization_can_be_turned_off(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join(work_a, g_all_nodes, 0u));
     IDEMIP_MLD6_IO(work_a)->group_args.group = g_all_nodes;
     IDEMIP_MLD6_IO(work_a)->group_args.netif = 0u;
-    IDEMIP_MLD6_IO(work_a)->group_args.done_always = IDEMIP_TRUE;
+    IDEMIP_MLD6_IO(work_a)->group_args.done_always = EMBED_TRUE;
     Mld6.leave(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_MLD6_IO(work_a)->status);
     TEST_ASSERT_FALSE_MESSAGE(IDEMIP_MLD6_IO(work_a)->send_done,
@@ -528,7 +532,7 @@ void test_a_full_table_is_busy_and_the_retry_after_a_leave_succeeds(void)
     for (uint8_t i = 0; i < IDEMIP_MLD6_GROUPS; i++)
     {
         uint8_t grp[IDEMIP_IP6_ADDR_LEN];
-        memcpy(grp, g_group, sizeof grp);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = grp, .at = g_group, .size = sizeof grp);
         grp[IDEMIP_IP6_ADDR_LEN - 1u] = (uint8_t)(0x10u + i);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join(work_a, grp, 0u));
     }
@@ -536,7 +540,7 @@ void test_a_full_table_is_busy_and_the_retry_after_a_leave_succeeds(void)
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_MLD6_NONE, IDEMIP_MLD6_IO(work_a)->index);
 
     uint8_t freed[IDEMIP_IP6_ADDR_LEN];
-    memcpy(freed, g_group, sizeof freed);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = freed, .at = g_group, .size = sizeof freed);
     freed[IDEMIP_IP6_ADDR_LEN - 1u] = 0x10u;
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_leave(work_a, freed, 0u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, do_join(work_a, g_group3, 0u));

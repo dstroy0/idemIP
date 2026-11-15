@@ -25,17 +25,19 @@
 
 #include "src/ip/ip6_forward.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
-#include "src/ip/ipv6_defines.h"
 #include "src/icmp/icmpv6_defines.h"
+#include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 #define CANARY 0x5Au
 #define DIRT 0xCCu
 
-static _Alignas(8) uint8_t work_a[IDEMIP_IP6_FORWARD_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_IP6_FORWARD_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_IP6_FORWARD_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_IP6_FORWARD_BORROW + 16))
+static uint8_t *work_b;
 
 // One packet, built where the suite can reach it. 1500 octets is an Ethernet payload, so a case that
 // claims a long packet is claiming octets that are really there.
@@ -70,8 +72,9 @@ static const uint8_t MCAST_GLOBAL[16] = {0xff, 0x0e, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_IP6_FORWARD_BORROW, CANARY, cap - IDEMIP_IP6_FORWARD_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_IP6_FORWARD_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_IP6_FORWARD_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -84,15 +87,17 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(g_pkt, 0, sizeof g_pkt);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_ip6_forward);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_ip6_forward);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(g_pkt, sizeof g_pkt);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // --- building a packet --------------------------------------------------------
@@ -130,14 +135,14 @@ static size_t build_icmp6(const uint8_t *src, const uint8_t *dst, uint8_t hop, u
 static void args_default(uint8_t *w, size_t len)
 {
     Ip6ForwardArgs *a = &IDEMIP_IP6_FORWARD_IO(w)->fwd_args;
-    memset(a, 0, sizeof *a);
+    *a = (Ip6ForwardArgs){0};
     a->hdr = g_pkt;
     a->len = len;
     a->next_hop = DOC_ROUTER;
     a->out_mtu = 1500u;
     a->in_netif = 0u;
     a->out_netif = 1u;
-    a->routed = IDEMIP_TRUE;
+    a->routed = EMBED_TRUE;
 }
 
 static void clear_ok(uint8_t *w)
@@ -219,7 +224,7 @@ void test_clear_leaves_the_operand_block_alone(void)
 // clear works on a borrow full of anything, so a second run leaves the same usable state.
 void test_clear_reclaims_a_dirty_borrow(void)
 {
-    memset(work_a, DIRT, IDEMIP_IP6_FORWARD_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = DIRT, .bytes = IDEMIP_IP6_FORWARD_BORROW);
     clear_ok(work_a);
     size_t len = build_plain(DOC_HOST_A, DOC_HOST_B, HOP_COMMON);
     args_default(work_a, len);
@@ -310,7 +315,7 @@ void test_no_route_answers_destination_unreachable_code_zero(void)
     clear_ok(work_a);
     size_t len = build_plain(DOC_HOST_A, DOC_HOST_B, HOP_COMMON);
     args_default(work_a, len);
-    IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.routed = IDEMIP_FALSE;
+    IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.routed = EMBED_FALSE;
     Ip6Forward.decide(work_a);
 
     const Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
@@ -367,7 +372,7 @@ void test_packet_too_big_is_sent_even_to_a_multicast_destination(void)
     size_t len = build6(DOC_HOST_A, MCAST_GLOBAL, HOP_COMMON, (uint8_t)IDEMIP_IP6_NH_TCP, 1400u);
     args_default(work_a, len);
     IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.out_mtu = (uint16_t)IDEMIP_IPV6_MIN_MTU;
-    IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.ll_multicast = IDEMIP_TRUE;
+    IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.ll_multicast = EMBED_TRUE;
     Ip6Forward.decide(work_a);
 
     const Ip6ForwardIo *io = IDEMIP_IP6_FORWARD_IO(work_a);
@@ -396,7 +401,7 @@ void test_a_link_layer_multicast_gets_no_time_exceeded(void)
     clear_ok(work_a);
     size_t len = build_plain(DOC_HOST_A, DOC_HOST_B, 1u);
     args_default(work_a, len);
-    IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.ll_multicast = IDEMIP_TRUE;
+    IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.ll_multicast = EMBED_TRUE;
     Ip6Forward.decide(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_R_HOP_LIMIT, IDEMIP_IP6_FORWARD_IO(work_a)->reason);
     TEST_ASSERT_FALSE(IDEMIP_IP6_FORWARD_IO(work_a)->icmp);
@@ -408,7 +413,7 @@ void test_a_link_layer_broadcast_gets_no_time_exceeded(void)
     clear_ok(work_a);
     size_t len = build_plain(DOC_HOST_A, DOC_HOST_B, 1u);
     args_default(work_a, len);
-    IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.ll_broadcast = IDEMIP_TRUE;
+    IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.ll_broadcast = EMBED_TRUE;
     Ip6Forward.decide(work_a);
     TEST_ASSERT_FALSE(IDEMIP_IP6_FORWARD_IO(work_a)->icmp);
 }
@@ -665,7 +670,7 @@ void test_a_redirect_is_owed_when_the_source_is_a_neighbor_on_the_same_link(void
     args_default(work_a, len);
     Ip6ForwardArgs *a = &IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args;
     a->out_netif = 0u;
-    a->src_neighbor = IDEMIP_TRUE;
+    a->src_neighbor = EMBED_TRUE;
     a->next_hop = LINK_LOCAL_B;
     Ip6Forward.decide(work_a);
 
@@ -685,7 +690,7 @@ void test_no_redirect_to_a_next_hop_that_is_not_link_local(void)
     args_default(work_a, len);
     Ip6ForwardArgs *a = &IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args;
     a->out_netif = 0u;
-    a->src_neighbor = IDEMIP_TRUE;
+    a->src_neighbor = EMBED_TRUE;
     a->next_hop = DOC_ROUTER; // a second router on the link, named by its global address
     Ip6Forward.decide(work_a);
 
@@ -704,7 +709,7 @@ void test_a_redirect_to_the_destination_itself_is_owed(void)
     args_default(work_a, len);
     Ip6ForwardArgs *a = &IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args;
     a->out_netif = 0u;
-    a->src_neighbor = IDEMIP_TRUE;
+    a->src_neighbor = EMBED_TRUE;
     a->next_hop = DOC_HOST_B; // the destination is on-link, so the next hop is the destination
     Ip6Forward.decide(work_a);
 
@@ -719,7 +724,7 @@ void test_no_redirect_across_interfaces(void)
     clear_ok(work_a);
     size_t len = build_plain(DOC_HOST_A, DOC_HOST_B, HOP_COMMON);
     args_default(work_a, len);
-    IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.src_neighbor = IDEMIP_TRUE;
+    IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.src_neighbor = EMBED_TRUE;
     Ip6Forward.decide(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_SEND, IDEMIP_IP6_FORWARD_IO(work_a)->action);
     TEST_ASSERT_FALSE(IDEMIP_IP6_FORWARD_IO(work_a)->redirect);
@@ -732,7 +737,7 @@ void test_no_redirect_to_a_multicast_destination(void)
     args_default(work_a, len);
     Ip6ForwardArgs *a = &IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args;
     a->out_netif = 0u;
-    a->src_neighbor = IDEMIP_TRUE;
+    a->src_neighbor = EMBED_TRUE;
     Ip6Forward.decide(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FORWARD_SEND, IDEMIP_IP6_FORWARD_IO(work_a)->action);
     TEST_ASSERT_FALSE(IDEMIP_IP6_FORWARD_IO(work_a)->redirect);
@@ -813,7 +818,7 @@ void test_nothing_is_ever_busy(void)
     TEST_ASSERT_NOT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_IP6_FORWARD_IO(work_a)->status);
 
     args_default(work_a, len);
-    IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.routed = IDEMIP_FALSE;
+    IDEMIP_IP6_FORWARD_IO(work_a)->fwd_args.routed = EMBED_FALSE;
     Ip6Forward.decide(work_a);
     TEST_ASSERT_NOT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_IP6_FORWARD_IO(work_a)->status);
 
@@ -876,7 +881,7 @@ void test_the_error_rules_read_the_source_and_the_chain(void)
     // close, so there is no ICMPv6 type to read and the packet is not carrying an error.
     clear_ok(work_a);
     len = build6(DOC_HOST_A, DOC_HOST_B, 1u, (uint8_t)IDEMIP_IP6_NH_HOPOPT, 4u);
-    memset(g_pkt + IDEMIP_IPV6_HDR_LEN, 0, 4u);
+    mmgr_zero_buf(g_pkt + IDEMIP_IPV6_HDR_LEN, 4u);
     g_pkt[IDEMIP_IPV6_HDR_LEN] = (uint8_t)IDEMIP_IP6_NH_ICMPV6;
     args_default(work_a, len);
     Ip6Forward.decide(work_a);

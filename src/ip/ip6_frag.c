@@ -16,7 +16,7 @@
 #include "src/common_defines.h"
 #include "src/ip/ipv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads zero here and every
 // entry but clear refuses it.
@@ -39,9 +39,9 @@ typedef struct
     uint16_t nh_off;
     uint16_t index;
     uint8_t next_hdr;
-    idemip_bool split;
-    idemip_bool open;
-    idemip_bool done;
+    embed_bool split;
+    embed_bool open;
+    embed_bool done;
 } Ip6FragCtx;
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
@@ -51,22 +51,22 @@ IDEMIP_ASSERT_REGION(IDEMIP_IP6_FRAG_OFF_CTX, sizeof(Ip6FragCtx), IDEMIP_IP6_FRA
 // The head region carries the operand block and the context, and this unit holds no table, so the
 // pair is the whole borrow. ip6_frag.h publishes the offsets; the assert proves the span covers them
 // before anything runs.
-static_assert(IDEMIP_IP6_FRAG_OFF_CTX + sizeof(Ip6FragCtx) <= IDEMIP_IP6_FRAG_BORROW,
-              "IDEMIP_IP6_FRAG_BORROW is short of the operand block and the context - raise it in "
-              "idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_FRAG_OFF_CTX + sizeof(Ip6FragCtx) <= IDEMIP_IP6_FRAG_BORROW,
+                    "IDEMIP_IP6_FRAG_BORROW is short of the operand block and the context - raise it in "
+                    "idemip_config.h");
 
 // The context starts at the end of the operand block, so its offset carries the borrow's alignment.
-static_assert((IDEMIP_IP6_FRAG_CTX_BYTES & (IDEMIP_ALIGN - 1u)) == 0u,
-              "IDEMIP_IP6_FRAG_CTX_BYTES must be a multiple of IDEMIP_ALIGN");
+EMBED_STATIC_ASSERT((IDEMIP_IP6_FRAG_CTX_BYTES & (IDEMIP_ALIGN - 1u)) == 0u,
+                    "IDEMIP_IP6_FRAG_CTX_BYTES must be a multiple of IDEMIP_ALIGN");
 
 // The regions, at their offsets in the caller's borrow.
 #define IP6_FRAG_IO(w) IDEMIP_IP6_FRAG_IO(w)
 #define IP6_FRAG_CTX(w) ((Ip6FragCtx *)(void *)((w) + IDEMIP_IP6_FRAG_OFF_CTX))
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool ip6_frag_ready(uint8_t *work)
+static embed_bool ip6_frag_ready(uint8_t *work)
 {
-    return (idemip_bool)(IP6_FRAG_CTX(work)->ready == IP6_FRAG_READY);
+    return (embed_bool)(IP6_FRAG_CTX(work)->ready == IP6_FRAG_READY);
 }
 
 // --- the chain walk (RFC 8200 sec 4.5) -------------------------------------
@@ -77,8 +77,8 @@ typedef struct
     size_t unfrag;  ///< octets the Per-Fragment headers span, the fixed header included
     size_t nh_off;  ///< the Next Header octet of the last of them, which becomes 44
     size_t ext_end; ///< octets to the upper-layer header, so ext_end - unfrag is what must ride along
-    idemip_bool fragmented;
-    idemip_bool ok;
+    embed_bool fragmented;
+    embed_bool ok;
 } Ip6FragChain;
 
 // "The Per-Fragment headers must consist of the IPv6 header plus any extension headers that must be
@@ -96,8 +96,8 @@ static Ip6FragChain ip6_frag_walk(const uint8_t *pkt, size_t len)
     c.unfrag = IDEMIP_IPV6_HDR_LEN;
     c.nh_off = IDEMIP_IP6_OFF_NEXT_HDR;
     c.ext_end = IDEMIP_IPV6_HDR_LEN;
-    c.fragmented = IDEMIP_FALSE;
-    c.ok = IDEMIP_FALSE;
+    c.fragmented = EMBED_FALSE;
+    c.ok = EMBED_FALSE;
 
     size_t off = IDEMIP_IPV6_HDR_LEN;
     uint8_t nh = idemip_ip6_next_hdr(pkt);
@@ -106,7 +106,7 @@ static Ip6FragChain ip6_frag_walk(const uint8_t *pkt, size_t len)
     {
         if (nh == IDEMIP_IP6_NH_FRAGMENT)
         {
-            c.fragmented = IDEMIP_TRUE;
+            c.fragmented = EMBED_TRUE;
             return c;
         }
         // sec 4.1: the Hop-by-Hop Options header is the one "restricted to appear immediately after an
@@ -142,7 +142,7 @@ static Ip6FragChain ip6_frag_walk(const uint8_t *pkt, size_t len)
         hops = (uint16_t)(hops + 1u);
     }
     c.ext_end = off;
-    c.ok = IDEMIP_TRUE;
+    c.ok = EMBED_TRUE;
     return c;
 }
 
@@ -158,8 +158,8 @@ static void ip6_frag_take(uint8_t *work)
     const uint8_t *pkt = io->begin_args.pkt;
     const uint16_t mtu = io->begin_args.mtu;
 
-    ctx->open = IDEMIP_FALSE;
-    ctx->done = IDEMIP_FALSE;
+    ctx->open = EMBED_FALSE;
+    ctx->done = EMBED_FALSE;
     ctx->pkt = NULL;
 
     if (pkt == NULL || io->begin_args.len < IDEMIP_IPV6_HDR_LEN || idemip_ip6_version(pkt) != IDEMIP_IP6_VERSION)
@@ -188,7 +188,7 @@ static void ip6_frag_take(uint8_t *work)
     ctx->cursor = 0u;
     ctx->index = 0u;
     ctx->chunk = ctx->data_len;
-    ctx->split = IDEMIP_FALSE;
+    ctx->split = EMBED_FALSE;
 
     if (pkt_len > (size_t)mtu)
     {
@@ -234,10 +234,10 @@ static void ip6_frag_take(uint8_t *work)
         ctx->next_hdr = pkt[c.nh_off];
         ctx->data_len = (uint16_t)(pkt_len - c.unfrag);
         ctx->chunk = chunk;
-        ctx->split = IDEMIP_TRUE;
+        ctx->split = EMBED_TRUE;
     }
 
-    ctx->open = IDEMIP_TRUE;
+    ctx->open = EMBED_TRUE;
     io->split = ctx->split;
     io->unfrag_len = ctx->unfrag_len;
     io->next_hdr = ctx->next_hdr;
@@ -250,14 +250,15 @@ static void ip6_frag_take(uint8_t *work)
 // header changed to contain the length of this fragment packet only (excluding the length of the
 // IPv6 header itself), and the Next Header field of the last header of the Per-Fragment headers
 // changed to 44", then the Fragment header, then the fragment.
-static void ip6_frag_emit(const Ip6FragCtx *ctx, uint8_t *out, uint16_t chunk, idemip_bool more)
+static void ip6_frag_emit(const Ip6FragCtx *ctx, uint8_t *out, uint16_t chunk, embed_bool more)
 {
-    memcpy(out, ctx->pkt, ctx->unfrag_len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = out, .at = ctx->pkt, .size = ctx->unfrag_len);
     out[ctx->nh_off] = IDEMIP_IP6_NH_FRAGMENT;
     idemip_ip6_set_payload_len(out,
                                (uint16_t)((ctx->unfrag_len - IDEMIP_IPV6_HDR_LEN) + IDEMIP_IP6_FRAG_HDR_LEN + chunk));
     idemip_ip6_frag_build(out + ctx->unfrag_len, ctx->next_hdr, ctx->cursor, more, ctx->ident);
-    memcpy(out + ctx->unfrag_len + IDEMIP_IP6_FRAG_HDR_LEN, ctx->pkt + ctx->unfrag_len + ctx->cursor, chunk);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = out + ctx->unfrag_len + IDEMIP_IP6_FRAG_HDR_LEN,
+               .at = ctx->pkt + ctx->unfrag_len + ctx->cursor, .size = chunk);
 }
 
 // The fragment packet the cursor stands on, into the caller's buffer.
@@ -288,12 +289,11 @@ static void ip6_frag_write(uint8_t *work)
         return;
     }
 
-    const idemip_bool more =
-        (idemip_bool)(((uint32_t)ctx->cursor + chunk < ctx->data_len) ? IDEMIP_TRUE : IDEMIP_FALSE);
+    const embed_bool more = (embed_bool)(((uint32_t)ctx->cursor + chunk < ctx->data_len) ? EMBED_TRUE : EMBED_FALSE);
 
     if (!ctx->split)
     {
-        memcpy(out, ctx->pkt, len);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = out, .at = ctx->pkt, .size = len);
     }
     else
     {
@@ -312,7 +312,7 @@ static void ip6_frag_write(uint8_t *work)
 
     ctx->cursor = (uint16_t)(ctx->cursor + chunk);
     ctx->index = (uint16_t)(ctx->index + 1u);
-    ctx->done = (idemip_bool)(ctx->cursor >= ctx->data_len);
+    ctx->done = (embed_bool)(ctx->cursor >= ctx->data_len);
 }
 
 // --- the entries -----------------------------------------------------------
@@ -323,7 +323,8 @@ void idemip_ip6_frag_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IP6_FRAG_OFF_CTX, 0, (size_t)IDEMIP_IP6_FRAG_BORROW - IDEMIP_IP6_FRAG_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_IP6_FRAG_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_IP6_FRAG_BORROW - IDEMIP_IP6_FRAG_OFF_CTX);
     IP6_FRAG_CTX(work)->ready = IP6_FRAG_READY;
     IP6_FRAG_IO(work)->status = IDEMIP_OK;
 }
@@ -337,8 +338,8 @@ void idemip_ip6_frag_begin(uint8_t *work)
     Ip6FragIo *io = IP6_FRAG_IO(work);
     io->status = IDEMIP_ERR;
     io->err = IDEMIP_IP6_FRAG_ERR_STATE;
-    io->split = IDEMIP_FALSE;
-    io->more = IDEMIP_FALSE;
+    io->split = EMBED_FALSE;
+    io->more = EMBED_FALSE;
     io->index = 0u;
     io->offset = 0u;
     io->len = 0u;
@@ -363,7 +364,7 @@ void idemip_ip6_frag_next(uint8_t *work)
     Ip6FragIo *io = IP6_FRAG_IO(work);
     io->status = IDEMIP_ERR;
     io->err = IDEMIP_IP6_FRAG_ERR_STATE;
-    io->more = IDEMIP_FALSE;
+    io->more = EMBED_FALSE;
     io->index = 0u;
     io->offset = 0u;
     io->len = 0u;
@@ -377,4 +378,4 @@ void idemip_ip6_frag_next(uint8_t *work)
     ip6_frag_write(work);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

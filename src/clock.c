@@ -16,7 +16,7 @@
 
 #include "src/clock.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief One reading, taken or carried. */
 typedef struct
@@ -38,7 +38,7 @@ typedef struct
  * does not touch the stamp: refreshing is every pass, and taking a stamp is a separate decision the
  * function makes when it starts work it means to pad.
  */
-IDEMIP_INLINE IdemIpMs clock_refresh(const ClockCtx *c)
+EMBED_INLINE IdemIpMs clock_refresh(const ClockCtx *c)
 {
     if (c->now_ms < c->clk->reading)
     {
@@ -52,7 +52,7 @@ IDEMIP_INLINE IdemIpMs clock_refresh(const ClockCtx *c)
  * @brief Open a pass: the stamp every pad is then measured from is the reading standing now.
  * @param c The pass.
  */
-IDEMIP_INLINE void clock_open(const ClockCtx *c)
+EMBED_INLINE void clock_open(const ClockCtx *c)
 {
     c->clk->stamp = c->clk->reading;
 #if IDEMIP_ENABLE_TIME_DETERMINISM && IDEMIP_DETERMINISM_HAS_TICK
@@ -61,13 +61,13 @@ IDEMIP_INLINE void clock_open(const ClockCtx *c)
 }
 
 /** @brief now(): the caller's latest millisecond reading, verbatim. Wraps; not the epoch. */
-IDEMIP_INLINE uint32_t clock_now(const ClockCtx *c)
+EMBED_INLINE uint32_t clock_now(const ClockCtx *c)
 {
     return c->ro->reading;
 }
 
 /** @brief stamp(): the reading this pass entered on, which every pad is measured from. */
-IDEMIP_INLINE uint32_t clock_stamp(const ClockCtx *c)
+EMBED_INLINE uint32_t clock_stamp(const ClockCtx *c)
 {
     return c->ro->stamp;
 }
@@ -81,13 +81,13 @@ IDEMIP_INLINE uint32_t clock_stamp(const ClockCtx *c)
  * subtracts out. It is here rather than in time_determinism.h because it answers a question about
  * the stamp, which every build has; it is also what a pad is tuned against.
  */
-IDEMIP_INLINE uint32_t clock_elapsed(const ClockCtx *c)
+EMBED_INLINE uint32_t clock_elapsed(const ClockCtx *c)
 {
     return (c->ro->reading - c->ro->stamp);
 }
 
 /** @brief epoch(): now() carried across its wraps. This is time; deadlines are these. */
-IDEMIP_INLINE IdemIpMs clock_epoch(const ClockCtx *c)
+EMBED_INLINE IdemIpMs clock_epoch(const ClockCtx *c)
 {
     return ((IdemIpMs)c->ro->hi << 32) | (IdemIpMs)c->ro->reading;
 }
@@ -102,32 +102,32 @@ IDEMIP_INLINE IdemIpMs clock_epoch(const ClockCtx *c)
 
 IdemIpMs idemip_clock_refresh(IdemIpClock *c, uint32_t now_ms)
 {
-    return IDEMIP_CALL(clock_refresh, ClockCtx, .clk = c, .now_ms = now_ms);
+    return EMBED_CALL(clock_refresh, ClockCtx, .clk = c, .now_ms = now_ms);
 }
 
 void idemip_clock_open(IdemIpClock *c)
 {
-    IDEMIP_CALL(clock_open, ClockCtx, .clk = c);
+    EMBED_CALL(clock_open, ClockCtx, .clk = c);
 }
 
 uint32_t idemip_clock_now(const IdemIpClock *c)
 {
-    return IDEMIP_CALL(clock_now, ClockCtx, .ro = c);
+    return EMBED_CALL(clock_now, ClockCtx, .ro = c);
 }
 
 uint32_t idemip_clock_stamp(const IdemIpClock *c)
 {
-    return IDEMIP_CALL(clock_stamp, ClockCtx, .ro = c);
+    return EMBED_CALL(clock_stamp, ClockCtx, .ro = c);
 }
 
 uint32_t idemip_clock_elapsed(const IdemIpClock *c)
 {
-    return IDEMIP_CALL(clock_elapsed, ClockCtx, .ro = c);
+    return EMBED_CALL(clock_elapsed, ClockCtx, .ro = c);
 }
 
 IdemIpMs idemip_clock_epoch(const IdemIpClock *c)
 {
-    return IDEMIP_CALL(clock_epoch, ClockCtx, .ro = c);
+    return EMBED_CALL(clock_epoch, ClockCtx, .ro = c);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

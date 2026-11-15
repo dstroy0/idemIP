@@ -19,7 +19,7 @@
 #include "src/ip/ipv4_defines.h"
 #include "src/icmp/icmp_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The one definition, private to this TU. A borrow that was never cleared carries no mark, so every
 // entry refuses it.
@@ -39,8 +39,9 @@ IDEMIP_ASSERT_REGION(IDEMIP_ICMP_IN_OFF_CTX, sizeof(IcmpInCtx), IDEMIP_ICMP_IN_B
 
 // The caller's borrow, split: the operand block, then the context. icmp_in.h publishes the offsets;
 // the assert below proves the span covers them before anything runs.
-static_assert(IDEMIP_ICMP_IN_OFF_CTX + sizeof(IcmpInCtx) <= IDEMIP_ICMP_IN_BORROW,
-              "IDEMIP_ICMP_IN_BORROW is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_ICMP_IN_OFF_CTX + sizeof(IcmpInCtx) <= IDEMIP_ICMP_IN_BORROW,
+    "IDEMIP_ICMP_IN_BORROW is short of the operand block and the context - raise it in idemip_config.h");
 
 // The regions, at their offsets in the caller's borrow.
 #define ICMP_IN_CTX(w) ((IcmpInCtx *)(void *)((w) + IDEMIP_ICMP_IN_OFF_CTX))
@@ -62,16 +63,16 @@ static_assert(IDEMIP_ICMP_IN_OFF_CTX + sizeof(IcmpInCtx) <= IDEMIP_ICMP_IN_BORRO
 
 // RFC 1112 sec 4: "Host groups are identified by class D IP addresses, i.e., those with '1110' as
 // their high-order four bits."
-static idemip_bool icmp_in_is_multicast(uint32_t addr)
+static embed_bool icmp_in_is_multicast(uint32_t addr)
 {
-    return ((addr >> ICMP_IN_CLASS_SHIFT) == ICMP_IN_CLASS_D) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((addr >> ICMP_IN_CLASS_SHIFT) == ICMP_IN_CLASS_D) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 1112 sec 4: "Class E IP addresses, i.e., those with '1111' as their high-order four bits, are
 // reserved for future addressing modes."
-static idemip_bool icmp_in_is_class_e(uint32_t addr)
+static embed_bool icmp_in_is_class_e(uint32_t addr)
 {
-    return ((addr >> ICMP_IN_CLASS_SHIFT) == ICMP_IN_CLASS_E) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((addr >> ICMP_IN_CLASS_SHIFT) == ICMP_IN_CLASS_E) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // The classful network mask RFC 791 sec 3.2 "Address Formats" gives an address: seven bits of net
@@ -103,38 +104,38 @@ static uint32_t icmp_in_classful_mask(uint32_t addr)
 // <Subnet-number>, -1 } Directed broadcast to the specified subnet" and (f) "{ <Network-number>, -1,
 // -1 } Directed broadcast to all subnets". Each is a host part of all ones under the mask that names
 // it: the interface's for (e), the classful one for (d) and (f).
-static idemip_bool icmp_in_is_broadcast(uint32_t addr, uint32_t if_mask)
+static embed_bool icmp_in_is_broadcast(uint32_t addr, uint32_t if_mask)
 {
     if (addr == ICMP_IN_ALL_ONES)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     if (icmp_in_is_multicast(addr) || icmp_in_is_class_e(addr))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (if_mask != ICMP_IN_ALL_ONES && (addr | if_mask) == ICMP_IN_ALL_ONES)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     const uint32_t classful = icmp_in_classful_mask(addr);
-    return ((addr | classful) == ICMP_IN_ALL_ONES) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((addr | classful) == ICMP_IN_ALL_ONES) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 1122 sec 3.2.2's last MUST NOT: "a datagram whose source address does not define a single host
 // -- e.g., a zero address, a loopback address, a broadcast address, a multicast address, or a Class
 // E address."
-static idemip_bool icmp_in_src_is_single_host(uint32_t src, uint32_t if_mask)
+static embed_bool icmp_in_src_is_single_host(uint32_t src, uint32_t if_mask)
 {
     if (src == 0u || (src >> ICMP_IN_NET_SHIFT) == ICMP_IN_LOOPBACK_NET)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (icmp_in_is_multicast(src) || icmp_in_is_class_e(src))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    return icmp_in_is_broadcast(src, if_mask) ? IDEMIP_FALSE : IDEMIP_TRUE;
+    return icmp_in_is_broadcast(src, if_mask) ? EMBED_FALSE : EMBED_TRUE;
 }
 
 // --- the arriving message --------------------------------------------------
@@ -161,13 +162,13 @@ static uint32_t icmp_in_specific_dst(uint32_t dst, uint32_t if_addr, uint32_t if
 static void icmp_in_build_echo_reply(IcmpInIo *io, const uint8_t *msg, size_t msg_len)
 {
     size_t len = msg_len;
-    io->truncated = IDEMIP_FALSE;
+    io->truncated = EMBED_FALSE;
     if (len > io->recv_args.out_cap)
     {
         len = io->recv_args.out_cap;
-        io->truncated = IDEMIP_TRUE;
+        io->truncated = EMBED_TRUE;
     }
-    memcpy(io->recv_args.out, msg, len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = io->recv_args.out, .at = msg, .size = len);
     idemip_icmp_echo_reply(io->recv_args.out, len);
     io->out_len = len;
     io->act |= IDEMIP_ICMP_IN_ACT_REPLY;
@@ -175,19 +176,19 @@ static void icmp_in_build_echo_reply(IcmpInIo *io, const uint8_t *msg, size_t ms
 
 // The Protocol field of the internet header an error message quotes, which RFC 1122 sec 3.2.2 demuxes
 // the error on. Present only when the quote carries a whole header.
-static idemip_bool icmp_in_quoted_proto(const uint8_t *msg, size_t msg_len, uint8_t *proto)
+static embed_bool icmp_in_quoted_proto(const uint8_t *msg, size_t msg_len, uint8_t *proto)
 {
     if (msg_len < (size_t)IDEMIP_ICMP_OFF_QUOTE + IDEMIP_IPV4_HDR_LEN)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     const uint8_t *quote = idemip_icmp_quote(msg);
     if (!idemip_ip4_version_ok(quote) || !idemip_ip4_ihl_ok(quote))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     *proto = idemip_ip4_proto(quote);
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // The five types RFC 1122 sec 3.2.2 groups as errors carry a quoted datagram, so each reports the
@@ -199,7 +200,7 @@ static void icmp_in_error_arrived(IcmpInIo *io, const uint8_t *msg, size_t msg_l
     {
         if (msg_len < (size_t)IDEMIP_ICMP_ERR_HDR_LEN)
         {
-            io->bad_len = IDEMIP_TRUE;
+            io->bad_len = EMBED_TRUE;
             io->act |= IDEMIP_ICMP_IN_ACT_DISCARD;
             return;
         }
@@ -228,7 +229,7 @@ static void icmp_in_error_arrived(IcmpInIo *io, const uint8_t *msg, size_t msg_l
     }
     if (!icmp_in_quoted_proto(msg, msg_len, &io->proto))
     {
-        io->bad_len = IDEMIP_TRUE;
+        io->bad_len = EMBED_TRUE;
         io->act |= IDEMIP_ICMP_IN_ACT_DISCARD;
         return;
     }
@@ -248,7 +249,7 @@ static void icmp_in_query_arrived(IcmpInIo *io, const uint8_t *msg, size_t msg_l
     }
     if (msg_len < (size_t)IDEMIP_ICMP_ECHO_HDR_LEN)
     {
-        io->bad_len = IDEMIP_TRUE;
+        io->bad_len = EMBED_TRUE;
         io->act |= IDEMIP_ICMP_IN_ACT_DISCARD;
         return;
     }
@@ -277,7 +278,7 @@ void idemip_icmp_in_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work, 0, (size_t)IDEMIP_ICMP_IN_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work, .val = 0, .bytes = (size_t)IDEMIP_ICMP_IN_BORROW);
     IcmpInCtx *ctx = ICMP_IN_CTX(work);
     ctx->ready = ICMP_IN_READY;
     ctx->tokens = (uint8_t)IDEMIP_ICMP4_ERR_BUCKET; // sec 4.3.2.8: a full bucket allows the first burst
@@ -300,9 +301,9 @@ static void icmp_in_result_clear(IcmpInIo *io)
     io->suppress = IDEMIP_ICMP_IN_SUPPRESS_NONE;
     io->tokens = 0u;
     io->quoted_dst = 0u;
-    io->cksum_ok = IDEMIP_FALSE;
-    io->bad_len = IDEMIP_FALSE;
-    io->truncated = IDEMIP_FALSE;
+    io->cksum_ok = EMBED_FALSE;
+    io->bad_len = EMBED_FALSE;
+    io->truncated = EMBED_FALSE;
 }
 
 // One message that arrived in a verified internet datagram. RFC 792 fixes the checksum as running
@@ -342,7 +343,7 @@ void idemip_icmp_in_recv(uint8_t *work)
     io->status = IDEMIP_OK;
     if (msg_len < (size_t)IDEMIP_ICMP_HDR_LEN)
     {
-        io->bad_len = IDEMIP_TRUE;
+        io->bad_len = EMBED_TRUE;
         io->act = IDEMIP_ICMP_IN_ACT_DISCARD;
         return;
     }
@@ -514,7 +515,7 @@ void idemip_icmp_in_error(uint8_t *work)
     }
     ctx->tokens = (uint8_t)(ctx->tokens - 1u);
     io->tokens = ctx->tokens;
-    memcpy(a->out + IDEMIP_ICMP_OFF_QUOTE, a->datagram, quote);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = a->out + IDEMIP_ICMP_OFF_QUOTE, .at = a->datagram, .size = quote);
     idemip_icmp_build_error(a->out, a->type, a->code, a->word, out_len);
     io->out_len = out_len;
     io->src = idemip_ip4_dst(a->datagram);
@@ -522,4 +523,4 @@ void idemip_icmp_in_error(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

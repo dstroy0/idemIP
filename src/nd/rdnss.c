@@ -18,7 +18,7 @@
 #include "src/nd/rdnss.h"
 #include "src/ip/ipv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads something else here and
 // every entry but clear refuses it.
@@ -29,10 +29,10 @@ typedef struct
 {
     IdemIpMs expire_at;
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
-    idemip_bool infinite;
-    idemip_bool used;
+    embed_bool infinite;
+    embed_bool used;
     uint8_t
-        pad[(1u << IDEMIP_RDNSS_ENTRY_SHIFT) - (sizeof(IdemIpMs) + IDEMIP_IP6_ADDR_LEN + (2u * sizeof(idemip_bool)))];
+        pad[(1u << IDEMIP_RDNSS_ENTRY_SHIFT) - (sizeof(IdemIpMs) + IDEMIP_IP6_ADDR_LEN + (2u * sizeof(embed_bool)))];
 } RdnssEntry;
 
 // The running context: the mark clear leaves, and the two readings that carry the caller's 32-bit
@@ -49,16 +49,17 @@ typedef struct
 IDEMIP_ASSERT_REGION(IDEMIP_RDNSS_OFF_CTX, sizeof(RdnssCtx), IDEMIP_RDNSS_OFF_ENTRIES, "rdnss's context");
 
 // An index is (i << SHIFT), so each entry is exactly its width.
-static_assert(sizeof(RdnssEntry) == (1u << IDEMIP_RDNSS_ENTRY_SHIFT),
-              "an RDNSS entry must be 1 << IDEMIP_RDNSS_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(RdnssEntry) == (1u << IDEMIP_RDNSS_ENTRY_SHIFT),
+                    "an RDNSS entry must be 1 << IDEMIP_RDNSS_ENTRY_SHIFT wide");
 
 // The caller's borrow, split: the operand block, the context, then the list. rdnss.h publishes the
 // offsets; these two asserts prove the span covers them before anything runs. The first keeps the
 // context inside the region ahead of the list, the second the whole map inside the borrow.
-static_assert(IDEMIP_RDNSS_OFF_CTX + sizeof(RdnssCtx) <= IDEMIP_RDNSS_OFF_ENTRIES,
-              "IDEMIP_RDNSS_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_RDNSS_OFF_END <= IDEMIP_RDNSS_BORROW,
-              "IDEMIP_RDNSS_BORROW is short of the map - raise IDEMIP_RDNSS_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_RDNSS_OFF_CTX + sizeof(RdnssCtx) <= IDEMIP_RDNSS_OFF_ENTRIES,
+    "IDEMIP_RDNSS_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_RDNSS_OFF_END <= IDEMIP_RDNSS_BORROW,
+                    "IDEMIP_RDNSS_BORROW is short of the map - raise IDEMIP_RDNSS_CTX_BYTES in idemip_config.h");
 
 // The regions, at their offsets in the caller's borrow.
 #define RDNSS_IO(w) IDEMIP_RDNSS_IO(w)
@@ -76,14 +77,14 @@ static_assert(IDEMIP_RDNSS_OFF_END <= IDEMIP_RDNSS_BORROW,
 // 5.1's 32-bit Lifetime field can name is representable and none is held at a bound.
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool rdnss_ready(uint8_t *work)
+static embed_bool rdnss_ready(uint8_t *work)
 {
-    return (idemip_bool)(RDNSS_CTX(work)->ready == RDNSS_READY);
+    return (embed_bool)(RDNSS_CTX(work)->ready == RDNSS_READY);
 }
 
 // --- addresses -------------------------------------------------------------
 
-static idemip_bool rdnss_addr_eq(const uint8_t *a, const uint8_t *b)
+static embed_bool rdnss_addr_eq(const uint8_t *a, const uint8_t *b)
 {
     return (idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
 }
@@ -91,13 +92,13 @@ static idemip_bool rdnss_addr_eq(const uint8_t *a, const uint8_t *b)
 // sec 5.3.1 checks "the validity of the RDNSS option ... with the 'Addresses of IPv6 Recursive DNS
 // Servers' field; that is, the addresses should be unicast addresses". RFC 4291 sec 2.7 gives
 // multicast FF00::/8 and sec 2.5.2 the unspecified address, and neither is a unicast address.
-static idemip_bool rdnss_is_unicast(const uint8_t *addr)
+static embed_bool rdnss_is_unicast(const uint8_t *addr)
 {
     if (addr[0] == 0xFFu)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    return (idemip_bool)!idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN);
+    return (embed_bool)!idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN);
 }
 
 // --- the clock -------------------------------------------------------------
@@ -106,9 +107,9 @@ static idemip_bool rdnss_is_unicast(const uint8_t *addr)
 // entry is regarded as expired". At exactly Expiration-time the entry still stands, which is why this
 // is a greater-than and not the at-or-past comparison RFC 4862 sec 5.5.4's wording takes. Both sit on
 // the same 64-bit millisecond clock, so this is one comparison and nothing wraps under it.
-static idemip_bool rdnss_due(IdemIpMs now, IdemIpMs deadline)
+static embed_bool rdnss_due(IdemIpMs now, IdemIpMs deadline)
 {
-    return (now > deadline) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (now > deadline) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // sec 6.1: "Expiration-time is set to the value of the Lifetime field of the RDNSS option ... plus the
@@ -160,9 +161,10 @@ static void rdnss_delete_at(uint8_t *work, uint8_t index)
     }
     for (uint8_t i = index; (uint8_t)(i + 1u) < count; i++)
     {
-        memcpy(RDNSS_AT(work, i), RDNSS_AT(work, i + 1u), sizeof(RdnssEntry));
+        EMBED_CALL(memor.cpy, MemoriaCfg, .dst = RDNSS_AT(work, i), .src = RDNSS_AT(work, i + 1u),
+                   .bytes = sizeof(RdnssEntry));
     }
-    memset(RDNSS_AT(work, count - 1u), 0, sizeof(RdnssEntry));
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = RDNSS_AT(work, count - 1u), .val = 0, .bytes = sizeof(RdnssEntry));
 }
 
 // sec 6.2 step (d): "delete from the DNS Server List the entry with the shortest Expiration-time
@@ -173,23 +175,23 @@ static uint8_t rdnss_soonest(uint8_t *work, IdemIpMs now)
     uint8_t count = rdnss_count(work);
     uint8_t best = (uint8_t)IDEMIP_RDNSS_NONE;
     IdemIpMs best_left = 0u;
-    idemip_bool best_infinite = IDEMIP_TRUE;
+    embed_bool best_infinite = EMBED_TRUE;
     for (uint8_t i = 0; i < count; i++)
     {
         const RdnssEntry *e = RDNSS_AT(work, i);
         IdemIpMs left = rdnss_due(now, e->expire_at) ? 0u : (e->expire_at - now);
-        idemip_bool take;
+        embed_bool take;
         if (best == (uint8_t)IDEMIP_RDNSS_NONE)
         {
-            take = IDEMIP_TRUE;
+            take = EMBED_TRUE;
         }
         else if (e->infinite)
         {
-            take = IDEMIP_FALSE;
+            take = EMBED_FALSE;
         }
         else
         {
-            take = (idemip_bool)(best_infinite || left < best_left);
+            take = (embed_bool)(best_infinite || left < best_left);
         }
         if (take)
         {
@@ -208,20 +210,21 @@ static void rdnss_insert_at(uint8_t *work, uint8_t index, const uint8_t *addr, u
     uint8_t count = rdnss_count(work);
     for (uint8_t i = count; i > index; i--)
     {
-        memcpy(RDNSS_AT(work, i), RDNSS_AT(work, i - 1u), sizeof(RdnssEntry));
+        EMBED_CALL(memor.cpy, MemoriaCfg, .dst = RDNSS_AT(work, i), .src = RDNSS_AT(work, i - 1u),
+                   .bytes = sizeof(RdnssEntry));
     }
     RdnssEntry *e = RDNSS_AT(work, index);
-    memcpy(e->addr, addr, IDEMIP_IP6_ADDR_LEN);
-    e->infinite = (idemip_bool)(lifetime_s == IDEMIP_RDNSS_LIFETIME_INFINITE);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = e->addr, .at = addr, .size = IDEMIP_IP6_ADDR_LEN);
+    e->infinite = (embed_bool)(lifetime_s == IDEMIP_RDNSS_LIFETIME_INFINITE);
     e->expire_at = e->infinite ? 0u : rdnss_expiration(now, lifetime_s);
-    e->used = IDEMIP_TRUE;
+    e->used = EMBED_TRUE;
 }
 
 // Every result member, cleared, so an entry reports what this call found and never what the last one
 // did.
 static void rdnss_clear_results(RdnssIo *io)
 {
-    memset(io->addr, 0, sizeof io->addr);
+    mmgr_zero_buf(io->addr, sizeof io->addr);
     io->expire_at = 0u;
     io->lifetime_s = 0u;
     io->entry = (uint8_t)IDEMIP_RDNSS_NONE;
@@ -230,9 +233,9 @@ static void rdnss_clear_results(RdnssIo *io)
     io->updated = 0u;
     io->deleted = 0u;
     io->evicted = 0u;
-    io->expired = IDEMIP_FALSE;
-    io->ignored = IDEMIP_FALSE;
-    io->infinite = IDEMIP_FALSE;
+    io->expired = EMBED_FALSE;
+    io->ignored = EMBED_FALSE;
+    io->infinite = EMBED_FALSE;
 }
 
 // One entry, into the result members of the operand block. The address is copied rather than pointed
@@ -242,7 +245,7 @@ static void rdnss_publish(uint8_t *work, uint8_t index)
     RdnssIo *io = RDNSS_IO(work);
     const RdnssEntry *e = RDNSS_AT(work, index);
     io->entry = index;
-    memcpy(io->addr, e->addr, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = io->addr, .at = e->addr, .size = IDEMIP_IP6_ADDR_LEN);
     io->expire_at = e->expire_at;
     io->infinite = e->infinite;
 }
@@ -288,7 +291,7 @@ static void rdnss_apply(uint8_t *work, const uint8_t *addr, uint32_t lifetime_s,
             return;
         }
         RdnssEntry *e = RDNSS_AT(work, index);
-        e->infinite = (idemip_bool)(lifetime_s == IDEMIP_RDNSS_LIFETIME_INFINITE);
+        e->infinite = (embed_bool)(lifetime_s == IDEMIP_RDNSS_LIFETIME_INFINITE);
         e->expire_at = e->infinite ? 0u : rdnss_expiration(now, lifetime_s);
         io->updated++;
         return;
@@ -323,7 +326,7 @@ void idemip_rdnss_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_RDNSS_OFF_CTX, 0, RDNSS_STATE_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_RDNSS_OFF_CTX, .val = 0, .bytes = RDNSS_STATE_BYTES);
     RDNSS_CTX(work)->ready = RDNSS_READY;
     RDNSS_IO(work)->status = IDEMIP_OK;
 }
@@ -356,16 +359,16 @@ void idemip_rdnss_option_in(uint8_t *work)
     if (opt[IDEMIP_RDNSS_OPT_OFF_TYPE] != (uint8_t)IDEMIP_RDNSS_OPT_TYPE || length < IDEMIP_RDNSS_OPT_LEN_MIN ||
         (uint8_t)((length - 1u) & 1u) != 0u)
     {
-        io->ignored = IDEMIP_TRUE;
+        io->ignored = EMBED_TRUE;
         io->status = IDEMIP_OK;
         return;
     }
     // RFC 4861 sec 4.6 states the Length "in units of 8 octets", so the option spans that many and
     // must lie inside what the caller says it may read.
-    size_t span = (size_t)length * IDEMIP_RDNSS_OPT_UNIT;
-    if (span > io->option_args.len)
+    size_t option_bytes = (size_t)length * IDEMIP_RDNSS_OPT_UNIT;
+    if (option_bytes > io->option_args.len)
     {
-        io->ignored = IDEMIP_TRUE;
+        io->ignored = EMBED_TRUE;
         io->status = IDEMIP_OK;
         return;
     }
@@ -377,7 +380,7 @@ void idemip_rdnss_option_in(uint8_t *work)
         const uint8_t *addr = opt + IDEMIP_RDNSS_OPT_OFF_ADDRS + ((size_t)i * IDEMIP_IP6_ADDR_LEN);
         if (!rdnss_is_unicast(addr))
         {
-            io->ignored = IDEMIP_TRUE;
+            io->ignored = EMBED_TRUE;
             io->status = IDEMIP_OK;
             return;
         }
@@ -500,7 +503,7 @@ void idemip_rdnss_tick(uint8_t *work)
         {
             rdnss_publish(work, i);
             rdnss_delete_at(work, i);
-            io->expired = IDEMIP_TRUE;
+            io->expired = EMBED_TRUE;
             io->servers = rdnss_count(work);
             io->status = IDEMIP_OK;
             return;
@@ -510,4 +513,4 @@ void idemip_rdnss_tick(uint8_t *work)
     io->status = IDEMIP_BUSY;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

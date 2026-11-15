@@ -19,14 +19,10 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief Opcode (ar$op). RFC 826: ares_op$REQUEST | ares_op$REPLY. */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_ARP_OP_REQUEST = 1,
-    IDEMIP_ARP_OP_REPLY = 2,
-} IdemIpArpOp;
+EMBED_ENUM_BYTE(IdemIpArpOp, IDEMIP_ARP_OP_REQUEST = 1, IDEMIP_ARP_OP_REPLY = 2, );
 
 /**
  * @brief Reading the fields out of a received packet, and the questions RFC 826 "Packet Reception"
@@ -49,13 +45,13 @@ typedef struct
     uint32_t (*spa)(const uint8_t *h);
     const uint8_t *(*tha)(const uint8_t *h);
     uint32_t (*tpa)(const uint8_t *h);
-    idemip_bool (*is_ethernet_ipv4)(const uint8_t *h);
-    idemip_bool (*is_request)(const uint8_t *h);
-    idemip_bool (*is_reply)(const uint8_t *h);
-    idemip_bool (*is_target)(const uint8_t *h, uint32_t pa);
+    embed_bool (*is_ethernet_ipv4)(const uint8_t *h);
+    embed_bool (*is_request)(const uint8_t *h);
+    embed_bool (*is_reply)(const uint8_t *h);
+    embed_bool (*is_target)(const uint8_t *h, uint32_t pa);
 } ArpParseNs;
-IDEMIP_NS_LAYOUT(ArpParseNs, hrd, pro, hln, pln, op, sha, spa, tha, tpa, is_ethernet_ipv4, is_request, is_reply,
-                 is_target);
+EMBED_TABLE_LAYOUT(ArpParseNs, hrd, pro, hln, pln, op, sha, spa, tha, tpa, is_ethernet_ipv4, is_request, is_reply,
+                   is_target);
 
 /**
  * @brief Writing a packet into the caller's bytes.
@@ -69,7 +65,7 @@ typedef struct
     void (*reply)(uint8_t *p, const uint8_t *sha, uint32_t spa, const uint8_t *tha, uint32_t tpa);
     void (*reply_in_place)(uint8_t *p, const uint8_t *local_sha);
 } ArpBuildNs;
-IDEMIP_NS_LAYOUT(ArpBuildNs, build, request, reply, reply_in_place);
+EMBED_TABLE_LAYOUT(ArpBuildNs, build, request, reply, reply_in_place);
 
 /** @name The entries the tables point at.
  *  @brief Nameable so a static const table can name them, and for no other reason. The tables are
@@ -84,10 +80,10 @@ const uint8_t *idemip_arp_sha(const uint8_t *h);
 uint32_t idemip_arp_spa(const uint8_t *h);
 const uint8_t *idemip_arp_tha(const uint8_t *h);
 uint32_t idemip_arp_tpa(const uint8_t *h);
-idemip_bool idemip_arp_is_ethernet_ipv4(const uint8_t *h);
-idemip_bool idemip_arp_is_request(const uint8_t *h);
-idemip_bool idemip_arp_is_reply(const uint8_t *h);
-idemip_bool idemip_arp_is_target(const uint8_t *h, uint32_t pa);
+embed_bool idemip_arp_is_ethernet_ipv4(const uint8_t *h);
+embed_bool idemip_arp_is_request(const uint8_t *h);
+embed_bool idemip_arp_is_reply(const uint8_t *h);
+embed_bool idemip_arp_is_target(const uint8_t *h, uint32_t pa);
 
 void idemip_arp_build(uint8_t *p, uint16_t op, const uint8_t *sha, uint32_t spa, uint32_t tpa);
 void idemip_arp_build_request(uint8_t *p, const uint8_t *sha, uint32_t spa, uint32_t tpa);
@@ -102,7 +98,7 @@ void idemip_arp_reply_in_place(uint8_t *p, const uint8_t *local_sha);
  * inlined body and cannot do that through an extern one, where the table is in another
  * translation unit and every call is a load and an indirect jump.
  */
-IDEMIP_NS ArpParseNs arp_parse IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE ArpParseNs arp_parse EMBED_UNUSED = {
     .hrd = idemip_arp_hrd,
     .pro = idemip_arp_pro,
     .hln = idemip_arp_hln,
@@ -118,14 +114,14 @@ IDEMIP_NS ArpParseNs arp_parse IDEMIP_UNUSED = {
     .is_target = idemip_arp_is_target,
 };
 
-IDEMIP_NS ArpBuildNs arp_build IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE ArpBuildNs arp_build EMBED_UNUSED = {
     .build = idemip_arp_build,
     .request = idemip_arp_build_request,
     .reply = idemip_arp_build_reply,
     .reply_in_place = idemip_arp_reply_in_place,
 };
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

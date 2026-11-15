@@ -25,7 +25,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
 // sec 2, the link's MTU
@@ -176,7 +176,7 @@ typedef struct
     uint8_t mac[IDEMIP_MAC_LEN];
     uint8_t iid[IDEMIP_ETHIP6_IID_LEN];
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
-    idemip_bool universal;
+    embed_bool universal;
 } Ethip6Io;
 
 // ---------------------------------------------------------------------------
@@ -245,37 +245,36 @@ void idemip_ethip6_linklocal(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Ethip6Ns Ethip6 IDEMIP_UNUSED = {
-    .clear = idemip_ethip6_clear,
-    .multicast_map = idemip_ethip6_multicast_map,
-    .eui64 = idemip_ethip6_eui64,
-    .linklocal = idemip_ethip6_linklocal};
+EMBED_TABLE_STORAGE Ethip6Ns Ethip6 EMBED_UNUSED = {.clear = idemip_ethip6_clear,
+                                                    .multicast_map = idemip_ethip6_multicast_map,
+                                                    .eui64 = idemip_ethip6_eui64,
+                                                    .linklocal = idemip_ethip6_linklocal};
 // RFC 2464 sec 7 fills a 48-bit Ethernet address with a two-octet prefix and four octets of DST.
-static_assert(IDEMIP_ETHIP6_MCAST_PREFIX_LEN + IDEMIP_ETHIP6_MCAST_TAIL_LEN == IDEMIP_MAC_LEN,
-              "the RFC 2464 sec 7 mapping must fill a 48-bit Ethernet address");
+EMBED_STATIC_ASSERT(IDEMIP_ETHIP6_MCAST_PREFIX_LEN + IDEMIP_ETHIP6_MCAST_TAIL_LEN == IDEMIP_MAC_LEN,
+                    "the RFC 2464 sec 7 mapping must fill a 48-bit Ethernet address");
 
 // RFC 2464 sec 4 builds the identifier from the OUI, the fixed FFFE, and the last three octets.
-static_assert(IDEMIP_ETHIP6_OUI_LEN + 2u + IDEMIP_ETHIP6_TAIL_LEN == IDEMIP_ETHIP6_IID_LEN,
-              "the RFC 2464 sec 4 fields must sum to the 64-bit interface identifier");
+EMBED_STATIC_ASSERT(IDEMIP_ETHIP6_OUI_LEN + 2u + IDEMIP_ETHIP6_TAIL_LEN == IDEMIP_ETHIP6_IID_LEN,
+                    "the RFC 2464 sec 4 fields must sum to the 64-bit interface identifier");
 
 // The OUI and the last three octets together are the whole 48-bit address sec 4 reads.
-static_assert(IDEMIP_ETHIP6_OUI_LEN + IDEMIP_ETHIP6_TAIL_LEN == IDEMIP_MAC_LEN,
-              "the RFC 2464 sec 4 derivation must read every octet of the built-in address");
+EMBED_STATIC_ASSERT(IDEMIP_ETHIP6_OUI_LEN + IDEMIP_ETHIP6_TAIL_LEN == IDEMIP_MAC_LEN,
+                    "the RFC 2464 sec 4 derivation must read every octet of the built-in address");
 
 // RFC 2464 sec 5 appends a 64-bit identifier to a 64-bit prefix, which RFC 4291 sec 2.5.6 draws as
 // 10 bits of 1111111010, 54 zero bits, then the interface ID.
-static_assert(IDEMIP_ETHIP6_LINKLOCAL_PREFIX_LEN + IDEMIP_ETHIP6_IID_LEN == IDEMIP_IP6_ADDR_LEN,
-              "the RFC 2464 sec 5 prefix and identifier must sum to a 128-bit address");
+EMBED_STATIC_ASSERT(IDEMIP_ETHIP6_LINKLOCAL_PREFIX_LEN + IDEMIP_ETHIP6_IID_LEN == IDEMIP_IP6_ADDR_LEN,
+                    "the RFC 2464 sec 5 prefix and identifier must sum to a 128-bit address");
 
 // RFC 2464 sec 2 states the same 1500 octets RFC 894 gives an IPv4 datagram over Ethernet.
-static_assert(IDEMIP_ETHIP6_MTU == IDEMIP_ETH_MAX_PAYLOAD,
-              "RFC 2464 sec 2 puts the default IPv6 MTU at the RFC 894 maximum data field");
+EMBED_STATIC_ASSERT(IDEMIP_ETHIP6_MTU == IDEMIP_ETH_MAX_PAYLOAD,
+                    "RFC 2464 sec 2 puts the default IPv6 MTU at the RFC 894 maximum data field");
 
 // RFC 8200 sec 5 requires every link to carry 1280 octets.
-static_assert(IDEMIP_ETHIP6_MTU >= IDEMIP_IPV6_MIN_MTU,
-              "RFC 2464 sec 2's default MTU is short of the RFC 8200 sec 5 minimum link MTU");
+EMBED_STATIC_ASSERT(IDEMIP_ETHIP6_MTU >= IDEMIP_IPV6_MIN_MTU,
+                    "RFC 2464 sec 2's default MTU is short of the RFC 8200 sec 5 minimum link MTU");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

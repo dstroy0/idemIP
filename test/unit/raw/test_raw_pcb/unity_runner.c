@@ -3,7 +3,8 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/raw/raw_pcb.h"
-#include <string.h>
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);
@@ -119,56 +120,56 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/raw/test_raw_pcb/test_raw_pcb.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 77);
-  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 86);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 100);
-  run_test(test_clear_zeroes_the_table, "test_clear_zeroes_the_table", 127);
-  run_test(test_clear_repeats, "test_clear_repeats", 140);
-  run_test(test_clear_leaves_the_operands_alone, "test_clear_leaves_the_operands_alone", 150);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 165);
-  run_test(test_a_clear_on_one_borrow_leaves_the_other_table_untouched, "test_a_clear_on_one_borrow_leaves_the_other_table_untouched", 187);
-  run_test(test_an_index_past_the_table_is_refused, "test_an_index_past_the_table_is_refused", 206);
-  run_test(test_a_missing_address_operand_is_refused, "test_a_missing_address_operand_is_refused", 229);
-  run_test(test_a_refused_load_reports_no_binding, "test_a_refused_load_reports_no_binding", 250);
-  run_test(test_open_takes_an_entry_and_reports_it, "test_open_takes_an_entry_and_reports_it", 400);
-  run_test(test_two_opens_take_two_entries, "test_two_opens_take_two_entries", 411);
-  run_test(test_a_new_binding_carries_the_rfc_defaults, "test_a_new_binding_carries_the_rfc_defaults", 423);
-  run_test(test_open_refuses_a_version_that_is_not_4_or_6, "test_open_refuses_a_version_that_is_not_4_or_6", 439);
-  run_test(test_a_full_table_is_busy_and_a_close_frees_an_entry, "test_a_full_table_is_busy_and_a_close_frees_an_entry", 451);
-  run_test(test_close_refuses_an_entry_no_open_holds, "test_close_refuses_an_entry_no_open_holds", 471);
-  run_test(test_a_closed_binding_matches_nothing, "test_a_closed_binding_matches_nothing", 481);
-  run_test(test_bind_sets_the_send_src_and_load_reports_it, "test_bind_sets_the_send_src_and_load_reports_it", 497);
-  run_test(test_bind_accepts_the_all_zero_wildcard, "test_bind_accepts_the_all_zero_wildcard", 514);
-  run_test(test_bind_refuses_a_broadcast_or_multicast_source, "test_bind_refuses_a_broadcast_or_multicast_source", 526);
-  run_test(test_bind_refuses_an_ipv6_multicast_source, "test_bind_refuses_an_ipv6_multicast_source", 546);
-  run_test(test_bind_and_connect_refuse_an_entry_no_open_holds, "test_bind_and_connect_refuse_an_entry_no_open_holds", 563);
-  run_test(test_connect_sets_the_send_dst_and_disconnect_clears_it, "test_connect_sets_the_send_dst_and_disconnect_clears_it", 575);
-  run_test(test_disconnect_repeats, "test_disconnect_repeats", 592);
-  run_test(test_connect_refuses_the_unspecified_destination, "test_connect_refuses_the_unspecified_destination", 603);
-  run_test(test_set_opts_writes_the_tos_ttl_and_flags, "test_set_opts_writes_the_tos_ttl_and_flags", 625);
-  run_test(test_set_opts_refuses_a_zero_ttl, "test_set_opts_refuses_a_zero_ttl", 638);
-  run_test(test_set_opts_takes_the_rfc_3542_offset_of_two, "test_set_opts_takes_the_rfc_3542_offset_of_two", 651);
-  run_test(test_set_opts_refuses_an_odd_checksum_offset, "test_set_opts_refuses_an_odd_checksum_offset", 670);
-  run_test(test_minus_one_disables_the_checksum_and_no_other_negative_is_an_offset, "test_minus_one_disables_the_checksum_and_no_other_negative_is_an_offset", 687);
-  run_test(test_set_opts_refuses_a_checksum_offset_on_an_ipv4_binding, "test_set_opts_refuses_a_checksum_offset_on_an_ipv4_binding", 706);
-  run_test(test_set_opts_refuses_a_checksum_offset_on_an_icmpv6_binding, "test_set_opts_refuses_a_checksum_offset_on_an_icmpv6_binding", 717);
-  run_test(test_find_matches_on_the_protocol_number, "test_find_matches_on_the_protocol_number", 737);
-  run_test(test_a_wildcard_binding_matches_any_local_address, "test_a_wildcard_binding_matches_any_local_address", 749);
-  run_test(test_a_specific_binding_matches_only_its_own_local_address, "test_a_specific_binding_matches_only_its_own_local_address", 762);
-  run_test(test_a_v4_binding_compares_four_octets, "test_a_v4_binding_compares_four_octets", 775);
-  run_test(test_a_connected_binding_matches_only_its_own_remote_address, "test_a_connected_binding_matches_only_its_own_remote_address", 794);
-  run_test(test_a_specific_binding_outranks_a_wildcard, "test_a_specific_binding_outranks_a_wildcard", 809);
-  run_test(test_a_connected_binding_outranks_an_unconnected_one, "test_a_connected_binding_outranks_an_unconnected_one", 825);
-  run_test(test_find_is_the_same_call_on_the_same_table, "test_find_is_the_same_call_on_the_same_table", 840);
-  run_test(test_find_matches_only_the_version_the_binding_was_opened_on, "test_find_matches_only_the_version_the_binding_was_opened_on", 853);
-  run_test(test_find_refuses_a_version_that_is_not_4_or_6, "test_find_refuses_a_version_that_is_not_4_or_6", 873);
-  run_test(test_a_netif_pinned_binding_answers_only_that_interface, "test_a_netif_pinned_binding_answers_only_that_interface", 884);
-  run_test(test_the_rfc_4007_zone_index_qualifies_a_link_local_address, "test_the_rfc_4007_zone_index_qualifies_a_link_local_address", 901);
-  run_test(test_the_rfc_4007_zone_index_qualifies_a_connected_remote, "test_the_rfc_4007_zone_index_qualifies_a_connected_remote", 923);
-  run_test(test_no_binding_is_err_and_not_busy, "test_no_binding_is_err_and_not_busy", 938);
-  run_test(test_a_binding_on_one_borrow_matches_nothing_on_the_other, "test_a_binding_on_one_borrow_matches_nothing_on_the_other", 949);
-  run_test(test_a_binding_takes_no_broadcast_source_and_no_index_past_the_table, "test_a_binding_takes_no_broadcast_source_and_no_index_past_the_table", 969);
-  run_test(test_a_lookup_with_no_destination_address_is_refused, "test_a_lookup_with_no_destination_address_is_refused", 1007);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 83);
+  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 92);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 106);
+  run_test(test_clear_zeroes_the_table, "test_clear_zeroes_the_table", 133);
+  run_test(test_clear_repeats, "test_clear_repeats", 147);
+  run_test(test_clear_leaves_the_operands_alone, "test_clear_leaves_the_operands_alone", 157);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 172);
+  run_test(test_a_clear_on_one_borrow_leaves_the_other_table_untouched, "test_a_clear_on_one_borrow_leaves_the_other_table_untouched", 194);
+  run_test(test_an_index_past_the_table_is_refused, "test_an_index_past_the_table_is_refused", 213);
+  run_test(test_a_missing_address_operand_is_refused, "test_a_missing_address_operand_is_refused", 236);
+  run_test(test_a_refused_load_reports_no_binding, "test_a_refused_load_reports_no_binding", 257);
+  run_test(test_open_takes_an_entry_and_reports_it, "test_open_takes_an_entry_and_reports_it", 407);
+  run_test(test_two_opens_take_two_entries, "test_two_opens_take_two_entries", 418);
+  run_test(test_a_new_binding_carries_the_rfc_defaults, "test_a_new_binding_carries_the_rfc_defaults", 430);
+  run_test(test_open_refuses_a_version_that_is_not_4_or_6, "test_open_refuses_a_version_that_is_not_4_or_6", 446);
+  run_test(test_a_full_table_is_busy_and_a_close_frees_an_entry, "test_a_full_table_is_busy_and_a_close_frees_an_entry", 458);
+  run_test(test_close_refuses_an_entry_no_open_holds, "test_close_refuses_an_entry_no_open_holds", 478);
+  run_test(test_a_closed_binding_matches_nothing, "test_a_closed_binding_matches_nothing", 488);
+  run_test(test_bind_sets_the_send_src_and_load_reports_it, "test_bind_sets_the_send_src_and_load_reports_it", 504);
+  run_test(test_bind_accepts_the_all_zero_wildcard, "test_bind_accepts_the_all_zero_wildcard", 521);
+  run_test(test_bind_refuses_a_broadcast_or_multicast_source, "test_bind_refuses_a_broadcast_or_multicast_source", 533);
+  run_test(test_bind_refuses_an_ipv6_multicast_source, "test_bind_refuses_an_ipv6_multicast_source", 553);
+  run_test(test_bind_and_connect_refuse_an_entry_no_open_holds, "test_bind_and_connect_refuse_an_entry_no_open_holds", 570);
+  run_test(test_connect_sets_the_send_dst_and_disconnect_clears_it, "test_connect_sets_the_send_dst_and_disconnect_clears_it", 582);
+  run_test(test_disconnect_repeats, "test_disconnect_repeats", 599);
+  run_test(test_connect_refuses_the_unspecified_destination, "test_connect_refuses_the_unspecified_destination", 610);
+  run_test(test_set_opts_writes_the_tos_ttl_and_flags, "test_set_opts_writes_the_tos_ttl_and_flags", 632);
+  run_test(test_set_opts_refuses_a_zero_ttl, "test_set_opts_refuses_a_zero_ttl", 645);
+  run_test(test_set_opts_takes_the_rfc_3542_offset_of_two, "test_set_opts_takes_the_rfc_3542_offset_of_two", 658);
+  run_test(test_set_opts_refuses_an_odd_checksum_offset, "test_set_opts_refuses_an_odd_checksum_offset", 677);
+  run_test(test_minus_one_disables_the_checksum_and_no_other_negative_is_an_offset, "test_minus_one_disables_the_checksum_and_no_other_negative_is_an_offset", 694);
+  run_test(test_set_opts_refuses_a_checksum_offset_on_an_ipv4_binding, "test_set_opts_refuses_a_checksum_offset_on_an_ipv4_binding", 713);
+  run_test(test_set_opts_refuses_a_checksum_offset_on_an_icmpv6_binding, "test_set_opts_refuses_a_checksum_offset_on_an_icmpv6_binding", 724);
+  run_test(test_find_matches_on_the_protocol_number, "test_find_matches_on_the_protocol_number", 744);
+  run_test(test_a_wildcard_binding_matches_any_local_address, "test_a_wildcard_binding_matches_any_local_address", 756);
+  run_test(test_a_specific_binding_matches_only_its_own_local_address, "test_a_specific_binding_matches_only_its_own_local_address", 769);
+  run_test(test_a_v4_binding_compares_four_octets, "test_a_v4_binding_compares_four_octets", 782);
+  run_test(test_a_connected_binding_matches_only_its_own_remote_address, "test_a_connected_binding_matches_only_its_own_remote_address", 801);
+  run_test(test_a_specific_binding_outranks_a_wildcard, "test_a_specific_binding_outranks_a_wildcard", 816);
+  run_test(test_a_connected_binding_outranks_an_unconnected_one, "test_a_connected_binding_outranks_an_unconnected_one", 832);
+  run_test(test_find_is_the_same_call_on_the_same_table, "test_find_is_the_same_call_on_the_same_table", 847);
+  run_test(test_find_matches_only_the_version_the_binding_was_opened_on, "test_find_matches_only_the_version_the_binding_was_opened_on", 860);
+  run_test(test_find_refuses_a_version_that_is_not_4_or_6, "test_find_refuses_a_version_that_is_not_4_or_6", 880);
+  run_test(test_a_netif_pinned_binding_answers_only_that_interface, "test_a_netif_pinned_binding_answers_only_that_interface", 891);
+  run_test(test_the_rfc_4007_zone_index_qualifies_a_link_local_address, "test_the_rfc_4007_zone_index_qualifies_a_link_local_address", 908);
+  run_test(test_the_rfc_4007_zone_index_qualifies_a_connected_remote, "test_the_rfc_4007_zone_index_qualifies_a_connected_remote", 930);
+  run_test(test_no_binding_is_err_and_not_busy, "test_no_binding_is_err_and_not_busy", 945);
+  run_test(test_a_binding_on_one_borrow_matches_nothing_on_the_other, "test_a_binding_on_one_borrow_matches_nothing_on_the_other", 956);
+  run_test(test_a_binding_takes_no_broadcast_source_and_no_index_past_the_table, "test_a_binding_takes_no_broadcast_source_and_no_index_past_the_table", 976);
+  run_test(test_a_lookup_with_no_destination_address_is_refused, "test_a_lookup_with_no_destination_address_is_refused", 1014);
 
   return UNITY_END();
 }

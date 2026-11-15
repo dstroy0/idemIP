@@ -23,7 +23,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief Message types in the ICMPv6 space. Numbered apart from RFC 792's.
@@ -36,23 +36,22 @@ IDEMIP_BEGIN_DECLS
  * A type listed here is one this library implements, so sec 2.4 (b), "If an ICMPv6 informational
  * message of unknown type is received, it MUST be silently discarded", does not reach it.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_ICMP6_DEST_UNREACHABLE = 1,  ///< sec 3.1
-    IDEMIP_ICMP6_PACKET_TOO_BIG = 2,    ///< sec 3.2
-    IDEMIP_ICMP6_TIME_EXCEEDED = 3,     ///< sec 3.3
-    IDEMIP_ICMP6_PARAMETER_PROBLEM = 4, ///< sec 3.4
-    IDEMIP_ICMP6_ECHO_REQUEST = 128,    ///< sec 4.1
-    IDEMIP_ICMP6_ECHO_REPLY = 129,      ///< sec 4.2
-    IDEMIP_ICMP6_MLD_QUERY = 130,       ///< RFC 2710 sec 3.1, "Multicast Listener Query"
-    IDEMIP_ICMP6_MLD_REPORT = 131,      ///< RFC 2710 sec 3.1, "Multicast Listener Report"
-    IDEMIP_ICMP6_MLD_DONE = 132,        ///< RFC 2710 sec 3.1, "Multicast Listener Done"
-    IDEMIP_ICMP6_ROUTER_SOLICIT = 133,  ///< RFC 4861 sec 4.1, "Router Solicitation"
-    IDEMIP_ICMP6_ROUTER_ADVERT = 134,   ///< RFC 4861 sec 4.2, "Router Advertisement"
-    IDEMIP_ICMP6_NEIGHBOR_SOLICIT = 135, ///< RFC 4861 sec 4.3, "Neighbor Solicitation"
-    IDEMIP_ICMP6_NEIGHBOR_ADVERT = 136,  ///< RFC 4861 sec 4.4, "Neighbor Advertisement"
-    IDEMIP_ICMP6_REDIRECT = 137,         ///< RFC 4861 sec 4.5, "Redirect"
-} IdemIpIcmp6Type;
+EMBED_ENUM_BYTE(IdemIpIcmp6Type,
+                IDEMIP_ICMP6_DEST_UNREACHABLE = 1,   ///< sec 3.1
+                IDEMIP_ICMP6_PACKET_TOO_BIG = 2,     ///< sec 3.2
+                IDEMIP_ICMP6_TIME_EXCEEDED = 3,      ///< sec 3.3
+                IDEMIP_ICMP6_PARAMETER_PROBLEM = 4,  ///< sec 3.4
+                IDEMIP_ICMP6_ECHO_REQUEST = 128,     ///< sec 4.1
+                IDEMIP_ICMP6_ECHO_REPLY = 129,       ///< sec 4.2
+                IDEMIP_ICMP6_MLD_QUERY = 130,        ///< RFC 2710 sec 3.1, "Multicast Listener Query"
+                IDEMIP_ICMP6_MLD_REPORT = 131,       ///< RFC 2710 sec 3.1, "Multicast Listener Report"
+                IDEMIP_ICMP6_MLD_DONE = 132,         ///< RFC 2710 sec 3.1, "Multicast Listener Done"
+                IDEMIP_ICMP6_ROUTER_SOLICIT = 133,   ///< RFC 4861 sec 4.1, "Router Solicitation"
+                IDEMIP_ICMP6_ROUTER_ADVERT = 134,    ///< RFC 4861 sec 4.2, "Router Advertisement"
+                IDEMIP_ICMP6_NEIGHBOR_SOLICIT = 135, ///< RFC 4861 sec 4.3, "Neighbor Solicitation"
+                IDEMIP_ICMP6_NEIGHBOR_ADVERT = 136,  ///< RFC 4861 sec 4.4, "Neighbor Advertisement"
+                IDEMIP_ICMP6_REDIRECT = 137,         ///< RFC 4861 sec 4.5, "Redirect"
+);
 
 /** @brief Reading the fields every message, and the echo and error bodies, carry. */
 typedef struct
@@ -60,22 +59,22 @@ typedef struct
     uint8_t (*type)(const uint8_t *m);
     uint8_t (*code)(const uint8_t *m);
     uint16_t (*cksum)(const uint8_t *m);
-    idemip_bool (*is_informational)(const uint8_t *m);
+    embed_bool (*is_informational)(const uint8_t *m);
     uint16_t (*id)(const uint8_t *m);
     uint16_t (*seq)(const uint8_t *m);
     uint32_t (*mtu)(const uint8_t *m);
     uint32_t (*pointer)(const uint8_t *m);
 } Icmp6ReadNs;
-IDEMIP_NS_LAYOUT(Icmp6ReadNs, type, code, cksum, is_informational, id, seq, mtu, pointer);
+EMBED_TABLE_LAYOUT(Icmp6ReadNs, type, code, cksum, is_informational, id, seq, mtu, pointer);
 
 /** @brief Which sub-protocol a type belongs to, and how long its fixed part is. */
 typedef struct
 {
-    idemip_bool (*is_nd)(uint8_t type);
-    idemip_bool (*is_mld)(uint8_t type);
+    embed_bool (*is_nd)(uint8_t type);
+    embed_bool (*is_mld)(uint8_t type);
     size_t (*nd_hdr_len)(uint8_t type);
 } Icmp6ClassNs;
-IDEMIP_NS_LAYOUT(Icmp6ClassNs, is_nd, is_mld, nd_hdr_len);
+EMBED_TABLE_LAYOUT(Icmp6ClassNs, is_nd, is_mld, nd_hdr_len);
 
 /** @brief The Multicast Listener Discovery body, RFC 2710 sec 3. One shape for all three types. */
 typedef struct
@@ -83,7 +82,7 @@ typedef struct
     uint16_t (*max_resp)(const uint8_t *m);
     const uint8_t *(*group)(const uint8_t *m);
 } Icmp6MldNs;
-IDEMIP_NS_LAYOUT(Icmp6MldNs, max_resp, group);
+EMBED_TABLE_LAYOUT(Icmp6MldNs, max_resp, group);
 
 /** @brief The Neighbor Discovery bodies, RFC 4861 sec 4.1 through sec 4.5. */
 typedef struct
@@ -97,16 +96,16 @@ typedef struct
     uint32_t (*ra_reachable)(const uint8_t *m);
     uint32_t (*ra_retrans)(const uint8_t *m);
 } Icmp6NdNs;
-IDEMIP_NS_LAYOUT(Icmp6NdNs, target, rd_dest, na_flags, ra_cur_hop, ra_flags, ra_lifetime, ra_reachable, ra_retrans);
+EMBED_TABLE_LAYOUT(Icmp6NdNs, target, rd_dest, na_flags, ra_cur_hop, ra_flags, ra_lifetime, ra_reachable, ra_retrans);
 
 /** @brief The Neighbor Discovery option format, RFC 4861 sec 4.6. */
 typedef struct
 {
     uint8_t (*type)(const uint8_t *o);
     size_t (*len)(const uint8_t *o);
-    idemip_bool (*ok)(const uint8_t *opts, size_t len);
+    embed_bool (*ok)(const uint8_t *opts, size_t len);
 } Icmp6NdOptNs;
-IDEMIP_NS_LAYOUT(Icmp6NdOptNs, type, len, ok);
+EMBED_TABLE_LAYOUT(Icmp6NdOptNs, type, len, ok);
 
 /**
  * @brief Writing a message into the caller's bytes, and the checksum that seals it.
@@ -126,8 +125,8 @@ typedef struct
     size_t (*echo_reply)(uint8_t *m, uint16_t id, uint16_t seq, const uint8_t *data, size_t data_len);
     uint16_t (*cksum)(const uint8_t *m, size_t len, const uint8_t *src, const uint8_t *dst);
 } Icmp6BuildNs;
-IDEMIP_NS_LAYOUT(Icmp6BuildNs, hdr, quote_len, err, dest_unreach, packet_too_big, time_exceeded, param_problem,
-                 echo_reply, cksum);
+EMBED_TABLE_LAYOUT(Icmp6BuildNs, hdr, quote_len, err, dest_unreach, packet_too_big, time_exceeded, param_problem,
+                   echo_reply, cksum);
 
 /** @name The entries the tables point at.
  *  @brief Nameable so a static const table can name them, and for no other reason. The tables are
@@ -136,14 +135,14 @@ IDEMIP_NS_LAYOUT(Icmp6BuildNs, hdr, quote_len, err, dest_unreach, packet_too_big
 uint8_t idemip_icmp6_type(const uint8_t *m);
 uint8_t idemip_icmp6_code(const uint8_t *m);
 uint16_t idemip_icmp6_cksum(const uint8_t *m);
-idemip_bool idemip_icmp6_is_informational(const uint8_t *m);
+embed_bool idemip_icmp6_is_informational(const uint8_t *m);
 uint16_t idemip_icmp6_id(const uint8_t *m);
 uint16_t idemip_icmp6_seq(const uint8_t *m);
 uint32_t idemip_icmp6_mtu(const uint8_t *m);
 uint32_t idemip_icmp6_pointer(const uint8_t *m);
 
-idemip_bool idemip_icmp6_is_nd(uint8_t type);
-idemip_bool idemip_icmp6_is_mld(uint8_t type);
+embed_bool idemip_icmp6_is_nd(uint8_t type);
+embed_bool idemip_icmp6_is_mld(uint8_t type);
 size_t idemip_icmp6_nd_hdr_len(uint8_t type);
 
 uint16_t idemip_icmp6_mld_max_resp(const uint8_t *m);
@@ -160,7 +159,7 @@ uint32_t idemip_icmp6_ra_retrans(const uint8_t *m);
 
 uint8_t idemip_icmp6_nd_opt_type(const uint8_t *o);
 size_t idemip_icmp6_nd_opt_len(const uint8_t *o);
-idemip_bool idemip_icmp6_nd_opts_ok(const uint8_t *opts, size_t len);
+embed_bool idemip_icmp6_nd_opts_ok(const uint8_t *opts, size_t len);
 
 void idemip_icmp6_hdr_write(uint8_t *m, uint8_t type, uint8_t code);
 size_t idemip_icmp6_err_quote_len(size_t invoking_len);
@@ -182,7 +181,7 @@ uint16_t idemip_icmp6_cksum_compute(const uint8_t *m, size_t len, const uint8_t 
  * inlined body and cannot do that through an extern one, where the table is in another
  * translation unit and every call is a load and an indirect jump.
  */
-IDEMIP_NS Icmp6ReadNs icmp6_read IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Icmp6ReadNs icmp6_read EMBED_UNUSED = {
     .type = idemip_icmp6_type,
     .code = idemip_icmp6_code,
     .cksum = idemip_icmp6_cksum,
@@ -193,18 +192,18 @@ IDEMIP_NS Icmp6ReadNs icmp6_read IDEMIP_UNUSED = {
     .pointer = idemip_icmp6_pointer,
 };
 
-IDEMIP_NS Icmp6ClassNs icmp6_class IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Icmp6ClassNs icmp6_class EMBED_UNUSED = {
     .is_nd = idemip_icmp6_is_nd,
     .is_mld = idemip_icmp6_is_mld,
     .nd_hdr_len = idemip_icmp6_nd_hdr_len,
 };
 
-IDEMIP_NS Icmp6MldNs icmp6_mld IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Icmp6MldNs icmp6_mld EMBED_UNUSED = {
     .max_resp = idemip_icmp6_mld_max_resp,
     .group = idemip_icmp6_mld_group,
 };
 
-IDEMIP_NS Icmp6NdNs icmp6_nd IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Icmp6NdNs icmp6_nd EMBED_UNUSED = {
     .target = idemip_icmp6_nd_target,
     .rd_dest = idemip_icmp6_rd_dest,
     .na_flags = idemip_icmp6_na_flags,
@@ -215,13 +214,13 @@ IDEMIP_NS Icmp6NdNs icmp6_nd IDEMIP_UNUSED = {
     .ra_retrans = idemip_icmp6_ra_retrans,
 };
 
-IDEMIP_NS Icmp6NdOptNs icmp6_nd_opt IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Icmp6NdOptNs icmp6_nd_opt EMBED_UNUSED = {
     .type = idemip_icmp6_nd_opt_type,
     .len = idemip_icmp6_nd_opt_len,
     .ok = idemip_icmp6_nd_opts_ok,
 };
 
-IDEMIP_NS Icmp6BuildNs icmp6_build IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Icmp6BuildNs icmp6_build EMBED_UNUSED = {
     .hdr = idemip_icmp6_hdr_write,
     .quote_len = idemip_icmp6_err_quote_len,
     .err = idemip_icmp6_err_build,
@@ -233,7 +232,7 @@ IDEMIP_NS Icmp6BuildNs icmp6_build IDEMIP_UNUSED = {
     .cksum = idemip_icmp6_cksum_compute,
 };
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

@@ -6,7 +6,7 @@
 #include "src/ip/ipv4.h"
 #include "src/common_defines.h"
 #include "src/ip/ipv4_defines.h"
-#include <string.h>
+#include "support/fill_bytes.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);

@@ -4,7 +4,7 @@
 #include "unity.h"
 #include "src/nd/dad.h"
 #include "src/ip/ipv6_defines.h"
-#include <string.h>
+#include "support/borrows.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);
@@ -128,64 +128,64 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/nd/test_dad/test_dad.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 141);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 149);
-  run_test(test_clear_on_one_borrow_leaves_the_other_untouched, "test_clear_on_one_borrow_leaves_the_other_untouched", 170);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 182);
-  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 200);
-  run_test(test_every_published_offset_is_aligned, "test_every_published_offset_is_aligned", 210);
-  run_test(test_the_io_macro_reaches_the_operand_block, "test_the_io_macro_reaches_the_operand_block", 216);
-  run_test(test_clear_reports_ok, "test_clear_reports_ok", 224);
-  run_test(test_clear_zeroes_the_table, "test_clear_zeroes_the_table", 230);
-  run_test(test_clear_zeroes_the_context_apart_from_the_mark, "test_clear_zeroes_the_context_apart_from_the_mark", 242);
-  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 258);
-  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 270);
-  run_test(test_bind_refuses_a_null_configuration, "test_bind_refuses_a_null_configuration", 285);
-  run_test(test_start_refuses_an_unbound_borrow, "test_start_refuses_an_unbound_borrow", 294);
-  run_test(test_start_refuses_a_multicast_address, "test_start_refuses_a_multicast_address", 305);
-  run_test(test_start_refuses_an_anycast_address, "test_start_refuses_an_anycast_address", 315);
-  run_test(test_a_retrans_timer_past_a_32_bit_deadline_is_served_whole, "test_a_retrans_timer_past_a_32_bit_deadline_is_served_whole", 336);
-  run_test(test_start_refuses_the_unspecified_address, "test_start_refuses_the_unspecified_address", 355);
-  run_test(test_start_refuses_a_null_address, "test_start_refuses_a_null_address", 362);
-  run_test(test_start_refuses_an_address_already_in_the_table, "test_start_refuses_an_address_already_in_the_table", 371);
-  run_test(test_a_full_table_is_busy_and_a_stop_frees_a_slot, "test_a_full_table_is_busy_and_a_stop_frees_a_slot", 381);
-  run_test(test_stop_refuses_an_address_that_is_not_in_the_table, "test_stop_refuses_an_address_that_is_not_in_the_table", 408);
-  run_test(test_find_refuses_an_address_that_is_not_in_the_table, "test_find_refuses_an_address_that_is_not_in_the_table", 416);
-  run_test(test_zero_transmits_skips_the_procedure, "test_zero_transmits_skips_the_procedure", 426);
-  run_test(test_the_first_tick_joins_and_solicits, "test_the_first_tick_joins_and_solicits", 444);
-  run_test(test_the_solicitation_target_is_the_address_being_checked, "test_the_solicitation_target_is_the_address_being_checked", 456);
-  run_test(test_the_solicited_node_address_is_the_prefix_and_the_low_24_bits, "test_the_solicited_node_address_is_the_prefix_and_the_low_24_bits", 469);
-  run_test(test_the_solicited_node_address_lies_in_the_printed_range, "test_the_solicited_node_address_lies_in_the_printed_range", 480);
-  run_test(test_the_delay_is_drawn_between_zero_and_max_rtr_solicitation_delay, "test_the_delay_is_drawn_between_zero_and_max_rtr_solicitation_delay", 493);
-  run_test(test_the_delay_holds_the_first_solicitation_back, "test_the_delay_holds_the_first_solicitation_back", 511);
-  run_test(test_no_delay_solicits_on_the_next_tick, "test_no_delay_solicits_on_the_next_tick", 528);
-  run_test(test_solicitations_are_spaced_by_retrans_timer, "test_solicitations_are_spaced_by_retrans_timer", 539);
-  run_test(test_the_procedure_ends_one_retrans_timer_after_the_last_solicitation, "test_the_procedure_ends_one_retrans_timer_after_the_last_solicitation", 620);
-  run_test(test_a_retrans_timer_past_the_deadline_span_still_waits, "test_a_retrans_timer_past_the_deadline_span_still_waits", 644);
-  run_test(test_a_zero_retrans_timer_takes_the_rfc_4861_default, "test_a_zero_retrans_timer_takes_the_rfc_4861_default", 660);
-  run_test(test_a_tick_with_nothing_due_is_busy, "test_a_tick_with_nothing_due_is_busy", 669);
-  run_test(test_a_tick_reports_one_event_per_call, "test_a_tick_reports_one_event_per_call", 677);
-  run_test(test_a_solicitation_received_before_one_is_sent_is_a_duplicate, "test_a_solicitation_received_before_one_is_sent_is_a_duplicate", 697);
-  run_test(test_a_solicitation_beyond_the_loopback_expectation_is_a_duplicate, "test_a_solicitation_beyond_the_loopback_expectation_is_a_duplicate", 710);
-  run_test(test_a_looped_back_solicitation_is_not_a_duplicate, "test_a_looped_back_solicitation_is_not_a_duplicate", 725);
-  run_test(test_a_solicitation_from_a_unicast_source_is_ignored, "test_a_solicitation_from_a_unicast_source_is_ignored", 743);
-  run_test(test_a_solicitation_for_an_unknown_target_is_not_tentative, "test_a_solicitation_for_an_unknown_target_is_not_tentative", 758);
-  run_test(test_a_solicitation_for_a_unique_address_is_not_tentative, "test_a_solicitation_for_a_unique_address_is_not_tentative", 769);
-  run_test(test_an_advertisement_for_a_tentative_address_is_a_duplicate, "test_an_advertisement_for_a_tentative_address_is_a_duplicate", 785);
-  run_test(test_an_advertisement_for_an_unknown_target_is_not_tentative, "test_an_advertisement_for_an_unknown_target_is_not_tentative", 797);
-  run_test(test_a_duplicate_hardware_derived_link_local_disables_ip, "test_a_duplicate_hardware_derived_link_local_disables_ip", 811);
-  run_test(test_a_duplicate_link_local_that_is_not_hardware_derived_leaves_ip_up, "test_a_duplicate_link_local_that_is_not_hardware_derived_leaves_ip_up", 823);
-  run_test(test_a_duplicate_global_address_does_not_disable_ip, "test_a_duplicate_global_address_does_not_disable_ip", 834);
-  run_test(test_a_duplicate_never_becomes_unique, "test_a_duplicate_never_becomes_unique", 845);
-  run_test(test_a_duplicate_holds_its_answer_until_it_is_stopped, "test_a_duplicate_holds_its_answer_until_it_is_stopped", 861);
-  run_test(test_two_borrows_run_independent_machines, "test_two_borrows_run_independent_machines", 881);
-  run_test(test_the_entries_refuse_a_call_that_names_no_address, "test_the_entries_refuse_a_call_that_names_no_address", 908);
-  run_test(test_the_link_local_test_is_the_first_ten_bits, "test_the_link_local_test_is_the_first_ten_bits", 948);
-  run_test(test_an_advertisement_about_an_address_already_unique_is_not_a_duplicate, "test_an_advertisement_about_an_address_already_unique_is_not_a_duplicate", 965);
-  run_test(test_the_count_of_looped_back_solicitations_holds_at_the_top_of_its_width, "test_the_count_of_looped_back_solicitations_holds_at_the_top_of_its_width", 992);
-  run_test(test_the_sweep_passes_over_an_address_it_has_already_decided, "test_the_sweep_passes_over_an_address_it_has_already_decided", 1029);
-  run_test(test_an_advertisement_inside_the_last_interval_is_still_about_a_tentative_address, "test_an_advertisement_inside_the_last_interval_is_still_about_a_tentative_address", 1057);
-  run_test(test_an_advertisement_between_two_solicitations_is_about_a_tentative_address, "test_an_advertisement_between_two_solicitations_is_about_a_tentative_address", 1081);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 145);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 153);
+  run_test(test_clear_on_one_borrow_leaves_the_other_untouched, "test_clear_on_one_borrow_leaves_the_other_untouched", 174);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 186);
+  run_test(test_the_published_offsets_are_ordered_and_do_not_overlap, "test_the_published_offsets_are_ordered_and_do_not_overlap", 204);
+  run_test(test_every_published_offset_is_aligned, "test_every_published_offset_is_aligned", 214);
+  run_test(test_the_io_macro_reaches_the_operand_block, "test_the_io_macro_reaches_the_operand_block", 220);
+  run_test(test_clear_reports_ok, "test_clear_reports_ok", 228);
+  run_test(test_clear_zeroes_the_table, "test_clear_zeroes_the_table", 234);
+  run_test(test_clear_zeroes_the_context_apart_from_the_mark, "test_clear_zeroes_the_context_apart_from_the_mark", 246);
+  run_test(test_clear_leaves_the_operand_block_alone, "test_clear_leaves_the_operand_block_alone", 262);
+  run_test(test_an_uncleared_borrow_is_refused, "test_an_uncleared_borrow_is_refused", 274);
+  run_test(test_bind_refuses_a_null_configuration, "test_bind_refuses_a_null_configuration", 289);
+  run_test(test_start_refuses_an_unbound_borrow, "test_start_refuses_an_unbound_borrow", 298);
+  run_test(test_start_refuses_a_multicast_address, "test_start_refuses_a_multicast_address", 309);
+  run_test(test_start_refuses_an_anycast_address, "test_start_refuses_an_anycast_address", 319);
+  run_test(test_a_retrans_timer_past_a_32_bit_deadline_is_served_whole, "test_a_retrans_timer_past_a_32_bit_deadline_is_served_whole", 340);
+  run_test(test_start_refuses_the_unspecified_address, "test_start_refuses_the_unspecified_address", 359);
+  run_test(test_start_refuses_a_null_address, "test_start_refuses_a_null_address", 366);
+  run_test(test_start_refuses_an_address_already_in_the_table, "test_start_refuses_an_address_already_in_the_table", 375);
+  run_test(test_a_full_table_is_busy_and_a_stop_frees_a_slot, "test_a_full_table_is_busy_and_a_stop_frees_a_slot", 385);
+  run_test(test_stop_refuses_an_address_that_is_not_in_the_table, "test_stop_refuses_an_address_that_is_not_in_the_table", 412);
+  run_test(test_find_refuses_an_address_that_is_not_in_the_table, "test_find_refuses_an_address_that_is_not_in_the_table", 420);
+  run_test(test_zero_transmits_skips_the_procedure, "test_zero_transmits_skips_the_procedure", 430);
+  run_test(test_the_first_tick_joins_and_solicits, "test_the_first_tick_joins_and_solicits", 448);
+  run_test(test_the_solicitation_target_is_the_address_being_checked, "test_the_solicitation_target_is_the_address_being_checked", 460);
+  run_test(test_the_solicited_node_address_is_the_prefix_and_the_low_24_bits, "test_the_solicited_node_address_is_the_prefix_and_the_low_24_bits", 473);
+  run_test(test_the_solicited_node_address_lies_in_the_printed_range, "test_the_solicited_node_address_lies_in_the_printed_range", 484);
+  run_test(test_the_delay_is_drawn_between_zero_and_max_rtr_solicitation_delay, "test_the_delay_is_drawn_between_zero_and_max_rtr_solicitation_delay", 499);
+  run_test(test_the_delay_holds_the_first_solicitation_back, "test_the_delay_holds_the_first_solicitation_back", 517);
+  run_test(test_no_delay_solicits_on_the_next_tick, "test_no_delay_solicits_on_the_next_tick", 534);
+  run_test(test_solicitations_are_spaced_by_retrans_timer, "test_solicitations_are_spaced_by_retrans_timer", 545);
+  run_test(test_the_procedure_ends_one_retrans_timer_after_the_last_solicitation, "test_the_procedure_ends_one_retrans_timer_after_the_last_solicitation", 626);
+  run_test(test_a_retrans_timer_past_the_deadline_span_still_waits, "test_a_retrans_timer_past_the_deadline_span_still_waits", 650);
+  run_test(test_a_zero_retrans_timer_takes_the_rfc_4861_default, "test_a_zero_retrans_timer_takes_the_rfc_4861_default", 666);
+  run_test(test_a_tick_with_nothing_due_is_busy, "test_a_tick_with_nothing_due_is_busy", 675);
+  run_test(test_a_tick_reports_one_event_per_call, "test_a_tick_reports_one_event_per_call", 683);
+  run_test(test_a_solicitation_received_before_one_is_sent_is_a_duplicate, "test_a_solicitation_received_before_one_is_sent_is_a_duplicate", 703);
+  run_test(test_a_solicitation_beyond_the_loopback_expectation_is_a_duplicate, "test_a_solicitation_beyond_the_loopback_expectation_is_a_duplicate", 716);
+  run_test(test_a_looped_back_solicitation_is_not_a_duplicate, "test_a_looped_back_solicitation_is_not_a_duplicate", 731);
+  run_test(test_a_solicitation_from_a_unicast_source_is_ignored, "test_a_solicitation_from_a_unicast_source_is_ignored", 749);
+  run_test(test_a_solicitation_for_an_unknown_target_is_not_tentative, "test_a_solicitation_for_an_unknown_target_is_not_tentative", 764);
+  run_test(test_a_solicitation_for_a_unique_address_is_not_tentative, "test_a_solicitation_for_a_unique_address_is_not_tentative", 775);
+  run_test(test_an_advertisement_for_a_tentative_address_is_a_duplicate, "test_an_advertisement_for_a_tentative_address_is_a_duplicate", 791);
+  run_test(test_an_advertisement_for_an_unknown_target_is_not_tentative, "test_an_advertisement_for_an_unknown_target_is_not_tentative", 803);
+  run_test(test_a_duplicate_hardware_derived_link_local_disables_ip, "test_a_duplicate_hardware_derived_link_local_disables_ip", 817);
+  run_test(test_a_duplicate_link_local_that_is_not_hardware_derived_leaves_ip_up, "test_a_duplicate_link_local_that_is_not_hardware_derived_leaves_ip_up", 829);
+  run_test(test_a_duplicate_global_address_does_not_disable_ip, "test_a_duplicate_global_address_does_not_disable_ip", 840);
+  run_test(test_a_duplicate_never_becomes_unique, "test_a_duplicate_never_becomes_unique", 851);
+  run_test(test_a_duplicate_holds_its_answer_until_it_is_stopped, "test_a_duplicate_holds_its_answer_until_it_is_stopped", 867);
+  run_test(test_two_borrows_run_independent_machines, "test_two_borrows_run_independent_machines", 887);
+  run_test(test_the_entries_refuse_a_call_that_names_no_address, "test_the_entries_refuse_a_call_that_names_no_address", 914);
+  run_test(test_the_link_local_test_is_the_first_ten_bits, "test_the_link_local_test_is_the_first_ten_bits", 954);
+  run_test(test_an_advertisement_about_an_address_already_unique_is_not_a_duplicate, "test_an_advertisement_about_an_address_already_unique_is_not_a_duplicate", 971);
+  run_test(test_the_count_of_looped_back_solicitations_holds_at_the_top_of_its_width, "test_the_count_of_looped_back_solicitations_holds_at_the_top_of_its_width", 998);
+  run_test(test_the_sweep_passes_over_an_address_it_has_already_decided, "test_the_sweep_passes_over_an_address_it_has_already_decided", 1035);
+  run_test(test_an_advertisement_inside_the_last_interval_is_still_about_a_tentative_address, "test_an_advertisement_inside_the_last_interval_is_still_about_a_tentative_address", 1063);
+  run_test(test_an_advertisement_between_two_solicitations_is_about_a_tentative_address, "test_an_advertisement_between_two_solicitations_is_about_a_tentative_address", 1087);
 
   return UNITY_END();
 }

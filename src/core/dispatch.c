@@ -40,7 +40,7 @@
 #include "src/udp/udp_defines.h"
 #endif
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The one definition, private to this TU. The bound borrows are copied out of the operand block, so a
 // later call does not read an operand some other caller overwrote.
@@ -98,9 +98,9 @@ typedef struct
     uint8_t pad[(1u << IDEMIP_DISPATCH_IF_ENTRY_SHIFT) - (sizeof(uint8_t *) + (2u * 2u) + 1u)];
 } DispatchIfRow;
 
-static_assert(sizeof(DispatchIfRow) == (1u << IDEMIP_DISPATCH_IF_ENTRY_SHIFT),
-              "a DispatchIfRow is not 1 << IDEMIP_DISPATCH_IF_ENTRY_SHIFT octets wide - raise the shift in "
-              "idemip_config.h");
+EMBED_STATIC_ASSERT(sizeof(DispatchIfRow) == (1u << IDEMIP_DISPATCH_IF_ENTRY_SHIFT),
+                    "a DispatchIfRow is not 1 << IDEMIP_DISPATCH_IF_ENTRY_SHIFT octets wide - raise the shift in "
+                    "idemip_config.h");
 
 // One connection's row: the RFC 9293 sec 3.10.7.4 MUST-58 aggregation bit, and the interface the
 // segments held for it were pinned on, which is what an unpin has to be routed through.
@@ -111,17 +111,17 @@ typedef struct
     uint8_t pad[(1u << IDEMIP_DISPATCH_PCB_ENTRY_SHIFT) - 2u];
 } DispatchPcbRow;
 
-static_assert(sizeof(DispatchPcbRow) == (1u << IDEMIP_DISPATCH_PCB_ENTRY_SHIFT),
-              "a DispatchPcbRow is not 1 << IDEMIP_DISPATCH_PCB_ENTRY_SHIFT octets wide - raise the shift in "
-              "idemip_config.h");
+EMBED_STATIC_ASSERT(sizeof(DispatchPcbRow) == (1u << IDEMIP_DISPATCH_PCB_ENTRY_SHIFT),
+                    "a DispatchPcbRow is not 1 << IDEMIP_DISPATCH_PCB_ENTRY_SHIFT octets wide - raise the shift in "
+                    "idemip_config.h");
 
 // The caller's borrow, split: the operand block, the context, then the two tables. dispatch.h
 // publishes the offsets; the asserts below prove the span covers them before anything runs.
-static_assert(IDEMIP_DISPATCH_OFF_CTX + sizeof(DispatchCtx) <= IDEMIP_DISPATCH_CTX_BYTES,
-              "IDEMIP_DISPATCH_CTX_BYTES is short of the operand block and the context - raise it in "
-              "idemip_config.h");
-static_assert(IDEMIP_DISPATCH_OFF_END <= IDEMIP_DISPATCH_BORROW,
-              "IDEMIP_DISPATCH_BORROW is short of the borrow map - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_DISPATCH_OFF_CTX + sizeof(DispatchCtx) <= IDEMIP_DISPATCH_CTX_BYTES,
+                    "IDEMIP_DISPATCH_CTX_BYTES is short of the operand block and the context - raise it in "
+                    "idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_DISPATCH_OFF_END <= IDEMIP_DISPATCH_BORROW,
+                    "IDEMIP_DISPATCH_BORROW is short of the borrow map - raise it in idemip_config.h");
 
 // The regions, at their offsets in the caller's borrow.
 #define D_IO(w) IDEMIP_DISPATCH_IO(w)
@@ -131,9 +131,9 @@ static_assert(IDEMIP_DISPATCH_OFF_END <= IDEMIP_DISPATCH_BORROW,
 #define D_PCB_AT(w, i)                                                                                                 \
     ((DispatchPcbRow *)(void *)((w) + IDEMIP_DISPATCH_OFF_PCB + ((size_t)(i) << IDEMIP_DISPATCH_PCB_ENTRY_SHIFT)))
 
-static idemip_bool d_ready(uint8_t *work)
+static embed_bool d_ready(uint8_t *work)
 {
-    return (idemip_bool)(D_CTX(work)->ready == DISPATCH_READY);
+    return (embed_bool)(D_CTX(work)->ready == DISPATCH_READY);
 }
 
 // --- the counters ----------------------------------------------------------
@@ -309,7 +309,7 @@ static void d_delivered(uint8_t *work, const uint8_t *frame)
 {
     const DispatchIo *io = D_IO(work);
     const uint8_t *dst = idemip_eth_dst(frame);
-    idemip_bool group = (idemip_bool)((dst[0] & 1u) != 0u);
+    embed_bool group = (embed_bool)((dst[0] & 1u) != 0u);
     d_if_bump(work, io->netif, group ? IDEMIP_STAT_IF_IN_NUCAST_PKTS : IDEMIP_STAT_IF_IN_UCAST_PKTS, 1u);
 }
 
@@ -321,21 +321,21 @@ static void d_delivered(uint8_t *work, const uint8_t *frame)
 // module can reach, so the descriptor is the caller's own token: it is recorded and reported and
 // nothing is pinned, the caller keeping it out of whatever holds it. A frame in no descriptor at all
 // cannot be held either way.
-static idemip_bool d_pin(uint8_t *work, uint8_t netif, uint16_t desc)
+static embed_bool d_pin(uint8_t *work, uint8_t netif, uint16_t desc)
 {
     // The index is not measured, for the reason written at d_if_bump.
     if (netif >= IDEMIP_NETIF_COUNT || desc == IDEMIP_DISPATCH_DESC_NONE) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     DispatchIfRow *row = D_IF_AT(work, netif);
     if (row->dma == NULL)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     IDEMIP_DMA_IO(row->dma)->desc_args.index = (uint8_t)desc;
     Dma.pin(row->dma);
-    return (idemip_bool)(IDEMIP_DMA_IO(row->dma)->status == IDEMIP_OK);
+    return (embed_bool)(IDEMIP_DMA_IO(row->dma)->status == IDEMIP_OK);
 }
 
 static void d_unpin(uint8_t *work, uint8_t netif, uint16_t desc)
@@ -358,16 +358,16 @@ static void d_unpin(uint8_t *work, uint8_t netif, uint16_t desc)
 
 // Reads one interface's own record into the netif operand block, which stays there until the next
 // netif call. False when no interface table is bound or the index names none.
-static idemip_bool d_netif_get(uint8_t *work, uint8_t index)
+static embed_bool d_netif_get(uint8_t *work, uint8_t index)
 {
     DispatchCtx *ctx = D_CTX(work);
     if (ctx->netif == NULL)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     IDEMIP_NETIF_IO(ctx->netif)->if_args.index = index;
     Netif.get(ctx->netif);
-    return (idemip_bool)(IDEMIP_NETIF_IO(ctx->netif)->status == IDEMIP_OK);
+    return (embed_bool)(IDEMIP_NETIF_IO(ctx->netif)->status == IDEMIP_OK);
 }
 
 // --- the result ------------------------------------------------------------
@@ -382,7 +382,7 @@ static void d_reset(DispatchIo *io)
     io->vid = IDEMIP_DISPATCH_VID_NONE;
     io->last_vid = IDEMIP_DISPATCH_VID_NONE;
     io->pcp = 0u;
-    io->tagged = IDEMIP_FALSE;
+    io->tagged = EMBED_FALSE;
     io->ip_off = 0u;
     io->payload_off = 0u;
     io->payload_len = 0u;
@@ -495,14 +495,14 @@ static void d_raw(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_
 // silently, while an all-zero field means the sender computed none and the datagram is accepted.
 // RFC 8200 sec 8.1 removes that exemption over IPv6: "IPv6 receivers must discard UDP packets
 // containing a zero checksum", the IPv6 header carrying no checksum of its own.
-static idemip_bool d_udp_cksum_ok(const uint8_t *udp, const uint8_t *local_ip, const uint8_t *remote_ip,
-                                  uint8_t ip_version)
+static embed_bool d_udp_cksum_ok(const uint8_t *udp, const uint8_t *local_ip, const uint8_t *remote_ip,
+                                 uint8_t ip_version)
 {
     size_t len = (size_t)idemip_udp_len(udp);
 
     if (!idemip_udp_cksum_present(udp))
     {
-        return (ip_version == (uint8_t)IDEMIP_IP6_VERSION) ? IDEMIP_FALSE : IDEMIP_TRUE;
+        return (ip_version == (uint8_t)IDEMIP_IP6_VERSION) ? EMBED_FALSE : EMBED_TRUE;
     }
     // Not measured: d_udp is reached from d_ip4 and d_ip6 alone, each of which passes its own
     // version, so the two the pseudo-header is defined for are the only two that arrive. The test is
@@ -512,13 +512,12 @@ static idemip_bool d_udp_cksum_ok(const uint8_t *udp, const uint8_t *local_ip, c
     if (!idemip_pseudo_accum(&sum, ip_version, (uint8_t)IDEMIP_UDP_PROTO, remote_ip, // GCOVR_EXCL_BR_LINE
                              local_ip, (uint32_t)len))                              // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+        return EMBED_FALSE; // GCOVR_EXCL_LINE
     }
-    return (idemip_cksum_final(idemip_cksum_accum(sum, udp, len)) == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (idemip_cksum_final(idemip_cksum_accum(sum, udp, len)) == 0u) ? EMBED_TRUE : EMBED_FALSE;
 }
 
-static void d_udp(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_ip, uint8_t ip_version,
-                  idemip_bool lite)
+static void d_udp(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_ip, uint8_t ip_version, embed_bool lite)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
@@ -580,10 +579,10 @@ static void d_udp(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_
             // sec 3.1's "the transmitted checksum MUST NOT be all zeroes" is broken, and it reports
             // the bad-sum one for every other failed sum. Both are written because the two are
             // separate refusals in udplite.h and a reader should see which map to a sum here.
-            const idemip_bool bad_sum = (ul->reason == IDEMIP_UDPLITE_REASON_CKSUM_BAD ||
-                                         ul->reason == IDEMIP_UDPLITE_REASON_CKSUM_ZERO) // GCOVR_EXCL_BR_LINE
-                                            ? IDEMIP_TRUE
-                                            : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
+            const embed_bool bad_sum = (ul->reason == IDEMIP_UDPLITE_REASON_CKSUM_BAD ||
+                                        ul->reason == IDEMIP_UDPLITE_REASON_CKSUM_ZERO) // GCOVR_EXCL_BR_LINE
+                                           ? EMBED_TRUE
+                                           : EMBED_FALSE; // GCOVR_EXCL_BR_LINE
             d_drop(work, bad_sum ? IDEMIP_DISPATCH_DROP_CKSUM : IDEMIP_DISPATCH_DROP_SHORT,
                    IDEMIP_STAT_IF_IN_ERRORS);
             d_bump(work, IDEMIP_STAT_UDP_IN_ERRORS);
@@ -1000,15 +999,15 @@ typedef enum
 // The two citations are the reason it stands outside either family's guard, as the enum above does:
 // each family asks this of the same interface record, and behind IPV4 the IPv6 half of the question
 // was asked of a function an IPv6-only build does not contain.
-static idemip_bool d_on_loopback(uint8_t *work)
+static embed_bool d_on_loopback(uint8_t *work)
 {
     DispatchCtx *ctx = D_CTX(work);
     const DispatchIo *io = D_IO(work);
     if (!d_netif_get(work, io->netif))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    return (idemip_bool)((IDEMIP_NETIF_IO(ctx->netif)->flags & (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK) != 0u);
+    return (embed_bool)((IDEMIP_NETIF_IO(ctx->netif)->flags & (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK) != 0u);
 }
 
 #endif // IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6
@@ -1259,8 +1258,8 @@ static void d_igmp(uint8_t *work, const uint8_t *msg)
         ig->query_args.rand = a->rand;
         ig->query_args.now_ms = a->now_ms;
         ig->query_args.netif = io->netif;
-        ig->query_args.general = (idemip_bool)(group == 0u);
-        ig->query_args.v1 = (idemip_bool)(max_resp == 0u);
+        ig->query_args.general = (embed_bool)(group == 0u);
+        ig->query_args.v1 = (embed_bool)(max_resp == 0u);
         Igmp.query_in(ctx->igmp);
     }
     else if (type == (uint8_t)IDEMIP_IGMP_TYPE_REPORT_V1 || type == (uint8_t)IDEMIP_IGMP_TYPE_REPORT_V2)
@@ -1304,10 +1303,10 @@ static void d_ip4_proto(uint8_t *work, const uint8_t *ip4, size_t hdr_len, size_
         return;
 #if IDEMIP_ENABLE_UDP
     case IDEMIP_IP4_PROTO_UDP:
-        d_udp(work, local_ip, remote_ip, IDEMIP_IP4_VERSION, IDEMIP_FALSE);
+        d_udp(work, local_ip, remote_ip, IDEMIP_IP4_VERSION, EMBED_FALSE);
         return;
     case IDEMIP_UDPLITE_PROTO:
-        d_udp(work, local_ip, remote_ip, IDEMIP_IP4_VERSION, IDEMIP_TRUE);
+        d_udp(work, local_ip, remote_ip, IDEMIP_IP4_VERSION, EMBED_TRUE);
         return;
 #endif
 #if IDEMIP_ENABLE_TCP
@@ -1379,33 +1378,33 @@ static void d_ip4_frag(uint8_t *work, const uint8_t *ip4, size_t total_len)
 // initialization procedure by which the host learns its own IP address", which is what a DHCP
 // client's first datagram carries. A directed broadcast is only recognizable against the receiving
 // interface's own mask, so an interface with no address bars nothing but the forms above.
-static idemip_bool d_ip4_src_invalid(uint8_t *work, uint32_t src)
+static embed_bool d_ip4_src_invalid(uint8_t *work, uint32_t src)
 {
     DispatchCtx *ctx = D_CTX(work);
     const DispatchIo *io = D_IO(work);
     IdemIpIp4AddrType type = idemip_ip4_addr_type(src);
     if (type == IDEMIP_IP4_TYPE_BROADCAST || type == IDEMIP_IP4_TYPE_MULTICAST)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
-    idemip_bool have = d_netif_get(work, io->netif);
+    embed_bool have = d_netif_get(work, io->netif);
     if (type == IDEMIP_IP4_TYPE_LOOPBACK)
     {
         // Case (g) bars 127/8 from the wire and leaves it to the interface no wire reaches. The
         // no-interface reading is not measured: a datagram reaches the source test only after the
         // destination test, which refuses one this interface could not be loaded for.
         uint16_t flags = have ? IDEMIP_NETIF_IO(ctx->netif)->flags : 0u; // GCOVR_EXCL_BR_LINE
-        return ((flags & (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK) != 0u) ? IDEMIP_FALSE : IDEMIP_TRUE;
+        return ((flags & (uint16_t)IDEMIP_NETIF_FLAG_LOOPBACK) != 0u) ? EMBED_FALSE : EMBED_TRUE;
     }
     // Not measured on the interface half, for the reason written above it.
     if (!have || ctx->ip4_addr == NULL) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     uint32_t mask = IDEMIP_NETIF_IO(ctx->netif)->mask;
     if (mask == 0u)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     Ip4AddrIo *ia = IDEMIP_IP4_ADDR_IO(ctx->ip4_addr);
     ia->match_args.addr = src;
@@ -1414,7 +1413,7 @@ static idemip_bool d_ip4_src_invalid(uint8_t *work, uint32_t src)
     Ip4Addr.match(ctx->ip4_addr);
     // The reported status is not measured: Ip4Addr.match reports ERR only for a borrow no clear has
     // marked, which Dispatch.bind would not have taken. The flag is what the call decides.
-    return (ia->status == IDEMIP_OK && ia->is_broadcast) ? IDEMIP_TRUE : IDEMIP_FALSE; // GCOVR_EXCL_BR_LINE
+    return (ia->status == IDEMIP_OK && ia->is_broadcast) ? EMBED_TRUE : EMBED_FALSE; // GCOVR_EXCL_BR_LINE
 }
 
 // RFC 1122 sec 3.1, steps (1), (2), (4) and (5) over one IPv4 datagram.
@@ -1544,7 +1543,7 @@ static void d_arp(uint8_t *work, const uint8_t *packet, size_t avail)
         v->build_args.type = (uint16_t)IDEMIP_ETHERTYPE_ARP;
         v->tag_args.vid = io->vid;
         v->tag_args.pcp = io->pcp;
-        v->tag_args.dei = IDEMIP_FALSE;
+        v->tag_args.dei = EMBED_FALSE;
         Vlan.build(ctx->vlan);
         // Not measured: the tag written here is the one the frame arrived carrying, and the build
         // refuses only a priority past IEEE 802.1Q's three bits or the reserved VLAN ID - which the
@@ -1590,7 +1589,7 @@ static DispatchDest d_ip6_dest(uint8_t *work, const uint8_t *dst)
         // and sec 5.4.5 bars a duplicate one from being assigned at all, so neither is this host's
         // for delivery. The sec 5.4.3 Target Address match is the one that wants a tentative address,
         // and it is not this path.
-        IDEMIP_NETIF_IO(ctx->netif)->addr6_args.tentative = IDEMIP_FALSE;
+        IDEMIP_NETIF_IO(ctx->netif)->addr6_args.tentative = EMBED_FALSE;
         Netif.find_addr6(ctx->netif);
         if (IDEMIP_NETIF_IO(ctx->netif)->status == IDEMIP_OK)
         {
@@ -1798,7 +1797,7 @@ static void d_icmp6(uint8_t *work, const uint8_t *ip6, size_t total_len)
     ic->recv_args.out = a->out;
     ic->recv_args.out_cap = a->out_cap;
     ic->recv_args.if_addr = if_addr;
-    ic->recv_args.dst_anycast = IDEMIP_FALSE;
+    ic->recv_args.dst_anycast = EMBED_FALSE;
     Icmp6In.recv(ctx->icmp6_in);
     // Not measured, for the reason written on the RFC 792 side: what the call refuses outright is a
     // packet or an output buffer this path has already made sure of, and what it decides about the
@@ -2021,10 +2020,10 @@ static void d_ip6(uint8_t *work, const uint8_t *ip6, size_t avail)
         return;
 #if IDEMIP_ENABLE_UDP
     case IDEMIP_IP6_NH_UDP:
-        d_udp(work, ip6 + IDEMIP_IP6_OFF_DST, ip6 + IDEMIP_IP6_OFF_SRC, IDEMIP_IP6_VERSION, IDEMIP_FALSE);
+        d_udp(work, ip6 + IDEMIP_IP6_OFF_DST, ip6 + IDEMIP_IP6_OFF_SRC, IDEMIP_IP6_VERSION, EMBED_FALSE);
         return;
     case IDEMIP_UDPLITE_PROTO:
-        d_udp(work, ip6 + IDEMIP_IP6_OFF_DST, ip6 + IDEMIP_IP6_OFF_SRC, IDEMIP_IP6_VERSION, IDEMIP_TRUE);
+        d_udp(work, ip6 + IDEMIP_IP6_OFF_DST, ip6 + IDEMIP_IP6_OFF_SRC, IDEMIP_IP6_VERSION, EMBED_TRUE);
         return;
 #endif
 #if IDEMIP_ENABLE_TCP
@@ -2051,7 +2050,7 @@ static void d_ip6(uint8_t *work, const uint8_t *ip6, size_t avail)
 // ===========================================================================
 
 // True when the frame goes on. A false answer has already bumped its counter and set the reason.
-static idemip_bool d_link(uint8_t *work, size_t *payload_off)
+static embed_bool d_link(uint8_t *work, size_t *payload_off)
 {
     DispatchCtx *ctx = D_CTX(work);
     DispatchIo *io = D_IO(work);
@@ -2061,12 +2060,12 @@ static idemip_bool d_link(uint8_t *work, size_t *payload_off)
     if (a->len < IDEMIP_ETH_HDR_LEN)
     {
         d_drop(work, IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_STAT_IF_IN_ERRORS);
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (ctx->vlan == NULL)
     {
         d_drop(work, IDEMIP_DISPATCH_DROP_UNBOUND, IDEMIP_STAT_IF_COUNT);
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     VlanIo *v = IDEMIP_VLAN_IO(ctx->vlan);
     v->parse_args.frame = a->frame;
@@ -2081,12 +2080,12 @@ static idemip_bool d_link(uint8_t *work, size_t *payload_off)
         // arranges the pair as one test with two uses, so gcov counts arms that stand for the same
         // decision. Both readings have a case - a frame of eight octets, which has no type field at
         // all, and one whose type field is an 802.3 Length with no RFC 1042 headers behind it.
-        const idemip_bool len_field =
-            (idemip_bool)(a->len >= IDEMIP_ETH_HDR_LEN && // GCOVR_EXCL_BR_LINE
-                          idemip_rd16(a->frame + IDEMIP_ETH_OFF_TYPE) <= (uint16_t)IDEMIP_ETH_MAX_PAYLOAD);
+        const embed_bool len_field =
+            (embed_bool)(a->len >= IDEMIP_ETH_HDR_LEN && // GCOVR_EXCL_BR_LINE
+                         idemip_rd16(a->frame + IDEMIP_ETH_OFF_TYPE) <= (uint16_t)IDEMIP_ETH_MAX_PAYLOAD);
         d_drop(work, len_field ? IDEMIP_DISPATCH_DROP_ETHERTYPE : IDEMIP_DISPATCH_DROP_SHORT, // GCOVR_EXCL_BR_LINE
                len_field ? IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS : IDEMIP_STAT_IF_IN_ERRORS);
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     io->type = v->type;
     io->tagged = v->tagged;
@@ -2094,7 +2093,7 @@ static idemip_bool d_link(uint8_t *work, size_t *payload_off)
     *payload_off = v->payload_off;
     if (!v->tagged)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     io->vid = v->vid;
     // RFC 6325 sec 4.1.1: "The VLAN ID 0xFFF MUST NOT be used", and a receiver "MUST discard any
@@ -2103,16 +2102,16 @@ static idemip_bool d_link(uint8_t *work, size_t *payload_off)
     if (v->vid_reserved)
     {
         d_drop(work, IDEMIP_DISPATCH_DROP_VLAN_RESERVED, IDEMIP_STAT_IF_IN_ERRORS);
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     // An untagged interface accepts every frame and reads the payload behind whatever tag it has.
     if (!row->tagged)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     if (v->vid == row->vid)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     // A tagged interface discards a frame outside its own VLAN. RFC 1213 ifInDiscards: "chosen to be
     // discarded even though no errors had been detected". The VLAN ID rises and falls rather than
@@ -2120,7 +2119,7 @@ static idemip_bool d_link(uint8_t *work, size_t *payload_off)
     row->last_vid = v->vid;
     io->last_vid = v->vid;
     d_drop(work, IDEMIP_DISPATCH_DROP_VLAN_POLICY, IDEMIP_STAT_IF_IN_DISCARDS);
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 // --- the entries -----------------------------------------------------------
@@ -2131,7 +2130,8 @@ void idemip_dispatch_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_DISPATCH_OFF_CTX, 0, IDEMIP_DISPATCH_OFF_END - IDEMIP_DISPATCH_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_DISPATCH_OFF_CTX, .val = 0,
+               .bytes = IDEMIP_DISPATCH_OFF_END - IDEMIP_DISPATCH_OFF_CTX);
     for (uint8_t i = 0u; i < (uint8_t)IDEMIP_NETIF_COUNT; i++)
     {
         D_IF_AT(work, i)->last_vid = IDEMIP_DISPATCH_VID_NONE;
@@ -2231,7 +2231,7 @@ void idemip_dispatch_if_get(uint8_t *work)
     const DispatchIfRow *row = D_IF_AT(work, io->if_args.index);
     io->netif = io->if_args.index;
     io->vid = row->vid;
-    io->tagged = (idemip_bool)(row->tagged != 0u);
+    io->tagged = (embed_bool)(row->tagged != 0u);
     io->last_vid = row->last_vid;
     io->status = IDEMIP_OK;
 }
@@ -2432,4 +2432,4 @@ void idemip_dispatch_tcp_ack(uint8_t *work)
 
 #endif // IDEMIP_ENABLE_TCP
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

@@ -25,7 +25,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief Where the machine is over its address.
@@ -37,16 +37,15 @@ IDEMIP_BEGIN_DECLS
  * sec 2.1.1's rate limit of "one attempted new address per RATE_LIMIT_INTERVAL" once MAX_CONFLICTS
  * conflicts are counted.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_ACD_STATE_OFF = 0,        ///< no address in the machine, which is what clear leaves
-    IDEMIP_ACD_STATE_PROBE_WAIT,     ///< sec 2.1.1, waiting out the initial delay over [0, PROBE_WAIT]
-    IDEMIP_ACD_STATE_PROBING,        ///< sec 2.1.1, sending PROBE_NUM ARP Probes
-    IDEMIP_ACD_STATE_ANNOUNCE_WAIT,  ///< sec 2.1.1, waiting ANNOUNCE_WAIT after the last probe
-    IDEMIP_ACD_STATE_ANNOUNCING,     ///< sec 2.3, sending ANNOUNCE_NUM ARP Announcements
-    IDEMIP_ACD_STATE_ONGOING,        ///< sec 2.4, the address is in use and every ARP packet is checked
-    IDEMIP_ACD_STATE_RATE_LIMIT,     ///< sec 2.1.1, MAX_CONFLICTS reached, one attempt per RATE_LIMIT_INTERVAL
-} IdemIpAcdState;
+EMBED_ENUM_BYTE(IdemIpAcdState,
+                IDEMIP_ACD_STATE_OFF = 0,       ///< no address in the machine, which is what clear leaves
+                IDEMIP_ACD_STATE_PROBE_WAIT,    ///< sec 2.1.1, waiting out the initial delay over [0, PROBE_WAIT]
+                IDEMIP_ACD_STATE_PROBING,       ///< sec 2.1.1, sending PROBE_NUM ARP Probes
+                IDEMIP_ACD_STATE_ANNOUNCE_WAIT, ///< sec 2.1.1, waiting ANNOUNCE_WAIT after the last probe
+                IDEMIP_ACD_STATE_ANNOUNCING,    ///< sec 2.3, sending ANNOUNCE_NUM ARP Announcements
+                IDEMIP_ACD_STATE_ONGOING,       ///< sec 2.4, the address is in use and every ARP packet is checked
+                IDEMIP_ACD_STATE_RATE_LIMIT, ///< sec 2.1.1, MAX_CONFLICTS reached, one attempt per RATE_LIMIT_INTERVAL
+);
 
 /**
  * @brief Which of the three responses RFC 5227 sec 2.4 permits this address takes on a conflict.
@@ -56,12 +55,11 @@ typedef enum IDEMIP_ENUM_PACKED
  * packets as described in (a), (b), or (c) above." Which one is a property of the address the
  * configuring agent chose, so it is an operand of start rather than a state of the machine.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_ACD_DEFEND_NEVER = 0, ///< (a) "immediately cease using the address, and signal an error"
-    IDEMIP_ACD_DEFEND_ONCE,      ///< (b) one Announcement per DEFEND_INTERVAL, then cease
-    IDEMIP_ACD_DEFEND_ALWAYS,    ///< (c) "defend its address indefinitely", and never cease
-} IdemIpAcdDefense;
+EMBED_ENUM_BYTE(IdemIpAcdDefense,
+                IDEMIP_ACD_DEFEND_NEVER = 0, ///< (a) "immediately cease using the address, and signal an error"
+                IDEMIP_ACD_DEFEND_ONCE,      ///< (b) one Announcement per DEFEND_INTERVAL, then cease
+                IDEMIP_ACD_DEFEND_ALWAYS,    ///< (c) "defend its address indefinitely", and never cease
+);
 
 /**
  * @brief What start takes: the address to claim, and how it is defended.
@@ -155,10 +153,10 @@ typedef struct
     IdemIpAcdState state;
     uint8_t sent;
     uint8_t conflicts;
-    idemip_bool send_probe;
-    idemip_bool send_announce;
-    idemip_bool conflict;
-    idemip_bool abandon;
+    embed_bool send_probe;
+    embed_bool send_announce;
+    embed_bool conflict;
+    embed_bool abandon;
 } AcdIo;
 
 // ---------------------------------------------------------------------------
@@ -240,27 +238,26 @@ void idemip_acd_tick(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const AcdNs Acd IDEMIP_UNUSED = {
-    .clear = idemip_acd_clear,
-    .start = idemip_acd_start,
-    .stop = idemip_acd_stop,
-    .arp_in = idemip_acd_arp_in,
-    .tick = idemip_acd_tick};
+EMBED_TABLE_STORAGE AcdNs Acd EMBED_UNUSED = {.clear = idemip_acd_clear,
+                                              .start = idemip_acd_start,
+                                              .stop = idemip_acd_stop,
+                                              .arp_in = idemip_acd_arp_in,
+                                              .tick = idemip_acd_tick};
 // RFC 5227 sec 1.1 prints PROBE_MIN 1 second and PROBE_MAX 2 seconds, and sec 2.1.1 spaces each probe
 // "randomly and uniformly, PROBE_MIN to PROBE_MAX seconds apart", so the span between them is what a
 // random word is masked against.
-static_assert(IDEMIP_ACD_PROBE_MAX_MS > IDEMIP_ACD_PROBE_MIN_MS,
-              "RFC 5227 sec 1.1 puts PROBE_MAX above PROBE_MIN: each probe gap is drawn between them");
+EMBED_STATIC_ASSERT(IDEMIP_ACD_PROBE_MAX_MS > IDEMIP_ACD_PROBE_MIN_MS,
+                    "RFC 5227 sec 1.1 puts PROBE_MAX above PROBE_MIN: each probe gap is drawn between them");
 
 // sec 2.1.1 counts probes against PROBE_NUM and sec 2.3 announcements against ANNOUNCE_NUM, both held
 // in one octet of the operand block.
-static_assert(IDEMIP_ACD_PROBE_NUM <= 0xFFu && IDEMIP_ACD_ANNOUNCE_NUM <= 0xFFu,
-              "PROBE_NUM and ANNOUNCE_NUM are counted in one octet");
+EMBED_STATIC_ASSERT(IDEMIP_ACD_PROBE_NUM <= 0xFFu && IDEMIP_ACD_ANNOUNCE_NUM <= 0xFFu,
+                    "PROBE_NUM and ANNOUNCE_NUM are counted in one octet");
 
 // sec 2.1.1 counts conflicts against MAX_CONFLICTS, which is also one octet.
-static_assert(IDEMIP_ACD_MAX_CONFLICTS <= 0xFFu, "MAX_CONFLICTS is counted in one octet");
+EMBED_STATIC_ASSERT(IDEMIP_ACD_MAX_CONFLICTS <= 0xFFu, "MAX_CONFLICTS is counted in one octet");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

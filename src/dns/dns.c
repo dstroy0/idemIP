@@ -20,7 +20,7 @@
 #include "src/dns/dns.h"
 #include "src/endian.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The definitions, private to this TU.
 
@@ -44,10 +44,10 @@ typedef struct
     /** RFC 5452 sec 9.1 matches a response's "Destination address against query source address", so
      *  the address the question's datagram left from is kept here for that comparison. */
     uint8_t local[IDEMIP_DNS_ADDR_LEN];
-    idemip_bool local_set;
+    embed_bool local_set;
     /** RFC 1123 sec 6.1.3.3 (2): the tries ran out with no response at all, as against a question a
      *  server answered with NXDOMAIN or with no record of the type. */
-    idemip_bool gave_up;
+    embed_bool gave_up;
     uint8_t pad[29];
 } DnsQuery;
 
@@ -61,7 +61,7 @@ typedef struct
     uint16_t type;
     uint8_t name;
     IdemIpDnsEntryState state;
-    idemip_bool ipv6;
+    embed_bool ipv6;
     uint8_t rcode; ///< the sec 4.1.1 RCODE a negative entry holds, zero for the no-record case
     uint8_t pad[2];
 } DnsEntry;
@@ -72,8 +72,8 @@ typedef struct
     uint8_t addr[IDEMIP_DNS_ADDR_LEN];
     uint32_t zone;
     uint16_t port;
-    idemip_bool ipv6;
-    idemip_bool used;
+    embed_bool ipv6;
+    embed_bool used;
     uint8_t pad[8];
 } DnsServer;
 
@@ -89,24 +89,24 @@ typedef struct
 IDEMIP_ASSERT_REGION(IDEMIP_DNS_OFF_CTX, sizeof(DnsCtx), IDEMIP_DNS_OFF_ENTRIES, "dns's context");
 
 // An index is a shift, so every entry width is a power of two and the struct is padded to it.
-static_assert(sizeof(DnsQuery) == (1u << IDEMIP_DNS_QUERY_ENTRY_SHIFT),
-              "DnsQuery is not 1 << IDEMIP_DNS_QUERY_ENTRY_SHIFT wide: pad it, or raise the shift");
-static_assert(sizeof(DnsEntry) == (1u << IDEMIP_DNS_ENTRY_SHIFT),
-              "DnsEntry is not 1 << IDEMIP_DNS_ENTRY_SHIFT wide: pad it, or raise the shift");
-static_assert(sizeof(DnsServer) == (1u << IDEMIP_DNS_SERVER_ENTRY_SHIFT),
-              "DnsServer is not 1 << IDEMIP_DNS_SERVER_ENTRY_SHIFT wide: pad it, or raise the shift");
+EMBED_STATIC_ASSERT(sizeof(DnsQuery) == (1u << IDEMIP_DNS_QUERY_ENTRY_SHIFT),
+                    "DnsQuery is not 1 << IDEMIP_DNS_QUERY_ENTRY_SHIFT wide: pad it, or raise the shift");
+EMBED_STATIC_ASSERT(sizeof(DnsEntry) == (1u << IDEMIP_DNS_ENTRY_SHIFT),
+                    "DnsEntry is not 1 << IDEMIP_DNS_ENTRY_SHIFT wide: pad it, or raise the shift");
+EMBED_STATIC_ASSERT(sizeof(DnsServer) == (1u << IDEMIP_DNS_SERVER_ENTRY_SHIFT),
+                    "DnsServer is not 1 << IDEMIP_DNS_SERVER_ENTRY_SHIFT wide: pad it, or raise the shift");
 
 // The caller's borrow, split: the operand block and the context in the first IDEMIP_DNS_CTX_BYTES
 // octets, then the four tables. dns.h publishes the offsets; the asserts below prove the span covers
 // them before anything runs.
-static_assert(IDEMIP_DNS_OFF_CTX + sizeof(DnsCtx) <= IDEMIP_DNS_CTX_BYTES,
-              "IDEMIP_DNS_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_DNS_OFF_SERVERS + (IDEMIP_DNS_SERVERS << IDEMIP_DNS_SERVER_ENTRY_SHIFT) <= IDEMIP_DNS_BORROW,
-              "IDEMIP_DNS_BORROW is short of the context region and the four tables");
-static_assert(((IDEMIP_DNS_OFF_CTX | IDEMIP_DNS_OFF_QUERIES | IDEMIP_DNS_OFF_ENTRIES | IDEMIP_DNS_OFF_NAMES |
-                IDEMIP_DNS_OFF_SERVERS) &
-               (IDEMIP_ALIGN - 1u)) == 0u,
-              "every region starts on IDEMIP_ALIGN");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_OFF_CTX + sizeof(DnsCtx) <= IDEMIP_DNS_CTX_BYTES,
+                    "IDEMIP_DNS_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_DNS_OFF_SERVERS + (IDEMIP_DNS_SERVERS << IDEMIP_DNS_SERVER_ENTRY_SHIFT) <= IDEMIP_DNS_BORROW,
+                    "IDEMIP_DNS_BORROW is short of the context region and the four tables");
+EMBED_STATIC_ASSERT(((IDEMIP_DNS_OFF_CTX | IDEMIP_DNS_OFF_QUERIES | IDEMIP_DNS_OFF_ENTRIES | IDEMIP_DNS_OFF_NAMES |
+                      IDEMIP_DNS_OFF_SERVERS) &
+                     (IDEMIP_ALIGN - 1u)) == 0u,
+                    "every region starts on IDEMIP_ALIGN");
 
 // The regions, at their offsets in the caller's borrow.
 #define DNS_CTX(w) ((DnsCtx *)(void *)((w) + IDEMIP_DNS_OFF_CTX))
@@ -129,9 +129,9 @@ static_assert(((IDEMIP_DNS_OFF_CTX | IDEMIP_DNS_OFF_QUERIES | IDEMIP_DNS_OFF_ENT
 
 // A deadline is a millisecond count that wraps, so the comparison is on the signed difference and
 // holds across the wrap (PLAN sec 5.2).
-static idemip_bool dns_reached(uint32_t now_ms, uint32_t deadline_ms)
+static embed_bool dns_reached(uint32_t now_ms, uint32_t deadline_ms)
 {
-    return ((int32_t)(now_ms - deadline_ms) >= 0) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((int32_t)(now_ms - deadline_ms) >= 0) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // --- names -----------------------------------------------------------------
@@ -151,7 +151,7 @@ static uint8_t dns_fold(uint8_t c)
  * one. IDEMIP_DNS_PTR_HOPS_MAX bounds the count as well, which is what holds when a caller resumes
  * the walk at a higher offset after a label.
  */
-static idemip_bool dns_deref(const uint8_t *msg, size_t len, size_t *off, size_t *hops)
+static embed_bool dns_deref(const uint8_t *msg, size_t len, size_t *off, size_t *hops)
 {
     // The exit arm is not measured, for the reason written at the return below it.
     while (*off < len) // GCOVR_EXCL_BR_LINE
@@ -159,7 +159,7 @@ static idemip_bool dns_deref(const uint8_t *msg, size_t len, size_t *off, size_t
         uint8_t n = msg[*off];
         if ((n & IDEMIP_DNS_LABEL_PTR) != IDEMIP_DNS_LABEL_PTR)
         {
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         // Neither half is measured. Every caller reaches this walk through dns_name_end, which stops
         // at the first pointer and refuses one whose second octet is not there, so a pointer standing
@@ -171,19 +171,19 @@ static idemip_bool dns_deref(const uint8_t *msg, size_t len, size_t *off, size_t
         // must be bounded whatever it is handed.
         if (((*off) + 1u) >= len || *hops >= IDEMIP_DNS_PTR_HOPS_MAX) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+            return EMBED_FALSE; // GCOVR_EXCL_LINE
         }
         size_t next = (size_t)(idemip_rd16(msg + *off) & IDEMIP_DNS_LABEL_PTR_MASK);
         if (next >= *off)
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         *off = next;
         (*hops)++;
     }
     // The loop leaves only through a return above: an offset at or past the end is refused by the
     // caller before the walk is entered, for the reason written there. Not measured.
-    return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+    return EMBED_FALSE; // GCOVR_EXCL_LINE
 }
 
 /**
@@ -192,7 +192,7 @@ static idemip_bool dns_deref(const uint8_t *msg, size_t len, size_t *off, size_t
  * The encoding a name occupies ends at its zero octet or at the second octet of its sec 4.1.4
  * pointer, so this walk never follows one and the offset only rises.
  */
-static idemip_bool dns_name_end(const uint8_t *msg, size_t len, size_t off, size_t *out_end)
+static embed_bool dns_name_end(const uint8_t *msg, size_t len, size_t off, size_t *out_end)
 {
     size_t spent = 0;
     while (off < len)
@@ -202,23 +202,23 @@ static idemip_bool dns_name_end(const uint8_t *msg, size_t len, size_t off, size
         {
             if ((off + 2u) > len)
             {
-                return IDEMIP_FALSE;
+                return EMBED_FALSE;
             }
             *out_end = off + 2u;
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         if (n > IDEMIP_DNS_LABEL_MAX)
         {
-            return IDEMIP_FALSE; // sec 4.1.4 reserves the 01 and 10 length forms
+            return EMBED_FALSE; // sec 4.1.4 reserves the 01 and 10 length forms
         }
         if (n == 0u)
         {
             *out_end = off + 1u;
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         if ((off + 1u + (size_t)n) > len)
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         spent += 1u + (size_t)n;
         // sec 3.1 bounds a name at 255 octets counting every "label octets and label length octets",
@@ -226,11 +226,11 @@ static idemip_bool dns_name_end(const uint8_t *msg, size_t len, size_t off, size
         // them. The root octet is consumed above without being counted, so it is added here.
         if ((spent + 1u) > IDEMIP_DNS_NAME_WIRE_MAX)
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         off += 1u + (size_t)n;
     }
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 /**
@@ -239,7 +239,7 @@ static idemip_bool dns_name_end(const uint8_t *msg, size_t len, size_t off, size
  * Case is folded per sec 2.3.3 and the sec 4.1.4 pointers are followed. The octets a name spends and
  * the hops it takes are both bounded, so the walk ends whatever the message holds.
  */
-static idemip_bool dns_name_eq_text(const uint8_t *msg, size_t len, size_t off, const char *text)
+static embed_bool dns_name_eq_text(const uint8_t *msg, size_t len, size_t off, const char *text)
 {
     size_t hops = 0;
     size_t spent = 0;
@@ -248,12 +248,12 @@ static idemip_bool dns_name_eq_text(const uint8_t *msg, size_t len, size_t off, 
     {
         if (!dns_deref(msg, len, &off, &hops))
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         uint8_t n = msg[off];
         if (n > IDEMIP_DNS_LABEL_MAX)
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         if (n == 0u)
         {
@@ -263,11 +263,11 @@ static idemip_bool dns_name_eq_text(const uint8_t *msg, size_t len, size_t off, 
             // name carrying an empty label would stand on one here - which dns_text_wire_len refuses
             // where the name is taken in. The second reading is written because sec 3.1's root is
             // written as that separator and a caller may hand one over.
-            return (idemip_bool)((*t == '\0') || ((*t == '.') && (t[1] == '\0'))); // GCOVR_EXCL_BR_LINE
+            return (embed_bool)((*t == '\0') || ((*t == '.') && (t[1] == '\0'))); // GCOVR_EXCL_BR_LINE
         }
         if ((off + 1u + (size_t)n) > len)
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         // sec 3.1's bound on the encoding, tested against the message rather than against the name
         // this is comparing it to. Not measured: the dotted form was measured by dns_text_wire_len
@@ -277,17 +277,17 @@ static idemip_bool dns_name_eq_text(const uint8_t *msg, size_t len, size_t off, 
         spent += 1u + (size_t)n;
         if ((spent + 1u) > IDEMIP_DNS_NAME_WIRE_MAX) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+            return EMBED_FALSE; // GCOVR_EXCL_LINE
         }
         for (uint8_t i = 0; i < n; i++)
         {
             if (*t == '\0')
             {
-                return IDEMIP_FALSE; // a label octet may itself be zero, so the terminator is tested first
+                return EMBED_FALSE; // a label octet may itself be zero, so the terminator is tested first
             }
             if (dns_fold(msg[off + 1u + (size_t)i]) != dns_fold((uint8_t)*t))
             {
-                return IDEMIP_FALSE;
+                return EMBED_FALSE;
             }
             t++;
         }
@@ -297,7 +297,7 @@ static idemip_bool dns_name_eq_text(const uint8_t *msg, size_t len, size_t off, 
         }
         else if (*t != '\0')
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         off += 1u + (size_t)n;
     }
@@ -309,7 +309,7 @@ static idemip_bool dns_name_eq_text(const uint8_t *msg, size_t len, size_t off, 
  * This is what an answer record's owner NAME is checked against, so a record for a name nobody asked
  * about cannot reach the cache (RFC 5452 sec 6).
  */
-static idemip_bool dns_name_eq_wire(const uint8_t *msg, size_t len, size_t a, size_t b)
+static embed_bool dns_name_eq_wire(const uint8_t *msg, size_t len, size_t a, size_t b)
 {
     size_t hops_a = 0;
     size_t hops_b = 0;
@@ -318,16 +318,16 @@ static idemip_bool dns_name_eq_wire(const uint8_t *msg, size_t len, size_t a, si
     {
         if (!dns_deref(msg, len, &a, &hops_a) || !dns_deref(msg, len, &b, &hops_b))
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         uint8_t na = msg[a];
         if (na != msg[b])
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         if (na == 0u)
         {
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         // The three bounds below are written because this walk is over a caller's octets, and none of
         // them is measured. This is reached only for a message whose question already matched the
@@ -337,22 +337,22 @@ static idemip_bool dns_name_eq_wire(const uint8_t *msg, size_t len, size_t a, si
         // message is answered by dns_name_end before the comparison is made.
         if (na > IDEMIP_DNS_LABEL_MAX) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+            return EMBED_FALSE; // GCOVR_EXCL_LINE
         }
         if (((a + 1u + (size_t)na) > len) || ((b + 1u + (size_t)na) > len)) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+            return EMBED_FALSE; // GCOVR_EXCL_LINE
         }
         spent += 1u + (size_t)na;
         if ((spent + 1u) > IDEMIP_DNS_NAME_WIRE_MAX) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+            return EMBED_FALSE; // GCOVR_EXCL_LINE
         }
         for (uint8_t i = 0; i < na; i++)
         {
             if (dns_fold(msg[a + 1u + (size_t)i]) != dns_fold(msg[b + 1u + (size_t)i]))
             {
-                return IDEMIP_FALSE;
+                return EMBED_FALSE;
             }
         }
         a += 1u + (size_t)na;
@@ -367,14 +367,14 @@ static idemip_bool dns_name_eq_wire(const uint8_t *msg, size_t len, size_t a, si
  * name is limited to 255 octets (including the separators)." An empty label, a label past
  * IDEMIP_DNS_LABEL_MAX, and an encoding past IDEMIP_DNS_NAME_WIRE_MAX are each refused.
  */
-static idemip_bool dns_text_wire_len(const char *text, size_t *out_wire, size_t *out_text)
+static embed_bool dns_text_wire_len(const char *text, size_t *out_wire, size_t *out_text)
 {
     size_t wire = 1u; // the root octet the encoding ends with
     size_t at = 0;
     size_t label = 0;
     if (text == NULL || text[0] == '\0')
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     for (;;)
     {
@@ -385,13 +385,13 @@ static idemip_bool dns_text_wire_len(const char *text, size_t *out_wire, size_t 
             at++;
             if (at > IDEMIP_DNS_NAME_TEXT_MAX)
             {
-                return IDEMIP_FALSE;
+                return EMBED_FALSE;
             }
             continue;
         }
         if ((label == 0u) || (label > IDEMIP_DNS_LABEL_MAX))
         {
-            return IDEMIP_FALSE; // an empty label, or one past the sec 2.3.4 limit
+            return EMBED_FALSE; // an empty label, or one past the sec 2.3.4 limit
         }
         // Not measured: the encoding is exactly two octets longer than the dotted form it is measured
         // from - one length octet replaces each separator and the root's is added - so this bound is
@@ -401,7 +401,7 @@ static idemip_bool dns_text_wire_len(const char *text, size_t *out_wire, size_t 
         wire += 1u + label;
         if (wire > IDEMIP_DNS_NAME_WIRE_MAX) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+            return EMBED_FALSE; // GCOVR_EXCL_LINE
         }
         label = 0;
         if (c == '\0')
@@ -424,7 +424,7 @@ static idemip_bool dns_text_wire_len(const char *text, size_t *out_wire, size_t 
     {
         *out_text = at;
     }
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // Put the dotted form in a name region, terminator included. The caller measured it first, so it
@@ -432,15 +432,15 @@ static idemip_bool dns_text_wire_len(const char *text, size_t *out_wire, size_t 
 static void dns_name_store(uint8_t *work, size_t idx, const char *text, size_t text_len)
 {
     char *dst = DNS_NAME_AT(work, idx);
-    memset(dst, 0, DNS_NAME_BYTES);
-    memcpy(dst, text, text_len);
+    mmgr_zero_buf(dst, DNS_NAME_BYTES);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = dst, .at = text, .size = text_len);
 }
 
 // --- the tables ------------------------------------------------------------
 
 // Two names held as dotted forms, compared sec 2.3.3 case insensitively. The region is bounded, so a
 // caller's string that never terminates inside it simply does not match.
-static idemip_bool dns_held_eq(const char *held, const char *text)
+static embed_bool dns_held_eq(const char *held, const char *text)
 {
     size_t k = 0;
     // Not measured on the bound: a held name was measured before it was stored, so it spans at most
@@ -451,11 +451,11 @@ static idemip_bool dns_held_eq(const char *held, const char *text)
     {
         if (text[k] == '\0')
         {
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
         k++;
     }
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 // The question asking about this name for this type, whatever state it is in, or IDEMIP_DNS_QUERIES.
@@ -479,8 +479,8 @@ static uint8_t dns_query_find(uint8_t *work, const char *text, uint16_t type)
 // One question slot and the name region it owns, back to the free state.
 static void dns_query_free(uint8_t *work, uint8_t i)
 {
-    memset(DNS_NAME_AT(work, i), 0, DNS_NAME_BYTES);
-    memset(DNS_QUERY_AT(work, i), 0, sizeof(DnsQuery));
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = DNS_NAME_AT(work, i), .val = 0, .bytes = DNS_NAME_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = DNS_QUERY_AT(work, i), .val = 0, .bytes = sizeof(DnsQuery));
 }
 
 // The cached answer for this name and type that is still inside its TTL, or IDEMIP_DNS_ENTRIES.
@@ -546,7 +546,7 @@ static void dns_cache_negative(uint8_t *work, uint8_t query, uint16_t type, uint
     {
         text++;
     }
-    memset(e, 0, sizeof *e);
+    *e = (DnsEntry){0};
     e->expire_ms = now_ms + ((uint32_t)IDEMIP_DNS_NEG_TTL_S * IDEMIP_DNS_MS_PER_S);
     e->ttl_s = (uint32_t)IDEMIP_DNS_NEG_TTL_S;
     e->type = type;
@@ -571,8 +571,8 @@ static uint8_t dns_server_used_from(uint8_t *work, uint8_t from)
     return (uint8_t)IDEMIP_DNS_SERVERS;
 }
 
-static_assert((IDEMIP_DNS_SERVERS & (IDEMIP_DNS_SERVERS - 1u)) == 0u,
-              "IDEMIP_DNS_SERVERS must be a power of two: the walk wraps with an AND, never a modulo");
+EMBED_STATIC_ASSERT((IDEMIP_DNS_SERVERS & (IDEMIP_DNS_SERVERS - 1u)) == 0u,
+                    "IDEMIP_DNS_SERVERS must be a power of two: the walk wraps with an AND, never a modulo");
 
 /**
  * The TTL an answer is held for.
@@ -619,7 +619,7 @@ static void dns_advance(uint8_t *work, DnsQuery *q)
         // response, an implementation MUST give up and return a soft error to the application." The
         // mark separates this from a question a server answered negatively, which FAILED also names.
         q->state = IDEMIP_DNS_QUERY_FAILED;
-        q->gave_up = IDEMIP_TRUE;
+        q->gave_up = EMBED_TRUE;
         return;
     }
     if (next < IDEMIP_DNS_SERVERS) // GCOVR_EXCL_BR_LINE
@@ -639,7 +639,7 @@ void idemip_dns_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work, 0, IDEMIP_DNS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work, .val = 0, .bytes = IDEMIP_DNS_BORROW);
     DNS_IO(work)->status = IDEMIP_OK;
 }
 
@@ -683,12 +683,13 @@ void idemip_dns_set_server(uint8_t *work)
         return;
     }
     DnsServer *s = DNS_SERVER_AT(work, a->index);
-    memset(s, 0, sizeof *s);
-    memcpy(s->addr, a->addr, a->ipv6 ? (size_t)IDEMIP_DNS_ADDR_LEN : (size_t)IDEMIP_DNS_A_RDLEN);
+    *s = (DnsServer){0};
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = s->addr, .at = a->addr,
+               .size = a->ipv6 ? (size_t)IDEMIP_DNS_ADDR_LEN : (size_t)IDEMIP_DNS_A_RDLEN);
     s->zone = a->zone;
     s->port = (uint16_t)((a->port != 0u) ? a->port : IDEMIP_DNS_PORT);
     s->ipv6 = a->ipv6;
-    s->used = IDEMIP_TRUE;
+    s->used = EMBED_TRUE;
     io->status = IDEMIP_OK;
 }
 
@@ -758,7 +759,7 @@ static void dns_query_register(uint8_t *work)
     }
 
     DnsQuery *q = DNS_QUERY_AT(work, slot);
-    memset(q, 0, sizeof *q);
+    *q = (DnsQuery){0};
     q->id = a->xid;
     q->src_port = a->src_port;
     q->type = a->type;
@@ -807,12 +808,12 @@ static void dns_lookup_cached(uint8_t *work)
     DnsIo *io = DNS_IO(work);
     const DnsLookupArgs *a = &io->lookup_args;
 
-    memset(io->addr, 0, sizeof io->addr);
-    io->ipv6 = IDEMIP_FALSE;
+    mmgr_zero_buf(io->addr, sizeof io->addr);
+    io->ipv6 = EMBED_FALSE;
     io->type = 0u;
     io->ttl_s = 0u;
     io->rcode = 0u;
-    io->failed = IDEMIP_FALSE;
+    io->failed = EMBED_FALSE;
     io->query = (uint8_t)IDEMIP_DNS_QUERIES;
     if (a->name == NULL || a->name[0] == '\0')
     {
@@ -831,7 +832,7 @@ static void dns_lookup_cached(uint8_t *work)
         // answer. Without this the caller sees the same BUSY a question still in flight gives.
         if (DNS_QUERY_AT(work, pending)->gave_up)
         {
-            io->failed = IDEMIP_TRUE;
+            io->failed = EMBED_TRUE;
             dns_query_free(work, pending);
             io->status = IDEMIP_ERR;
             return;
@@ -855,7 +856,7 @@ static void dns_lookup_cached(uint8_t *work)
         io->status = IDEMIP_ERR;
         return;
     }
-    memcpy(io->addr, e->addr, sizeof io->addr);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = io->addr, .at = e->addr, .size = sizeof io->addr);
     io->ipv6 = e->ipv6;
     io->status = IDEMIP_OK;
 }
@@ -960,7 +961,7 @@ static void dns_build_query(uint8_t *work)
             break; // GCOVR_EXCL_LINE
         }
         out[at] = (uint8_t)label;
-        memcpy(out + at + 1u, name + k, label);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = out + at + 1u, .at = name + k, .size = label);
         at += 1u + label;
         k += label;
         // Not measured on the second: the label above ran to the separator or to the end of the
@@ -979,7 +980,7 @@ static void dns_build_query(uint8_t *work)
 
     const DnsServer *s = DNS_SERVER_AT(work, si);
     io->len = at;
-    memcpy(io->dst, s->addr, sizeof io->dst);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = io->dst, .at = s->addr, .size = sizeof io->dst);
     io->dst_zone = s->zone;
     io->dst_port = s->port;
     io->ipv6 = s->ipv6;
@@ -990,11 +991,12 @@ static void dns_build_query(uint8_t *work)
 
     // RFC 5452 sec 9.1 matches a response's destination against this, so it is recorded as the
     // datagram leaves rather than looked up when one arrives.
-    q->local_set = IDEMIP_FALSE;
+    q->local_set = EMBED_FALSE;
     if (a->src != NULL)
     {
-        memcpy(q->local, a->src, s->ipv6 ? (size_t)IDEMIP_DNS_ADDR_LEN : (size_t)IDEMIP_DNS_A_RDLEN);
-        q->local_set = IDEMIP_TRUE;
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = q->local, .at = a->src,
+                   .size = s->ipv6 ? (size_t)IDEMIP_DNS_ADDR_LEN : (size_t)IDEMIP_DNS_A_RDLEN);
+        q->local_set = EMBED_TRUE;
     }
 
     q->state = IDEMIP_DNS_QUERY_SENT;
@@ -1010,7 +1012,7 @@ static void dns_build_query(uint8_t *work)
     // does not have one on its own. It is not measured in this configuration: IDEMIP_DNS_RETRY_MS is
     // 2000 and IDEMIP_DNS_RETRY_MAX_MS is 32000, so the doubling lands exactly on the bound and stops
     // there. A configuration whose lower bound does not divide the upper by a power of two - which
-    // the static_assert in dns.h allows, taking IDEMIP_DNS_RETRY_MS anywhere in 2000 to 5000 - steps
+    // the EMBED_STATIC_ASSERT in dns.h allows, taking IDEMIP_DNS_RETRY_MS anywhere in 2000 to 5000 - steps
     // over it, and this is what holds the interval down when it does.
     if (wait > (uint32_t)IDEMIP_DNS_RETRY_MAX_MS) // GCOVR_EXCL_BR_LINE
     {
@@ -1120,12 +1122,12 @@ static uint8_t dns_match(uint8_t *work, const uint8_t *msg, size_t len)
  *
  * The section is walked once forward, so an alias record stands before the record it names.
  */
-static idemip_bool dns_answers_read(const uint8_t *msg, size_t len, size_t at, uint16_t ancount, uint16_t type,
-                                    uint8_t *out_addr, uint32_t *out_ttl)
+static embed_bool dns_answers_read(const uint8_t *msg, size_t len, size_t at, uint16_t ancount, uint16_t type,
+                                   uint8_t *out_addr, uint32_t *out_ttl)
 {
     size_t want = (type == (uint16_t)IDEMIP_DNS_TYPE_AAAA) ? (size_t)IDEMIP_DNS_AAAA_RDLEN : (size_t)IDEMIP_DNS_A_RDLEN;
     size_t interest = IDEMIP_DNS_HDR_LEN;
-    idemip_bool found = IDEMIP_FALSE;
+    embed_bool found = EMBED_FALSE;
     uint32_t ttl = 0;
 
     for (uint16_t n = 0; n < ancount; n++)
@@ -1154,9 +1156,9 @@ static idemip_bool dns_answers_read(const uint8_t *msg, size_t len, size_t at, u
                 uint32_t clamped = dns_ttl_clamp(rttl);
                 if (!found)
                 {
-                    memcpy(out_addr, msg + rdata, want);
+                    EMBED_CALL(proxim.read, ProximusCfg, .dst = out_addr, .at = msg + rdata, .size = want);
                     ttl = clamped;
-                    found = IDEMIP_TRUE;
+                    found = EMBED_TRUE;
                 }
                 else if (clamped < ttl)
                 {
@@ -1187,8 +1189,8 @@ static void dns_take(uint8_t *work)
     const uint8_t *msg = a->msg;
     size_t len = a->len;
 
-    memset(io->addr, 0, sizeof io->addr);
-    io->ipv6 = IDEMIP_FALSE;
+    mmgr_zero_buf(io->addr, sizeof io->addr);
+    io->ipv6 = EMBED_FALSE;
     io->type = 0u;
     io->ttl_s = 0u;
     io->answers = 0u;
@@ -1278,14 +1280,14 @@ static void dns_take(uint8_t *work)
         // lands, a pointer ring or an out-of-domain owner among them, so caching it would let a
         // forged answer hold the name negative for the whole negative TTL. RFC 1123 sec 6.1.3.3 (4)
         // is taken on the Name Error alone, which is a server's own statement about the name.
-        memset(io->addr, 0, sizeof io->addr);
+        mmgr_zero_buf(io->addr, sizeof io->addr);
         q->state = IDEMIP_DNS_QUERY_FAILED;
         io->status = IDEMIP_OK;
         return;
     }
 
     io->type = q->type;
-    io->ipv6 = (idemip_bool)((q->type == (uint16_t)IDEMIP_DNS_TYPE_AAAA) ? IDEMIP_TRUE : IDEMIP_FALSE);
+    io->ipv6 = (embed_bool)((q->type == (uint16_t)IDEMIP_DNS_TYPE_AAAA) ? EMBED_TRUE : EMBED_FALSE);
     io->ttl_s = ttl;
     q->state = IDEMIP_DNS_QUERY_DONE;
 
@@ -1302,8 +1304,8 @@ static void dns_take(uint8_t *work)
         {
             text++;
         }
-        memset(e, 0, sizeof *e);
-        memcpy(e->addr, io->addr, sizeof e->addr);
+        *e = (DnsEntry){0};
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = e->addr, .at = io->addr, .size = sizeof e->addr);
         e->expire_ms = io->now_ms + (ttl * IDEMIP_DNS_MS_PER_S);
         e->ttl_s = ttl;
         e->type = q->type;
@@ -1355,8 +1357,9 @@ static void dns_sweep(uint8_t *work)
         {
             continue;
         }
-        memset(DNS_NAME_AT(work, DNS_ENTRY_NAME_IDX(j)), 0, DNS_NAME_BYTES);
-        memset(e, 0, sizeof *e);
+        EMBED_CALL(memor.set, MemoriaCfg, .dst = DNS_NAME_AT(work, DNS_ENTRY_NAME_IDX(j)), .val = 0,
+                   .bytes = DNS_NAME_BYTES);
+        *e = (DnsEntry){0};
     }
     io->status = IDEMIP_OK;
 }
@@ -1416,9 +1419,11 @@ void idemip_dns_flush(uint8_t *work)
     {
         return;
     }
-    memset(work + IDEMIP_DNS_OFF_ENTRIES, 0, (size_t)IDEMIP_DNS_ENTRIES << IDEMIP_DNS_ENTRY_SHIFT);
-    memset(DNS_NAME_AT(work, IDEMIP_DNS_QUERIES), 0, (size_t)IDEMIP_DNS_ENTRIES << IDEMIP_DNS_NAME_SHIFT);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_DNS_OFF_ENTRIES, .val = 0,
+               .bytes = (size_t)IDEMIP_DNS_ENTRIES << IDEMIP_DNS_ENTRY_SHIFT);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = DNS_NAME_AT(work, IDEMIP_DNS_QUERIES), .val = 0,
+               .bytes = (size_t)IDEMIP_DNS_ENTRIES << IDEMIP_DNS_NAME_SHIFT);
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

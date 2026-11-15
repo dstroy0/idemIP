@@ -23,15 +23,17 @@
 
 #include "src/nd/rdnss.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because RFC 8106 sec 6.1 refreshes an entry when the option
 // arrives "on the same interface". A canary follows each so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(IDEMIP_ALIGN) uint8_t work_a[IDEMIP_RDNSS_BORROW + 16];
-static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_RDNSS_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_RDNSS_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_RDNSS_BORROW + 16))
+static uint8_t *work_b;
 
 #define STATE_OFF ((size_t)IDEMIP_RDNSS_OFF_CTX)
 #define TABLE_OFF ((size_t)IDEMIP_RDNSS_OFF_ENTRIES)
@@ -53,7 +55,7 @@ static uint8_t g_opt[8u + (16u * 4u)];
 
 static size_t build(uint8_t type, uint8_t length, uint32_t lifetime, const uint8_t *const *addrs, uint8_t n)
 {
-    memset(g_opt, 0, sizeof g_opt);
+    mmgr_zero_buf(g_opt, sizeof g_opt);
     g_opt[IDEMIP_RDNSS_OPT_OFF_TYPE] = type;
     g_opt[IDEMIP_RDNSS_OPT_OFF_LEN] = length;
     g_opt[IDEMIP_RDNSS_OPT_OFF_LIFETIME + 0u] = (uint8_t)(lifetime >> 24);
@@ -62,7 +64,9 @@ static size_t build(uint8_t type, uint8_t length, uint32_t lifetime, const uint8
     g_opt[IDEMIP_RDNSS_OPT_OFF_LIFETIME + 3u] = (uint8_t)lifetime;
     for (uint8_t i = 0; i < n; i++)
     {
-        memcpy(g_opt + IDEMIP_RDNSS_OPT_OFF_ADDRS + ((size_t)i * IDEMIP_IP6_ADDR_LEN), addrs[i], IDEMIP_IP6_ADDR_LEN);
+        EMBED_CALL(proxim.read, ProximusCfg,
+                   .dst = g_opt + IDEMIP_RDNSS_OPT_OFF_ADDRS + ((size_t)i * IDEMIP_IP6_ADDR_LEN), .at = addrs[i],
+                   .size = IDEMIP_IP6_ADDR_LEN);
     }
     return (size_t)IDEMIP_RDNSS_OPT_OFF_ADDRS + ((size_t)n * IDEMIP_IP6_ADDR_LEN);
 }
@@ -108,8 +112,9 @@ static void tick_at(uint8_t *w, uint32_t now_ms)
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_RDNSS_BORROW, CANARY, cap - IDEMIP_RDNSS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_RDNSS_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_RDNSS_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -122,15 +127,17 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(g_opt, 0, sizeof g_opt);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_rdnss);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_rdnss);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(g_opt, sizeof g_opt);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // Every entry, in namespace order, so a new one added to RdnssNs is added here too.
@@ -173,7 +180,7 @@ void test_two_borrows_share_no_byte(void)
 // this module has.
 void test_clear_on_one_borrow_leaves_the_other_untouched(void)
 {
-    memset(work_b + STATE_OFF, 0xC3, STATE_END - STATE_OFF);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b + STATE_OFF, .val = 0xC3, .bytes = STATE_END - STATE_OFF);
     Rdnss.clear(work_a);
     for (size_t i = STATE_OFF; i < STATE_END; i++)
     {
@@ -231,7 +238,7 @@ void test_clear_reports_ok(void)
 
 void test_clear_zeroes_the_list(void)
 {
-    memset(work_a, 0xFF, IDEMIP_RDNSS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_RDNSS_BORROW);
     Rdnss.clear(work_a);
     for (size_t i = TABLE_OFF; i < STATE_END; i++)
     {
@@ -241,7 +248,7 @@ void test_clear_zeroes_the_list(void)
 
 void test_clear_zeroes_the_context_apart_from_the_mark(void)
 {
-    memset(work_a, 0xFF, IDEMIP_RDNSS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_RDNSS_BORROW);
     Rdnss.clear(work_a);
     size_t set = 0;
     for (size_t i = STATE_OFF; i < TABLE_OFF; i++)
@@ -721,7 +728,7 @@ void test_the_address_entries_refuse_what_names_no_address(void)
     Rdnss.remove(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_a)->status, "a removal of no address was made");
 
-    memset(work_b, 0xFF, IDEMIP_RDNSS_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b, .val = 0xFF, .bytes = IDEMIP_RDNSS_BORROW);
     IO(work_b)->addr_args.addr = g_a;
     Rdnss.find(work_b);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IO(work_b)->status, "find read an uncleared borrow");

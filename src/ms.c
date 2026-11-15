@@ -16,14 +16,14 @@
 /** @brief Milliseconds in a second, the scale between an RFC lifetime field and the epoch. */
 #define IDEMIP_MS_PER_S 1000u
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The widest lifetime a 32-bit RFC seconds field can name has to convert into the epoch whole and
 // still leave room to be added to a stamp, or a deadline would land behind the stamp that made it.
-static_assert((IdemIpMs)0xFFFFFFFFu * (IdemIpMs)IDEMIP_MS_PER_S < (IdemIpMs)0xFFFFFFFFFFFFFFFFu / 2u,
-              "the widest RFC lifetime field must convert into IdemIpMs with room to be added to a stamp");
+EMBED_STATIC_ASSERT((IdemIpMs)0xFFFFFFFFu * (IdemIpMs)IDEMIP_MS_PER_S < (IdemIpMs)0xFFFFFFFFFFFFFFFFu / 2u,
+                    "the widest RFC lifetime field must convert into IdemIpMs with room to be added to a stamp");
 
-static_assert(sizeof(IdemIpMs) == 8u, "idemip_ms_hi and idemip_ms_lo split a 64-bit epoch in two halves");
+EMBED_STATIC_ASSERT(sizeof(IdemIpMs) == 8u, "idemip_ms_hi and idemip_ms_lo split a 64-bit epoch in two halves");
 
 /** @brief One conversion, split or join. */
 typedef struct
@@ -48,26 +48,26 @@ typedef struct
  *
  * The result is a duration. It names no instant until it is added to an epoch value.
  */
-IDEMIP_INLINE IdemIpMs ms_from_s(const MsCtx *m)
+EMBED_INLINE IdemIpMs ms_from_s(const MsCtx *m)
 {
     IdemIpMs s = (IdemIpMs)m->seconds;
     return (s << 10) - (s << 4) - (s << 3);
 }
 
 /** @brief The high half of an epoch value. */
-IDEMIP_INLINE uint32_t ms_hi(const MsCtx *m)
+EMBED_INLINE uint32_t ms_hi(const MsCtx *m)
 {
     return (uint32_t)(m->t >> 32);
 }
 
 /** @brief Its low half. */
-IDEMIP_INLINE uint32_t ms_lo(const MsCtx *m)
+EMBED_INLINE uint32_t ms_lo(const MsCtx *m)
 {
     return (uint32_t)(m->t & 0xFFFFFFFFu);
 }
 
 /** @brief The two halves back into one epoch value. */
-IDEMIP_INLINE IdemIpMs ms_join(const MsCtx *m)
+EMBED_INLINE IdemIpMs ms_join(const MsCtx *m)
 {
     return ((IdemIpMs)m->hi << 32) | (IdemIpMs)m->lo;
 }
@@ -80,7 +80,7 @@ IDEMIP_INLINE IdemIpMs ms_join(const MsCtx *m)
  * Same wrap rule and the same epoch. It opens no pass, so a function using this has no stamp() and
  * cannot be padded; a module that wants a pad holds an IdemIpClock instead.
  */
-IDEMIP_INLINE IdemIpMs ms_extend(const MsCtx *m)
+EMBED_INLINE IdemIpMs ms_extend(const MsCtx *m)
 {
     if (m->now_ms < *m->last_ms)
     {
@@ -95,27 +95,27 @@ IDEMIP_INLINE IdemIpMs ms_extend(const MsCtx *m)
 
 IdemIpMs idemip_ms_from_s(uint32_t seconds)
 {
-    return IDEMIP_CALL(ms_from_s, MsCtx, .seconds = seconds);
+    return EMBED_CALL(ms_from_s, MsCtx, .seconds = seconds);
 }
 
 uint32_t idemip_ms_hi(IdemIpMs t)
 {
-    return IDEMIP_CALL(ms_hi, MsCtx, .t = t);
+    return EMBED_CALL(ms_hi, MsCtx, .t = t);
 }
 
 uint32_t idemip_ms_lo(IdemIpMs t)
 {
-    return IDEMIP_CALL(ms_lo, MsCtx, .t = t);
+    return EMBED_CALL(ms_lo, MsCtx, .t = t);
 }
 
 IdemIpMs idemip_ms_join(uint32_t hi, uint32_t lo)
 {
-    return IDEMIP_CALL(ms_join, MsCtx, .hi = hi, .lo = lo);
+    return EMBED_CALL(ms_join, MsCtx, .hi = hi, .lo = lo);
 }
 
 IdemIpMs idemip_ms_extend(uint32_t *last_ms, uint32_t *hi, uint32_t now_ms)
 {
-    return IDEMIP_CALL(ms_extend, MsCtx, .last_ms = last_ms, .hi_word = hi, .now_ms = now_ms);
+    return EMBED_CALL(ms_extend, MsCtx, .last_ms = last_ms, .hi_word = hi, .now_ms = now_ms);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

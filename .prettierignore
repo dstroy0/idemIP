@@ -6,6 +6,9 @@
 # a commit of that repo, not its files - and would show up as a dirty submodule on every checkout.
 include/MMgr/
 
+# The checkouts that deps/CMakeLists.txt fetches. Each one is another repository, with its own format.
+deps/
+
 # Build and coverage output. Machine-written, regenerated on every run, and compile_commands.json is
 # json a formatter will happily rewrite.
 build-cov/

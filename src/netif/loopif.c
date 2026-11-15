@@ -17,7 +17,7 @@
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ip/ipv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The stamp clear writes into the context. Every other entry refuses a borrow without it, so bytes
 // that were never cleared are refused rather than read as a queue.
@@ -50,19 +50,20 @@ IDEMIP_ASSERT_REGION(IDEMIP_LOOPIF_OFF_CTX, sizeof(LoopifCtx), IDEMIP_LOOPIF_OFF
 // The caller's borrow, split: the operand block, the context, then the frame regions. loopif.h
 // publishes the offsets; the asserts below prove the span covers them and that a region holds a
 // whole frame before anything runs.
-static_assert(IDEMIP_LOOPIF_OFF_CTX + sizeof(LoopifCtx) <= IDEMIP_LOOPIF_CTX_BYTES,
-              "IDEMIP_LOOPIF_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_LOOPIF_OFF_END <= IDEMIP_LOOPIF_BORROW,
-              "IDEMIP_LOOPIF_BORROW is short of the operand block, the context and the frame regions - raise "
-              "IDEMIP_LOOPIF_CTX_BYTES in idemip_config.h");
-static_assert((1u << IDEMIP_LOOPIF_FRAME_SHIFT) >= IDEMIP_ETH_FRAME_MAX,
-              "a frame region is narrower than the RFC 894 maximum frame - raise IDEMIP_LOOPIF_FRAME_SHIFT");
-static_assert((IDEMIP_LOOPIF_OFF_FRAMES & (IDEMIP_ALIGN - 1u)) == 0u,
-              "the frame regions do not start on IDEMIP_ALIGN: region i sits at (i << SHIFT) from there");
-static_assert(IDEMIP_LOOPIF_FRAMES >= 1u, "IDEMIP_LOOPIF_FRAMES holds no frame - raise it in idemip_config.h");
-static_assert((IDEMIP_LOOPIF_FRAMES & (IDEMIP_LOOPIF_FRAMES - 1u)) == 0u,
-              "IDEMIP_LOOPIF_FRAMES is not a power of two: head and tail wrap with an AND");
-static_assert(IDEMIP_ETH_FRAME_MAX <= UINT16_MAX, "a frame length does not fit LoopifCtx::len");
+EMBED_STATIC_ASSERT(
+    IDEMIP_LOOPIF_OFF_CTX + sizeof(LoopifCtx) <= IDEMIP_LOOPIF_CTX_BYTES,
+    "IDEMIP_LOOPIF_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_LOOPIF_OFF_END <= IDEMIP_LOOPIF_BORROW,
+                    "IDEMIP_LOOPIF_BORROW is short of the operand block, the context and the frame regions - raise "
+                    "IDEMIP_LOOPIF_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT((1u << IDEMIP_LOOPIF_FRAME_SHIFT) >= IDEMIP_ETH_FRAME_MAX,
+                    "a frame region is narrower than the RFC 894 maximum frame - raise IDEMIP_LOOPIF_FRAME_SHIFT");
+EMBED_STATIC_ASSERT((IDEMIP_LOOPIF_OFF_FRAMES & (IDEMIP_ALIGN - 1u)) == 0u,
+                    "the frame regions do not start on IDEMIP_ALIGN: region i sits at (i << SHIFT) from there");
+EMBED_STATIC_ASSERT(IDEMIP_LOOPIF_FRAMES >= 1u, "IDEMIP_LOOPIF_FRAMES holds no frame - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT((IDEMIP_LOOPIF_FRAMES & (IDEMIP_LOOPIF_FRAMES - 1u)) == 0u,
+                    "IDEMIP_LOOPIF_FRAMES is not a power of two: head and tail wrap with an AND");
+EMBED_STATIC_ASSERT(IDEMIP_ETH_FRAME_MAX <= UINT16_MAX, "a frame length does not fit LoopifCtx::len");
 
 // The regions, at their offsets in the caller's borrow.
 #define LOOPIF_IO(w) IDEMIP_LOOPIF_IO(w)
@@ -76,21 +77,19 @@ static_assert(IDEMIP_ETH_FRAME_MAX <= UINT16_MAX, "a frame length does not fit L
 
 // RFC 1122 sec 3.2.1.3 case (g), "{ 127, <any> } Internal host loopback address": the network
 // number is the whole test, so every host part on network 127 answers.
-static idemip_bool loopif_is_lo4(uint32_t addr)
+static embed_bool loopif_is_lo4(uint32_t addr)
 {
-    return ((addr & IDEMIP_LOOPIF_NET4_MASK) == IDEMIP_LOOPIF_NET4) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((addr & IDEMIP_LOOPIF_NET4_MASK) == IDEMIP_LOOPIF_NET4) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 #if IDEMIP_ENABLE_IPV6
 
 // RFC 4291 sec 2.5.3, "The unicast address 0:0:0:0:0:0:0:1 is called the loopback address": one
 // address, so the leading IDEMIP_IP6_ADDR_LEN - 1 octets are zero and the last is one.
-static idemip_bool loopif_is_lo6(const uint8_t *addr)
+static embed_bool loopif_is_lo6(const uint8_t *addr)
 {
-    return (idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN - 1u) &&
-            addr[IDEMIP_IP6_ADDR_LEN - 1u] == 0x01u)
-               ? IDEMIP_TRUE
-               : IDEMIP_FALSE;
+    return (idemip_bytes_zero(addr, IDEMIP_IP6_ADDR_LEN - 1u) && addr[IDEMIP_IP6_ADDR_LEN - 1u] == 0x01u) ? EMBED_TRUE
+                                                                                                          : EMBED_FALSE;
 }
 
 #endif // IDEMIP_ENABLE_IPV6
@@ -103,7 +102,7 @@ static void loopif_push(uint8_t *work, const uint8_t *frame, size_t len)
     LoopifCtx *ctx = LOOPIF_CTX(work);
     LoopifIo *io = LOOPIF_IO(work);
     uint8_t slot = ctx->tail;
-    memcpy(LOOPIF_FRAME(work, slot), frame, len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = LOOPIF_FRAME(work, slot), .at = frame, .size = len);
     ctx->len[slot] = (uint16_t)len;
     ctx->tail = (uint8_t)((slot + 1u) & LOOPIF_WRAP);
     ctx->held++;
@@ -151,7 +150,8 @@ void idemip_loopif_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_LOOPIF_OFF_CTX, 0, (size_t)IDEMIP_LOOPIF_OFF_END - IDEMIP_LOOPIF_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_LOOPIF_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_LOOPIF_OFF_END - IDEMIP_LOOPIF_OFF_CTX);
     LOOPIF_CTX(work)->ready = LOOPIF_READY;
     LOOPIF_IO(work)->status = IDEMIP_OK;
 }
@@ -296,7 +296,7 @@ void idemip_loopif_owns4(uint8_t *work)
     }
     LoopifIo *io = LOOPIF_IO(work);
     io->status = IDEMIP_ERR;
-    io->owned = IDEMIP_FALSE;
+    io->owned = EMBED_FALSE;
     if (LOOPIF_CTX(work)->ready != LOOPIF_READY)
     {
         return;
@@ -317,7 +317,7 @@ void idemip_loopif_owns6(uint8_t *work)
     }
     LoopifIo *io = LOOPIF_IO(work);
     io->status = IDEMIP_ERR;
-    io->owned = IDEMIP_FALSE;
+    io->owned = EMBED_FALSE;
     if (LOOPIF_CTX(work)->ready != LOOPIF_READY || io->match_args.addr6 == NULL)
     {
         return;
@@ -330,4 +330,4 @@ void idemip_loopif_owns6(uint8_t *work)
 
 #endif // IDEMIP_ENABLE_IPV6
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

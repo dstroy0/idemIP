@@ -23,7 +23,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief The fields a build writes, in host order.
@@ -65,12 +65,12 @@ typedef struct
     uint16_t (*total_len)(const uint8_t *h);
     uint16_t (*id)(const uint8_t *h);
     uint16_t (*flags_frag)(const uint8_t *h);
-    idemip_bool (*reserved)(const uint8_t *h);
-    idemip_bool (*df)(const uint8_t *h);
-    idemip_bool (*mf)(const uint8_t *h);
+    embed_bool (*reserved)(const uint8_t *h);
+    embed_bool (*df)(const uint8_t *h);
+    embed_bool (*mf)(const uint8_t *h);
     uint16_t (*frag_units)(const uint8_t *h);
     uint32_t (*frag_offset_bytes)(const uint8_t *h);
-    idemip_bool (*is_fragment)(const uint8_t *h);
+    embed_bool (*is_fragment)(const uint8_t *h);
     uint8_t (*ttl)(const uint8_t *h);
     uint8_t (*proto)(const uint8_t *h);
     uint16_t (*cksum)(const uint8_t *h);
@@ -80,8 +80,8 @@ typedef struct
     const uint8_t *(*options)(const uint8_t *h);
     size_t (*options_len)(const uint8_t *h);
 } Ip4ReadNs;
-IDEMIP_NS_LAYOUT(Ip4ReadNs, version, ihl, hdr_len, tos, total_len, id, flags_frag, reserved, df, mf, frag_units,
-                 frag_offset_bytes, is_fragment, ttl, proto, cksum, src, dst, payload_len, options, options_len);
+EMBED_TABLE_LAYOUT(Ip4ReadNs, version, ihl, hdr_len, tos, total_len, id, flags_frag, reserved, df, mf, frag_units,
+                   frag_offset_bytes, is_fragment, ttl, proto, cksum, src, dst, payload_len, options, options_len);
 
 /** @brief Writing a field into a header, in network order, and sealing one. */
 typedef struct
@@ -99,19 +99,19 @@ typedef struct
     void (*recksum)(uint8_t *h);
     void (*build)(uint8_t *h, const IdemIpIp4Fields *f);
 } Ip4WriteNs;
-IDEMIP_NS_LAYOUT(Ip4WriteNs, set_ver_ihl, set_tos, set_total_len, set_id, set_flags_frag, set_ttl, set_proto,
-                 set_cksum, set_src, set_dst, recksum, build);
+EMBED_TABLE_LAYOUT(Ip4WriteNs, set_ver_ihl, set_tos, set_total_len, set_id, set_flags_frag, set_ttl, set_proto,
+                   set_cksum, set_src, set_dst, recksum, build);
 
 /** @brief The checks RFC 1122 sec 3.2.1 puts on a received datagram. */
 typedef struct
 {
-    idemip_bool (*version_ok)(const uint8_t *h);
-    idemip_bool (*ihl_ok)(const uint8_t *h);
-    idemip_bool (*len_ok)(const uint8_t *h, size_t avail);
-    idemip_bool (*cksum_ok)(const uint8_t *h);
+    embed_bool (*version_ok)(const uint8_t *h);
+    embed_bool (*ihl_ok)(const uint8_t *h);
+    embed_bool (*len_ok)(const uint8_t *h, size_t avail);
+    embed_bool (*cksum_ok)(const uint8_t *h);
     IdemIpStatus (*verify)(const uint8_t *h, size_t avail);
 } Ip4VerifyNs;
-IDEMIP_NS_LAYOUT(Ip4VerifyNs, version_ok, ihl_ok, len_ok, cksum_ok, verify);
+EMBED_TABLE_LAYOUT(Ip4VerifyNs, version_ok, ihl_ok, len_ok, cksum_ok, verify);
 
 /**
  * @brief Arithmetic over the mask itself, which both the address classifier and the routing table
@@ -128,9 +128,9 @@ IDEMIP_NS_LAYOUT(Ip4VerifyNs, version_ok, ihl_ok, len_ok, cksum_ok, verify);
 typedef struct
 {
     uint8_t (*ones)(uint32_t mask);
-    idemip_bool (*contiguous)(uint32_t mask);
+    embed_bool (*contiguous)(uint32_t mask);
 } Ip4MaskNs;
-IDEMIP_NS_LAYOUT(Ip4MaskNs, ones, contiguous);
+EMBED_TABLE_LAYOUT(Ip4MaskNs, ones, contiguous);
 
 /** @name The entries the tables point at.
  *  @brief Nameable so a static const table can name them, and for no other reason. The tables are
@@ -143,12 +143,12 @@ uint8_t idemip_ip4_tos(const uint8_t *h);
 uint16_t idemip_ip4_total_len(const uint8_t *h);
 uint16_t idemip_ip4_id(const uint8_t *h);
 uint16_t idemip_ip4_flags_frag(const uint8_t *h);
-idemip_bool idemip_ip4_reserved(const uint8_t *h);
-idemip_bool idemip_ip4_df(const uint8_t *h);
-idemip_bool idemip_ip4_mf(const uint8_t *h);
+embed_bool idemip_ip4_reserved(const uint8_t *h);
+embed_bool idemip_ip4_df(const uint8_t *h);
+embed_bool idemip_ip4_mf(const uint8_t *h);
 uint16_t idemip_ip4_frag_units(const uint8_t *h);
 uint32_t idemip_ip4_frag_offset_bytes(const uint8_t *h);
-idemip_bool idemip_ip4_is_fragment(const uint8_t *h);
+embed_bool idemip_ip4_is_fragment(const uint8_t *h);
 uint8_t idemip_ip4_ttl(const uint8_t *h);
 uint8_t idemip_ip4_proto(const uint8_t *h);
 uint16_t idemip_ip4_cksum(const uint8_t *h);
@@ -171,14 +171,14 @@ void idemip_ip4_set_dst(uint8_t *h, uint32_t addr);
 void idemip_ip4_recksum(uint8_t *h);
 void idemip_ip4_build(uint8_t *h, const IdemIpIp4Fields *f);
 
-idemip_bool idemip_ip4_version_ok(const uint8_t *h);
-idemip_bool idemip_ip4_ihl_ok(const uint8_t *h);
-idemip_bool idemip_ip4_len_ok(const uint8_t *h, size_t avail);
-idemip_bool idemip_ip4_cksum_ok(const uint8_t *h);
+embed_bool idemip_ip4_version_ok(const uint8_t *h);
+embed_bool idemip_ip4_ihl_ok(const uint8_t *h);
+embed_bool idemip_ip4_len_ok(const uint8_t *h, size_t avail);
+embed_bool idemip_ip4_cksum_ok(const uint8_t *h);
 IdemIpStatus idemip_ip4_verify(const uint8_t *h, size_t avail);
 
 uint8_t idemip_ip4_addr_mask_ones(uint32_t mask);
-idemip_bool idemip_ip4_addr_mask_contiguous(uint32_t mask);
+embed_bool idemip_ip4_addr_mask_contiguous(uint32_t mask);
 /** @} */
 
 /**
@@ -188,7 +188,7 @@ idemip_bool idemip_ip4_addr_mask_contiguous(uint32_t mask);
  * inlined body and cannot do that through an extern one, where the table is in another
  * translation unit and every call is a load and an indirect jump.
  */
-IDEMIP_NS Ip4ReadNs ip4_read IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Ip4ReadNs ip4_read EMBED_UNUSED = {
     .version = idemip_ip4_version,
     .ihl = idemip_ip4_ihl,
     .hdr_len = idemip_ip4_hdr_len,
@@ -212,7 +212,7 @@ IDEMIP_NS Ip4ReadNs ip4_read IDEMIP_UNUSED = {
     .options_len = idemip_ip4_options_len,
 };
 
-IDEMIP_NS Ip4WriteNs ip4_write IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Ip4WriteNs ip4_write EMBED_UNUSED = {
     .set_ver_ihl = idemip_ip4_set_ver_ihl,
     .set_tos = idemip_ip4_set_tos,
     .set_total_len = idemip_ip4_set_total_len,
@@ -227,7 +227,7 @@ IDEMIP_NS Ip4WriteNs ip4_write IDEMIP_UNUSED = {
     .build = idemip_ip4_build,
 };
 
-IDEMIP_NS Ip4VerifyNs ip4_verify IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Ip4VerifyNs ip4_verify EMBED_UNUSED = {
     .version_ok = idemip_ip4_version_ok,
     .ihl_ok = idemip_ip4_ihl_ok,
     .len_ok = idemip_ip4_len_ok,
@@ -235,12 +235,12 @@ IDEMIP_NS Ip4VerifyNs ip4_verify IDEMIP_UNUSED = {
     .verify = idemip_ip4_verify,
 };
 
-IDEMIP_NS Ip4MaskNs ip4_mask IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE Ip4MaskNs ip4_mask EMBED_UNUSED = {
     .ones = idemip_ip4_addr_mask_ones,
     .contiguous = idemip_ip4_addr_mask_contiguous,
 };
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

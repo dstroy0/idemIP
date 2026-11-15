@@ -18,7 +18,7 @@
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ip/ipv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // RFC 4861 sec 5.1 Neighbor Cache: an entry is "keyed on the neighbor's on-link unicast IP address"
 // and holds "its link-layer address, a flag indicating whether the neighbor is a router or a host
@@ -34,8 +34,8 @@ typedef struct
     IdemIpNd6State state;
     uint8_t probes;
     uint8_t pending_head;
-    idemip_bool is_router;
-    idemip_bool used;
+    embed_bool is_router;
+    embed_bool used;
     uint8_t pad[1];
 } Nd6Neighbor;
 
@@ -49,7 +49,7 @@ typedef struct
     uint8_t next_hop[IDEMIP_IP6_ADDR_LEN];
     uint16_t pmtu;
     uint8_t neighbor;
-    idemip_bool used;
+    embed_bool used;
     uint8_t pad[24];
 } Nd6Destination;
 
@@ -62,10 +62,10 @@ typedef struct
     uint8_t prefix[IDEMIP_IP6_ADDR_LEN];
     uint8_t prefix_len;
     uint8_t netif;
-    idemip_bool on_link;
-    idemip_bool autonomous;
-    idemip_bool infinite;
-    idemip_bool used;
+    embed_bool on_link;
+    embed_bool autonomous;
+    embed_bool infinite;
+    embed_bool used;
     uint8_t pad[6];
 } Nd6Prefix;
 
@@ -83,7 +83,7 @@ typedef struct
     uint32_t invalidate_ms;
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     uint8_t neighbor;
-    idemip_bool used;
+    embed_bool used;
     uint8_t pad[10];
 } Nd6Router;
 
@@ -96,7 +96,7 @@ typedef struct
     uint16_t len;
     uint8_t neighbor;
     uint8_t next;
-    idemip_bool used;
+    embed_bool used;
     uint8_t pad[5];
 } Nd6Pending;
 
@@ -121,9 +121,9 @@ typedef struct
     uint8_t routers;
     uint8_t pendings;
     uint8_t router_cursor;
-    idemip_bool managed;
-    idemip_bool other;
-    idemip_bool ready;
+    embed_bool managed;
+    embed_bool other;
+    embed_bool ready;
 } Nd6Ctx;
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
@@ -131,29 +131,29 @@ typedef struct
 IDEMIP_ASSERT_REGION(IDEMIP_ND6_OFF_CTX, sizeof(Nd6Ctx), IDEMIP_ND6_OFF_END, "nd6's context");
 
 // An index is (i << SHIFT), so each entry is exactly its width.
-static_assert(sizeof(Nd6Neighbor) == (1u << IDEMIP_ND6_NEIGHBOR_ENTRY_SHIFT),
-              "a neighbor entry must be 1 << IDEMIP_ND6_NEIGHBOR_ENTRY_SHIFT wide");
-static_assert(sizeof(Nd6Destination) == (1u << IDEMIP_ND6_DESTINATION_ENTRY_SHIFT),
-              "a destination entry must be 1 << IDEMIP_ND6_DESTINATION_ENTRY_SHIFT wide");
-static_assert(sizeof(Nd6Prefix) == (1u << IDEMIP_ND6_PREFIX_ENTRY_SHIFT),
-              "a prefix entry must be 1 << IDEMIP_ND6_PREFIX_ENTRY_SHIFT wide");
-static_assert(sizeof(Nd6Router) == (1u << IDEMIP_ND6_ROUTER_ENTRY_SHIFT),
-              "a router entry must be 1 << IDEMIP_ND6_ROUTER_ENTRY_SHIFT wide");
-static_assert(sizeof(Nd6Pending) == (1u << IDEMIP_ND6_PENDING_ENTRY_SHIFT),
-              "a pending entry must be 1 << IDEMIP_ND6_PENDING_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(Nd6Neighbor) == (1u << IDEMIP_ND6_NEIGHBOR_ENTRY_SHIFT),
+                    "a neighbor entry must be 1 << IDEMIP_ND6_NEIGHBOR_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(Nd6Destination) == (1u << IDEMIP_ND6_DESTINATION_ENTRY_SHIFT),
+                    "a destination entry must be 1 << IDEMIP_ND6_DESTINATION_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(Nd6Prefix) == (1u << IDEMIP_ND6_PREFIX_ENTRY_SHIFT),
+                    "a prefix entry must be 1 << IDEMIP_ND6_PREFIX_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(Nd6Router) == (1u << IDEMIP_ND6_ROUTER_ENTRY_SHIFT),
+                    "a router entry must be 1 << IDEMIP_ND6_ROUTER_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(Nd6Pending) == (1u << IDEMIP_ND6_PENDING_ENTRY_SHIFT),
+                    "a pending entry must be 1 << IDEMIP_ND6_PENDING_ENTRY_SHIFT wide");
 // The caller's borrow, split: the operand block, the context, then the five tables. nd6.h publishes
 // the offsets; these two asserts prove the span covers them before anything runs. The first keeps the
 // context inside the region ahead of the neighbor cache, the second the whole map inside the borrow.
-static_assert(IDEMIP_ND6_OFF_CTX + sizeof(Nd6Ctx) <= IDEMIP_ND6_OFF_NEIGHBORS,
-              "IDEMIP_ND6_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_ND6_OFF_END <= IDEMIP_ND6_BORROW,
-              "IDEMIP_ND6_BORROW is short of the map - raise IDEMIP_ND6_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_ND6_OFF_CTX + sizeof(Nd6Ctx) <= IDEMIP_ND6_OFF_NEIGHBORS,
+                    "IDEMIP_ND6_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_ND6_OFF_END <= IDEMIP_ND6_BORROW,
+                    "IDEMIP_ND6_BORROW is short of the map - raise IDEMIP_ND6_CTX_BYTES in idemip_config.h");
 
 // Every table index counts the entries the borrow holds, so IDEMIP_ND6_NONE names none of them.
-static_assert(IDEMIP_ND6_NUM_NEIGHBORS < IDEMIP_ND6_NONE && IDEMIP_ND6_NUM_DESTINATIONS < IDEMIP_ND6_NONE &&
-                  IDEMIP_ND6_NUM_PREFIXES < IDEMIP_ND6_NONE && IDEMIP_ND6_NUM_ROUTERS < IDEMIP_ND6_NONE &&
-                  IDEMIP_ND6_PENDING < IDEMIP_ND6_NONE,
-              "a table is wider than the index a result member carries");
+EMBED_STATIC_ASSERT(IDEMIP_ND6_NUM_NEIGHBORS < IDEMIP_ND6_NONE && IDEMIP_ND6_NUM_DESTINATIONS < IDEMIP_ND6_NONE &&
+                        IDEMIP_ND6_NUM_PREFIXES < IDEMIP_ND6_NONE && IDEMIP_ND6_NUM_ROUTERS < IDEMIP_ND6_NONE &&
+                        IDEMIP_ND6_PENDING < IDEMIP_ND6_NONE,
+                    "a table is wider than the index a result member carries");
 
 // The regions, at their offsets in the caller's borrow.
 #define ND6_IO(w) IDEMIP_ND6_IO(w)
@@ -185,8 +185,8 @@ static_assert(IDEMIP_ND6_NUM_NEIGHBORS < IDEMIP_ND6_NONE && IDEMIP_ND6_NUM_DESTI
 // finite one longer than this is held at the bound.
 #define ND6_DEADLINE_MAX_MS 0x7FFFFFFFu
 #define ND6_LIFETIME_S_MAX 2147483u
-static_assert((uint64_t)ND6_LIFETIME_S_MAX * 1000u <= (uint64_t)ND6_DEADLINE_MAX_MS,
-              "ND6_LIFETIME_S_MAX seconds must fit ND6_DEADLINE_MAX_MS milliseconds");
+EMBED_STATIC_ASSERT((uint64_t)ND6_LIFETIME_S_MAX * 1000u <= (uint64_t)ND6_DEADLINE_MAX_MS,
+                    "ND6_LIFETIME_S_MAX seconds must fit ND6_DEADLINE_MAX_MS milliseconds");
 
 // RFC 4861 sec 7.2.2 arms the address-resolution deadline at RetransTimer times
 // MAX_MULTICAST_SOLICIT + 1, so the interval is the deadline span shifted down by that count. A
@@ -197,13 +197,13 @@ static_assert((uint64_t)ND6_LIFETIME_S_MAX * 1000u <= (uint64_t)ND6_DEADLINE_MAX
 // shift.
 #define ND6_RETRANS_SHIFT 2u
 #define ND6_RETRANS_MAX_MS (ND6_DEADLINE_MAX_MS >> ND6_RETRANS_SHIFT)
-static_assert(((uint32_t)IDEMIP_ND6_MAX_MULTICAST_SOLICIT + 1u) == (1u << ND6_RETRANS_SHIFT),
-              "ND6_RETRANS_SHIFT must be the log2 of MAX_MULTICAST_SOLICIT + 1 - RFC 4861 sec 10");
-static_assert((uint64_t)ND6_RETRANS_MAX_MS * ((uint64_t)IDEMIP_ND6_MAX_MULTICAST_SOLICIT + 1u) <=
-                  (uint64_t)ND6_DEADLINE_MAX_MS,
-              "a sec 7.2.2 retransmit deadline must fit ND6_DEADLINE_MAX_MS milliseconds");
-static_assert((uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS <= ND6_RETRANS_MAX_MS,
-              "the RETRANS_TIMER default must fit the deadline span");
+EMBED_STATIC_ASSERT(((uint32_t)IDEMIP_ND6_MAX_MULTICAST_SOLICIT + 1u) == (1u << ND6_RETRANS_SHIFT),
+                    "ND6_RETRANS_SHIFT must be the log2 of MAX_MULTICAST_SOLICIT + 1 - RFC 4861 sec 10");
+EMBED_STATIC_ASSERT((uint64_t)ND6_RETRANS_MAX_MS *((uint64_t)IDEMIP_ND6_MAX_MULTICAST_SOLICIT + 1u) <=
+                        (uint64_t)ND6_DEADLINE_MAX_MS,
+                    "a sec 7.2.2 retransmit deadline must fit ND6_DEADLINE_MAX_MS milliseconds");
+EMBED_STATIC_ASSERT((uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS <= ND6_RETRANS_MAX_MS,
+                    "the RETRANS_TIMER default must fit the deadline span");
 
 // RFC 4291 sec 2.5.6 gives the link-local prefix as FE80::/10, which RFC 4861 sec 5.1 keeps on the
 // Prefix List "with an infinite invalidation timer regardless of whether routers are advertising a
@@ -216,51 +216,51 @@ static_assert((uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS <= ND6_RETRANS_MAX_MS,
 // --- addresses -------------------------------------------------------------
 
 // RFC 4861 sec 5.1 keys a Neighbor Cache entry on the whole unicast address.
-static idemip_bool nd6_addr_eq(const uint8_t *a, const uint8_t *b)
+static embed_bool nd6_addr_eq(const uint8_t *a, const uint8_t *b)
 {
-    return (idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN)) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN)) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 4861 sec 5.2 longest prefix match over the first len bits: (len >> 3) whole octets compare
 // exactly, and the remaining (len & 7) bits compare under a mask of that many leading bits.
-static idemip_bool nd6_prefix_eq(const uint8_t *a, const uint8_t *b, uint8_t len)
+static embed_bool nd6_prefix_eq(const uint8_t *a, const uint8_t *b, uint8_t len)
 {
     size_t whole = (size_t)(len >> 3);
     uint8_t bits = (uint8_t)(len & 7u);
     if (whole != 0u && !idemip_bytes_eq(a, b, whole))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (bits != 0u)
     {
         uint8_t mask = (uint8_t)(0xFFu << (8u - bits));
         if ((uint8_t)((a[whole] ^ b[whole]) & mask) != 0u)
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
     }
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // RFC 4291 sec 2.5.6: the first ten bits of a link-local address are 1111111010.
-static idemip_bool nd6_is_link_local(const uint8_t *addr)
+static embed_bool nd6_is_link_local(const uint8_t *addr)
 {
-    return (addr[0] == 0xFEu && (uint8_t)(addr[1] & 0xC0u) == 0x80u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (addr[0] == 0xFEu && (uint8_t)(addr[1] & 0xC0u) == 0x80u) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 4291 sec 2.7: FF00::/8.
-static idemip_bool nd6_is_multicast(const uint8_t *addr)
+static embed_bool nd6_is_multicast(const uint8_t *addr)
 {
-    return (addr[0] == ND6_MULTICAST_TAG) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (addr[0] == ND6_MULTICAST_TAG) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // --- the clock -------------------------------------------------------------
 
 // True when the clock is at or past the deadline. The difference is taken signed, so the comparison
 // holds across one wrap of the millisecond clock.
-static idemip_bool nd6_due(uint32_t now_ms, uint32_t deadline_ms)
+static embed_bool nd6_due(uint32_t now_ms, uint32_t deadline_ms)
 {
-    return ((int32_t)(now_ms - deadline_ms) >= 0) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return ((int32_t)(now_ms - deadline_ms) >= 0) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // Milliseconds still to run on a deadline, and zero once it is due.
@@ -286,8 +286,9 @@ static uint32_t nd6_lifetime_ms(uint32_t lifetime_s)
 // an advertised value from arming a deadline that reads as already passed.
 #define ND6_REACHABLE_MAX_MS (ND6_DEADLINE_MAX_MS / 3u)
 
-static_assert((uint64_t)(ND6_REACHABLE_MAX_MS >> 1) + (uint64_t)ND6_REACHABLE_MAX_MS <= (uint64_t)ND6_DEADLINE_MAX_MS,
-              "a sec 6.3.2 ReachableTime draw must fit ND6_DEADLINE_MAX_MS milliseconds");
+EMBED_STATIC_ASSERT((uint64_t)(ND6_REACHABLE_MAX_MS >> 1) + (uint64_t)ND6_REACHABLE_MAX_MS <=
+                        (uint64_t)ND6_DEADLINE_MAX_MS,
+                    "a sec 6.3.2 ReachableTime draw must fit ND6_DEADLINE_MAX_MS milliseconds");
 
 static uint32_t nd6_draw_reachable(uint32_t base_ms, uint32_t rand_word)
 {
@@ -315,8 +316,8 @@ static uint32_t nd6_base_reachable_ms(const Nd6Ctx *ctx)
 // where every reader of the timer takes it, so no deadline armed from it can land outside the span.
 static uint32_t nd6_retrans_ms(const Nd6Ctx *ctx)
 {
-    uint32_t ms = (ctx->retrans_ms != 0u) ? ctx->retrans_ms : (uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS;
-    return (ms > ND6_RETRANS_MAX_MS) ? ND6_RETRANS_MAX_MS : ms;
+    uint32_t retrans = (ctx->retrans_ms != 0u) ? ctx->retrans_ms : (uint32_t)IDEMIP_ND6_RETRANS_TIMER_MS;
+    return (retrans > ND6_RETRANS_MAX_MS) ? ND6_RETRANS_MAX_MS : retrans;
 }
 
 // RFC 2464 sec 2: "The default MTU size for IPv6 ... packets on an Ethernet is 1500 octets."
@@ -370,16 +371,16 @@ static void nd6_arm(const Nd6Ctx *ctx, Nd6Neighbor *n)
 
 // STALE takes no deadline, so nothing schedules an event on it (RFC 4861 sec 7.3.2: "While stale, no
 // action takes place until a packet is sent").
-static idemip_bool nd6_has_timer(const Nd6Neighbor *n)
+static embed_bool nd6_has_timer(const Nd6Neighbor *n)
 {
-    return (n->state != IDEMIP_ND6_STALE) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (n->state != IDEMIP_ND6_STALE) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // RFC 4861 sec 5.2: with no entry for the next hop "the sender creates one, sets its state to
 // INCOMPLETE, initiates Address Resolution". A full cache reports IDEMIP_ND6_NONE, since sec 7.3.3
 // frees a slot as solicitations go unanswered.
 static uint8_t nd6_create_neighbor(uint8_t *work, const uint8_t *addr, const uint8_t *lladdr, IdemIpNd6State state,
-                                   idemip_bool is_router)
+                                   embed_bool is_router)
 {
     Nd6Ctx *ctx = ND6_CTX(work);
     for (uint8_t i = 0u; i < ND6_NEIGHBORS; i++)
@@ -389,15 +390,15 @@ static uint8_t nd6_create_neighbor(uint8_t *work, const uint8_t *addr, const uin
         {
             continue;
         }
-        memset(n, 0, sizeof *n);
-        memcpy(n->addr, addr, IDEMIP_IP6_ADDR_LEN);
+        *n = (Nd6Neighbor){0};
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = n->addr, .at = addr, .size = IDEMIP_IP6_ADDR_LEN);
         n->pending_head = IDEMIP_ND6_NONE;
         n->state = state;
         n->is_router = is_router;
-        n->used = IDEMIP_TRUE;
+        n->used = EMBED_TRUE;
         if (lladdr != NULL)
         {
-            memcpy(n->lladdr, lladdr, IDEMIP_MAC_LEN);
+            EMBED_CALL(proxim.read, ProximusCfg, .dst = n->lladdr, .at = lladdr, .size = IDEMIP_MAC_LEN);
         }
         nd6_arm(ctx, n);
         ctx->neighbors++;
@@ -484,7 +485,7 @@ static void nd6_release_pending(uint8_t *work, uint8_t pi)
     io->desc = p->desc;
     io->len = p->len;
     io->neighbor = ni;
-    p->used = IDEMIP_FALSE;
+    p->used = EMBED_FALSE;
     p->next = IDEMIP_ND6_NONE;
     p->neighbor = IDEMIP_ND6_NONE;
     p->desc = 0u;
@@ -513,7 +514,7 @@ static void nd6_drop_destinations_via(uint8_t *work, uint8_t ni)
         Nd6Destination *d = ND6_DESTINATION_AT(work, i);
         if (d->used && d->neighbor == ni)
         {
-            d->used = IDEMIP_FALSE;
+            d->used = EMBED_FALSE;
             d->neighbor = IDEMIP_ND6_NONE;
             // Not measured on the empty arm: the count rises with the destination that is being given back
             // here, so it cannot be at zero while one is in hand. It is written because the count is what
@@ -532,10 +533,10 @@ static void nd6_drop_router(uint8_t *work, uint8_t ri)
     Nd6Ctx *ctx = ND6_CTX(work);
     Nd6Router *r = ND6_ROUTER_AT(work, ri);
     uint8_t ni = r->neighbor;
-    r->used = IDEMIP_FALSE;
+    r->used = EMBED_FALSE;
     r->invalidate_ms = 0u;
     r->neighbor = IDEMIP_ND6_NONE;
-    memset(r->addr, 0, IDEMIP_IP6_ADDR_LEN);
+    mmgr_zero_buf(r->addr, IDEMIP_IP6_ADDR_LEN);
     // Not measured on the empty arm: the count rises with the router that is being given back
     // here, so it cannot be at zero while one is in hand. It is written because the count is what
     // the entries read to report a table as full, and a count that wrapped would report every one
@@ -579,7 +580,7 @@ static void nd6_free_neighbor(uint8_t *work, uint8_t ni)
     Nd6Ctx *ctx = ND6_CTX(work);
     Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, ni);
     nd6_drop_router_of(work, ni);
-    memset(n, 0, sizeof *n);
+    *n = (Nd6Neighbor){0};
     n->pending_head = IDEMIP_ND6_NONE;
     // Not measured on the empty arm: the count rises with the neighbor that is being given back
     // here, so it cannot be at zero while one is in hand. It is written because the count is what
@@ -602,8 +603,8 @@ void idemip_nd6_clear(uint8_t *work)
         return; // no borrow, so nowhere to report
     }
     Nd6Io *io = ND6_IO(work);
-    memset(work + IDEMIP_ND6_OFF_CTX, 0, ND6_STATE_BYTES);
-    ND6_CTX(work)->ready = IDEMIP_TRUE;
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_ND6_OFF_CTX, .val = 0, .bytes = ND6_STATE_BYTES);
+    ND6_CTX(work)->ready = EMBED_TRUE;
     io->status = IDEMIP_OK;
 }
 
@@ -659,9 +660,9 @@ static void nd6_set_neighbor(uint8_t *work)
     }
 
     Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, i);
-    idemip_bool differs =
-        (a->lladdr != NULL && !idemip_bytes_eq(n->lladdr, a->lladdr, IDEMIP_MAC_LEN)) ? IDEMIP_TRUE : IDEMIP_FALSE;
-    idemip_bool was_router = n->is_router;
+    embed_bool differs =
+        (a->lladdr != NULL && !idemip_bytes_eq(n->lladdr, a->lladdr, IDEMIP_MAC_LEN)) ? EMBED_TRUE : EMBED_FALSE;
+    embed_bool was_router = n->is_router;
 
     if (n->state == IDEMIP_ND6_INCOMPLETE)
     {
@@ -671,7 +672,7 @@ static void nd6_set_neighbor(uint8_t *work)
         // INCOMPLETE state".
         if (a->lladdr != NULL)
         {
-            memcpy(n->lladdr, a->lladdr, IDEMIP_MAC_LEN);
+            EMBED_CALL(proxim.read, ProximusCfg, .dst = n->lladdr, .at = a->lladdr, .size = IDEMIP_MAC_LEN);
             n->state = a->solicited ? IDEMIP_ND6_REACHABLE : IDEMIP_ND6_STALE;
             n->probes = 0u;
             n->is_router = a->is_router;
@@ -697,7 +698,7 @@ static void nd6_set_neighbor(uint8_t *work)
         // the state stands. sec 7.2.3 and sec 6.3.4 reach the same result for a changed address.
         if (differs)
         {
-            memcpy(n->lladdr, a->lladdr, IDEMIP_MAC_LEN);
+            EMBED_CALL(proxim.read, ProximusCfg, .dst = n->lladdr, .at = a->lladdr, .size = IDEMIP_MAC_LEN);
         }
         if (a->solicited)
         {
@@ -925,16 +926,16 @@ void idemip_nd6_dest_set(uint8_t *work)
             return;
         }
         Nd6Destination *d = ND6_DESTINATION_AT(work, i);
-        memset(d, 0, sizeof *d);
-        memcpy(d->dst, a->dst, IDEMIP_IP6_ADDR_LEN);
+        *d = (Nd6Destination){0};
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = d->dst, .at = a->dst, .size = IDEMIP_IP6_ADDR_LEN);
         d->neighbor = IDEMIP_ND6_NONE;
-        d->used = IDEMIP_TRUE;
+        d->used = EMBED_TRUE;
         ctx->destinations++;
     }
     Nd6Destination *d = ND6_DESTINATION_AT(work, i);
     if (a->next_hop != NULL)
     {
-        memcpy(d->next_hop, a->next_hop, IDEMIP_IP6_ADDR_LEN);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = d->next_hop, .at = a->next_hop, .size = IDEMIP_IP6_ADDR_LEN);
     }
     if (a->pmtu != 0u)
     {
@@ -1019,16 +1020,16 @@ void idemip_nd6_prefix_set(uint8_t *work)
             return;
         }
         Nd6Prefix *p = ND6_PREFIX_AT(work, i);
-        memset(p, 0, sizeof *p);
-        memcpy(p->prefix, a->prefix, IDEMIP_IP6_ADDR_LEN);
+        *p = (Nd6Prefix){0};
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = p->prefix, .at = a->prefix, .size = IDEMIP_IP6_ADDR_LEN);
         p->prefix_len = a->prefix_len;
-        p->used = IDEMIP_TRUE;
+        p->used = EMBED_TRUE;
         ctx->prefixes++;
     }
     Nd6Prefix *p = ND6_PREFIX_AT(work, i);
     p->on_link = a->on_link;
     p->autonomous = a->autonomous;
-    p->infinite = (a->lifetime_s == IDEMIP_ND6_LIFETIME_INFINITE) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    p->infinite = (a->lifetime_s == IDEMIP_ND6_LIFETIME_INFINITE) ? EMBED_TRUE : EMBED_FALSE;
     p->invalidate_ms = ctx->now_ms + nd6_lifetime_ms(a->lifetime_s);
     io->prefix = i;
     io->status = IDEMIP_OK;
@@ -1044,7 +1045,7 @@ void idemip_nd6_prefix_on_link(uint8_t *work)
     Nd6Ctx *ctx = ND6_CTX(work);
     io->status = IDEMIP_ERR;
     io->prefix = IDEMIP_ND6_NONE;
-    io->on_link = IDEMIP_FALSE;
+    io->on_link = EMBED_FALSE;
     if (!ctx->ready || io->prefix_args.prefix == NULL)
     {
         return;
@@ -1058,11 +1059,11 @@ void idemip_nd6_prefix_on_link(uint8_t *work)
     ctx->now_ms = io->tick_args.now_ms;
     const uint8_t *addr = io->prefix_args.prefix;
     uint8_t best_len = 0u;
-    idemip_bool matched = IDEMIP_FALSE;
+    embed_bool matched = EMBED_FALSE;
     if (nd6_is_multicast(addr) || nd6_is_link_local(addr))
     {
         best_len = (uint8_t)ND6_LINK_LOCAL_LEN;
-        matched = IDEMIP_TRUE;
+        matched = EMBED_TRUE;
     }
     for (uint8_t i = 0u; i < ND6_PREFIXES; i++)
     {
@@ -1082,7 +1083,7 @@ void idemip_nd6_prefix_on_link(uint8_t *work)
         if (nd6_prefix_eq(p->prefix, addr, p->prefix_len))
         {
             best_len = p->prefix_len;
-            matched = IDEMIP_TRUE;
+            matched = EMBED_TRUE;
             io->prefix = i;
         }
     }
@@ -1145,7 +1146,7 @@ void idemip_nd6_router_set(uint8_t *work)
     // does not apply to information contained in other message fields or options." A lifetime of zero
     // therefore takes the router out of the Default Router List and nothing else; the Source
     // Link-Layer Address recording and the IsRouter write below run for every valid advertisement.
-    const idemip_bool default_router = (idemip_bool)(a->lifetime_s != 0u);
+    const embed_bool default_router = (embed_bool)(a->lifetime_s != 0u);
     if (!default_router && ri != IDEMIP_ND6_NONE)
     {
         nd6_drop_router(work, ri);
@@ -1155,7 +1156,7 @@ void idemip_nd6_router_set(uint8_t *work)
     {
         if (ni == IDEMIP_ND6_NONE)
         {
-            ni = nd6_create_neighbor(work, a->addr, a->lladdr, IDEMIP_ND6_STALE, IDEMIP_TRUE);
+            ni = nd6_create_neighbor(work, a->addr, a->lladdr, IDEMIP_ND6_STALE, EMBED_TRUE);
             if (ni == IDEMIP_ND6_NONE)
             {
                 io->status = IDEMIP_BUSY; // a slot frees as sec 7.3.3 deletes an unanswered entry
@@ -1169,7 +1170,7 @@ void idemip_nd6_router_set(uint8_t *work)
             {
                 // "If a cache entry already exists and is updated with a different link-layer
                 // address, the reachability state MUST also be set to STALE."
-                memcpy(n->lladdr, a->lladdr, IDEMIP_MAC_LEN);
+                EMBED_CALL(proxim.read, ProximusCfg, .dst = n->lladdr, .at = a->lladdr, .size = IDEMIP_MAC_LEN);
                 n->state = IDEMIP_ND6_STALE;
                 nd6_arm(ctx, n);
             }
@@ -1193,8 +1194,8 @@ void idemip_nd6_router_set(uint8_t *work)
                 return;
             }
             Nd6Router *r = ND6_ROUTER_AT(work, ri);
-            r->used = IDEMIP_TRUE;
-            memcpy(r->addr, a->addr, IDEMIP_IP6_ADDR_LEN);
+            r->used = EMBED_TRUE;
+            EMBED_CALL(proxim.read, ProximusCfg, .dst = r->addr, .at = a->addr, .size = IDEMIP_IP6_ADDR_LEN);
             ctx->routers++;
         }
         ND6_ROUTER_AT(work, ri)->neighbor = ni;
@@ -1205,7 +1206,7 @@ void idemip_nd6_router_set(uint8_t *work)
     // whatever its Router Lifetime.
     if (ni < ND6_NEIGHBORS)
     {
-        ND6_NEIGHBOR_AT(work, ni)->is_router = IDEMIP_TRUE;
+        ND6_NEIGHBOR_AT(work, ni)->is_router = EMBED_TRUE;
         nd6_report_neighbor(work, ni);
     }
     io->router = ri;
@@ -1357,7 +1358,7 @@ void idemip_nd6_pending_push(uint8_t *work)
     p->len = io->pending_args.len;
     p->neighbor = ni;
     p->next = IDEMIP_ND6_NONE;
-    p->used = IDEMIP_TRUE;
+    p->used = EMBED_TRUE;
     // sec 7.2.2 retransmits every RetransTimer and gives up after MAX_MULTICAST_SOLICIT
     // solicitations, so a held frame outlives address resolution by no more than that.
     p->deadline_ms = ctx->now_ms + (nd6_retrans_ms(ctx) * (uint32_t)(IDEMIP_ND6_MAX_MULTICAST_SOLICIT + 1u));
@@ -1476,7 +1477,7 @@ static void nd6_sweep(uint8_t *work)
         Nd6Prefix *p = ND6_PREFIX_AT(work, i);
         if (p->used && !p->infinite && nd6_due(now, p->invalidate_ms))
         {
-            memset(p, 0, sizeof *p);
+            *p = (Nd6Prefix){0};
             // Not measured on the empty arm: the count rises with the prefix that is being given back
             // here, so it cannot be at zero while one is in hand. It is written because the count is what
             // the entries read to report a table as full, and a count that wrapped would report every one
@@ -1508,7 +1509,7 @@ static void nd6_sweep(uint8_t *work)
         Nd6Destination *d = ND6_DESTINATION_AT(work, i);
         if (d->used && d->neighbor < ND6_NEIGHBORS && !ND6_NEIGHBOR_AT(work, d->neighbor)->used)
         {
-            d->used = IDEMIP_FALSE;
+            d->used = EMBED_FALSE;
             d->neighbor = IDEMIP_ND6_NONE;
             // Not measured on the empty arm: the count rises with the destination that is being given back
             // here, so it cannot be at zero while one is in hand. It is written because the count is what
@@ -1552,7 +1553,7 @@ static void nd6_sweep(uint8_t *work)
     // with code 3 (Address Unreachable) for each packet queued awaiting address resolution."
     // sec 7.3.3: after MAX_UNICAST_SOLICIT solicitations in PROBE "retransmissions cease and the
     // entry SHOULD be deleted".
-    idemip_bool reported = IDEMIP_FALSE;
+    embed_bool reported = EMBED_FALSE;
     for (uint8_t i = 0u; i < ND6_NEIGHBORS && !reported; i++)
     {
         const Nd6Neighbor *n = ND6_NEIGHBOR_AT(work, i);
@@ -1569,7 +1570,7 @@ static void nd6_sweep(uint8_t *work)
         if (n->pending_head < ND6_PENDINGS)
         {
             nd6_release_pending(work, n->pending_head);
-            reported = IDEMIP_TRUE;
+            reported = EMBED_TRUE;
         }
         else
         {
@@ -1585,7 +1586,7 @@ static void nd6_sweep(uint8_t *work)
         if (p->used && nd6_due(now, p->deadline_ms))
         {
             nd6_release_pending(work, i);
-            reported = IDEMIP_TRUE;
+            reported = EMBED_TRUE;
         }
     }
 
@@ -1606,11 +1607,11 @@ static void nd6_sweep(uint8_t *work)
         }
         n->probes++;
         n->next_event_ms = now + retrans;
-        io->solicit = IDEMIP_TRUE;
-        io->multicast = (n->state == IDEMIP_ND6_INCOMPLETE) ? IDEMIP_TRUE : IDEMIP_FALSE;
+        io->solicit = EMBED_TRUE;
+        io->multicast = (n->state == IDEMIP_ND6_INCOMPLETE) ? EMBED_TRUE : EMBED_FALSE;
         io->target = n->addr;
         nd6_report_neighbor(work, i);
-        reported = IDEMIP_TRUE;
+        reported = EMBED_TRUE;
     }
 
     // The soonest deadline any table still holds, so the caller knows when to come back.
@@ -1666,8 +1667,8 @@ void idemip_nd6_tick(uint8_t *work)
     Nd6Ctx *ctx = ND6_CTX(work);
     io->status = IDEMIP_ERR;
     io->expired = 0u;
-    io->solicit = IDEMIP_FALSE;
-    io->multicast = IDEMIP_FALSE;
+    io->solicit = EMBED_FALSE;
+    io->multicast = EMBED_FALSE;
     io->target = NULL;
     io->neighbor = IDEMIP_ND6_NONE;
     io->pending = IDEMIP_ND6_NONE;
@@ -1681,4 +1682,4 @@ void idemip_nd6_tick(uint8_t *work)
     nd6_sweep(work);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

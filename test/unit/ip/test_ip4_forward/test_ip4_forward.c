@@ -29,17 +29,19 @@
 
 #include "src/ip/ip4_forward.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
-#include "src/ip/ipv4_defines.h"
 #include "src/icmp/icmp_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 #define CANARY 0x5Au
 #define DIRT 0xCCu
 
-static _Alignas(8) uint8_t work_a[IDEMIP_IP4_FORWARD_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_IP4_FORWARD_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_IP4_FORWARD_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_IP4_FORWARD_BORROW + 16))
+static uint8_t *work_b;
 
 // One datagram, built where the suite can reach it. 1500 octets is an Ethernet payload, so a case
 // that claims a long datagram is claiming octets that are really there.
@@ -60,8 +62,9 @@ static uint8_t g_pkt[1500];
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_IP4_FORWARD_BORROW, CANARY, cap - IDEMIP_IP4_FORWARD_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_IP4_FORWARD_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_IP4_FORWARD_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -74,15 +77,17 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(g_pkt, 0, sizeof g_pkt);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_ip4_forward);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_ip4_forward);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(g_pkt, sizeof g_pkt);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // --- building a datagram ------------------------------------------------------
@@ -115,8 +120,8 @@ static size_t build_with_option(uint32_t src, uint32_t dst, uint8_t ttl, const u
     size_t padded = (optlen + 3u) & ~(size_t)3u;
     size_t hdr = IDEMIP_IPV4_HDR_LEN + padded;
     (void)build(src, dst, ttl, 0u, (uint8_t)IDEMIP_IP4_PROTO_TCP, (uint16_t)hdr);
-    memset(g_pkt + IDEMIP_IP4_OFF_OPTIONS, 0, padded);
-    memcpy(g_pkt + IDEMIP_IP4_OFF_OPTIONS, opt, optlen);
+    mmgr_zero_buf(g_pkt + IDEMIP_IP4_OFF_OPTIONS, padded);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_pkt + IDEMIP_IP4_OFF_OPTIONS, .at = opt, .size = optlen);
     idemip_ip4_set_ver_ihl(g_pkt, (uint8_t)(hdr >> IDEMIP_IP4_IHL_SHIFT));
     idemip_ip4_recksum(g_pkt);
     return hdr;
@@ -127,14 +132,14 @@ static size_t build_with_option(uint32_t src, uint32_t dst, uint8_t ttl, const u
 static void args_default(uint8_t *w, size_t len)
 {
     Ip4ForwardArgs *a = &IDEMIP_IP4_FORWARD_IO(w)->fwd_args;
-    memset(a, 0, sizeof *a);
+    *a = (Ip4ForwardArgs){0};
     a->hdr = g_pkt;
     a->len = len;
     a->next_hop = TEST_NET_1_GW;
     a->out_mtu = 1500u;
     a->in_netif = 0u;
     a->out_netif = 1u;
-    a->routed = IDEMIP_TRUE;
+    a->routed = EMBED_TRUE;
 }
 
 static void clear_ok(uint8_t *w)
@@ -210,7 +215,7 @@ void test_an_uncleared_borrow_is_refused(void)
 // their switch to default to on, so clear raises both.
 void test_clear_raises_both_switches_the_rfc_defaults_on(void)
 {
-    memset(work_a, DIRT, IDEMIP_IP4_FORWARD_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = DIRT, .bytes = IDEMIP_IP4_FORWARD_BORROW);
     clear_ok(work_a);
     TEST_ASSERT_EQUAL_HEX8(IDEMIP_IP4_FORWARD_P_MASK, IDEMIP_IP4_FORWARD_IO(work_a)->policy);
     TEST_ASSERT_EQUAL_HEX8(IDEMIP_IP4_FORWARD_P_MARTIAN | IDEMIP_IP4_FORWARD_P_DIRECTED,
@@ -332,7 +337,7 @@ void test_no_route_answers_network_unreachable(void)
     clear_ok(work_a);
     size_t len = build_plain(TEST_NET_1_HOST, TEST_NET_2_HOST, TTL_COMMON);
     args_default(work_a, len);
-    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.routed = IDEMIP_FALSE;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.routed = EMBED_FALSE;
     Ip4Forward.decide(work_a);
 
     const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
@@ -446,7 +451,7 @@ void test_a_link_layer_broadcast_is_not_forwarded(void)
     clear_ok(work_a);
     size_t len = build_plain(TEST_NET_1_HOST, TEST_NET_2_HOST, TTL_COMMON);
     args_default(work_a, len);
-    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.ll_broadcast = IDEMIP_TRUE;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.ll_broadcast = EMBED_TRUE;
     Ip4Forward.decide(work_a);
 
     const Ip4ForwardIo *io = IDEMIP_IP4_FORWARD_IO(work_a);
@@ -463,7 +468,7 @@ void test_a_link_layer_broadcast_to_a_multicast_destination_passes_the_check(voi
     clear_ok(work_a);
     size_t len = build_plain(TEST_NET_1_HOST, IP4(239, 1, 2, 3), TTL_COMMON);
     args_default(work_a, len);
-    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.ll_broadcast = IDEMIP_TRUE;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.ll_broadcast = EMBED_TRUE;
     Ip4Forward.decide(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action);
 }
@@ -475,7 +480,7 @@ void test_a_link_layer_multicast_to_a_unicast_destination_is_not_forwarded(void)
     clear_ok(work_a);
     size_t len = build_plain(TEST_NET_1_HOST, TEST_NET_2_HOST, TTL_COMMON);
     args_default(work_a, len);
-    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.ll_multicast = IDEMIP_TRUE;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.ll_multicast = EMBED_TRUE;
     Ip4Forward.decide(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_LINK_BCAST, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
 }
@@ -603,7 +608,7 @@ void test_a_directed_broadcast_is_forwarded_by_default(void)
     size_t len = build_plain(TEST_NET_2_HOST, TEST_NET_1_BCAST, TTL_COMMON);
     args_default(work_a, len);
     Ip4ForwardArgs *a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
-    a->direct = IDEMIP_TRUE;
+    a->direct = EMBED_TRUE;
     a->next_hop = TEST_NET_1_BCAST;
     a->out_addr = TEST_NET_1_GW;
     a->out_mask = MASK24;
@@ -623,7 +628,7 @@ void test_the_directed_broadcast_switch_stops_it(void)
     size_t len = build_plain(TEST_NET_2_HOST, TEST_NET_1_BCAST, TTL_COMMON);
     args_default(work_a, len);
     Ip4ForwardArgs *a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
-    a->direct = IDEMIP_TRUE;
+    a->direct = EMBED_TRUE;
     a->next_hop = TEST_NET_1_BCAST;
     a->out_addr = TEST_NET_1_GW;
     a->out_mask = MASK24;
@@ -647,7 +652,7 @@ void test_a_broadcast_form_through_a_gateway_is_forwarded_but_draws_no_icmp_erro
     size_t len = build_plain(TEST_NET_2_HOST, TEST_NET_1_BCAST, 1u);
     args_default(work_a, len);
     Ip4ForwardArgs *a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
-    a->direct = IDEMIP_FALSE;
+    a->direct = EMBED_FALSE;
     a->out_addr = TEST_NET_1_GW;
     a->out_mask = MASK24;
     Ip4Forward.decide(work_a);
@@ -663,7 +668,7 @@ void test_a_broadcast_form_through_a_gateway_is_forwarded_but_draws_no_icmp_erro
     len = build_plain(TEST_NET_2_HOST, TEST_NET_1_BCAST, 64u);
     args_default(work_a, len);
     a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
-    a->direct = IDEMIP_FALSE;
+    a->direct = EMBED_FALSE;
     a->out_addr = TEST_NET_1_GW;
     a->out_mask = MASK24;
     Ip4Forward.decide(work_a);
@@ -676,7 +681,7 @@ void test_a_broadcast_form_through_a_gateway_is_forwarded_but_draws_no_icmp_erro
     len = build_plain(TEST_NET_2_HOST, TEST_NET_1_BCAST, 1u);
     args_default(work_a, len);
     a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
-    a->direct = IDEMIP_FALSE;
+    a->direct = EMBED_FALSE;
     a->out_addr = 0u;
     a->out_mask = 0u;
     Ip4Forward.decide(work_a);
@@ -693,7 +698,7 @@ void test_a_directed_broadcast_gets_no_icmp_error(void)
     size_t len = build_plain(TEST_NET_2_HOST, TEST_NET_1_BCAST, 1u);
     args_default(work_a, len);
     Ip4ForwardArgs *a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
-    a->direct = IDEMIP_TRUE;
+    a->direct = EMBED_TRUE;
     a->next_hop = TEST_NET_1_BCAST;
     a->out_addr = TEST_NET_1_GW;
     a->out_mask = MASK24;
@@ -805,7 +810,7 @@ void test_the_obsolete_broadcast_destination_is_treated_as_a_broadcast(void)
     size_t len = build_plain(TEST_NET_3_HOST, IP4(192, 0, 2, 0), 64u);
     args_default(work_a, len);
     Ip4ForwardArgs *a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
-    a->direct = IDEMIP_TRUE;
+    a->direct = EMBED_TRUE;
     a->out_addr = TEST_NET_1_GW;
     a->out_mask = MASK24;
     Ip4Forward.decide(work_a);
@@ -817,7 +822,7 @@ void test_the_obsolete_broadcast_destination_is_treated_as_a_broadcast(void)
     len = build_plain(TEST_NET_3_HOST, IP4(192, 0, 2, 0), 1u);
     args_default(work_a, len);
     a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
-    a->direct = IDEMIP_TRUE;
+    a->direct = EMBED_TRUE;
     a->out_addr = TEST_NET_1_GW;
     a->out_mask = MASK24;
     Ip4Forward.decide(work_a);
@@ -837,7 +842,7 @@ void test_a_31_bit_prefix_endpoint_is_not_a_directed_broadcast(void)
     size_t len = build_plain(TEST_NET_2_HOST, IP4(10, 0, 0, 1), 64u);
     args_default(work_a, len);
     Ip4ForwardArgs *a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
-    a->direct = IDEMIP_TRUE;
+    a->direct = EMBED_TRUE;
     a->next_hop = IP4(10, 0, 0, 1);
     a->out_addr = IP4(10, 0, 0, 0);
     a->out_mask = IP4(255, 255, 255, 254);
@@ -851,7 +856,7 @@ void test_a_31_bit_prefix_endpoint_is_not_a_directed_broadcast(void)
     len = build_plain(TEST_NET_2_HOST, IP4(10, 0, 0, 1), 1u);
     args_default(work_a, len);
     a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
-    a->direct = IDEMIP_TRUE;
+    a->direct = EMBED_TRUE;
     a->out_addr = IP4(10, 0, 0, 0);
     a->out_mask = IP4(255, 255, 255, 254);
     Ip4Forward.decide(work_a);
@@ -868,7 +873,7 @@ void test_an_unusable_type_of_service_draws_the_unreachable_for_tos_codes(void)
     size_t len = build_plain(TEST_NET_2_HOST, TEST_NET_3_HOST, 64u);
     args_default(work_a, len);
     Ip4ForwardArgs *a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
-    a->routed = IDEMIP_FALSE;
+    a->routed = EMBED_FALSE;
     Ip4Forward.decide(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_NO_ROUTE, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_IP4_FORWARD_IO(work_a)->icmp_type);
@@ -877,8 +882,8 @@ void test_an_unusable_type_of_service_draws_the_unreachable_for_tos_codes(void)
     clear_ok(work_a);
     args_default(work_a, len);
     a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
-    a->routed = IDEMIP_FALSE;
-    a->tos_blocked = IDEMIP_TRUE;
+    a->routed = EMBED_FALSE;
+    a->tos_blocked = EMBED_TRUE;
     Ip4Forward.decide(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_NO_ROUTE_TOS, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
     TEST_ASSERT_EQUAL_UINT8_MESSAGE((uint8_t)IDEMIP_ICMP_DU_NET_TOS, IDEMIP_IP4_FORWARD_IO(work_a)->icmp_code,
@@ -887,9 +892,9 @@ void test_an_unusable_type_of_service_draws_the_unreachable_for_tos_codes(void)
     clear_ok(work_a);
     args_default(work_a, len);
     a = &IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args;
-    a->routed = IDEMIP_FALSE;
-    a->tos_blocked = IDEMIP_TRUE;
-    a->direct = IDEMIP_TRUE;
+    a->routed = EMBED_FALSE;
+    a->tos_blocked = EMBED_TRUE;
+    a->direct = EMBED_TRUE;
     Ip4Forward.decide(work_a);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)IDEMIP_ICMP_DU_HOST_TOS, IDEMIP_IP4_FORWARD_IO(work_a)->icmp_code);
 }
@@ -1051,7 +1056,7 @@ void test_a_link_layer_broadcast_draws_no_icmp_error(void)
     clear_ok(work_a);
     size_t len = build_plain(TEST_NET_1_HOST, IP4(224, 0, 0, 1), 1u);
     args_default(work_a, len);
-    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.ll_broadcast = IDEMIP_TRUE;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.ll_broadcast = EMBED_TRUE;
     Ip4Forward.decide(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP4_FORWARD_R_TTL, IDEMIP_IP4_FORWARD_IO(work_a)->reason);
     TEST_ASSERT_FALSE(IDEMIP_IP4_FORWARD_IO(work_a)->icmp);
@@ -1150,7 +1155,7 @@ void test_nothing_is_ever_busy(void)
     TEST_ASSERT_NOT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_IP4_FORWARD_IO(work_a)->status);
 
     args_default(work_a, len);
-    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.routed = IDEMIP_FALSE;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.routed = EMBED_FALSE;
     Ip4Forward.decide(work_a);
     TEST_ASSERT_NOT_EQUAL_INT(IDEMIP_BUSY, IDEMIP_IP4_FORWARD_IO(work_a)->status);
 
@@ -1191,7 +1196,7 @@ void test_a_directed_broadcast_needs_a_prefix_to_be_directed_under(void)
         args_default(work_a, len);
         IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_addr = TEST_NET_1_GW;
         IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_mask = masks[i];
-        IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.direct = IDEMIP_TRUE;
+        IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.direct = EMBED_TRUE;
         Ip4Forward.decide(work_a);
         TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action,
                                       "an address was read as a directed broadcast under no prefix");
@@ -1204,7 +1209,7 @@ void test_a_directed_broadcast_needs_a_prefix_to_be_directed_under(void)
     IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.next_hop = TEST_NET_1_HOST;
     IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_addr = TEST_NET_1_GW;
     IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_mask = MASK24;
-    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.direct = IDEMIP_TRUE;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.direct = EMBED_TRUE;
     Ip4Forward.decide(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action,
                                   "a host address inside the prefix was read as its broadcast");
@@ -1215,7 +1220,7 @@ void test_a_directed_broadcast_needs_a_prefix_to_be_directed_under(void)
     args_default(work_a, len);
     IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_addr = TEST_NET_3_HOST;
     IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_mask = MASK24;
-    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.direct = IDEMIP_TRUE;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.direct = EMBED_TRUE;
     Ip4Forward.decide(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_FORWARD_SEND, IDEMIP_IP4_FORWARD_IO(work_a)->action,
                                   "an address outside the prefix was read as its broadcast");
@@ -1231,7 +1236,7 @@ void test_a_directed_broadcast_needs_a_prefix_to_be_directed_under(void)
     IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.next_hop = IP4(192, 0, 2, 0);
     IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_addr = TEST_NET_1_GW;
     IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.out_mask = MASK24;
-    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.direct = IDEMIP_TRUE;
+    IDEMIP_IP4_FORWARD_IO(work_a)->fwd_args.direct = EMBED_TRUE;
     Ip4Forward.decide(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_IP4_FORWARD_R_DIRECTED, IDEMIP_IP4_FORWARD_IO(work_a)->reason,
                                   "the obsolete form of a directed broadcast was not treated as one");

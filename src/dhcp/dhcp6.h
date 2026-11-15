@@ -22,7 +22,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
 // The message on the wire (RFC 8415 sec 8, Figure 2, and sec 21.1, Figure 12)
@@ -185,34 +185,16 @@ IDEMIP_BEGIN_DECLS
 #define IDEMIP_DHCP6_IAADDR_FIXED_LEN 24u
 
 /** @brief The message types of RFC 8415 sec 7.3, "The numeric encoding for each message type". */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_DHCP6_SOLICIT = 1,
-    IDEMIP_DHCP6_ADVERTISE = 2,
-    IDEMIP_DHCP6_REQUEST = 3,
-    IDEMIP_DHCP6_CONFIRM = 4,
-    IDEMIP_DHCP6_RENEW = 5,
-    IDEMIP_DHCP6_REBIND = 6,
-    IDEMIP_DHCP6_REPLY = 7,
-    IDEMIP_DHCP6_RELEASE = 8,
-    IDEMIP_DHCP6_DECLINE = 9,
-    IDEMIP_DHCP6_RECONFIGURE = 10,
-    IDEMIP_DHCP6_INFORMATION_REQUEST = 11,
-    IDEMIP_DHCP6_RELAY_FORW = 12,
-    IDEMIP_DHCP6_RELAY_REPL = 13,
-} IdemIpDhcp6MsgType;
+EMBED_ENUM_BYTE(IdemIpDhcp6MsgType, IDEMIP_DHCP6_SOLICIT = 1, IDEMIP_DHCP6_ADVERTISE = 2, IDEMIP_DHCP6_REQUEST = 3,
+                IDEMIP_DHCP6_CONFIRM = 4, IDEMIP_DHCP6_RENEW = 5, IDEMIP_DHCP6_REBIND = 6, IDEMIP_DHCP6_REPLY = 7,
+                IDEMIP_DHCP6_RELEASE = 8, IDEMIP_DHCP6_DECLINE = 9, IDEMIP_DHCP6_RECONFIGURE = 10,
+                IDEMIP_DHCP6_INFORMATION_REQUEST = 11, IDEMIP_DHCP6_RELAY_FORW = 12, IDEMIP_DHCP6_RELAY_REPL = 13, );
 
 /** @brief The status codes of RFC 8415 sec 21.13, Table 3. */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_DHCP6_STATUS_SUCCESS = 0,
-    IDEMIP_DHCP6_STATUS_UNSPEC_FAIL = 1,
-    IDEMIP_DHCP6_STATUS_NO_ADDRS_AVAIL = 2,
-    IDEMIP_DHCP6_STATUS_NO_BINDING = 3,
-    IDEMIP_DHCP6_STATUS_NOT_ON_LINK = 4,
-    IDEMIP_DHCP6_STATUS_USE_MULTICAST = 5,
-    IDEMIP_DHCP6_STATUS_NO_PREFIX_AVAIL = 6,
-} IdemIpDhcp6Status;
+EMBED_ENUM_BYTE(IdemIpDhcp6Status, IDEMIP_DHCP6_STATUS_SUCCESS = 0, IDEMIP_DHCP6_STATUS_UNSPEC_FAIL = 1,
+                IDEMIP_DHCP6_STATUS_NO_ADDRS_AVAIL = 2, IDEMIP_DHCP6_STATUS_NO_BINDING = 3,
+                IDEMIP_DHCP6_STATUS_NOT_ON_LINK = 4, IDEMIP_DHCP6_STATUS_USE_MULTICAST = 5,
+                IDEMIP_DHCP6_STATUS_NO_PREFIX_AVAIL = 6, );
 
 /**
  * @brief The exchange a client is in.
@@ -223,21 +205,20 @@ typedef enum IDEMIP_ENUM_PACKED
  * BOUND is what sec 18.2.10.1 leaves a client in once a Reply assigns leases. A zeroed borrow is
  * IDLE, running no exchange.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_DHCP6_IDLE = 0,        ///< no exchange running
-    IDEMIP_DHCP6_SOLICITING,      ///< sec 18.2.1, locating servers
-    IDEMIP_DHCP6_REQUESTING,      ///< sec 18.2.2, requesting leases from one server
-    IDEMIP_DHCP6_CONFIRMING,      ///< sec 18.2.3, checking the addresses suit this link
-    IDEMIP_DHCP6_RENEWING,        ///< sec 18.2.4, T1 reached, the assigning server contacted
-    IDEMIP_DHCP6_REBINDING,       ///< sec 18.2.5, T2 reached, any server contacted
-    IDEMIP_DHCP6_INFO_REQUESTING, ///< sec 18.2.6, configuration without leases
-    IDEMIP_DHCP6_RELEASING,       ///< sec 18.2.7, giving leases up
-    IDEMIP_DHCP6_DECLINING,       ///< sec 18.2.8, reporting an address already in use
-    IDEMIP_DHCP6_BOUND,           ///< sec 18.2.10.1, leases assigned and lifetimes running; for a
-                                  ///< stateless client, sec 18.2.10.4 configuration held with T1
-                                  ///< carrying the sec 21.23 information-refresh-time
-} IdemIpDhcp6State;
+EMBED_ENUM_BYTE(IdemIpDhcp6State,
+                IDEMIP_DHCP6_IDLE = 0,        ///< no exchange running
+                IDEMIP_DHCP6_SOLICITING,      ///< sec 18.2.1, locating servers
+                IDEMIP_DHCP6_REQUESTING,      ///< sec 18.2.2, requesting leases from one server
+                IDEMIP_DHCP6_CONFIRMING,      ///< sec 18.2.3, checking the addresses suit this link
+                IDEMIP_DHCP6_RENEWING,        ///< sec 18.2.4, T1 reached, the assigning server contacted
+                IDEMIP_DHCP6_REBINDING,       ///< sec 18.2.5, T2 reached, any server contacted
+                IDEMIP_DHCP6_INFO_REQUESTING, ///< sec 18.2.6, configuration without leases
+                IDEMIP_DHCP6_RELEASING,       ///< sec 18.2.7, giving leases up
+                IDEMIP_DHCP6_DECLINING,       ///< sec 18.2.8, reporting an address already in use
+                IDEMIP_DHCP6_BOUND,           ///< sec 18.2.10.1, leases assigned and lifetimes running; for a
+                                              ///< stateless client, sec 18.2.10.4 configuration held with T1
+                                              ///< carrying the sec 21.23 information-refresh-time
+);
 
 /**
  * @brief What one client is configured with, in the caller's rodata.
@@ -255,8 +236,8 @@ typedef struct
     uint32_t iaid;
     uint16_t duid_len;
     uint8_t netif;
-    idemip_bool stateless;
-    idemip_bool rapid_commit;
+    embed_bool stateless;
+    embed_bool rapid_commit;
 } IdemIpDhcp6Cfg;
 
 /** @brief What bind takes. */
@@ -467,59 +448,58 @@ void idemip_dhcp6_decline(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Dhcp6Ns Dhcp6 IDEMIP_UNUSED = {
-    .clear = idemip_dhcp6_clear,
-    .bind = idemip_dhcp6_bind,
-    .start = idemip_dhcp6_start,
-    .stop = idemip_dhcp6_stop,
-    .input = idemip_dhcp6_input,
-    .build = idemip_dhcp6_build,
-    .tick = idemip_dhcp6_tick,
-    .confirm = idemip_dhcp6_confirm,
-    .release = idemip_dhcp6_release,
-    .decline = idemip_dhcp6_decline};
+EMBED_TABLE_STORAGE Dhcp6Ns Dhcp6 EMBED_UNUSED = {.clear = idemip_dhcp6_clear,
+                                                  .bind = idemip_dhcp6_bind,
+                                                  .start = idemip_dhcp6_start,
+                                                  .stop = idemip_dhcp6_stop,
+                                                  .input = idemip_dhcp6_input,
+                                                  .build = idemip_dhcp6_build,
+                                                  .tick = idemip_dhcp6_tick,
+                                                  .confirm = idemip_dhcp6_confirm,
+                                                  .release = idemip_dhcp6_release,
+                                                  .decline = idemip_dhcp6_decline};
 // The field chain of RFC 8415 sec 8, Figure 2, and sec 21.1, Figure 12.
-static_assert(IDEMIP_DHCP6_MSG_OFF_XID + 3u == IDEMIP_DHCP6_MSG_OFF_OPTIONS,
-              "transaction-id is three octets and the options follow it (RFC 8415 sec 8)");
-static_assert(IDEMIP_DHCP6_OPT_OFF_LEN + 2u == IDEMIP_DHCP6_OPT_OFF_DATA &&
-                  IDEMIP_DHCP6_OPT_OFF_DATA == IDEMIP_DHCP6_OPT_HDR_LEN,
-              "option-code and option-len are two octets each (RFC 8415 sec 21.1)");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP6_MSG_OFF_XID + 3u == IDEMIP_DHCP6_MSG_OFF_OPTIONS,
+                    "transaction-id is three octets and the options follow it (RFC 8415 sec 8)");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP6_OPT_OFF_LEN + 2u == IDEMIP_DHCP6_OPT_OFF_DATA &&
+                        IDEMIP_DHCP6_OPT_OFF_DATA == IDEMIP_DHCP6_OPT_HDR_LEN,
+                    "option-code and option-len are two octets each (RFC 8415 sec 21.1)");
 // sec 21.4: "option-len 12 + length of IA_NA-options field", and sec 21.6: "24 + length of
 // IAaddr-options field".
-static_assert(IDEMIP_DHCP6_IA_NA_FIXED_LEN == 12u && IDEMIP_DHCP6_IAADDR_FIXED_LEN == 24u,
-              "the IA_NA and IAADDR fixed parts are 12 and 24 octets (RFC 8415 sec 21.4, sec 21.6)");
-static_assert(IDEMIP_DHCP6_IAADDR_FIXED_LEN == IDEMIP_IP6_ADDR_LEN + 8u,
-              "an IAADDR is one address and two 4-octet lifetimes (RFC 8415 sec 21.6)");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP6_IA_NA_FIXED_LEN == 12u && IDEMIP_DHCP6_IAADDR_FIXED_LEN == 24u,
+                    "the IA_NA and IAADDR fixed parts are 12 and 24 octets (RFC 8415 sec 21.4, sec 21.6)");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP6_IAADDR_FIXED_LEN == IDEMIP_IP6_ADDR_LEN + 8u,
+                    "an IAADDR is one address and two 4-octet lifetimes (RFC 8415 sec 21.6)");
 
 // sec 15 bounds RAND at a tenth either way, so the quantized magnitude stays under it: k at its
 // largest times ten is short of one whole 1 << IDEMIP_DHCP6_RAND_SHIFT.
-static_assert(IDEMIP_DHCP6_RAND_K_MAX * 10u < (1u << IDEMIP_DHCP6_RAND_SHIFT),
-              "the quantized RAND magnitude must stay inside RFC 8415 sec 15's 0.1");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP6_RAND_K_MAX * 10u < (1u << IDEMIP_DHCP6_RAND_SHIFT),
+                    "the quantized RAND magnitude must stay inside RFC 8415 sec 15's 0.1");
 // The reciprocal is the rounded-up 2^30/100, and the accumulated error over the whole elapsed-time
 // range stays under one unit, so the shift lands on floor(ms/100) exactly.
-static_assert(IDEMIP_DHCP6_CS_RECIP == ((1u << IDEMIP_DHCP6_CS_SHIFT) / 100u) + 1u,
-              "IDEMIP_DHCP6_CS_RECIP is the rounded-up reciprocal of the sec 21.9 hundredth");
-static_assert((uint64_t)((IDEMIP_DHCP6_CS_RECIP * 100u) - (1u << IDEMIP_DHCP6_CS_SHIFT)) *
-                      (uint64_t)IDEMIP_DHCP6_ELAPSED_MAX_MS <=
-                  ((uint64_t)1u << IDEMIP_DHCP6_CS_SHIFT),
-              "the reciprocal multiply drifts off floor(ms/100) inside the sec 21.9 range");
-static_assert(IDEMIP_DHCP6_ELAPSED_MAX_MS == 0xFFFFu * 100u,
-              "sec 21.9 caps elapsed-time at 0xffff hundredths of a second");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP6_CS_RECIP == ((1u << IDEMIP_DHCP6_CS_SHIFT) / 100u) + 1u,
+                    "IDEMIP_DHCP6_CS_RECIP is the rounded-up reciprocal of the sec 21.9 hundredth");
+EMBED_STATIC_ASSERT((uint64_t)((IDEMIP_DHCP6_CS_RECIP * 100u) - (1u << IDEMIP_DHCP6_CS_SHIFT)) *
+                            (uint64_t)IDEMIP_DHCP6_ELAPSED_MAX_MS <=
+                        ((uint64_t)1u << IDEMIP_DHCP6_CS_SHIFT),
+                    "the reciprocal multiply drifts off floor(ms/100) inside the sec 21.9 range");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP6_ELAPSED_MAX_MS == 0xFFFFu * 100u,
+                    "sec 21.9 caps elapsed-time at 0xffff hundredths of a second");
 // A deadline is compared by signed difference, so the widest span it holds stays under half the clock.
-static_assert(IDEMIP_DHCP6_MAX_DEADLINE_S * 1000u < 0x80000000u,
-              "IDEMIP_DHCP6_MAX_DEADLINE_S in milliseconds must stay under 2^31");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP6_MAX_DEADLINE_S * 1000u < 0x80000000u,
+                    "IDEMIP_DHCP6_MAX_DEADLINE_S in milliseconds must stay under 2^31");
 // sec 7.6 Table 1 in milliseconds, against the seconds it prints.
-static_assert(IDEMIP_DHCP6_SOL_MAX_RT_MS == 3600u * 1000u && IDEMIP_DHCP6_REQ_MAX_RT_MS == 30u * 1000u &&
-                  IDEMIP_DHCP6_CNF_MAX_RT_MS == 4u * 1000u && IDEMIP_DHCP6_CNF_MAX_RD_MS == 10u * 1000u &&
-                  IDEMIP_DHCP6_REN_TIMEOUT_MS == 10u * 1000u && IDEMIP_DHCP6_REN_MAX_RT_MS == 600u * 1000u &&
-                  IDEMIP_DHCP6_REB_TIMEOUT_MS == 10u * 1000u && IDEMIP_DHCP6_REB_MAX_RT_MS == 600u * 1000u &&
-                  IDEMIP_DHCP6_INF_MAX_RT_MS == 3600u * 1000u && IDEMIP_DHCP6_MAX_WAIT_TIME_MS == 60u * 1000u,
-              "the sec 7.6 Table 1 timeouts in milliseconds must match the seconds it prints");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP6_SOL_MAX_RT_MS == 3600u * 1000u && IDEMIP_DHCP6_REQ_MAX_RT_MS == 30u * 1000u &&
+                        IDEMIP_DHCP6_CNF_MAX_RT_MS == 4u * 1000u && IDEMIP_DHCP6_CNF_MAX_RD_MS == 10u * 1000u &&
+                        IDEMIP_DHCP6_REN_TIMEOUT_MS == 10u * 1000u && IDEMIP_DHCP6_REN_MAX_RT_MS == 600u * 1000u &&
+                        IDEMIP_DHCP6_REB_TIMEOUT_MS == 10u * 1000u && IDEMIP_DHCP6_REB_MAX_RT_MS == 600u * 1000u &&
+                        IDEMIP_DHCP6_INF_MAX_RT_MS == 3600u * 1000u && IDEMIP_DHCP6_MAX_WAIT_TIME_MS == 60u * 1000u,
+                    "the sec 7.6 Table 1 timeouts in milliseconds must match the seconds it prints");
 // The largest RAND term is over a whole MRT, so the product stays inside 32 bits.
-static_assert(IDEMIP_DHCP6_SOL_MAX_RT_MS <= (0xFFFFFFFFu / IDEMIP_DHCP6_RAND_K_MAX),
-              "the sec 15 RAND product over the widest MRT must stay inside 32 bits");
+EMBED_STATIC_ASSERT(IDEMIP_DHCP6_SOL_MAX_RT_MS <= (0xFFFFFFFFu / IDEMIP_DHCP6_RAND_K_MAX),
+                    "the sec 15 RAND product over the widest MRT must stay inside 32 bits");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

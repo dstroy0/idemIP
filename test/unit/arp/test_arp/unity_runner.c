@@ -3,9 +3,9 @@
 /*=======Automagically Detected Files To Include=====*/
 #include "unity.h"
 #include "src/arp/arp.h"
-#include "src/ethernet/ethernet_defines.h"
 #include "src/arp/arp_defines.h"
-#include <string.h>
+#include "src/ethernet/ethernet_defines.h"
+#include "support/fill_bytes.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);

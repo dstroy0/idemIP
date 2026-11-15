@@ -27,7 +27,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
 // What a received message asks the caller to do
@@ -129,7 +129,7 @@ typedef struct
     size_t out_cap;
     uint32_t if_addr;
     uint32_t if_mask;
-    idemip_bool link_bcast;
+    embed_bool link_bcast;
 } IcmpInRecvArgs;
 
 /**
@@ -163,7 +163,7 @@ typedef struct
     uint32_t now_ms;
     uint8_t type;
     uint8_t code;
-    idemip_bool link_bcast;
+    embed_bool link_bcast;
 } IcmpInErrArgs;
 
 /**
@@ -226,9 +226,9 @@ typedef struct
     uint16_t seq;
     uint8_t suppress;
     uint8_t tokens;
-    idemip_bool cksum_ok;
-    idemip_bool bad_len;
-    idemip_bool truncated;
+    embed_bool cksum_ok;
+    embed_bool bad_len;
+    embed_bool truncated;
 } IcmpInIo;
 
 // ---------------------------------------------------------------------------
@@ -301,11 +301,9 @@ void idemip_icmp_in_error(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const IcmpInNs IcmpIn IDEMIP_UNUSED = {
-    .clear = idemip_icmp_in_clear,
-    .recv = idemip_icmp_in_recv,
-    .error = idemip_icmp_in_error};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE IcmpInNs IcmpIn EMBED_UNUSED = {
+    .clear = idemip_icmp_in_clear, .recv = idemip_icmp_in_recv, .error = idemip_icmp_in_error};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

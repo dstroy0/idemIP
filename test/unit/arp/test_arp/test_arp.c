@@ -11,10 +11,10 @@
 
 #include "src/arp/arp.h"
 
-#include <string.h>
-#include <unity.h>
-#include "src/ethernet/ethernet_defines.h"
 #include "src/arp/arp_defines.h"
+#include "src/ethernet/ethernet_defines.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // The RFC's symbols, bound. EA is a 48-bit Ethernet address, IPA a 32-bit DOD Internet address.
 static const uint8_t EA_X[6] = {0x02, 0x1A, 0x2B, 0x3C, 0x4D, 0x5E};
@@ -59,8 +59,8 @@ static uint8_t alt[IDEMIP_ARP_LEN + PAD];
 
 static void arm(uint8_t *p)
 {
-    memset(p, 0xC3, IDEMIP_ARP_LEN);
-    memset(p + IDEMIP_ARP_LEN, CANARY, PAD);
+    fill_bytes(p, 0xC3, IDEMIP_ARP_LEN);
+    fill_bytes(p + IDEMIP_ARP_LEN, CANARY, PAD);
 }
 
 static void check_canary(const uint8_t *p)
@@ -198,20 +198,20 @@ void test_is_target_answers_the_reception_question(void)
 // for <ar$hrd, ar$pro, ar$hln, ar$pln> = <1, 0x0800, 6, 4>.
 void test_is_ethernet_ipv4_rejects_any_other_pairing(void)
 {
-    memcpy(buf, REQ, IDEMIP_ARP_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = REQ, .size = IDEMIP_ARP_LEN);
     TEST_ASSERT_TRUE(idemip_arp_is_ethernet_ipv4(buf));
 
     buf[IDEMIP_ARP_OFF_HRD + 1u] = 3u; // a packet radio net, not Ethernet
     TEST_ASSERT_FALSE(idemip_arp_is_ethernet_ipv4(buf));
-    memcpy(buf, REQ, IDEMIP_ARP_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = REQ, .size = IDEMIP_ARP_LEN);
 
     buf[IDEMIP_ARP_OFF_PRO + 1u] = 0x35u; // some other ether_type$
     TEST_ASSERT_FALSE(idemip_arp_is_ethernet_ipv4(buf));
-    memcpy(buf, REQ, IDEMIP_ARP_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = REQ, .size = IDEMIP_ARP_LEN);
 
     buf[IDEMIP_ARP_OFF_HLN] = 8u;
     TEST_ASSERT_FALSE(idemip_arp_is_ethernet_ipv4(buf));
-    memcpy(buf, REQ, IDEMIP_ARP_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = REQ, .size = IDEMIP_ARP_LEN);
 
     buf[IDEMIP_ARP_OFF_PLN] = 16u;
     TEST_ASSERT_FALSE(idemip_arp_is_ethernet_ipv4(buf));
@@ -237,7 +237,7 @@ void test_build_reply_matches_the_vector(void)
 // the reply's, byte for byte.
 void test_reply_in_place_turns_the_request_into_the_reply(void)
 {
-    memcpy(buf, REQ, IDEMIP_ARP_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = REQ, .size = IDEMIP_ARP_LEN);
     idemip_arp_reply_in_place(buf, EA_Y);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(REP, buf, IDEMIP_ARP_LEN);
 }
@@ -248,8 +248,8 @@ void test_reply_in_place_turns_the_request_into_the_reply(void)
 // the swap overwrites ar$tha with the requester's ar$sha.
 void test_reply_in_place_ignores_whatever_ar_tha_arrived_as(void)
 {
-    memcpy(buf, REQ, IDEMIP_ARP_LEN);
-    memset(buf + IDEMIP_ARP_OFF_THA, 0xFF, IDEMIP_ARP_HLN_ETHERNET);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = REQ, .size = IDEMIP_ARP_LEN);
+    fill_bytes(buf + IDEMIP_ARP_OFF_THA, 0xFF, IDEMIP_ARP_HLN_ETHERNET);
     idemip_arp_reply_in_place(buf, EA_Y);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(REP, buf, IDEMIP_ARP_LEN);
 }
@@ -259,7 +259,7 @@ void test_reply_in_place_ignores_whatever_ar_tha_arrived_as(void)
 void test_a_build_is_a_function_of_its_arguments(void)
 {
     idemip_arp_build_request(buf, EA_X, IPA_X, IPA_Y);
-    memset(alt, 0x00, IDEMIP_ARP_LEN);
+    mmgr_zero_buf(alt, IDEMIP_ARP_LEN);
     idemip_arp_build_request(alt, EA_X, IPA_X, IPA_Y);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(buf, alt, IDEMIP_ARP_LEN);
 
@@ -287,8 +287,8 @@ void test_build_request_carries_a_zero_sender_protocol_address(void)
 void test_a_padded_frame_still_parses(void)
 {
     uint8_t padded[IDEMIP_ETH_MIN_PAYLOAD];
-    memset(padded, 0, sizeof padded);
-    memcpy(padded, REQ, IDEMIP_ARP_LEN);
+    mmgr_zero_buf(padded, sizeof padded);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = padded, .at = REQ, .size = IDEMIP_ARP_LEN);
     TEST_ASSERT_TRUE(IDEMIP_ARP_LEN < IDEMIP_ETH_MIN_PAYLOAD);
     TEST_ASSERT_TRUE(idemip_arp_is_ethernet_ipv4(padded));
     TEST_ASSERT_EQUAL_HEX32(IPA_Y, idemip_arp_tpa(padded));

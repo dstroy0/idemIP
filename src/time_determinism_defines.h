@@ -30,8 +30,9 @@
 #define IDEMIP_CLOCK_PAD_STATE_MASK 0x3u
 
 // The pad and the state fill the word and do not overlap.
-static_assert((IDEMIP_CLOCK_PAD_MASK & (IDEMIP_CLOCK_PAD_STATE_MASK << IDEMIP_CLOCK_PAD_SHIFT)) == 0u &&
-                  (IDEMIP_CLOCK_PAD_MASK | (IDEMIP_CLOCK_PAD_STATE_MASK << IDEMIP_CLOCK_PAD_SHIFT)) == 0xFFFFFFFFu,
-              "the pad and the state must fill the word and must not overlap");
+EMBED_STATIC_ASSERT((IDEMIP_CLOCK_PAD_MASK & (IDEMIP_CLOCK_PAD_STATE_MASK << IDEMIP_CLOCK_PAD_SHIFT)) == 0u &&
+                        (IDEMIP_CLOCK_PAD_MASK | (IDEMIP_CLOCK_PAD_STATE_MASK << IDEMIP_CLOCK_PAD_SHIFT)) ==
+                            0xFFFFFFFFu,
+                    "the pad and the state must fill the word and must not overlap");
 
 #endif // IDEMIP_TIME_DETERMINISM_DEFINES_H

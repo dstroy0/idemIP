@@ -31,7 +31,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief The Redirect type of RFC 4861 sec 4.5, which RFC 4443 sec 2.4 (e.2) names.
@@ -121,7 +121,7 @@ typedef struct
     uint8_t *out;
     size_t out_cap;
     const uint8_t *if_addr;
-    idemip_bool dst_anycast;
+    embed_bool dst_anycast;
 } Icmp6InRecvArgs;
 
 /**
@@ -164,10 +164,10 @@ typedef struct
     uint32_t now_ms;
     uint8_t type;
     uint8_t code;
-    idemip_bool link_mcast;
-    idemip_bool link_bcast;
-    idemip_bool src_anycast;
-    idemip_bool dst_local_unicast;
+    embed_bool link_mcast;
+    embed_bool link_bcast;
+    embed_bool src_anycast;
+    embed_bool dst_local_unicast;
 } Icmp6InErrArgs;
 
 /**
@@ -235,9 +235,9 @@ typedef struct
     uint8_t proto;
     uint8_t suppress;
     uint8_t tokens;
-    idemip_bool cksum_ok;
-    idemip_bool bad_len;
-    idemip_bool truncated;
+    embed_bool cksum_ok;
+    embed_bool bad_len;
+    embed_bool truncated;
 } Icmp6InIo;
 
 // ---------------------------------------------------------------------------
@@ -310,11 +310,9 @@ void idemip_icmp6_in_error(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Icmp6InNs Icmp6In IDEMIP_UNUSED = {
-    .clear = idemip_icmp6_in_clear,
-    .recv = idemip_icmp6_in_recv,
-    .error = idemip_icmp6_in_error};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE Icmp6InNs Icmp6In EMBED_UNUSED = {
+    .clear = idemip_icmp6_in_clear, .recv = idemip_icmp6_in_recv, .error = idemip_icmp6_in_error};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

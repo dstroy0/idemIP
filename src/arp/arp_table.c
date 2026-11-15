@@ -16,7 +16,7 @@
 #include "src/ethernet/ethernet_defines.h"
 #include "src/arp/arp_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads zero here and every
 // entry refuses it, because a zeroed borrow reads each list link as row zero and not as
@@ -70,34 +70,35 @@ IDEMIP_ASSERT_REGION(IDEMIP_ARP_OFF_CTX, sizeof(ArpCtx), IDEMIP_ARP_OFF_TAB, "ar
 
 // What a hold is doing. A hold off every row list still pins a descriptor, so it stays taken until
 // tick hands the descriptor back.
-typedef enum IDEMIP_ENUM_PACKED
-{
-    ARP_HOLD_FREE = 0, ///< no descriptor in this hold
-    ARP_HOLD_WAIT,     ///< linked on row ArpPending::entry, waiting for its triplet
-    ARP_HOLD_RECLAIM,  ///< off every row, its descriptor waiting to be handed back
-} ArpHoldState;
+EMBED_ENUM_BYTE(ArpHoldState,
+                ARP_HOLD_FREE = 0, ///< no descriptor in this hold
+                ARP_HOLD_WAIT,     ///< linked on row ArpPending::entry, waiting for its triplet
+                ARP_HOLD_RECLAIM,  ///< off every row, its descriptor waiting to be handed back
+);
 
 // Row i is at (i << SHIFT), so the width has to be exactly the shift.
-static_assert(sizeof(ArpEntry) == (1u << IDEMIP_ARP_ENTRY_SHIFT),
-              "an ArpEntry must be exactly 1 << IDEMIP_ARP_ENTRY_SHIFT wide - pad it, or raise the shift");
-static_assert(sizeof(ArpPending) == (1u << IDEMIP_ARP_PENDING_ENTRY_SHIFT),
-              "an ArpPending must be exactly 1 << IDEMIP_ARP_PENDING_ENTRY_SHIFT wide - pad it, or raise the shift");
+EMBED_STATIC_ASSERT(sizeof(ArpEntry) == (1u << IDEMIP_ARP_ENTRY_SHIFT),
+                    "an ArpEntry must be exactly 1 << IDEMIP_ARP_ENTRY_SHIFT wide - pad it, or raise the shift");
+EMBED_STATIC_ASSERT(
+    sizeof(ArpPending) == (1u << IDEMIP_ARP_PENDING_ENTRY_SHIFT),
+    "an ArpPending must be exactly 1 << IDEMIP_ARP_PENDING_ENTRY_SHIFT wide - pad it, or raise the shift");
 
 // The head region carries the operand block and the context, both outside either table.
-static_assert(IDEMIP_ARP_OFF_CTX + sizeof(ArpCtx) <= IDEMIP_ARP_CTX_BYTES,
-              "IDEMIP_ARP_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_OFF_CTX + sizeof(ArpCtx) <= IDEMIP_ARP_CTX_BYTES,
+                    "IDEMIP_ARP_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
 
 // The caller's borrow, split: the head region, then the rows, then the holds. arp_table.h publishes
 // the offsets; the assert proves the span covers them before anything runs.
-static_assert(IDEMIP_ARP_OFF_PENDING + (IDEMIP_ARP_PENDING << IDEMIP_ARP_PENDING_ENTRY_SHIFT) <= IDEMIP_ARP_BORROW,
-              "IDEMIP_ARP_BORROW is short of the head region and both tables - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_OFF_PENDING + (IDEMIP_ARP_PENDING << IDEMIP_ARP_PENDING_ENTRY_SHIFT) <=
+                        IDEMIP_ARP_BORROW,
+                    "IDEMIP_ARP_BORROW is short of the head region and both tables - raise it in idemip_config.h");
 
 // clear zeroes both tables, so the empty row and the empty hold are the zero state.
-static_assert(IDEMIP_ARP_STATE_FREE == 0, "IDEMIP_ARP_STATE_FREE must be zero: clear zeroes the tables");
-static_assert(ARP_HOLD_FREE == 0, "ARP_HOLD_FREE must be zero: clear zeroes the tables");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_STATE_FREE == 0, "IDEMIP_ARP_STATE_FREE must be zero: clear zeroes the tables");
+EMBED_STATIC_ASSERT(ARP_HOLD_FREE == 0, "ARP_HOLD_FREE must be zero: clear zeroes the tables");
 
 // A hold count is the one octet of ArpCtx::held.
-static_assert(IDEMIP_ARP_PENDING <= 0xFFu, "IDEMIP_ARP_PENDING exceeds the one-octet ArpCtx::held");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_PENDING <= 0xFFu, "IDEMIP_ARP_PENDING exceeds the one-octet ArpCtx::held");
 
 // Every deadline is milliseconds (PLAN sec 5.2), and each span is compared as (now - stamp), so a
 // span has to stay under half the range of the 32-bit stamp for the compare to survive a wrap.
@@ -109,10 +110,10 @@ static_assert(IDEMIP_ARP_PENDING <= 0xFFu, "IDEMIP_ARP_PENDING exceeds the one-o
 // second per destination."
 #define ARP_REQUEST_MIN_MS 1000u
 
-static_assert(ARP_MAXAGE_MS < 0x80000000u,
-              "IDEMIP_ARP_MAXAGE_S past half the millisecond range breaks the wrap compare");
-static_assert(ARP_MAXPENDING_MS < 0x80000000u,
-              "IDEMIP_ARP_MAXPENDING_S past half the millisecond range breaks the wrap compare");
+EMBED_STATIC_ASSERT(ARP_MAXAGE_MS < 0x80000000u,
+                    "IDEMIP_ARP_MAXAGE_S past half the millisecond range breaks the wrap compare");
+EMBED_STATIC_ASSERT(ARP_MAXPENDING_MS < 0x80000000u,
+                    "IDEMIP_ARP_MAXPENDING_S past half the millisecond range breaks the wrap compare");
 
 // The regions, at their offsets in the caller's borrow.
 #define ARP_IO(w) IDEMIP_ARP_IO(w)
@@ -124,16 +125,16 @@ static_assert(ARP_MAXPENDING_MS < 0x80000000u,
 #define ARP_NONE ((uint8_t)IDEMIP_ARP_INDEX_NONE)
 
 // A borrow clear has not run on holds no list terminator, so every entry but clear refuses it.
-static idemip_bool arp_ready(uint8_t *work)
+static embed_bool arp_ready(uint8_t *work)
 {
-    return (idemip_bool)(ARP_CTX(work)->ready == ARP_READY);
+    return (embed_bool)(ARP_CTX(work)->ready == ARP_READY);
 }
 
 // True when @p now_ms is at or past @p deadline_ms. The difference is read in the low half of the
 // 32-bit range, so a clock that wrapped past the deadline still reads as due.
-static idemip_bool arp_due(uint32_t now_ms, uint32_t deadline_ms)
+static embed_bool arp_due(uint32_t now_ms, uint32_t deadline_ms)
 {
-    return (idemip_bool)((now_ms - deadline_ms) < 0x80000000u);
+    return (embed_bool)((now_ms - deadline_ms) < 0x80000000u);
 }
 
 // --- the statics -----------------------------------------------------------
@@ -175,7 +176,7 @@ static void arp_row_free(uint8_t *work, uint8_t i)
         p->state = (uint8_t)ARP_HOLD_RECLAIM;
         h = next;
     }
-    memset(e, 0, sizeof *e);
+    *e = (ArpEntry){0};
     e->pending = ARP_NONE;
 }
 
@@ -221,7 +222,7 @@ static uint8_t arp_row_take(uint8_t *work, uint32_t now_ms)
 static void arp_row_open(uint8_t *work, uint8_t i, uint16_t pro, uint32_t spa, uint32_t now_ms)
 {
     ArpEntry *e = ARP_AT(work, i);
-    memset(e, 0, sizeof *e);
+    *e = (ArpEntry){0};
     e->pro = pro;
     e->spa = spa;
     e->used_ms = now_ms;
@@ -236,18 +237,18 @@ static void arp_row_open(uint8_t *work, uint8_t i, uint16_t pro, uint32_t spa, u
 // pair that is not in the table out of it, which is what keeps a REQUEST for a third party from
 // creating a row. Reports the row, or ARP_NONE when nothing was merged and nothing was added.
 static uint8_t arp_learn(uint8_t *work, uint16_t pro, uint32_t spa, const uint8_t *sha, uint8_t netif, uint32_t now_ms,
-                         idemip_bool add_absent, idemip_bool *merged)
+                         embed_bool add_absent, embed_bool *merged)
 {
     // RFC 1812 sec 3.3.2: "A router MUST not believe any ARP reply that claims that the Link Layer
     // address of another host or router is a broadcast or multicast address." Bit 0 of the first
     // octet is the group bit, which the broadcast address and every multicast group address carry.
     if ((sha[0] & 0x01u) != 0u)
     {
-        *merged = IDEMIP_FALSE;
+        *merged = EMBED_FALSE;
         return ARP_NONE;
     }
     uint8_t i = arp_row_find(work, pro, spa);
-    *merged = (idemip_bool)(i != ARP_NONE);
+    *merged = (embed_bool)(i != ARP_NONE);
     if (i == ARP_NONE)
     {
         if (!add_absent)
@@ -263,7 +264,7 @@ static uint8_t arp_learn(uint8_t *work, uint16_t pro, uint32_t spa, const uint8_
         arp_row_open(work, i, pro, spa, now_ms);
     }
     ArpEntry *e = ARP_AT(work, i);
-    memcpy(e->sha, sha, IDEMIP_ARP_HLN_ETHERNET);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = e->sha, .at = sha, .size = IDEMIP_ARP_HLN_ETHERNET);
     e->state = (uint8_t)IDEMIP_ARP_STATE_STABLE;
     e->netif = netif;
     e->used_ms = now_ms; // RFC 1122 sec 2.3.2.1: the timeout restarts when the entry is refreshed
@@ -392,7 +393,7 @@ static void arp_expire_holds(uint8_t *work, uint32_t now_ms)
 
 // One reclaimable hold's descriptor, into the operand block, and the hold goes free. len is the
 // octets of a frame, never zero, so it is what tells a handed-back descriptor from a REQUEST report.
-static idemip_bool arp_report_reclaim(uint8_t *work)
+static embed_bool arp_report_reclaim(uint8_t *work)
 {
     ArpTableIo *io = ARP_IO(work);
     for (uint8_t h = 0u; h < (uint8_t)IDEMIP_ARP_PENDING; h++)
@@ -405,7 +406,7 @@ static idemip_bool arp_report_reclaim(uint8_t *work)
         io->desc = p->desc;
         io->len = p->len;
         io->ip = p->spa;
-        memset(p, 0, sizeof *p);
+        *p = (ArpPending){0};
         // Not measured on the empty arm: the count rises with the hold that is being given back
         // here, so it cannot be at zero while one is in hand. It is written because the count is what
         // idemip_arp_queue reads to refuse a packet, and a count that wrapped would refuse every one.
@@ -413,15 +414,15 @@ static idemip_bool arp_report_reclaim(uint8_t *work)
         {
             ARP_CTX(work)->held--;
         }
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 // The address of one row a REQUEST is due for, into the operand block. RFC 1122 sec 2.3.2.1 holds the
 // rate to one per second per destination, so a row that has had one inside ARP_REQUEST_MIN_MS is
 // passed over; a row that has had none is due at once.
-static idemip_bool arp_report_request(uint8_t *work, uint32_t now_ms)
+static embed_bool arp_report_request(uint8_t *work, uint32_t now_ms)
 {
     ArpTableIo *io = ARP_IO(work);
     for (uint8_t i = 0u; i < (uint8_t)IDEMIP_ARP_ENTRIES; i++)
@@ -449,9 +450,9 @@ static idemip_bool arp_report_request(uint8_t *work, uint32_t now_ms)
         io->index = i;
         io->state = IDEMIP_ARP_STATE_PENDING;
         io->netif = e->netif;
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 // --- the entries -----------------------------------------------------------
@@ -464,7 +465,8 @@ void idemip_arp_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_ARP_OFF_CTX, 0, (size_t)IDEMIP_ARP_BORROW - IDEMIP_ARP_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_ARP_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_ARP_BORROW - IDEMIP_ARP_OFF_CTX);
     ARP_CTX(work)->ready = ARP_READY;
     ARP_IO(work)->status = IDEMIP_OK;
 }
@@ -481,7 +483,7 @@ void idemip_arp_add(uint8_t *work)
     ArpTableIo *io = ARP_IO(work);
     io->status = IDEMIP_ERR;
     io->index = ARP_NONE;
-    io->merged = IDEMIP_FALSE;
+    io->merged = EMBED_FALSE;
     if (!arp_ready(work))
     {
         return;
@@ -492,9 +494,9 @@ void idemip_arp_add(uint8_t *work)
     {
         return;
     }
-    idemip_bool merged = IDEMIP_FALSE;
+    embed_bool merged = EMBED_FALSE;
     uint8_t i = arp_learn(work, io->add_args.pro, io->add_args.spa, io->add_args.sha, io->add_args.netif, io->now_ms,
-                          IDEMIP_TRUE, &merged);
+                          EMBED_TRUE, &merged);
     if (i == ARP_NONE)
     {
         io->status = IDEMIP_BUSY;
@@ -603,9 +605,9 @@ void idemip_arp_input(uint8_t *work)
     }
     ArpTableIo *io = ARP_IO(work);
     io->status = IDEMIP_ERR;
-    io->merged = IDEMIP_FALSE;
-    io->reply_owed = IDEMIP_FALSE;
-    io->conflict = IDEMIP_FALSE;
+    io->merged = EMBED_FALSE;
+    io->reply_owed = EMBED_FALSE;
+    io->conflict = EMBED_FALSE;
     io->index = ARP_NONE;
     if (!arp_ready(work))
     {
@@ -625,15 +627,15 @@ void idemip_arp_input(uint8_t *work)
     // "?Am I the target protocol address?" RFC 1122 sec 3.2.1.3 (a) makes {0,0} no host's address,
     // so an end without one is the target of nothing.
     uint32_t local_pa = io->input_args.local_pa;
-    idemip_bool target = (idemip_bool)(local_pa != 0u && idemip_arp_is_target(packet, local_pa));
+    embed_bool target = (embed_bool)(local_pa != 0u && idemip_arp_is_target(packet, local_pa));
     uint32_t spa = idemip_arp_spa(packet);
     // RFC 5227 sec 2.4: a packet whose sender IP address is this end's own is a conflicting ARP
     // packet. Keying a row on it would point this end's own address at another station's hardware
     // address, so it is reported to the caller for sec 2.4's (a), (b) or (c) and learned from never.
-    io->conflict = (idemip_bool)(local_pa != 0u && spa == local_pa);
+    io->conflict = (embed_bool)(local_pa != 0u && spa == local_pa);
     if (spa != 0u && !io->conflict)
     {
-        idemip_bool merged = IDEMIP_FALSE;
+        embed_bool merged = EMBED_FALSE;
         uint8_t i = arp_learn(work, idemip_arp_pro(packet), spa, idemip_arp_sha(packet), io->input_args.netif,
                               io->now_ms, target, &merged);
         io->merged = merged;
@@ -651,7 +653,7 @@ void idemip_arp_input(uint8_t *work)
     // sec 2.5 carves the conflicting packet out of that obligation: the REPLY is owed "whenever a
     // host receives an ARP Request, that's not a conflicting ARP packet as described above in
     // Section 2.4".
-    io->reply_owed = (idemip_bool)(target && !io->conflict && idemip_arp_is_request(packet));
+    io->reply_owed = (embed_bool)(target && !io->conflict && idemip_arp_is_request(packet));
     io->status = IDEMIP_OK;
 }
 
@@ -764,7 +766,7 @@ void idemip_arp_dequeue(uint8_t *work)
         io->state = IDEMIP_ARP_STATE_STABLE;
         io->netif = e->netif;
         io->mac = e->sha;
-        memset(p, 0, sizeof *p);
+        *p = (ArpPending){0};
         // Not measured on the empty arm: the count rises with the hold that is being given back
         // here, so it cannot be at zero while one is in hand. It is written because the count is what
         // idemip_arp_queue reads to refuse a packet, and a count that wrapped would refuse every one.
@@ -823,4 +825,4 @@ void idemip_arp_tick(uint8_t *work)
     io->status = IDEMIP_BUSY;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

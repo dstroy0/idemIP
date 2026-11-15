@@ -21,7 +21,7 @@
 #include "src/common.h"
 #include "src/endian.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief Dispatch table. Addressed by offset, so the layout is asserted below. */
 typedef struct
@@ -29,9 +29,9 @@ typedef struct
     uint32_t (*accum)(uint32_t sum, const uint8_t *p, size_t len);
     uint16_t (*final)(uint32_t sum);
     uint16_t (*cksum)(const uint8_t *p, size_t len);
-    idemip_bool (*valid)(const uint8_t *p, size_t len);
+    embed_bool (*valid)(const uint8_t *p, size_t len);
 } ChecksumNs;
-IDEMIP_NS_LAYOUT(ChecksumNs, accum, final, cksum, valid);
+EMBED_TABLE_LAYOUT(ChecksumNs, accum, final, cksum, valid);
 
 /** @name The entries the table points at.
  *  @brief Nameable so a static const table can name them, and for no other reason. The table is
@@ -40,7 +40,7 @@ IDEMIP_NS_LAYOUT(ChecksumNs, accum, final, cksum, valid);
 uint32_t idemip_cksum_accum(uint32_t sum, const uint8_t *p, size_t len);
 uint16_t idemip_cksum_final(uint32_t sum);
 uint16_t idemip_cksum(const uint8_t *p, size_t len);
-idemip_bool idemip_cksum_valid(const uint8_t *p, size_t len);
+embed_bool idemip_cksum_valid(const uint8_t *p, size_t len);
 /** @} */
 
 /**
@@ -50,13 +50,13 @@ idemip_bool idemip_cksum_valid(const uint8_t *p, size_t len);
  * inlined body and cannot do that through an extern one, where the table is in another
  * translation unit and every call is a load and an indirect jump.
  */
-IDEMIP_NS ChecksumNs cksum IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE ChecksumNs cksum EMBED_UNUSED = {
     .accum = idemip_cksum_accum,
     .final = idemip_cksum_final,
     .cksum = idemip_cksum,
     .valid = idemip_cksum_valid,
 };
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_CHECKSUM_H

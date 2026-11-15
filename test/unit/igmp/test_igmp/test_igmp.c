@@ -17,14 +17,16 @@
 
 #include "src/igmp/igmp.h"
 
-#include <string.h>
+#include "support/borrows.h"
 #include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each so a
 // write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(IDEMIP_ALIGN) uint8_t work_a[IDEMIP_IGMP_BORROW + 16];
-static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_IGMP_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_IGMP_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_IGMP_BORROW + 16))
+static uint8_t *work_b;
 
 // The span clear owns: the context and the group table.
 #define STATE_OFF ((size_t)IDEMIP_IGMP_OFF_CTX)
@@ -38,8 +40,8 @@ static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_IGMP_BORROW + 16];
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_IGMP_BORROW, CANARY, cap - IDEMIP_IGMP_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_IGMP_BORROW, .val = CANARY, .bytes = cap - IDEMIP_IGMP_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -52,14 +54,16 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_igmp);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_igmp);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // Every entry, in namespace order, so a new one added to IgmpNs is added here too.
@@ -110,12 +114,12 @@ typedef struct
 {
     uint8_t *w;
     uint8_t netif;
-    idemip_bool general;
+    embed_bool general;
     uint32_t group;
     uint32_t max_resp_ms;
     uint32_t now_ms;
     uint32_t rand;
-    idemip_bool v1;
+    embed_bool v1;
 } QueryAtArgs;
 
 static void query_at_ctx(const QueryAtArgs *args)
@@ -130,7 +134,7 @@ static void query_at_ctx(const QueryAtArgs *args)
     Igmp.query_in(args->w);
 }
 
-#define query_at(...) IDEMIP_CALL(query_at_ctx, QueryAtArgs, __VA_ARGS__)
+#define query_at(...) EMBED_CALL(query_at_ctx, QueryAtArgs, __VA_ARGS__)
 
 static void report_at(uint8_t *w, uint32_t group, uint8_t netif)
 {
@@ -213,7 +217,7 @@ void test_two_borrows_share_no_byte(void)
 // this module has.
 void test_clear_on_one_borrow_leaves_the_other_untouched(void)
 {
-    memset(work_b + STATE_OFF, 0xC3, STATE_END - STATE_OFF);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b + STATE_OFF, .val = 0xC3, .bytes = STATE_END - STATE_OFF);
     IDEMIP_IGMP_IO(work_b)->group_args.group = GROUP_B;
 
     Igmp.clear(work_a);
@@ -297,7 +301,7 @@ void test_no_entry_leaves_a_stale_send_leave_behind(void)
     join_ok(work_a, GROUP_A, 0u, 0u, 0u);
     join_ok(work_a, GROUP_B, 0u, 0u, 0u);
     leave_at(work_a, GROUP_A, 0u);
-    query_at(work_a, 0u, IDEMIP_TRUE, 0u, 10000u, 0u, 0u, IDEMIP_FALSE);
+    query_at(work_a, 0u, EMBED_TRUE, 0u, 10000u, 0u, 0u, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
     TEST_ASSERT_FALSE(IDEMIP_IGMP_IO(work_a)->send_leave);
 }
@@ -345,7 +349,7 @@ void test_clear_reports_ok(void)
 // Non-Member state that "requires no storage in the host".
 void test_clear_zeroes_the_table(void)
 {
-    memset(work_a, 0xFF, IDEMIP_IGMP_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_IGMP_BORROW);
     Igmp.clear(work_a);
     for (size_t i = TABLE_OFF; i < STATE_END; i++)
     {
@@ -357,7 +361,7 @@ void test_clear_zeroes_the_table(void)
 // cleared borrow from one no one cleared.
 void test_clear_zeroes_the_context_apart_from_the_mark(void)
 {
-    memset(work_a, 0xFF, IDEMIP_IGMP_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_IGMP_BORROW);
     Igmp.clear(work_a);
     size_t set = 0;
     for (size_t i = STATE_OFF; i < TABLE_OFF; i++)
@@ -374,8 +378,8 @@ void test_clear_zeroes_the_context_apart_from_the_mark(void)
 // Whatever the region held, clear takes it to one state, so no stale membership survives.
 void test_clear_takes_the_regions_to_one_state(void)
 {
-    memset(work_a, 0x00, IDEMIP_IGMP_BORROW);
-    memset(work_b, 0xFF, IDEMIP_IGMP_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0x00, .bytes = IDEMIP_IGMP_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b, .val = 0xFF, .bytes = IDEMIP_IGMP_BORROW);
     Igmp.clear(work_a);
     Igmp.clear(work_b);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(work_a + STATE_OFF, work_b + STATE_OFF, STATE_END - STATE_OFF);
@@ -394,9 +398,9 @@ void test_clear_leaves_the_operand_block_alone(void)
 // An entry is a function of its borrow alone, so clearing twice leaves the same bytes as clearing once.
 void test_clear_is_idempotent(void)
 {
-    memset(work_a, 0xFF, IDEMIP_IGMP_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_IGMP_BORROW);
     Igmp.clear(work_a);
-    memcpy(work_b, work_a, IDEMIP_IGMP_BORROW);
+    EMBED_CALL(memor.cpy, MemoriaCfg, .dst = work_b, .src = work_a, .bytes = IDEMIP_IGMP_BORROW);
     Igmp.clear(work_a);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(work_b + STATE_OFF, work_a + STATE_OFF, STATE_END - STATE_OFF);
 }
@@ -573,7 +577,7 @@ void test_the_host_timers_are_the_ones_rfc_2236_prints(void)
 // =============================================================================
 
 // A second interface has to be a second interface for the sec 4 and sec 6 per-interface cases below.
-static_assert(IDEMIP_NETIF_COUNT >= 2u, "test_igmp's per-interface cases need IDEMIP_NETIF_COUNT >= 2");
+EMBED_STATIC_ASSERT(IDEMIP_NETIF_COUNT >= 2u, "test_igmp's per-interface cases need IDEMIP_NETIF_COUNT >= 2");
 
 // The RFC 2236 sec 2.2 field values the RFC prints, in milliseconds.
 #define MAXRESP_10S (100u * IDEMIP_IGMP_MAX_RESP_UNIT_MS)    // sec 8.3 Query Response Interval
@@ -752,7 +756,7 @@ void test_a_general_query_arms_every_membership_on_its_own_interface_only(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_IGMP_IDLE_MEMBER, state_of(work_a, GROUP_B, 0u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_IGMP_IDLE_MEMBER, state_of(work_a, GROUP_C, 1u));
 
-    query_at(work_a, 0u, IDEMIP_TRUE, 0u, MAXRESP_10S, 1000u, 0xA5A5A5A5u, IDEMIP_FALSE);
+    query_at(work_a, 0u, EMBED_TRUE, 0u, MAXRESP_10S, 1000u, 0xA5A5A5A5u, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
 
     TEST_ASSERT_EQUAL_INT(IDEMIP_IGMP_DELAYING_MEMBER, state_of(work_a, GROUP_A, 0u));
@@ -771,7 +775,7 @@ void test_a_group_specific_query_arms_only_the_group_it_names(void)
     run_timer_out(work_a, 100u);
     run_timer_out(work_a, 100u);
 
-    query_at(work_a, 0u, IDEMIP_FALSE, GROUP_B, MAXRESP_1S, 1000u, 0xFFFFFFFFu, IDEMIP_FALSE);
+    query_at(work_a, 0u, EMBED_FALSE, GROUP_B, MAXRESP_1S, 1000u, 0xFFFFFFFFu, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
     TEST_ASSERT_EQUAL_HEX32(GROUP_B, IDEMIP_IGMP_IO(work_a)->group);
 
@@ -793,7 +797,7 @@ void test_a_query_draws_over_the_whole_max_response_time(void)
     {
         report_at(work_a, GROUP_A, 0u); // another host's Report returns it to Idle Member
         TEST_ASSERT_EQUAL_INT(IDEMIP_IGMP_IDLE_MEMBER, IDEMIP_IGMP_IO(work_a)->state);
-        query_at(work_a, 0u, IDEMIP_FALSE, GROUP_A, MAXRESP_10S, 4000u, hi << 16, IDEMIP_FALSE);
+        query_at(work_a, 0u, EMBED_FALSE, GROUP_A, MAXRESP_10S, 4000u, hi << 16, EMBED_FALSE);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
         uint32_t drawn = deadline_of(work_a, GROUP_A, 0u) - 4000u;
         TEST_ASSERT_GREATER_THAN_UINT32(0u, drawn);
@@ -815,7 +819,7 @@ void test_a_general_query_gives_each_timer_a_different_value(void)
     run_timer_out(work_a, 100u);
     run_timer_out(work_a, 100u);
 
-    query_at(work_a, 0u, IDEMIP_TRUE, 0u, MAXRESP_10S, 1000u, 0x12345678u, IDEMIP_FALSE);
+    query_at(work_a, 0u, EMBED_TRUE, 0u, MAXRESP_10S, 1000u, 0x12345678u, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
     TEST_ASSERT_NOT_EQUAL_UINT32_MESSAGE(deadline_of(work_a, GROUP_A, 0u), deadline_of(work_a, GROUP_B, 0u),
                                          "sec 3 sets each timer to a different random value");
@@ -830,13 +834,13 @@ void test_a_running_timer_is_reset_only_by_a_shorter_max_response_time(void)
     TEST_ASSERT_EQUAL_UINT32(IDEMIP_IGMP_UNSOLICITED_REPORT_MS, deadline_of(work_a, GROUP_A, 0u));
 
     // 10 s requested against 10 s remaining is not less, so the running timer stands.
-    query_at(work_a, 0u, IDEMIP_TRUE, 0u, MAXRESP_10S, 0u, 0x1u, IDEMIP_FALSE);
+    query_at(work_a, 0u, EMBED_TRUE, 0u, MAXRESP_10S, 0u, 0x1u, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(IDEMIP_IGMP_UNSOLICITED_REPORT_MS, deadline_of(work_a, GROUP_A, 0u),
                                      "a timer was reset by a Max Response Time that was not shorter");
 
     // 1 s requested against 10 s remaining is less, so it is reset inside the shorter interval.
-    query_at(work_a, 0u, IDEMIP_TRUE, 0u, MAXRESP_1S, 0u, 0xFFFFFFFFu, IDEMIP_FALSE);
+    query_at(work_a, 0u, EMBED_TRUE, 0u, MAXRESP_1S, 0u, 0xFFFFFFFFu, EMBED_FALSE);
     TEST_ASSERT_EQUAL_UINT32(MAXRESP_1S, deadline_of(work_a, GROUP_A, 0u));
 }
 
@@ -848,7 +852,7 @@ void test_a_query_never_sends_a_report_itself(void)
     join_ok(work_a, GROUP_A, 0u, 0u, 0u);
     run_timer_out(work_a, 100u);
 
-    query_at(work_a, 0u, IDEMIP_TRUE, 0u, MAXRESP_10S, 1000u, 0xFFFFFFFFu, IDEMIP_FALSE);
+    query_at(work_a, 0u, EMBED_TRUE, 0u, MAXRESP_10S, 1000u, 0xFFFFFFFFu, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
     TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IGMP_IO(work_a)->send_report, "sec 6 query received only starts a timer");
 }
@@ -860,7 +864,7 @@ void test_a_query_for_a_group_the_host_has_not_joined_changes_nothing(void)
     Igmp.clear(work_a);
     join_ok(work_a, GROUP_A, 0u, 0u, 0xFFFFFFFFu);
 
-    query_at(work_a, 0u, IDEMIP_FALSE, GROUP_B, MAXRESP_1S, 0u, 0xFFFFFFFFu, IDEMIP_FALSE);
+    query_at(work_a, 0u, EMBED_FALSE, GROUP_B, MAXRESP_1S, 0u, 0xFFFFFFFFu, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_IGMP_NONE, IDEMIP_IGMP_IO(work_a)->index);
 
@@ -877,11 +881,11 @@ void test_a_max_response_time_wider_than_the_field_can_carry_is_refused(void)
     join_ok(work_a, GROUP_A, 0u, 0u, 0u);
     run_timer_out(work_a, 100u);
 
-    query_at(work_a, 0u, IDEMIP_TRUE, 0u, MAXRESP_WIDEST, 1000u, 0xFFFFFFFFu, IDEMIP_FALSE);
+    query_at(work_a, 0u, EMBED_TRUE, 0u, MAXRESP_WIDEST, 1000u, 0xFFFFFFFFu, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT32(1000u + MAXRESP_WIDEST, deadline_of(work_a, GROUP_A, 0u));
 
-    query_at(work_a, 0u, IDEMIP_TRUE, 0u, MAXRESP_WIDEST + 1u, 1000u, 0xFFFFFFFFu, IDEMIP_FALSE);
+    query_at(work_a, 0u, EMBED_TRUE, 0u, MAXRESP_WIDEST + 1u, 1000u, 0xFFFFFFFFu, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IGMP_IO(work_a)->status);
 }
 
@@ -890,7 +894,7 @@ void test_a_max_response_time_wider_than_the_field_can_carry_is_refused(void)
 void test_a_query_needs_an_interface_this_build_carries(void)
 {
     Igmp.clear(work_a);
-    query_at(work_a, (uint8_t)IDEMIP_NETIF_COUNT, IDEMIP_TRUE, 0u, MAXRESP_10S, 0u, 1u, IDEMIP_FALSE);
+    query_at(work_a, (uint8_t)IDEMIP_NETIF_COUNT, EMBED_TRUE, 0u, MAXRESP_10S, 0u, 1u, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IGMP_IO(work_a)->status);
 }
 
@@ -899,7 +903,7 @@ void test_a_query_needs_an_interface_this_build_carries(void)
 void test_a_group_specific_query_needs_a_class_d_group(void)
 {
     Igmp.clear(work_a);
-    query_at(work_a, 0u, IDEMIP_FALSE, 0x0A000001u, MAXRESP_10S, 0u, 1u, IDEMIP_FALSE);
+    query_at(work_a, 0u, EMBED_FALSE, 0x0A000001u, MAXRESP_10S, 0u, 1u, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_IGMP_IO(work_a)->status);
 }
 
@@ -914,7 +918,7 @@ void test_a_v1_query_arms_the_ten_second_interval_sec_4_prints(void)
     join_ok(work_a, GROUP_A, 0u, 0u, 0u);
     run_timer_out(work_a, 100u);
 
-    query_at(work_a, 0u, IDEMIP_TRUE, 0u, 0u, 1000u, 0xFFFFFFFFu, IDEMIP_FALSE);
+    query_at(work_a, 0u, EMBED_TRUE, 0u, 0u, 1000u, 0xFFFFFFFFu, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(1000u + (IDEMIP_IGMP_V1_MAX_RESP * IDEMIP_IGMP_MAX_RESP_UNIT_MS),
                                      deadline_of(work_a, GROUP_A, 0u),
@@ -932,7 +936,7 @@ void test_a_v1_query_makes_the_reports_version_one_reports(void)
     join_ok(work_a, GROUP_A, 0u, 0u, 0u);
     TEST_ASSERT_FALSE_MESSAGE(IDEMIP_IGMP_IO(work_a)->report_v1, "no IGMPv1 Query was heard yet");
 
-    query_at(work_a, 0u, IDEMIP_TRUE, 0u, 0u, 0u, 1u, IDEMIP_TRUE);
+    query_at(work_a, 0u, EMBED_TRUE, 0u, 0u, 0u, 1u, EMBED_TRUE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_IGMP_IO(work_a)->status);
 
     // an unsolicited Report, and a Report a timer fired, are both Version 1 now
@@ -949,7 +953,7 @@ void test_a_v1_query_makes_the_reports_version_one_reports(void)
 void test_the_v1_router_record_ages_out_after_the_sec_8_11_timeout(void)
 {
     Igmp.clear(work_a);
-    query_at(work_a, 0u, IDEMIP_TRUE, 0u, 0u, 0u, 1u, IDEMIP_TRUE);
+    query_at(work_a, 0u, EMBED_TRUE, 0u, 0u, 0u, 1u, EMBED_TRUE);
 
     tick_at(work_a, IDEMIP_IGMP_V1_ROUTER_PRESENT_MS - 1u);
     join_ok(work_a, GROUP_A, 0u, IDEMIP_IGMP_V1_ROUTER_PRESENT_MS - 1u, 0u);
@@ -965,7 +969,7 @@ void test_the_v1_router_record_ages_out_after_the_sec_8_11_timeout(void)
 void test_the_v1_router_record_is_per_interface(void)
 {
     Igmp.clear(work_a);
-    query_at(work_a, 0u, IDEMIP_TRUE, 0u, 0u, 0u, 1u, IDEMIP_TRUE);
+    query_at(work_a, 0u, EMBED_TRUE, 0u, 0u, 0u, 1u, EMBED_TRUE);
 
     join_ok(work_a, GROUP_A, 0u, 0u, 0u);
     TEST_ASSERT_TRUE(IDEMIP_IGMP_IO(work_a)->report_v1);
@@ -980,7 +984,7 @@ void test_the_v1_router_record_is_per_interface(void)
 void test_a_v1_querier_suppresses_the_leave_message(void)
 {
     Igmp.clear(work_a);
-    query_at(work_a, 0u, IDEMIP_TRUE, 0u, 0u, 0u, 1u, IDEMIP_TRUE);
+    query_at(work_a, 0u, EMBED_TRUE, 0u, 0u, 0u, 1u, EMBED_TRUE);
     join_ok(work_a, GROUP_A, 0u, 0u, 0u); // last reporter flag set
     join_ok(work_a, GROUP_A, 1u, 0u, 0u); // the interface with no IGMPv1 Querier
 
@@ -1068,7 +1072,7 @@ void test_an_expired_timer_sends_a_report_and_sets_the_flag(void)
     Igmp.clear(work_a);
     join_ok(work_a, GROUP_A, 0u, 0u, 0u); // deadline 1
     report_at(work_a, GROUP_A, 0u);       // clears the flag, so the tick has to set it again
-    query_at(work_a, 0u, IDEMIP_FALSE, GROUP_A, MAXRESP_1S, 0u, 0u, IDEMIP_FALSE);
+    query_at(work_a, 0u, EMBED_FALSE, GROUP_A, MAXRESP_1S, 0u, 0u, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_IGMP_DELAYING_MEMBER, state_of(work_a, GROUP_A, 0u));
 
     tick_at(work_a, 1u);

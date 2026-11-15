@@ -24,10 +24,10 @@
 #include "src/checksum.h"
 #include "src/ip/ipv6.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
 #include "src/ip/ipv6_defines.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // --- the caller's bytes, each with a canary past the end ----------------------
 
@@ -40,8 +40,8 @@ static uint8_t fragbuf[IDEMIP_IP6_FRAG_HDR_LEN + 16u];
 
 static void arm(uint8_t *b, size_t used, size_t cap)
 {
-    memset(b, 0, used);
-    memset(b + used, CANARY, cap - used);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = b, .val = 0, .bytes = used);
+    fill_bytes(b + used, CANARY, cap - used);
 }
 
 static void check_canary(const uint8_t *b, size_t used, size_t cap)
@@ -85,7 +85,7 @@ static const uint8_t g_hdr[IDEMIP_IPV6_HDR_LEN] = {
 // Lay the fixed header into pkt and return the offset of the payload.
 static size_t lay_hdr(uint8_t next_hdr, uint16_t payload_len)
 {
-    memcpy(pkt, g_hdr, sizeof g_hdr);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = pkt, .at = g_hdr, .size = sizeof g_hdr);
     pkt[IDEMIP_IP6_OFF_NEXT_HDR] = next_hdr;
     idemip_wr16(pkt + IDEMIP_IP6_OFF_PAYLOAD_LEN, payload_len);
     return IDEMIP_IP6_OFF_PAYLOAD;
@@ -133,7 +133,7 @@ void test_every_field_reads_the_same_at_an_odd_offset(void)
 {
     for (size_t at = 0u; at <= 14u; at += 7u)
     {
-        memcpy(pkt + at, g_hdr, sizeof g_hdr);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = pkt + at, .at = g_hdr, .size = sizeof g_hdr);
         const uint8_t *h = pkt + at;
         TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP6_VERSION, idemip_ip6_version(h));
         TEST_ASSERT_EQUAL_HEX8(0x2fu, idemip_ip6_traffic_class(h));
@@ -218,7 +218,7 @@ void test_build_round_trips_through_the_accessors(void)
 // Length rewritten and the last Next Header changed to 44. Both are single-field writes.
 void test_the_field_writers_touch_only_their_own_field(void)
 {
-    memcpy(built, g_hdr, sizeof g_hdr);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = built, .at = g_hdr, .size = sizeof g_hdr);
     idemip_ip6_set_payload_len(built, 1234u);
     idemip_ip6_set_next_hdr(built, IDEMIP_IP6_NH_FRAGMENT);
     idemip_ip6_set_hop_limit(built, 1u);
@@ -327,7 +327,7 @@ void test_the_three_high_option_type_bits_decode_as_section_4_2_states(void)
     // bit is not part of the decision, so setting it does not alter either answer.
     // PadN, then an option whose action bits are 00 and whose change-en-route bit is set.
     static const uint8_t stream_skip[6] = {IDEMIP_IP6_OPT_PADN, 2u, 0u, 0u, IDEMIP_IP6_OPT_CHG_MASK, 0u};
-    memcpy(pkt, stream_skip, sizeof stream_skip);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = pkt, .at = stream_skip, .size = sizeof stream_skip);
     size_t bad = 0xFFFFu;
     TEST_ASSERT_FALSE(idemip_ip6_opts_refused(pkt, 0u, 6u, &bad));
 
@@ -394,8 +394,8 @@ void test_fragment_identification_is_thirty_two_bits(void)
 // transmission", so build writes it as zero whatever was there before.
 void test_fragment_build_writes_the_first_fragment(void)
 {
-    memset(fragbuf, 0xFFu, IDEMIP_IP6_FRAG_HDR_LEN);
-    idemip_ip6_frag_build(fragbuf, IDEMIP_IP6_NH_TCP, 0u, IDEMIP_TRUE, 0x01020304u);
+    fill_bytes(fragbuf, 0xFFu, IDEMIP_IP6_FRAG_HDR_LEN);
+    idemip_ip6_frag_build(fragbuf, IDEMIP_IP6_NH_TCP, 0u, EMBED_TRUE, 0x01020304u);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_IP6_NH_TCP, fragbuf[IDEMIP_IP6_FRAG_OFF_NEXT_HDR]);
     TEST_ASSERT_EQUAL_HEX8(0u, fragbuf[IDEMIP_IP6_FRAG_OFF_RESERVED]);
     TEST_ASSERT_EQUAL_HEX16(0x0001u, idemip_rd16(fragbuf + IDEMIP_IP6_FRAG_OFF_OFFS_M));
@@ -408,7 +408,7 @@ void test_fragment_build_writes_the_first_fragment(void)
 // zero because the mask clears them.
 void test_fragment_build_writes_the_last_fragment(void)
 {
-    idemip_ip6_frag_build(fragbuf, IDEMIP_IP6_NH_UDP, 1400u, IDEMIP_FALSE, 0xA5A5A5A5u);
+    idemip_ip6_frag_build(fragbuf, IDEMIP_IP6_NH_UDP, 1400u, EMBED_FALSE, 0xA5A5A5A5u);
     TEST_ASSERT_EQUAL_HEX16(0x0578u, idemip_rd16(fragbuf + IDEMIP_IP6_FRAG_OFF_OFFS_M));
     TEST_ASSERT_EQUAL_UINT16(1400u, idemip_ip6_frag_offset_bytes(fragbuf));
     TEST_ASSERT_FALSE(idemip_ip6_frag_more(fragbuf));
@@ -419,7 +419,7 @@ void test_fragment_build_writes_the_last_fragment(void)
 // The field is thirteen bits of 8-octet units, so the largest byte offset it carries is 8191 * 8.
 void test_fragment_offset_field_reaches_65528(void)
 {
-    idemip_ip6_frag_build(fragbuf, IDEMIP_IP6_NH_TCP, 65528u, IDEMIP_FALSE, 0u);
+    idemip_ip6_frag_build(fragbuf, IDEMIP_IP6_NH_TCP, 65528u, EMBED_FALSE, 0u);
     TEST_ASSERT_EQUAL_HEX16(0xFFF8u, idemip_rd16(fragbuf + IDEMIP_IP6_FRAG_OFF_OFFS_M));
     TEST_ASSERT_EQUAL_UINT16(65528u, idemip_ip6_frag_offset_bytes(fragbuf));
 }
@@ -475,7 +475,7 @@ void test_walk_steps_over_routing_then_fragment(void)
 {
     size_t at = lay_hdr(IDEMIP_IP6_NH_ROUTING, 36u);
     lay_ext(at, IDEMIP_IP6_NH_FRAGMENT, 0u);
-    idemip_ip6_frag_build(pkt + at + 8u, IDEMIP_IP6_NH_TCP, 0u, IDEMIP_TRUE, 0x11223344u);
+    idemip_ip6_frag_build(pkt + at + 8u, IDEMIP_IP6_NH_TCP, 0u, EMBED_TRUE, 0x11223344u);
     IdemIpIp6Chain c = idemip_ip6_walk(pkt, at + 36u);
     TEST_ASSERT_TRUE(c.ok);
     TEST_ASSERT_EQUAL_size_t(56u, c.offset);
@@ -492,7 +492,7 @@ void test_walk_steps_over_routing_then_fragment(void)
 void test_walk_sizes_a_fragment_header_at_eight_not_by_the_second_octet(void)
 {
     size_t at = lay_hdr(IDEMIP_IP6_NH_FRAGMENT, 28u);
-    idemip_ip6_frag_build(pkt + at, IDEMIP_IP6_NH_TCP, 0u, IDEMIP_TRUE, 0u);
+    idemip_ip6_frag_build(pkt + at, IDEMIP_IP6_NH_TCP, 0u, EMBED_TRUE, 0u);
     pkt[at + IDEMIP_IP6_FRAG_OFF_RESERVED] = 0xFFu;
     IdemIpIp6Chain c = idemip_ip6_walk(pkt, at + 28u);
     TEST_ASSERT_TRUE(c.ok);
@@ -511,7 +511,7 @@ void test_walk_stops_at_a_fragment_header_carrying_a_non_zero_offset(void)
     // Options header with an option whose action bits are 10, "discard the packet and ... send an
     // ICMP Parameter Problem, Code 2".
     size_t at = lay_hdr(IDEMIP_IP6_NH_FRAGMENT, 16u);
-    idemip_ip6_frag_build(pkt + at, IDEMIP_IP6_NH_DSTOPTS, 8u, IDEMIP_FALSE, 0x55667788u);
+    idemip_ip6_frag_build(pkt + at, IDEMIP_IP6_NH_DSTOPTS, 8u, EMBED_FALSE, 0x55667788u);
     pkt[at + 8u] = 0x06u;
     pkt[at + 9u] = 0x00u;
     pkt[at + 10u] = 0x80u;
@@ -530,7 +530,7 @@ void test_walk_stops_at_a_fragment_header_carrying_a_non_zero_offset(void)
 
     // The offset-zero fragment is where those headers really are, so the walk does follow them.
     at = lay_hdr(IDEMIP_IP6_NH_FRAGMENT, 16u);
-    idemip_ip6_frag_build(pkt + at, IDEMIP_IP6_NH_DSTOPTS, 0u, IDEMIP_TRUE, 0x55667788u);
+    idemip_ip6_frag_build(pkt + at, IDEMIP_IP6_NH_DSTOPTS, 0u, EMBED_TRUE, 0x55667788u);
     pkt[at + 8u] = IDEMIP_IP6_NH_TCP;
     pkt[at + 9u] = 0u;
     pkt[at + 10u] = IDEMIP_IP6_OPT_PADN;
@@ -667,7 +667,7 @@ void test_walk_steps_the_recommended_order(void)
     lay_ext(at, IDEMIP_IP6_NH_DSTOPTS, 0u);
     lay_ext(at + 8u, IDEMIP_IP6_NH_ROUTING, 0u);
     lay_ext(at + 16u, IDEMIP_IP6_NH_FRAGMENT, 0u);
-    idemip_ip6_frag_build(pkt + at + 24u, IDEMIP_IP6_NH_TCP, 0u, IDEMIP_TRUE, 7u);
+    idemip_ip6_frag_build(pkt + at + 24u, IDEMIP_IP6_NH_TCP, 0u, EMBED_TRUE, 7u);
     IdemIpIp6Chain c = idemip_ip6_walk(pkt, at + 52u);
     TEST_ASSERT_TRUE(c.ok);
     TEST_ASSERT_EQUAL_UINT16(4u, c.hops);
@@ -716,7 +716,7 @@ void test_walk_does_not_write_the_packet(void)
     uint8_t before[PKT_USED];
     size_t at = lay_hdr(IDEMIP_IP6_NH_ROUTING, 28u);
     lay_ext(at, IDEMIP_IP6_NH_TCP, 0u);
-    memcpy(before, pkt, PKT_USED);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = before, .at = pkt, .size = PKT_USED);
     IdemIpIp6Chain c = idemip_ip6_walk(pkt, at + 28u);
     TEST_ASSERT_TRUE(c.ok);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(before, pkt, PKT_USED);
@@ -771,8 +771,8 @@ void test_the_pseudo_header_next_header_is_the_upper_layer_not_the_packets(void)
 void test_pseudo_header_sum_matches_the_section_8_1_figure(void)
 {
     uint8_t ph[40];
-    memcpy(ph, g_src, IDEMIP_IP6_ADDR_LEN);
-    memcpy(ph + 16, g_dst, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = ph, .at = g_src, .size = IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = ph + 16, .at = g_dst, .size = IDEMIP_IP6_ADDR_LEN);
     idemip_wr32(ph + 32, 20u);
     ph[36] = 0u;
     ph[37] = 0u;
@@ -788,8 +788,8 @@ void test_pseudo_header_sum_matches_the_section_8_1_figure(void)
 void test_pseudo_header_sums_both_halves_of_the_length(void)
 {
     uint8_t ph[40];
-    memcpy(ph, g_src, IDEMIP_IP6_ADDR_LEN);
-    memcpy(ph + 16, g_dst, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = ph, .at = g_src, .size = IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = ph + 16, .at = g_dst, .size = IDEMIP_IP6_ADDR_LEN);
     idemip_wr32(ph + 32, 0x00012345u);
     ph[36] = 0u;
     ph[37] = 0u;
@@ -812,7 +812,7 @@ void test_an_option_area_that_ends_inside_an_option_is_malformed(void)
     size_t bad;
 
     // An Option Type at the last octet of the area, with no length octet behind it.
-    memset(opts, 0, sizeof opts);
+    mmgr_zero_buf(opts, sizeof opts);
     opts[0] = IDEMIP_IP6_OPT_PADN;
     opts[1] = 0u;
     opts[2] = IDEMIP_IP6_OPT_PADN;
@@ -822,7 +822,7 @@ void test_an_option_area_that_ends_inside_an_option_is_malformed(void)
     TEST_ASSERT_EQUAL_size_t_MESSAGE(0xFFFFu, bad, "a malformed area named an Option Type");
 
     // An option whose length runs past the area it stands in.
-    memset(opts, 0, sizeof opts);
+    mmgr_zero_buf(opts, sizeof opts);
     opts[0] = IDEMIP_IP6_OPT_PADN;
     opts[1] = 6u;
     bad = 0xFFFFu;
@@ -831,7 +831,7 @@ void test_an_option_area_that_ends_inside_an_option_is_malformed(void)
     TEST_ASSERT_EQUAL_size_t_MESSAGE(0xFFFFu, bad, "an option past the area named an Option Type");
 
     // A Pad1 at the last octet is one octet and needs no length, so the area is walked to its end.
-    memset(opts, 0, sizeof opts);
+    mmgr_zero_buf(opts, sizeof opts);
     opts[0] = IDEMIP_IP6_OPT_PAD1;
     opts[1] = IDEMIP_IP6_OPT_PAD1;
     bad = 0xFFFFu;

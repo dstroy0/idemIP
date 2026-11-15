@@ -35,10 +35,10 @@ import sys
 ROOT = os.getcwd()
 
 # A namespace struct is the anonymous typedef that ends in an XNs tag, and the table is the one
-# static const of that type. Both are matched over the whole file, so a header carrying two
-# namespaces is read as two.
+# EMBED_TABLE_STORAGE of that type. The script matches both over the whole file, so it reads a header
+# that carries two namespaces as two.
 STRUCT = re.compile(r"typedef struct\s*\{(.*?)\}\s*(\w+Ns);", re.S)
-TABLE = re.compile(r"static const (\w+Ns) \w+ IDEMIP_UNUSED = \{(.*?)\};", re.S)
+TABLE = re.compile(r"EMBED_TABLE_STORAGE (\w+Ns) \w+ EMBED_UNUSED = \{(.*?)\};", re.S)
 MEMBER = re.compile(r"\(\*const (\w+)\)")
 SETS = re.compile(r"\.(\w+)\s*=")
 

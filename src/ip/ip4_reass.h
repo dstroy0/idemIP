@@ -47,7 +47,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief No row and no list link. Every index result and every list terminator reads this. */
 #define IDEMIP_IP4_REASS_INDEX_NONE 0xFFu
@@ -69,20 +69,19 @@ IDEMIP_BEGIN_DECLS
  * disagree about what its octets are. COMPLETE, ABANDONED and RECLAIM all still pin receive
  * descriptors, so a row is not free until they are handed back.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IP4_REASS_FREE = 0, ///< no datagram in this row
-    IDEMIP_IP4_REASS_HOLDING,  ///< fragments are held and the hole list is not empty
-    IDEMIP_IP4_REASS_COMPLETE, ///< the hole list emptied, RFC 815 sec 3 step 8
-    /**
-     * A fragment overlapped octets the row already held, so nothing more of this datagram is
-     * reassembled. The row keeps its buffer identifier until its deadline, so a further fragment of
-     * the same datagram cannot open a fresh one, and its pinned descriptors go back through release
-     * and reclaim like any other row's.
-     */
-    IDEMIP_IP4_REASS_ABANDONED,
-    IDEMIP_IP4_REASS_RECLAIM, ///< done with, and its descriptors are waiting to be handed back
-} IdemIpIp4ReassState;
+EMBED_ENUM_BYTE(IdemIpIp4ReassState,
+                IDEMIP_IP4_REASS_FREE = 0, ///< no datagram in this row
+                IDEMIP_IP4_REASS_HOLDING,  ///< fragments are held and the hole list is not empty
+                IDEMIP_IP4_REASS_COMPLETE, ///< the hole list emptied, RFC 815 sec 3 step 8
+                /**
+                 * A fragment overlapped octets the row already held, so nothing more of this datagram is
+                 * reassembled. The row keeps its buffer identifier until its deadline, so a further fragment of
+                 * the same datagram cannot open a fresh one, and its pinned descriptors go back through release
+                 * and reclaim like any other row's.
+                 */
+                IDEMIP_IP4_REASS_ABANDONED,
+                IDEMIP_IP4_REASS_RECLAIM, ///< done with, and its descriptors are waiting to be handed back
+);
 
 /**
  * @brief What hold takes: one fragment, where the engine left it.
@@ -163,8 +162,8 @@ typedef struct
     IdemIpStatus status;
     IdemIpIp4ReassState state;
     uint8_t index;
-    idemip_bool complete;
-    idemip_bool frag_zero;
+    embed_bool complete;
+    embed_bool frag_zero;
 } Ip4ReassIo;
 
 // ---------------------------------------------------------------------------
@@ -195,16 +194,16 @@ typedef struct
 #define IDEMIP_IP4_REASS_IO(w) ((Ip4ReassIo *)(void *)((w) + IDEMIP_IP4_REASS_OFF_IO))
 
 // A row index and a list link are one octet, so a count at or above the terminator is unaddressable.
-static_assert(IDEMIP_IP4_REASS_DATAGRAMS < IDEMIP_IP4_REASS_INDEX_NONE,
-              "IDEMIP_IP4_REASS_DATAGRAMS must stay below IDEMIP_IP4_REASS_INDEX_NONE: a row index is one octet");
-static_assert(IDEMIP_IP4_REASS_FRAGS < IDEMIP_IP4_REASS_INDEX_NONE,
-              "IDEMIP_IP4_REASS_FRAGS must stay below IDEMIP_IP4_REASS_INDEX_NONE: a list link is one octet");
-static_assert(IDEMIP_IP4_REASS_HOLES < IDEMIP_IP4_REASS_INDEX_NONE,
-              "IDEMIP_IP4_REASS_HOLES must stay below IDEMIP_IP4_REASS_INDEX_NONE: a list link is one octet");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_REASS_DATAGRAMS < IDEMIP_IP4_REASS_INDEX_NONE,
+                    "IDEMIP_IP4_REASS_DATAGRAMS must stay below IDEMIP_IP4_REASS_INDEX_NONE: a row index is one octet");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_REASS_FRAGS < IDEMIP_IP4_REASS_INDEX_NONE,
+                    "IDEMIP_IP4_REASS_FRAGS must stay below IDEMIP_IP4_REASS_INDEX_NONE: a list link is one octet");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_REASS_HOLES < IDEMIP_IP4_REASS_INDEX_NONE,
+                    "IDEMIP_IP4_REASS_HOLES must stay below IDEMIP_IP4_REASS_INDEX_NONE: a list link is one octet");
 
 // RFC 791's Total Length is 16 bits, so the last octet a hole can name is inside a 16-bit field.
-static_assert(IDEMIP_IP4_REASS_INFINITY >= IDEMIP_IP4_TOTAL_LEN_MAX - 1u,
-              "RFC 815 sec 3 opens a hole reaching to infinity: it must reach the last octet RFC 791 allows");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_REASS_INFINITY >= IDEMIP_IP4_TOTAL_LEN_MAX - 1u,
+                    "RFC 815 sec 3 opens a hole reaching to infinity: it must reach the last octet RFC 791 allows");
 
 /**
  * @brief The reassembler.
@@ -283,14 +282,13 @@ void idemip_ip4_reass_tick(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Ip4ReassNs Ip4Reass IDEMIP_UNUSED = {
-    .clear = idemip_ip4_reass_clear,
-    .hold = idemip_ip4_reass_hold,
-    .next = idemip_ip4_reass_next,
-    .release = idemip_ip4_reass_release,
-    .reclaim = idemip_ip4_reass_reclaim,
-    .tick = idemip_ip4_reass_tick};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE Ip4ReassNs Ip4Reass EMBED_UNUSED = {.clear = idemip_ip4_reass_clear,
+                                                        .hold = idemip_ip4_reass_hold,
+                                                        .next = idemip_ip4_reass_next,
+                                                        .release = idemip_ip4_reass_release,
+                                                        .reclaim = idemip_ip4_reass_reclaim,
+                                                        .tick = idemip_ip4_reass_tick};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

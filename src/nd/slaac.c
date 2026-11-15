@@ -16,7 +16,7 @@
 #include "src/nd/slaac.h"
 #include "src/ip/ipv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads something else here and
 // every entry but clear refuses it.
@@ -33,11 +33,11 @@ typedef struct
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     uint8_t prefix_len;
     IdemIpSlaacAddrState state;
-    idemip_bool valid_infinite;
-    idemip_bool preferred_infinite;
-    idemip_bool used;
+    embed_bool valid_infinite;
+    embed_bool preferred_infinite;
+    embed_bool used;
     uint8_t pad[(1u << IDEMIP_SLAAC_ENTRY_SHIFT) -
-                ((2u * sizeof(IdemIpMs)) + IDEMIP_IP6_ADDR_LEN + 2u + (3u * sizeof(idemip_bool)))];
+                ((2u * sizeof(IdemIpMs)) + IDEMIP_IP6_ADDR_LEN + 2u + (3u * sizeof(embed_bool)))];
 } SlaacEntry;
 
 // The running context: the mark clear leaves, and the two readings that carry the caller's 32-bit
@@ -54,19 +54,20 @@ typedef struct
 IDEMIP_ASSERT_REGION(IDEMIP_SLAAC_OFF_CTX, sizeof(SlaacCtx), IDEMIP_SLAAC_OFF_ENTRIES, "slaac's context");
 
 // An index is (i << SHIFT), so each entry is exactly its width.
-static_assert(sizeof(SlaacEntry) == (1u << IDEMIP_SLAAC_ENTRY_SHIFT),
-              "a SLAAC entry must be 1 << IDEMIP_SLAAC_ENTRY_SHIFT wide");
+EMBED_STATIC_ASSERT(sizeof(SlaacEntry) == (1u << IDEMIP_SLAAC_ENTRY_SHIFT),
+                    "a SLAAC entry must be 1 << IDEMIP_SLAAC_ENTRY_SHIFT wide");
 
 // The caller's borrow, split: the operand block, the context, then the list. slaac.h publishes the
 // offsets; these two asserts prove the span covers them before anything runs. The first keeps the
 // context inside the region ahead of the list, the second the whole map inside the borrow.
-static_assert(IDEMIP_SLAAC_OFF_CTX + sizeof(SlaacCtx) <= IDEMIP_SLAAC_OFF_ENTRIES,
-              "IDEMIP_SLAAC_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_SLAAC_OFF_END <= IDEMIP_SLAAC_BORROW,
-              "IDEMIP_SLAAC_BORROW is short of the map - raise IDEMIP_SLAAC_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_SLAAC_OFF_CTX + sizeof(SlaacCtx) <= IDEMIP_SLAAC_OFF_ENTRIES,
+    "IDEMIP_SLAAC_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_SLAAC_OFF_END <= IDEMIP_SLAAC_BORROW,
+                    "IDEMIP_SLAAC_BORROW is short of the map - raise IDEMIP_SLAAC_CTX_BYTES in idemip_config.h");
 
 // clear zeroes the list, so the state a cleared slot reads is the free one.
-static_assert(IDEMIP_SLAAC_ADDR_FREE == 0, "IDEMIP_SLAAC_ADDR_FREE must be zero: clear zeroes the list");
+EMBED_STATIC_ASSERT(IDEMIP_SLAAC_ADDR_FREE == 0, "IDEMIP_SLAAC_ADDR_FREE must be zero: clear zeroes the list");
 
 // The regions, at their offsets in the caller's borrow.
 #define SLAAC_IO(w) IDEMIP_SLAAC_IO(w)
@@ -92,27 +93,27 @@ static_assert(IDEMIP_SLAAC_ADDR_FREE == 0, "IDEMIP_SLAAC_ADDR_FREE must be zero:
 #define SLAAC_ADDR_BITS 128u
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool slaac_ready(uint8_t *work)
+static embed_bool slaac_ready(uint8_t *work)
 {
-    return (idemip_bool)(SLAAC_CTX(work)->ready == SLAAC_READY);
+    return (embed_bool)(SLAAC_CTX(work)->ready == SLAAC_READY);
 }
 
 // --- addresses -------------------------------------------------------------
 
-static idemip_bool slaac_addr_eq(const uint8_t *a, const uint8_t *b)
+static embed_bool slaac_addr_eq(const uint8_t *a, const uint8_t *b)
 {
     return (idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN));
 }
 
 // sec 5.5.3 (d): "equal" over the first @p len bits. The (len >> 3) whole octets compare exactly, and
 // the remaining (len & 7) bits compare under a mask of that many leading bits.
-static idemip_bool slaac_prefix_eq(const uint8_t *a, const uint8_t *b, uint8_t len)
+static embed_bool slaac_prefix_eq(const uint8_t *a, const uint8_t *b, uint8_t len)
 {
     size_t whole = (size_t)(len >> 3);
     uint8_t bits = (uint8_t)(len & 7u);
     if (whole != 0u && !idemip_bytes_eq(a, b, whole))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (bits != 0u)
     {
@@ -123,16 +124,16 @@ static idemip_bool slaac_prefix_eq(const uint8_t *a, const uint8_t *b, uint8_t l
         // walked. It is written because the walk compares whatever length it is handed.
         if ((uint8_t)((a[whole] ^ b[whole]) & mask) != 0u) // GCOVR_EXCL_BR_LINE
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
     }
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // RFC 4291 sec 2.5.6: the first ten bits of a link-local address are 1111111010.
-static idemip_bool slaac_is_link_local(const uint8_t *addr)
+static embed_bool slaac_is_link_local(const uint8_t *addr)
 {
-    return (idemip_bool)(addr[0] == 0xFEu && (uint8_t)(addr[1] & 0xC0u) == 0x80u);
+    return (embed_bool)(addr[0] == 0xFEu && (uint8_t)(addr[1] & 0xC0u) == 0x80u);
 }
 
 // sec 5.3 step 3 and sec 5.5.3 (d): "the right-most N bits of the address are replaced by the
@@ -140,7 +141,7 @@ static idemip_bool slaac_is_link_local(const uint8_t *addr)
 static void slaac_place_iid(uint8_t *out, const uint8_t *iid, uint8_t iid_bits)
 {
     size_t octets = (size_t)(iid_bits >> 3);
-    memcpy(out + (IDEMIP_IP6_ADDR_LEN - octets), iid, octets);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = out + (IDEMIP_IP6_ADDR_LEN - octets), .at = iid, .size = octets);
 }
 
 // sec 5.3: the left-most bits are the link-local prefix RFC 4291 sec 2.5.6 gives as FE80::/10, "the
@@ -148,7 +149,7 @@ static void slaac_place_iid(uint8_t *out, const uint8_t *iid, uint8_t iid_bits)
 // right-most N bits are the interface identifier.
 static void slaac_form_link_local(uint8_t *out, const uint8_t *iid, uint8_t iid_bits)
 {
-    memset(out, 0, IDEMIP_IP6_ADDR_LEN);
+    mmgr_zero_buf(out, IDEMIP_IP6_ADDR_LEN);
     out[0] = 0xFEu;
     out[1] = 0x80u;
     slaac_place_iid(out, iid, iid_bits);
@@ -159,8 +160,8 @@ static void slaac_form_link_local(uint8_t *out, const uint8_t *iid, uint8_t iid_
 static void slaac_form_global(uint8_t *out, const uint8_t *prefix, uint8_t prefix_len, const uint8_t *iid,
                               uint8_t iid_bits)
 {
-    memset(out, 0, IDEMIP_IP6_ADDR_LEN);
-    memcpy(out, prefix, (size_t)(prefix_len >> 3));
+    mmgr_zero_buf(out, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = out, .at = prefix, .size = (size_t)(prefix_len >> 3));
     slaac_place_iid(out, iid, iid_bits);
 }
 
@@ -168,25 +169,25 @@ static void slaac_form_global(uint8_t *out, const uint8_t *prefix, uint8_t prefi
 // fails and manual configuration is required." The identifier arrives as whole octets, so a length
 // that is not a multiple of eight cannot be laid into an address held as octets. RFC 2464 sec 4 fixes
 // N at 64 for Ethernet, and this stack's link layer is Ethernet II.
-static idemip_bool slaac_iid_ok(const uint8_t *iid, uint8_t iid_bits, uint8_t prefix_len)
+static embed_bool slaac_iid_ok(const uint8_t *iid, uint8_t iid_bits, uint8_t prefix_len)
 {
     // Not measured on the last: the caller reaches this only once the two lengths sum to 128 and the
     // identifier is whole octets, so the octets the prefix occupies and the octets the identifier
     // occupies come to sixteen exactly and the test is met. It is written because it is what keeps
     // the store inside the address, and the two lengths arrive from an option on the wire.
-    return (idemip_bool)(iid != NULL && iid_bits != 0u && (uint8_t)(iid_bits & 7u) == 0u &&
-                         (uint32_t)prefix_len + (uint32_t)iid_bits <= SLAAC_ADDR_BITS &&
-                         (uint8_t)(prefix_len >> 3) <=
-                             (uint8_t)(IDEMIP_IP6_ADDR_LEN - (iid_bits >> 3))); // GCOVR_EXCL_BR_LINE
+    return (embed_bool)(iid != NULL && iid_bits != 0u && (uint8_t)(iid_bits & 7u) == 0u &&
+                        (uint32_t)prefix_len + (uint32_t)iid_bits <= SLAAC_ADDR_BITS &&
+                        (uint8_t)(prefix_len >> 3) <=
+                            (uint8_t)(IDEMIP_IP6_ADDR_LEN - (iid_bits >> 3))); // GCOVR_EXCL_BR_LINE
 }
 
 // --- the clock -------------------------------------------------------------
 
 // True once @p now has reached @p deadline. Both sit on the same 64-bit millisecond clock, so this is
 // one comparison and nothing wraps under it.
-static idemip_bool slaac_due(IdemIpMs now, IdemIpMs deadline)
+static embed_bool slaac_due(IdemIpMs now, IdemIpMs deadline)
 {
-    return (now >= deadline) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (now >= deadline) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // Milliseconds still to run on a deadline, and zero once it is due.
@@ -254,21 +255,21 @@ static uint8_t slaac_count(uint8_t *work)
 // did.
 static void slaac_clear_results(SlaacIo *io)
 {
-    memset(io->addr, 0, sizeof io->addr);
+    mmgr_zero_buf(io->addr, sizeof io->addr);
     io->valid_at = 0;
     io->preferred_at = 0;
     io->entry = (uint8_t)IDEMIP_SLAAC_NONE;
     io->state = IDEMIP_SLAAC_ADDR_FREE;
     io->prefix_len = 0u;
     io->addresses = 0u;
-    io->valid_infinite = IDEMIP_FALSE;
-    io->preferred_infinite = IDEMIP_FALSE;
-    io->created = IDEMIP_FALSE;
-    io->updated = IDEMIP_FALSE;
-    io->ignored = IDEMIP_FALSE;
-    io->two_hour = IDEMIP_FALSE;
-    io->deprecated = IDEMIP_FALSE;
-    io->invalidated = IDEMIP_FALSE;
+    io->valid_infinite = EMBED_FALSE;
+    io->preferred_infinite = EMBED_FALSE;
+    io->created = EMBED_FALSE;
+    io->updated = EMBED_FALSE;
+    io->ignored = EMBED_FALSE;
+    io->two_hour = EMBED_FALSE;
+    io->deprecated = EMBED_FALSE;
+    io->invalidated = EMBED_FALSE;
 }
 
 // One entry, into the result members of the operand block. The address is copied rather than pointed
@@ -278,7 +279,7 @@ static void slaac_publish(uint8_t *work, uint8_t index)
     SlaacIo *io = SLAAC_IO(work);
     const SlaacEntry *e = SLAAC_AT(work, index);
     io->entry = index;
-    memcpy(io->addr, e->addr, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = io->addr, .at = e->addr, .size = IDEMIP_IP6_ADDR_LEN);
     io->valid_at = e->valid_at;
     io->preferred_at = e->preferred_at;
     io->state = e->state;
@@ -296,14 +297,14 @@ static void slaac_publish(uint8_t *work, uint8_t index)
 // address deprecated "when its preferred lifetime expires".
 static void slaac_set_preferred(SlaacEntry *e, IdemIpMs now, uint32_t preferred_s)
 {
-    e->preferred_infinite = (idemip_bool)(preferred_s == IDEMIP_SLAAC_LIFETIME_INFINITE);
+    e->preferred_infinite = (embed_bool)(preferred_s == IDEMIP_SLAAC_LIFETIME_INFINITE);
     e->preferred_at = e->preferred_infinite ? (IdemIpMs)0 : (now + idemip_ms_from_s(preferred_s));
     e->state = (preferred_s != 0u) ? IDEMIP_SLAAC_ADDR_PREFERRED : IDEMIP_SLAAC_ADDR_DEPRECATED;
 }
 
 static void slaac_set_valid(SlaacEntry *e, IdemIpMs now, uint32_t valid_s)
 {
-    e->valid_infinite = (idemip_bool)(valid_s == IDEMIP_SLAAC_LIFETIME_INFINITE);
+    e->valid_infinite = (embed_bool)(valid_s == IDEMIP_SLAAC_LIFETIME_INFINITE);
     e->valid_at = e->valid_infinite ? (IdemIpMs)0 : (now + idemip_ms_from_s(valid_s));
 }
 
@@ -324,10 +325,10 @@ static void slaac_set_valid(SlaacEntry *e, IdemIpMs now, uint32_t valid_s)
  * RemainingLifetime is neither less than the received lifetime nor at or under 2 hours, so it takes
  * rule 1 or rule 3.
  */
-static void slaac_two_hour_rule(uint8_t *work, SlaacEntry *e, IdemIpMs now, uint32_t valid_s, idemip_bool authenticated)
+static void slaac_two_hour_rule(uint8_t *work, SlaacEntry *e, IdemIpMs now, uint32_t valid_s, embed_bool authenticated)
 {
     SlaacIo *io = SLAAC_IO(work);
-    idemip_bool received_infinite = (idemip_bool)(valid_s == IDEMIP_SLAAC_LIFETIME_INFINITE);
+    embed_bool received_infinite = (embed_bool)(valid_s == IDEMIP_SLAAC_LIFETIME_INFINITE);
     IdemIpMs received_ms = idemip_ms_from_s(valid_s);
     IdemIpMs remaining_ms = e->valid_infinite ? (IdemIpMs)0 : slaac_remaining(now, e->valid_at);
 
@@ -345,13 +346,13 @@ static void slaac_two_hour_rule(uint8_t *work, SlaacEntry *e, IdemIpMs now, uint
         }
         else
         {
-            io->two_hour = IDEMIP_TRUE;
+            io->two_hour = EMBED_TRUE;
         }
         return;
     }
-    e->valid_infinite = IDEMIP_FALSE;
+    e->valid_infinite = EMBED_FALSE;
     e->valid_at = now + (IdemIpMs)IDEMIP_SLAAC_TWO_HOURS_MS;
-    io->two_hour = IDEMIP_TRUE;
+    io->two_hour = EMBED_TRUE;
 }
 
 // --- the entries -----------------------------------------------------------
@@ -364,7 +365,7 @@ void idemip_slaac_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_SLAAC_OFF_CTX, 0, SLAAC_STATE_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_SLAAC_OFF_CTX, .val = 0, .bytes = SLAAC_STATE_BYTES);
     SLAAC_CTX(work)->ready = SLAAC_READY;
     SLAAC_IO(work)->status = IDEMIP_OK;
 }
@@ -401,13 +402,13 @@ void idemip_slaac_link_local(uint8_t *work)
         return;
     }
     SlaacEntry *e = SLAAC_AT(work, index);
-    memcpy(e->addr, io->addr, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = e->addr, .at = io->addr, .size = IDEMIP_IP6_ADDR_LEN);
     e->prefix_len = SLAAC_LINK_LOCAL_LEN;
-    e->used = IDEMIP_TRUE;
+    e->used = EMBED_TRUE;
     slaac_set_preferred(e, 0u, IDEMIP_SLAAC_LIFETIME_INFINITE);
     slaac_set_valid(e, 0u, IDEMIP_SLAAC_LIFETIME_INFINITE);
     slaac_publish(work, index);
-    io->created = IDEMIP_TRUE;
+    io->created = EMBED_TRUE;
     io->status = IDEMIP_OK;
 }
 
@@ -439,7 +440,7 @@ void idemip_slaac_prefix_in(uint8_t *work)
     //     Information option."
     if (!a->autonomous || slaac_is_link_local(a->prefix) || a->preferred_s > a->valid_s)
     {
-        io->ignored = IDEMIP_TRUE;
+        io->ignored = EMBED_TRUE;
         io->addresses = slaac_count(work);
         io->status = IDEMIP_OK;
         return;
@@ -453,7 +454,7 @@ void idemip_slaac_prefix_in(uint8_t *work)
         // not equal 128 bits, the Prefix Information option MUST be ignored."
         if (a->valid_s == 0u || (uint32_t)a->prefix_len + (uint32_t)a->iid_bits != SLAAC_ADDR_BITS)
         {
-            io->ignored = IDEMIP_TRUE;
+            io->ignored = EMBED_TRUE;
             io->addresses = slaac_count(work);
             io->status = IDEMIP_OK;
             return;
@@ -481,14 +482,14 @@ void idemip_slaac_prefix_in(uint8_t *work)
             return;
         }
         SlaacEntry *e = SLAAC_AT(work, slot);
-        memcpy(e->addr, io->addr, IDEMIP_IP6_ADDR_LEN);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = e->addr, .at = io->addr, .size = IDEMIP_IP6_ADDR_LEN);
         e->prefix_len = a->prefix_len;
-        e->used = IDEMIP_TRUE;
+        e->used = EMBED_TRUE;
         // "initializing its preferred and valid lifetime values from the Prefix Information option"
         slaac_set_preferred(e, now, a->preferred_s);
         slaac_set_valid(e, now, a->valid_s);
         slaac_publish(work, slot);
-        io->created = IDEMIP_TRUE;
+        io->created = EMBED_TRUE;
         io->status = IDEMIP_OK;
         return;
     }
@@ -498,7 +499,7 @@ void idemip_slaac_prefix_in(uint8_t *work)
     slaac_two_hour_rule(work, e, now, a->valid_s, a->authenticated);
     slaac_set_preferred(e, now, a->preferred_s);
     slaac_publish(work, index);
-    io->updated = IDEMIP_TRUE;
+    io->updated = EMBED_TRUE;
     io->status = IDEMIP_OK;
 }
 
@@ -562,7 +563,7 @@ void idemip_slaac_remove(uint8_t *work)
         return;
     }
     slaac_publish(work, index);
-    memset(SLAAC_AT(work, index), 0, sizeof(SlaacEntry));
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = SLAAC_AT(work, index), .val = 0, .bytes = sizeof(SlaacEntry));
     io->addresses = slaac_count(work);
     io->status = IDEMIP_OK;
 }
@@ -596,9 +597,9 @@ void idemip_slaac_tick(uint8_t *work)
         if (!e->valid_infinite && slaac_due(now, e->valid_at))
         {
             slaac_publish(work, i);
-            memset(e, 0, sizeof(SlaacEntry));
+            *e = (SlaacEntry){0};
             io->addresses = slaac_count(work);
-            io->invalidated = IDEMIP_TRUE;
+            io->invalidated = EMBED_TRUE;
             io->status = IDEMIP_OK;
             return;
         }
@@ -606,7 +607,7 @@ void idemip_slaac_tick(uint8_t *work)
         {
             e->state = IDEMIP_SLAAC_ADDR_DEPRECATED;
             slaac_publish(work, i);
-            io->deprecated = IDEMIP_TRUE;
+            io->deprecated = EMBED_TRUE;
             io->status = IDEMIP_OK;
             return;
         }
@@ -615,4 +616,4 @@ void idemip_slaac_tick(uint8_t *work)
     io->status = IDEMIP_BUSY;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

@@ -18,24 +18,28 @@
 
 #include "src/icmp/icmp_in.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
-#include "src/ip/ipv4_defines.h"
 #include "src/icmp/icmp_defines.h"
+#include "src/ip/ipv4_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // --- the borrow, the caller's ------------------------------------------------
 // Two of them, because the borrow is the instance. A canary follows each so a write past the map is
 // visible.
 
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_ICMP_IN_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_ICMP_IN_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_ICMP_IN_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_ICMP_IN_BORROW + 16))
+static uint8_t *work_b;
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_ICMP_IN_BORROW, CANARY, cap - IDEMIP_ICMP_IN_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_ICMP_IN_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_ICMP_IN_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -65,7 +69,7 @@ static uint8_t out[512];
 static void put_ip(uint32_t src, uint32_t dst, uint8_t proto, uint16_t flags_frag, size_t payload)
 {
     IdemIpIp4Fields f;
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.total_len = (uint16_t)(IDEMIP_IPV4_HDR_LEN + payload);
     f.ttl = 64u;
     f.proto = proto;
@@ -80,7 +84,7 @@ static void put_ip(uint32_t src, uint32_t dst, uint8_t proto, uint16_t flags_fra
 static size_t put_echo(uint8_t type, uint16_t id, uint16_t seq, size_t data_len)
 {
     uint8_t *m = dgram + IDEMIP_IPV4_HDR_LEN;
-    memset(m + IDEMIP_ICMP_ECHO_HDR_LEN, 0xA5, data_len);
+    fill_bytes(m + IDEMIP_ICMP_ECHO_HDR_LEN, 0xA5, data_len);
     const size_t len = IDEMIP_ICMP_ECHO_HDR_LEN + data_len;
     idemip_icmp_build_echo(m, type, id, seq, len);
     return len;
@@ -92,14 +96,14 @@ static size_t put_error(uint8_t type, uint8_t code, uint32_t word)
     uint8_t *m = dgram + IDEMIP_IPV4_HDR_LEN;
     uint8_t *quote = m + IDEMIP_ICMP_OFF_QUOTE;
     IdemIpIp4Fields f;
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.total_len = (uint16_t)(IDEMIP_IPV4_HDR_LEN + 8u);
     f.ttl = 64u;
     f.proto = IDEMIP_IP4_PROTO_UDP;
     f.src = HOST_IP;
     f.dst = PEER_IP;
     idemip_ip4_build(quote, &f);
-    memset(quote + IDEMIP_IPV4_HDR_LEN, 0x11, 8u);
+    fill_bytes(quote + IDEMIP_IPV4_HDR_LEN, 0x11, 8u);
     const size_t len = IDEMIP_ICMP_ERR_HDR_LEN + IDEMIP_IPV4_HDR_LEN + 8u;
     idemip_icmp_build_error(m, type, code, word, len);
     return len;
@@ -108,7 +112,7 @@ static size_t put_error(uint8_t type, uint8_t code, uint32_t word)
 // A whole datagram to originate an error about: a UDP one from PEER_IP to HOST_IP.
 static void put_victim(void)
 {
-    memset(dgram + IDEMIP_IPV4_HDR_LEN, 0x33, 16u);
+    fill_bytes(dgram + IDEMIP_IPV4_HDR_LEN, 0x33, 16u);
     put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_UDP, 0u, 16u);
 }
 
@@ -121,7 +125,7 @@ static void load_recv(uint8_t *w)
     io->recv_args.out_cap = sizeof out;
     io->recv_args.if_addr = HOST_IP;
     io->recv_args.if_mask = HOST_MASK;
-    io->recv_args.link_bcast = IDEMIP_FALSE;
+    io->recv_args.link_bcast = EMBED_FALSE;
 }
 
 static void load_error(uint8_t *w, uint8_t type, uint8_t code)
@@ -135,7 +139,7 @@ static void load_error(uint8_t *w, uint8_t type, uint8_t code)
     io->err_args.word = 0u;
     io->err_args.type = type;
     io->err_args.code = code;
-    io->err_args.link_bcast = IDEMIP_FALSE;
+    io->err_args.link_bcast = EMBED_FALSE;
 }
 
 // The rule a call was refused by, after loading a victim datagram and asking for a port unreachable.
@@ -148,10 +152,12 @@ static uint8_t suppress_of(uint8_t *w)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(dgram, 0, sizeof dgram);
-    memset(out, 0, sizeof out);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_icmp_in);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_icmp_in);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(dgram, sizeof dgram);
+    mmgr_zero_buf(out, sizeof out);
     dgram_len = 0;
     IcmpIn.clear(work_a);
     IcmpIn.clear(work_b);
@@ -159,8 +165,8 @@ void setUp(void)
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // --- the borrow --------------------------------------------------------------
@@ -178,7 +184,7 @@ void test_every_entry_survives_a_null_borrow(void)
 // context of whatever the caller's .bss held.
 void test_uncleared_borrow_refuses_work(void)
 {
-    arm(work_a, sizeof work_a);
+    arm(work_a, WORK_A_BYTES);
     put_echo((uint8_t)IDEMIP_ICMP_ECHO, 1u, 1u, 8u);
     put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, IDEMIP_ICMP_ECHO_HDR_LEN + 8u);
     load_recv(work_a);
@@ -404,7 +410,7 @@ void test_an_information_request_is_discarded(void)
 void test_a_timestamp_request_is_discarded(void)
 {
     uint8_t *m = dgram + IDEMIP_IPV4_HDR_LEN;
-    memset(m, 0, IDEMIP_ICMP_TS_LEN);
+    mmgr_zero_buf(m, IDEMIP_ICMP_TS_LEN);
     idemip_icmp_build_echo(m, (uint8_t)IDEMIP_ICMP_TIMESTAMP, 1u, 1u, IDEMIP_ICMP_TS_LEN);
     put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, IDEMIP_ICMP_TS_LEN);
     load_recv(work_a);
@@ -502,7 +508,7 @@ void test_source_quench_time_exceeded_and_parameter_problem_reach_the_transport(
                               (uint8_t)IDEMIP_ICMP_PARAMETER_PROBLEM};
     for (int i = 0; i < 3; i++)
     {
-        memset(dgram, 0, sizeof dgram);
+        mmgr_zero_buf(dgram, sizeof dgram);
         const size_t len = put_error(types[i], 0u, 0u);
         put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
         load_recv(work_a);
@@ -554,7 +560,7 @@ void test_a_redirect_naming_a_broadcast_or_multicast_gateway_is_discarded(void)
     const uint32_t forms[2] = {0xC0A801FFu, 0xE0000001u};
     for (int i = 0; i < 2; i++)
     {
-        memset(dgram, 0, sizeof dgram);
+        mmgr_zero_buf(dgram, sizeof dgram);
         const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, forms[i]);
         put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
         load_recv(work_a);
@@ -589,7 +595,7 @@ void test_an_error_without_a_whole_quoted_header_is_discarded(void)
 {
     uint8_t *m = dgram + IDEMIP_IPV4_HDR_LEN;
     const size_t len = IDEMIP_ICMP_ERR_HDR_LEN + 4u;
-    memset(m + IDEMIP_ICMP_OFF_QUOTE, 0x45, 4u);
+    fill_bytes(m + IDEMIP_ICMP_OFF_QUOTE, 0x45, 4u);
     idemip_icmp_build_dest_unreachable(m, IDEMIP_ICMP_DU_PORT, len);
     put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
     load_recv(work_a);
@@ -719,7 +725,7 @@ void test_no_error_about_a_link_layer_broadcast(void)
 {
     put_victim();
     load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
-    IDEMIP_ICMP_IN_IO(work_a)->err_args.link_bcast = IDEMIP_TRUE;
+    IDEMIP_ICMP_IN_IO(work_a)->err_args.link_bcast = EMBED_TRUE;
     IcmpIn.error(work_a);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP_IN_SUPPRESS_LINK_BCAST, IDEMIP_ICMP_IN_IO(work_a)->suppress);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_ICMP_IN_IO(work_a)->status);
@@ -729,7 +735,7 @@ void test_no_error_about_a_link_layer_broadcast(void)
 // handling fragment zero of fragemented datagrams."
 void test_no_error_about_a_non_initial_fragment(void)
 {
-    memset(dgram + IDEMIP_IPV4_HDR_LEN, 0x33, 16u);
+    fill_bytes(dgram + IDEMIP_IPV4_HDR_LEN, 0x33, 16u);
     put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_UDP, (uint16_t)(IDEMIP_IP4_FLAG_MF | 2u), 16u);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP_IN_SUPPRESS_FRAGMENT, suppress_of(work_a));
 }
@@ -737,7 +743,7 @@ void test_no_error_about_a_non_initial_fragment(void)
 // Fragment zero is the one an error may be sent about, MF or not.
 void test_an_error_about_the_first_fragment_is_allowed(void)
 {
-    memset(dgram + IDEMIP_IPV4_HDR_LEN, 0x33, 16u);
+    fill_bytes(dgram + IDEMIP_IPV4_HDR_LEN, 0x33, 16u);
     put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_UDP, IDEMIP_IP4_FLAG_MF, 16u);
     TEST_ASSERT_EQUAL_UINT8(IDEMIP_ICMP_IN_SUPPRESS_NONE, suppress_of(work_a));
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ICMP_IN_IO(work_a)->status);
@@ -952,7 +958,7 @@ void test_an_error_quotes_a_header_with_options_whole(void)
     // A Router Alert option (RFC 2113), padded to the 32-bit boundary sec 3.1 requires.
     static const uint8_t opts[4] = {0x94u, 0x04u, 0x00u, 0x00u};
     IdemIpIp4Fields f;
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.total_len = (uint16_t)(IDEMIP_IPV4_HDR_LEN + sizeof opts + 16u);
     f.ttl = 64u;
     f.proto = IDEMIP_IP4_PROTO_UDP;
@@ -960,10 +966,10 @@ void test_an_error_quotes_a_header_with_options_whole(void)
     f.dst = HOST_IP;
     idemip_ip4_build(dgram, &f);
     // sec 3.1: a caller that appends options raises IHL and reseals the checksum.
-    memcpy(dgram + IDEMIP_IPV4_HDR_LEN, opts, sizeof opts);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = dgram + IDEMIP_IPV4_HDR_LEN, .at = opts, .size = sizeof opts);
     idemip_ip4_set_ver_ihl(dgram, (uint8_t)((IDEMIP_IPV4_HDR_LEN + sizeof opts) >> 2));
     idemip_ip4_recksum(dgram);
-    memset(dgram + IDEMIP_IPV4_HDR_LEN + sizeof opts, 0x33, 16u);
+    fill_bytes(dgram + IDEMIP_IPV4_HDR_LEN + sizeof opts, 0x33, 16u);
     dgram_len = IDEMIP_IPV4_HDR_LEN + sizeof opts + 16u;
 
     load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
@@ -984,9 +990,9 @@ void test_a_built_error_repeats(void)
     IcmpIn.error(work_a);
     const size_t first = IDEMIP_ICMP_IN_IO(work_a)->out_len;
     uint8_t copy[64];
-    memcpy(copy, out, first);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = copy, .at = out, .size = first);
 
-    memset(out, 0, sizeof out);
+    mmgr_zero_buf(out, sizeof out);
     load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
     IcmpIn.error(work_a);
     TEST_ASSERT_EQUAL_size_t(first, IDEMIP_ICMP_IN_IO(work_a)->out_len);
@@ -1005,7 +1011,7 @@ void test_a_redirect_naming_a_classful_broadcast_is_discarded(void)
     const uint32_t gateway[3] = {0x0AFFFFFFu, 0x8001FFFFu, 0xC0A801FFu};
     for (int i = 0; i < 3; i++)
     {
-        memset(dgram, 0, sizeof dgram);
+        mmgr_zero_buf(dgram, sizeof dgram);
         const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, gateway[i]);
         put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
         load_recv(work_a);
@@ -1021,7 +1027,7 @@ void test_a_redirect_naming_a_classful_broadcast_is_discarded(void)
     const uint32_t host[3] = {0x0A000002u, 0x80010002u, 0xC0A80102u};
     for (int i = 0; i < 3; i++)
     {
-        memset(dgram, 0, sizeof dgram);
+        mmgr_zero_buf(dgram, sizeof dgram);
         const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, host[i]);
         put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
         load_recv(work_a);
@@ -1040,7 +1046,7 @@ void test_a_redirect_naming_a_classful_broadcast_is_discarded(void)
     const uint8_t expect[2] = {(uint8_t)IDEMIP_ICMP_IN_SUPPRESS_REDIRECT, 0u};
     for (int i = 0; i < 2; i++)
     {
-        memset(dgram, 0, sizeof dgram);
+        mmgr_zero_buf(dgram, sizeof dgram);
         const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, not_hosts[i]);
         put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
         load_recv(work_a);
@@ -1056,7 +1062,7 @@ void test_a_redirect_naming_a_classful_broadcast_is_discarded(void)
 // nothing there and the classful forms are the only ones left to test.
 void test_a_single_host_interface_has_no_subnet_broadcast(void)
 {
-    memset(dgram, 0, sizeof dgram);
+    mmgr_zero_buf(dgram, sizeof dgram);
     const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, 0xC0A801FFu);
     put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, len);
     load_recv(work_a);
@@ -1071,7 +1077,7 @@ void test_a_single_host_interface_has_no_subnet_broadcast(void)
 // destination for sec 3.2.2.2's "first-hop gateway for the specified destination" to be tested on.
 void test_a_redirect_with_no_gateway_field_or_no_readable_quote(void)
 {
-    memset(dgram, 0, sizeof dgram);
+    mmgr_zero_buf(dgram, sizeof dgram);
     uint8_t *m = dgram + IDEMIP_IPV4_HDR_LEN;
     m[0] = (uint8_t)IDEMIP_ICMP_REDIRECT;
     m[1] = IDEMIP_ICMP_RD_HOST;
@@ -1084,7 +1090,7 @@ void test_a_redirect_with_no_gateway_field_or_no_readable_quote(void)
     TEST_ASSERT_TRUE_MESSAGE(IDEMIP_ICMP_IN_IO(work_a)->bad_len, "a Redirect with no gateway field was read");
 
     // The gateway is on this subnet and the quote behind it is not an IPv4 header at all.
-    memset(dgram, 0, sizeof dgram);
+    mmgr_zero_buf(dgram, sizeof dgram);
     const size_t len = put_error((uint8_t)IDEMIP_ICMP_REDIRECT, IDEMIP_ICMP_RD_HOST, PEER_IP);
     uint8_t *msg = dgram + IDEMIP_IPV4_HDR_LEN;
     msg[IDEMIP_ICMP_OFF_QUOTE] = 0x00u; // version zero: not IPv4
@@ -1109,14 +1115,14 @@ void test_the_icmp_error_suppression_reads_the_message_the_datagram_carries(void
     // A later fragment of an ICMP datagram. sec 3.2.2 (4) refuses it for being a non-initial
     // fragment, and the ICMP-error rule above passes it by for the same reason: the message head is
     // in fragment zero, which this is not.
-    memset(dgram, 0, sizeof dgram);
-    memset(dgram + IDEMIP_IPV4_HDR_LEN, 0x33, 16u);
+    mmgr_zero_buf(dgram, sizeof dgram);
+    fill_bytes(dgram + IDEMIP_IPV4_HDR_LEN, 0x33, 16u);
     put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 2u, 16u);
     TEST_ASSERT_EQUAL_UINT8_MESSAGE(IDEMIP_ICMP_IN_SUPPRESS_FRAGMENT, suppress_of(work_a),
                                     "a later fragment was answered as something other than one");
 
     // An ICMP datagram with no room for a Type and Code at all.
-    memset(dgram, 0, sizeof dgram);
+    mmgr_zero_buf(dgram, sizeof dgram);
     put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_ICMP, 0u, 2u);
     TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, suppress_of(work_a),
                                     "a datagram too short to carry a message was read for one");
@@ -1126,7 +1132,7 @@ void test_the_icmp_error_suppression_reads_the_message_the_datagram_carries(void
 // datagram's data", and a datagram with fewer than 64 bits behind its header carries what there is.
 void test_an_error_about_a_datagram_shorter_than_the_quote_carries_what_there_is(void)
 {
-    memset(dgram, 0, sizeof dgram);
+    mmgr_zero_buf(dgram, sizeof dgram);
     put_ip(PEER_IP, HOST_IP, IDEMIP_IP4_PROTO_UDP, 0u, 0u); // header only, no data at all
     load_error(work_a, (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT);
     IcmpIn.error(work_a);
@@ -1142,7 +1148,7 @@ void test_an_error_about_a_datagram_shorter_than_the_quote_carries_what_there_is
 // with one to give back leaves the bucket full and not over.
 void test_the_token_bucket_refill_stops_at_the_top(void)
 {
-    memset(dgram, 0, sizeof dgram);
+    mmgr_zero_buf(dgram, sizeof dgram);
     put_victim();
 
     // One token spent.
@@ -1165,7 +1171,7 @@ void test_the_token_bucket_refill_stops_at_the_top(void)
 // the version alone is not enough to say it is one.
 void test_a_quote_whose_header_length_is_below_the_minimum_names_no_protocol(void)
 {
-    memset(dgram, 0, sizeof dgram);
+    mmgr_zero_buf(dgram, sizeof dgram);
     const size_t len = put_error((uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE, IDEMIP_ICMP_DU_PORT, 0u);
     uint8_t *msg = dgram + IDEMIP_IPV4_HDR_LEN;
     msg[IDEMIP_ICMP_OFF_QUOTE] = 0x44u; // version 4, IHL 4: one word short of a header

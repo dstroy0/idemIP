@@ -22,7 +22,7 @@
 #include "src/endian.h" // the connection-id's ports and the digest's words, byte at a time
 #include "src/tcp/tcp_isn.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The one definition, private to this TU. A borrow that was never reset carries no mark, so every
 // entry refuses it rather than hashing a key that was never set. base is the tick M is counted from,
@@ -32,7 +32,7 @@ typedef struct
     uint32_t ready;
     uint32_t base;
     uint8_t secret[IDEMIP_TCP_ISN_SECRET_BYTES];
-    idemip_bool keyed;
+    embed_bool keyed;
 } TcpIsnCtx;
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
@@ -45,15 +45,17 @@ IDEMIP_ASSERT_REGION(IDEMIP_TCP_ISN_OFF_CTX, sizeof(TcpIsnCtx), IDEMIP_TCP_ISN_B
 // The caller's borrow, split: the operand block, the context, the connection-id block, then the PRF's
 // working set. tcp_isn.h publishes the offsets; the asserts below prove the span covers them before
 // anything runs.
-static_assert(IDEMIP_TCP_ISN_OFF_CTX + sizeof(TcpIsnCtx) <= IDEMIP_TCP_ISN_CTX_BYTES,
-              "IDEMIP_TCP_ISN_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_TCP_ISN_OFF_HASH + IDEMIP_TCP_ISN_HASH_BYTES <= IDEMIP_TCP_ISN_BORROW,
-              "IDEMIP_TCP_ISN_BORROW is short of the context, the connection-id block and the PRF's working set - "
-              "raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_TCP_ISN_OFF_CTX + sizeof(TcpIsnCtx) <= IDEMIP_TCP_ISN_CTX_BYTES,
+    "IDEMIP_TCP_ISN_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_TCP_ISN_OFF_HASH + IDEMIP_TCP_ISN_HASH_BYTES <= IDEMIP_TCP_ISN_BORROW,
+    "IDEMIP_TCP_ISN_BORROW is short of the context, the connection-id block and the PRF's working set - "
+    "raise it in idemip_config.h");
 
 // RFC 6528 sec 3 concatenates localip, localport, remoteip, remoteport and secretkey.
-static_assert(IDEMIP_TCP_ISN_BLOCK_BYTES >= (2u * IDEMIP_TCP_ISN_ADDR_BYTES) + 4u + IDEMIP_TCP_ISN_SECRET_BYTES,
-              "the connection-id block is short of two addresses, two ports and the key (RFC 6528 sec 3)");
+EMBED_STATIC_ASSERT(IDEMIP_TCP_ISN_BLOCK_BYTES >= (2u * IDEMIP_TCP_ISN_ADDR_BYTES) + 4u + IDEMIP_TCP_ISN_SECRET_BYTES,
+                    "the connection-id block is short of two addresses, two ports and the key (RFC 6528 sec 3)");
 
 // The regions, at their offsets in the caller's borrow.
 #define TCP_ISN_CTX(w) ((TcpIsnCtx *)(void *)((w) + IDEMIP_TCP_ISN_OFF_CTX))
@@ -78,13 +80,13 @@ static_assert(IDEMIP_TCP_ISN_BLOCK_BYTES >= (2u * IDEMIP_TCP_ISN_ADDR_BYTES) + 4
 #define TCP_ISN_OFF_SCHED (TCP_ISN_OFF_STATE + (TCP_ISN_SHA_WORDS * 4u))
 #define TCP_ISN_OFF_PAD (TCP_ISN_OFF_SCHED + (TCP_ISN_SHA_WINDOW * 4u))
 
-static_assert(TCP_ISN_OFF_PAD + TCP_ISN_SHA_BLOCK <= IDEMIP_TCP_ISN_HASH_BYTES,
-              "IDEMIP_TCP_ISN_HASH_BYTES is short of the state, the schedule window and the padded block - "
-              "raise it in idemip_config.h");
-static_assert((IDEMIP_TCP_ISN_OFF_HASH & (IDEMIP_ALIGN - 1u)) == 0u,
-              "the working set must start on IDEMIP_ALIGN: the state and the schedule are read as words");
-static_assert((TCP_ISN_SHA_WINDOW & (TCP_ISN_SHA_WINDOW - 1u)) == 0u,
-              "the schedule window must be a power of two: a round reaches it with a mask");
+EMBED_STATIC_ASSERT(TCP_ISN_OFF_PAD + TCP_ISN_SHA_BLOCK <= IDEMIP_TCP_ISN_HASH_BYTES,
+                    "IDEMIP_TCP_ISN_HASH_BYTES is short of the state, the schedule window and the padded block - "
+                    "raise it in idemip_config.h");
+EMBED_STATIC_ASSERT((IDEMIP_TCP_ISN_OFF_HASH & (IDEMIP_ALIGN - 1u)) == 0u,
+                    "the working set must start on IDEMIP_ALIGN: the state and the schedule are read as words");
+EMBED_STATIC_ASSERT((TCP_ISN_SHA_WINDOW & (TCP_ISN_SHA_WINDOW - 1u)) == 0u,
+                    "the schedule window must be a power of two: a round reaches it with a mask");
 
 #define TCP_ISN_STATE(w) ((uint32_t *)(void *)(TCP_ISN_HASH(w) + TCP_ISN_OFF_STATE))
 #define TCP_ISN_SCHED(w) ((uint32_t *)(void *)(TCP_ISN_HASH(w) + TCP_ISN_OFF_SCHED))
@@ -203,7 +205,7 @@ static void tcp_isn_prf(uint8_t *work, size_t len)
     const uint8_t *msg = TCP_ISN_BLOCK(work);
     size_t left = len;
 
-    memcpy(h, tcp_isn_h0, sizeof tcp_isn_h0);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = h, .at = tcp_isn_h0, .size = sizeof tcp_isn_h0);
 
     // Neither the whole-block loop nor the second padded block is measured: the block this digests
     // is RFC 6528 sec 3's concatenation, which is two addresses of IDEMIP_TCP_ISN_ADDR_BYTES, two
@@ -220,14 +222,14 @@ static void tcp_isn_prf(uint8_t *work, size_t len)
         // GCOVR_EXCL_STOP
     }
 
-    memset(pad, 0, TCP_ISN_SHA_BLOCK);
-    memcpy(pad, msg, left);
+    mmgr_zero_buf(pad, TCP_ISN_SHA_BLOCK);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = pad, .at = msg, .size = left);
     pad[left] = (uint8_t)0x80u;
     if (left >= TCP_ISN_SHA_LEN_OFF) // GCOVR_EXCL_BR_LINE
     {
         // GCOVR_EXCL_START
         tcp_isn_sha_block(work, pad);
-        memset(pad, 0, TCP_ISN_SHA_BLOCK);
+        mmgr_zero_buf(pad, TCP_ISN_SHA_BLOCK);
         // GCOVR_EXCL_STOP
     }
 
@@ -268,15 +270,16 @@ static size_t tcp_isn_lay(uint8_t *work, size_t addr_len)
     uint8_t *blk = TCP_ISN_BLOCK(work);
     size_t at = 0u;
 
-    memcpy(blk + at, io->gen_args.local_ip, addr_len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = blk + at, .at = io->gen_args.local_ip, .size = addr_len);
     at += addr_len;
     idemip_wr16(blk + at, io->gen_args.local_port);
     at += 2u;
-    memcpy(blk + at, io->gen_args.remote_ip, addr_len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = blk + at, .at = io->gen_args.remote_ip, .size = addr_len);
     at += addr_len;
     idemip_wr16(blk + at, io->gen_args.remote_port);
     at += 2u;
-    memcpy(blk + at, ctx->secret, (size_t)IDEMIP_TCP_ISN_SECRET_BYTES);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = blk + at, .at = ctx->secret,
+               .size = (size_t)IDEMIP_TCP_ISN_SECRET_BYTES);
     at += (size_t)IDEMIP_TCP_ISN_SECRET_BYTES;
     return at;
 }
@@ -297,7 +300,8 @@ static uint32_t tcp_isn_derive(uint8_t *work, size_t addr_len)
     uint32_t f = TCP_ISN_STATE(work)[0];
     uint32_t m = TCP_ISN_CTX(work)->base + (TCP_ISN_IO(work)->gen_args.now_ms * (uint32_t)IDEMIP_TCP_ISN_TICKS_PER_MS);
 
-    memset(work + IDEMIP_TCP_ISN_OFF_BLOCK, 0, (size_t)IDEMIP_TCP_ISN_BORROW - IDEMIP_TCP_ISN_OFF_BLOCK);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_TCP_ISN_OFF_BLOCK, .val = 0,
+               .bytes = (size_t)IDEMIP_TCP_ISN_BORROW - IDEMIP_TCP_ISN_OFF_BLOCK);
     return m + f;
 }
 
@@ -314,7 +318,8 @@ void idemip_tcp_isn_reset(uint8_t *work)
         return; // no borrow, so nowhere to report
     }
     TcpIsnIo *io = TCP_ISN_IO(work);
-    memset(work + IDEMIP_TCP_ISN_OFF_CTX, 0, (size_t)IDEMIP_TCP_ISN_BORROW - IDEMIP_TCP_ISN_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_TCP_ISN_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_TCP_ISN_BORROW - IDEMIP_TCP_ISN_OFF_CTX);
     TCP_ISN_CTX(work)->ready = TCP_ISN_READY;
     io->isn = 0u;
     io->status = IDEMIP_OK;
@@ -338,9 +343,10 @@ void idemip_tcp_isn_seed(uint8_t *work)
     // counts from, so a key change on a running system leaves M rising. A short or absent key is ERR
     // above: the same operands can never produce a key, so a retry cannot succeed.
     TcpIsnCtx *ctx = TCP_ISN_CTX(work);
-    memcpy(ctx->secret, io->seed_args.key, (size_t)IDEMIP_TCP_ISN_SECRET_BYTES);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = ctx->secret, .at = io->seed_args.key,
+               .size = (size_t)IDEMIP_TCP_ISN_SECRET_BYTES);
     ctx->base = io->seed_args.base;
-    ctx->keyed = IDEMIP_TRUE;
+    ctx->keyed = EMBED_TRUE;
     io->status = IDEMIP_OK;
 }
 
@@ -370,4 +376,4 @@ void idemip_tcp_isn_generate(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

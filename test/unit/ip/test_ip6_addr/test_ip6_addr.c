@@ -19,9 +19,9 @@
 
 #include "src/ip/ip6_addr.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // Eight 16-bit pieces, the "preferred form" of RFC 4291 sec 2.2.
 typedef struct
@@ -47,7 +47,7 @@ static void a6_ctx(const A6Args *args)
     }
 }
 
-#define a6(...) IDEMIP_CALL(a6_ctx, A6Args, __VA_ARGS__)
+#define a6(...) EMBED_CALL(a6_ctx, A6Args, __VA_ARGS__)
 
 static uint8_t addr_a[IDEMIP_IP6_ADDR_LEN];
 static uint8_t addr_b[IDEMIP_IP6_ADDR_LEN];
@@ -56,13 +56,16 @@ static uint8_t want[IDEMIP_IP6_ADDR_LEN];
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_IP6_ADDR_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_IP6_ADDR_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_IP6_ADDR_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_IP6_ADDR_BORROW + 16))
+static uint8_t *work_b;
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_IP6_ADDR_BORROW, CANARY, cap - IDEMIP_IP6_ADDR_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_IP6_ADDR_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_IP6_ADDR_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -75,17 +78,19 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(addr_a, 0, sizeof addr_a);
-    memset(addr_b, 0, sizeof addr_b);
-    memset(want, 0, sizeof want);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_ip6_addr);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_ip6_addr);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(addr_a, sizeof addr_a);
+    mmgr_zero_buf(addr_b, sizeof addr_b);
+    mmgr_zero_buf(want, sizeof want);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void classify(uint8_t *w, const uint8_t *addr)
@@ -144,7 +149,8 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
 
     Ip6Addr.solicited(work_a);
     uint8_t first[IDEMIP_IP6_ADDR_LEN];
-    memcpy(first, IDEMIP_IP6_ADDR_IO(work_a)->solicited, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = first, .at = IDEMIP_IP6_ADDR_IO(work_a)->solicited,
+               .size = IDEMIP_IP6_ADDR_LEN);
     Ip6Addr.solicited(work_b);
     Ip6Addr.solicited(work_a);
 
@@ -355,7 +361,8 @@ void test_sec2_7_1_high_order_bits_alias(void)
 
     IDEMIP_IP6_ADDR_IO(work_a)->solicited_args.addr = addr_a;
     Ip6Addr.solicited(work_a);
-    memcpy(want, IDEMIP_IP6_ADDR_IO(work_a)->solicited, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = want, .at = IDEMIP_IP6_ADDR_IO(work_a)->solicited,
+               .size = IDEMIP_IP6_ADDR_LEN);
 
     IDEMIP_IP6_ADDR_IO(work_a)->solicited_args.addr = addr_b;
     Ip6Addr.solicited(work_a);

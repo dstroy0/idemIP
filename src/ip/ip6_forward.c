@@ -18,7 +18,7 @@
 #include "src/ip/ipv6_defines.h"
 #include "src/icmp/icmpv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads zero here and decide
 // refuses it.
@@ -60,53 +60,54 @@ IDEMIP_ASSERT_REGION(IDEMIP_IP6_FORWARD_OFF_CTX, sizeof(Ip6ForwardCtx), IDEMIP_I
 
 // The caller's borrow, split: the operand block, then the context. ip6_forward.h publishes the
 // offsets; the assert proves the span covers them before anything runs.
-static_assert(IDEMIP_IP6_FORWARD_OFF_CTX + sizeof(Ip6ForwardCtx) <= IDEMIP_IP6_FORWARD_BORROW,
-              "IDEMIP_IP6_FORWARD_BORROW is short of the operand block and the context - raise "
-              "IDEMIP_IP6_FORWARD_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_FORWARD_OFF_CTX + sizeof(Ip6ForwardCtx) <= IDEMIP_IP6_FORWARD_BORROW,
+                    "IDEMIP_IP6_FORWARD_BORROW is short of the operand block and the context - raise "
+                    "IDEMIP_IP6_FORWARD_CTX_BYTES in idemip_config.h");
 
 // The borrow abuts the next one the caller placed, so its length keeps that one's alignment.
-static_assert((IDEMIP_IP6_FORWARD_BORROW & (IDEMIP_ALIGN - 1u)) == 0u,
-              "IDEMIP_IP6_FORWARD_BORROW must be a multiple of IDEMIP_ALIGN");
+EMBED_STATIC_ASSERT((IDEMIP_IP6_FORWARD_BORROW & (IDEMIP_ALIGN - 1u)) == 0u,
+                    "IDEMIP_IP6_FORWARD_BORROW must be a multiple of IDEMIP_ALIGN");
 
 // clear zeroes the context, so the reason a passing decision reports is the zero state.
-static_assert(IDEMIP_IP6_FORWARD_R_OK == 0, "IDEMIP_IP6_FORWARD_R_OK must be zero: it is the reason of a clean pass");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_FORWARD_R_OK == 0,
+                    "IDEMIP_IP6_FORWARD_R_OK must be zero: it is the reason of a clean pass");
 
 // The regions, at their offsets in the caller's borrow.
 #define IP6_FORWARD_IO(w) IDEMIP_IP6_FORWARD_IO(w)
 #define IP6_FORWARD_CTX(w) ((Ip6ForwardCtx *)(void *)((w) + IDEMIP_IP6_FORWARD_OFF_CTX))
 
 // A borrow clear has not run on carries no mark, so decide refuses it.
-static idemip_bool ip6_forward_ready(uint8_t *work)
+static embed_bool ip6_forward_ready(uint8_t *work)
 {
-    return (idemip_bool)(IP6_FORWARD_CTX(work)->ready == IP6_FORWARD_READY);
+    return (embed_bool)(IP6_FORWARD_CTX(work)->ready == IP6_FORWARD_READY);
 }
 
 // --- the addresses ---------------------------------------------------------
 
 // RFC 4291 sec 2.7: FF00::/8.
-static idemip_bool ip6_forward_is_multicast(const uint8_t *a)
+static embed_bool ip6_forward_is_multicast(const uint8_t *a)
 {
-    return (idemip_bool)(a[0] == IP6_FORWARD_MULTICAST_TAG);
+    return (embed_bool)(a[0] == IP6_FORWARD_MULTICAST_TAG);
 }
 
 // RFC 4291 sec 2.5.6: FE80::/10.
-static idemip_bool ip6_forward_is_link_local(const uint8_t *a)
+static embed_bool ip6_forward_is_link_local(const uint8_t *a)
 {
-    return (idemip_bool)(a[0] == IP6_FORWARD_LINK_LOCAL_HI &&
-                         (uint8_t)(a[1] & IP6_FORWARD_LINK_LOCAL_MASK) == IP6_FORWARD_LINK_LOCAL_LO);
+    return (embed_bool)(a[0] == IP6_FORWARD_LINK_LOCAL_HI &&
+                        (uint8_t)(a[1] & IP6_FORWARD_LINK_LOCAL_MASK) == IP6_FORWARD_LINK_LOCAL_LO);
 }
 
 // RFC 4291 sec 2.5.2: "The address 0:0:0:0:0:0:0:0 is called the unspecified address."
-static idemip_bool ip6_forward_is_unspecified(const uint8_t *a)
+static embed_bool ip6_forward_is_unspecified(const uint8_t *a)
 {
     return idemip_bytes_zero(a, IDEMIP_IP6_ADDR_LEN);
 }
 
 // RFC 4291 sec 2.5.3: fifteen zero octets and a low octet of one.
-static idemip_bool ip6_forward_is_loopback(const uint8_t *a)
+static embed_bool ip6_forward_is_loopback(const uint8_t *a)
 {
-    return (idemip_bool)(idemip_bytes_zero(a, IDEMIP_IP6_ADDR_LEN - 1u) &&
-                         a[IDEMIP_IP6_ADDR_LEN - 1u] == IP6_FORWARD_LOOPBACK_LOW);
+    return (embed_bool)(idemip_bytes_zero(a, IDEMIP_IP6_ADDR_LEN - 1u) &&
+                        a[IDEMIP_IP6_ADDR_LEN - 1u] == IP6_FORWARD_LOOPBACK_LOW);
 }
 
 // RFC 4291 sec 2.7's scop nibble, the low half of the second octet.
@@ -119,17 +120,17 @@ static uint8_t ip6_forward_scope(const uint8_t *a)
 
 // RFC 8200 sec 3: the Version is 6, and the Payload Length is "the rest of the packet following this
 // IPv6 header, in octets", so the header and it together fit the span the link layer delivered.
-static idemip_bool ip6_forward_header_ok(const uint8_t *h, size_t len)
+static embed_bool ip6_forward_header_ok(const uint8_t *h, size_t len)
 {
     if (len < IDEMIP_IPV6_HDR_LEN)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (idemip_ip6_version(h) != IDEMIP_IP6_VERSION)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    return (idemip_bool)(((size_t)idemip_ip6_payload_len(h) + (size_t)IDEMIP_IPV6_HDR_LEN) <= len);
+    return (embed_bool)(((size_t)idemip_ip6_payload_len(h) + (size_t)IDEMIP_IPV6_HDR_LEN) <= len);
 }
 
 // --- when an ICMPv6 error may be sent --------------------------------------
@@ -138,12 +139,12 @@ static idemip_bool ip6_forward_header_ok(const uint8_t *h, size_t len)
 // walked to the upper-layer header, which RFC 8200 sec 4 reaches by "the first one that is not an
 // extension header". A packet carrying a Fragment header at a nonzero offset holds no upper-layer
 // header to read, so nothing is claimed about it.
-static idemip_bool ip6_forward_carries_icmp_error(const uint8_t *h, size_t len)
+static embed_bool ip6_forward_carries_icmp_error(const uint8_t *h, size_t len)
 {
     IdemIpIp6Chain c = idemip_ip6_walk(h, len);
     if (!c.ok || c.next_hdr != (uint8_t)IDEMIP_IP6_NH_ICMPV6)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     // Not measured on the offset: idemip_ip6_walk stops at a Fragment header whose offset is not
     // zero and leaves the Fragment header as the next one, so the test above has already answered a
@@ -151,21 +152,21 @@ static idemip_bool ip6_forward_carries_icmp_error(const uint8_t *h, size_t len)
     // first fragment" alone, and the type read below is out of that header.
     if (c.fragmented && idemip_ip6_frag_offset_bytes(h + c.frag_hdr) != 0u) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+        return EMBED_FALSE; // GCOVR_EXCL_LINE
     }
     if (c.offset + (size_t)IDEMIP_ICMP6_OFF_TYPE + 1u > len)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     uint8_t type = h[c.offset + IDEMIP_ICMP6_OFF_TYPE];
-    return (idemip_bool)(type < IDEMIP_ICMP6_INFORMATIONAL || type == IP6_FORWARD_TYPE_REDIRECT);
+    return (embed_bool)(type < IDEMIP_ICMP6_INFORMATIONAL || type == IP6_FORWARD_TYPE_REDIRECT);
 }
 
 // RFC 4443 sec 2.4 (e), the whole list. sec 3.2 makes Packet Too Big the exception to (e.3), (e.4)
 // and (e.5): "Unlike other messages, it is sent in response to a packet received with an IPv6
 // multicast destination address, or with a link-layer multicast or link-layer broadcast address."
 // (e.6) has no exception, so a source that names no single node suppresses every message.
-static idemip_bool ip6_forward_icmp_allowed(const uint8_t *h, size_t len, const Ip6ForwardArgs *a, idemip_bool too_big)
+static embed_bool ip6_forward_icmp_allowed(const uint8_t *h, size_t len, const Ip6ForwardArgs *a, embed_bool too_big)
 {
     const uint8_t *src = idemip_ip6_src(h);
     const uint8_t *dst = idemip_ip6_dst(h);
@@ -176,17 +177,17 @@ static idemip_bool ip6_forward_icmp_allowed(const uint8_t *h, size_t len, const 
     if (ip6_forward_is_unspecified(src) || ip6_forward_is_multicast(src)) // GCOVR_EXCL_BR_LINE
     {
         // (e.6) "A packet whose source address does not uniquely identify a single node"
-        return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+        return EMBED_FALSE; // GCOVR_EXCL_LINE
     }
     if (ip6_forward_carries_icmp_error(h, len))
     {
-        return IDEMIP_FALSE; // (e.1) and (e.2)
+        return EMBED_FALSE; // (e.1) and (e.2)
     }
     if (!too_big && (ip6_forward_is_multicast(dst) || a->ll_multicast || a->ll_broadcast))
     {
-        return IDEMIP_FALSE; // (e.3), (e.4) and (e.5)
+        return EMBED_FALSE; // (e.3), (e.4) and (e.5)
     }
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // --- the decision ----------------------------------------------------------
@@ -203,8 +204,8 @@ static void ip6_forward_reset(Ip6ForwardIo *io)
     io->netif = 0;
     io->icmp_type = IDEMIP_IP6_FORWARD_ICMP_NONE;
     io->icmp_code = 0;
-    io->icmp = IDEMIP_FALSE;
-    io->redirect = IDEMIP_FALSE;
+    io->icmp = EMBED_FALSE;
+    io->redirect = EMBED_FALSE;
 }
 
 // A discard the RFC names, with no message owed.
@@ -217,12 +218,12 @@ static void ip6_forward_drop(Ip6ForwardIo *io, IdemIpIp6ForwardReason reason)
 
 // A discard with a message owed, subject to the sec 2.4 (e) list.
 static void ip6_forward_drop_icmp(Ip6ForwardIo *io, IdemIpIp6ForwardReason reason, uint8_t type, uint8_t code,
-                                  idemip_bool allowed)
+                                  embed_bool allowed)
 {
     ip6_forward_drop(io, reason);
     if (allowed)
     {
-        io->icmp = IDEMIP_TRUE;
+        io->icmp = EMBED_TRUE;
         io->icmp_type = type;
         io->icmp_code = code;
     }
@@ -231,9 +232,9 @@ static void ip6_forward_drop_icmp(Ip6ForwardIo *io, IdemIpIp6ForwardReason reaso
 // RFC 4291 sec 2.5.6 of the unicast link-local addresses and sec 2.7 of the multicast scopes: a
 // packet leaving the interface it arrived on stays on one link, and every other case crosses to
 // another link, which the scope forbids.
-static idemip_bool ip6_forward_crosses_link(const Ip6ForwardArgs *a)
+static embed_bool ip6_forward_crosses_link(const Ip6ForwardArgs *a)
 {
-    return (idemip_bool)(a->out_netif != a->in_netif);
+    return (embed_bool)(a->out_netif != a->in_netif);
 }
 
 // --- the entries -----------------------------------------------------------
@@ -245,7 +246,8 @@ void idemip_ip6_forward_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IP6_FORWARD_OFF_CTX, 0, (size_t)IDEMIP_IP6_FORWARD_BORROW - IDEMIP_IP6_FORWARD_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_IP6_FORWARD_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_IP6_FORWARD_BORROW - IDEMIP_IP6_FORWARD_OFF_CTX);
     IP6_FORWARD_CTX(work)->ready = IP6_FORWARD_READY;
     IP6_FORWARD_IO(work)->status = IDEMIP_OK;
 }
@@ -351,7 +353,7 @@ void idemip_ip6_forward_decide(uint8_t *work)
         return;
     }
 
-    idemip_bool icmp_ok = ip6_forward_icmp_allowed(h, a->len, a, IDEMIP_FALSE);
+    embed_bool icmp_ok = ip6_forward_icmp_allowed(h, a->len, a, EMBED_FALSE);
 
     // RFC 4443 sec 3.1 Code 0, "No route to destination", which its Description gives as the answer
     // "in response to a packet that cannot be delivered to its destination address for reasons other
@@ -383,7 +385,7 @@ void idemip_ip6_forward_decide(uint8_t *work)
     if (total > (size_t)a->out_mtu)
     {
         ip6_forward_drop_icmp(io, IDEMIP_IP6_FORWARD_R_TOO_BIG, (uint8_t)IDEMIP_ICMP6_PACKET_TOO_BIG,
-                              (uint8_t)IDEMIP_ICMP6_CODE_PTB, ip6_forward_icmp_allowed(h, a->len, a, IDEMIP_TRUE));
+                              (uint8_t)IDEMIP_ICMP6_CODE_PTB, ip6_forward_icmp_allowed(h, a->len, a, EMBED_TRUE));
         io->mtu = (uint32_t)a->out_mtu;
         return;
     }
@@ -399,10 +401,10 @@ void idemip_ip6_forward_decide(uint8_t *work)
     // routers". A next hop that is neither is not a target this may name, so no redirect is asked for.
     if (a->src_neighbor && !ip6_forward_crosses_link(a) && !ip6_forward_is_multicast(dst))
     {
-        const idemip_bool target_is_dst = (idemip_bytes_eq(a->next_hop, dst, IDEMIP_IP6_ADDR_LEN));
+        const embed_bool target_is_dst = (idemip_bytes_eq(a->next_hop, dst, IDEMIP_IP6_ADDR_LEN));
         if (target_is_dst || ip6_forward_is_link_local(a->next_hop))
         {
-            io->redirect = IDEMIP_TRUE;
+            io->redirect = EMBED_TRUE;
             io->redirect_target = a->next_hop;
         }
     }
@@ -414,4 +416,4 @@ void idemip_ip6_forward_decide(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

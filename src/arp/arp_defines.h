@@ -62,23 +62,23 @@
 #define IDEMIP_ARP_LEN 28u
 
 // Each field starts where the one before it ends, in the order RFC 826 "Packet format" lists them.
-static_assert(IDEMIP_ARP_OFF_PRO == IDEMIP_ARP_OFF_HRD + 2u, "ar$pro follows the 16-bit ar$hrd");
-static_assert(IDEMIP_ARP_OFF_HLN == IDEMIP_ARP_OFF_PRO + 2u, "ar$hln follows the 16-bit ar$pro");
-static_assert(IDEMIP_ARP_OFF_PLN == IDEMIP_ARP_OFF_HLN + 1u, "ar$pln follows the 8-bit ar$hln");
-static_assert(IDEMIP_ARP_OFF_OP == IDEMIP_ARP_OFF_PLN + 1u, "ar$op follows the 8-bit ar$pln");
-static_assert(IDEMIP_ARP_OFF_SHA == IDEMIP_ARP_OFF_OP + 2u, "ar$sha follows the 16-bit ar$op");
-static_assert(IDEMIP_ARP_OFF_SPA == IDEMIP_ARP_OFF_SHA + IDEMIP_ARP_HLN_ETHERNET,
-              "ar$spa follows ar$hln bytes of ar$sha");
-static_assert(IDEMIP_ARP_OFF_THA == IDEMIP_ARP_OFF_SPA + IDEMIP_ARP_PLN_IPV4,
-              "ar$tha follows ar$pln bytes of ar$spa");
-static_assert(IDEMIP_ARP_OFF_TPA == IDEMIP_ARP_OFF_THA + IDEMIP_ARP_HLN_ETHERNET,
-              "ar$tha is ar$hln bytes and ar$tpa follows it: RFC 826 leaves no padding between addresses");
-static_assert(IDEMIP_ARP_OFF_TPA + IDEMIP_ARP_PLN_IPV4 == IDEMIP_ARP_LEN,
-              "the RFC 826 field offsets must sum to the Ethernet/IPv4 payload length");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_OFF_PRO == IDEMIP_ARP_OFF_HRD + 2u, "ar$pro follows the 16-bit ar$hrd");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_OFF_HLN == IDEMIP_ARP_OFF_PRO + 2u, "ar$hln follows the 16-bit ar$pro");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_OFF_PLN == IDEMIP_ARP_OFF_HLN + 1u, "ar$pln follows the 8-bit ar$hln");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_OFF_OP == IDEMIP_ARP_OFF_PLN + 1u, "ar$op follows the 8-bit ar$pln");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_OFF_SHA == IDEMIP_ARP_OFF_OP + 2u, "ar$sha follows the 16-bit ar$op");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_OFF_SPA == IDEMIP_ARP_OFF_SHA + IDEMIP_ARP_HLN_ETHERNET,
+                    "ar$spa follows ar$hln bytes of ar$sha");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_OFF_THA == IDEMIP_ARP_OFF_SPA + IDEMIP_ARP_PLN_IPV4,
+                    "ar$tha follows ar$pln bytes of ar$spa");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_OFF_TPA == IDEMIP_ARP_OFF_THA + IDEMIP_ARP_HLN_ETHERNET,
+                    "ar$tha is ar$hln bytes and ar$tpa follows it: RFC 826 leaves no padding between addresses");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_OFF_TPA + IDEMIP_ARP_PLN_IPV4 == IDEMIP_ARP_LEN,
+                    "the RFC 826 field offsets must sum to the Ethernet/IPv4 payload length");
 // RFC 894 pads a short frame to 46 octets, and an ARP payload is 28, so an ARP frame is always
 // padded on the wire. The pad is not part of the packet, so a parser reads the fields at their
 // offsets and never takes a length from the frame.
-static_assert(IDEMIP_ARP_LEN < IDEMIP_ETH_MIN_PAYLOAD,
-              "an ARP payload is shorter than the RFC 894 minimum data field and is padded to it");
+EMBED_STATIC_ASSERT(IDEMIP_ARP_LEN < IDEMIP_ETH_MIN_PAYLOAD,
+                    "an ARP payload is shorter than the RFC 894 minimum data field and is padded to it");
 
 #endif // IDEMIP_ARP_DEFINES_H

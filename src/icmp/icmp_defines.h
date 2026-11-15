@@ -151,26 +151,27 @@
 // The maps close on themselves
 // ---------------------------------------------------------------------------
 
-static_assert(IDEMIP_ICMP_OFF_CKSUM + 2u == IDEMIP_ICMP_HDR_LEN,
-              "the fields every RFC 792 message shares must sum to the common header length");
-static_assert(IDEMIP_ICMP_OFF_SEQ + 2u == IDEMIP_ICMP_ECHO_HDR_LEN,
-              "the RFC 792 echo fields must sum to the echo header length");
-static_assert(IDEMIP_ICMP_OFF_SEQ + 2u == IDEMIP_ICMP_INFO_LEN,
-              "an RFC 792 information request or reply is the echo fields and nothing after them");
-static_assert(IDEMIP_ICMP_OFF_UNUSED + 4u == IDEMIP_ICMP_ERR_HDR_LEN,
-              "the RFC 792 error fields must sum to the error header length");
-static_assert(IDEMIP_ICMP_OFF_QUOTE == IDEMIP_ICMP_ERR_HDR_LEN,
-              "the quoted datagram starts where the RFC 792 error header ends");
-static_assert(IDEMIP_ICMP_OFF_POINTER == IDEMIP_ICMP_OFF_UNUSED && IDEMIP_ICMP_OFF_GATEWAY == IDEMIP_ICMP_OFF_UNUSED,
-              "RFC 792 puts the pointer, the gateway address and the unused word at the same offset");
-static_assert(IDEMIP_ICMP_POINTER_SHIFT == 24u,
-              "the RFC 792 pointer is the first octet of the word at offset 4");
-static_assert(IDEMIP_ICMP_OFF_XMIT_TS + 4u == IDEMIP_ICMP_TS_LEN,
-              "the RFC 792 timestamp fields must sum to the timestamp message length");
-static_assert(IDEMIP_ICMP_ERR_QUOTE_DATA == 64u / 8u,
-              "RFC 792 quotes 64 bits of the original datagram's data, which is eight octets");
-static_assert(IDEMIP_ICMP_DU_NET_UNKNOWN == IDEMIP_ICMP_DU_SRC_ROUTE_FAILED + 1u,
-              "RFC 1122 sec 3.2.2.1's added codes continue RFC 792's run at 6");
-static_assert(IDEMIP_ICMP_DU_HOST_TOS == 12u, "RFC 1122 sec 3.2.2.1 ends the destination unreachable codes at 12");
+EMBED_STATIC_ASSERT(IDEMIP_ICMP_OFF_CKSUM + 2u == IDEMIP_ICMP_HDR_LEN,
+                    "the fields every RFC 792 message shares must sum to the common header length");
+EMBED_STATIC_ASSERT(IDEMIP_ICMP_OFF_SEQ + 2u == IDEMIP_ICMP_ECHO_HDR_LEN,
+                    "the RFC 792 echo fields must sum to the echo header length");
+EMBED_STATIC_ASSERT(IDEMIP_ICMP_OFF_SEQ + 2u == IDEMIP_ICMP_INFO_LEN,
+                    "an RFC 792 information request or reply is the echo fields and nothing after them");
+EMBED_STATIC_ASSERT(IDEMIP_ICMP_OFF_UNUSED + 4u == IDEMIP_ICMP_ERR_HDR_LEN,
+                    "the RFC 792 error fields must sum to the error header length");
+EMBED_STATIC_ASSERT(IDEMIP_ICMP_OFF_QUOTE == IDEMIP_ICMP_ERR_HDR_LEN,
+                    "the quoted datagram starts where the RFC 792 error header ends");
+EMBED_STATIC_ASSERT(IDEMIP_ICMP_OFF_POINTER == IDEMIP_ICMP_OFF_UNUSED &&
+                        IDEMIP_ICMP_OFF_GATEWAY == IDEMIP_ICMP_OFF_UNUSED,
+                    "RFC 792 puts the pointer, the gateway address and the unused word at the same offset");
+EMBED_STATIC_ASSERT(IDEMIP_ICMP_POINTER_SHIFT == 24u, "the RFC 792 pointer is the first octet of the word at offset 4");
+EMBED_STATIC_ASSERT(IDEMIP_ICMP_OFF_XMIT_TS + 4u == IDEMIP_ICMP_TS_LEN,
+                    "the RFC 792 timestamp fields must sum to the timestamp message length");
+EMBED_STATIC_ASSERT(IDEMIP_ICMP_ERR_QUOTE_DATA == 64u / 8u,
+                    "RFC 792 quotes 64 bits of the original datagram's data, which is eight octets");
+EMBED_STATIC_ASSERT(IDEMIP_ICMP_DU_NET_UNKNOWN == IDEMIP_ICMP_DU_SRC_ROUTE_FAILED + 1u,
+                    "RFC 1122 sec 3.2.2.1's added codes continue RFC 792's run at 6");
+EMBED_STATIC_ASSERT(IDEMIP_ICMP_DU_HOST_TOS == 12u,
+                    "RFC 1122 sec 3.2.2.1 ends the destination unreachable codes at 12");
 
 #endif // IDEMIP_ICMP_DEFINES_H

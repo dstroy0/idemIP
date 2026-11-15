@@ -4,7 +4,8 @@
 #include "unity.h"
 #include "src/udp/udplite.h"
 #include "src/udp/udp_defines.h"
-#include <string.h>
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);
@@ -106,42 +107,42 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/udp/test_udplite/test_udplite.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 181);
-  run_test(test_an_uncleared_borrow_refuses_work, "test_an_uncleared_borrow_refuses_work", 192);
-  run_test(test_clear_zeroes_the_operand_block, "test_clear_zeroes_the_operand_block", 204);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 217);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 247);
-  run_test(test_check_repeats_on_the_same_bytes, "test_check_repeats_on_the_same_bytes", 271);
-  run_test(test_coverage_of_zero_covers_the_entire_packet, "test_coverage_of_zero_covers_the_entire_packet", 289);
-  run_test(test_coverage_one_to_seven_is_discarded, "test_coverage_one_to_seven_is_discarded", 302);
-  run_test(test_coverage_of_eight_is_the_smallest_one_kept, "test_coverage_of_eight_is_the_smallest_one_kept", 321);
-  run_test(test_coverage_past_the_ip_length_is_discarded, "test_coverage_past_the_ip_length_is_discarded", 333);
-  run_test(test_an_ip_payload_under_the_header_is_discarded, "test_an_ip_payload_under_the_header_is_discarded", 350);
-  run_test(test_an_ip_payload_of_exactly_the_header_is_kept, "test_an_ip_payload_of_exactly_the_header_is_kept", 370);
-  run_test(test_coverage_equal_to_the_ip_length_covers_the_whole_packet, "test_coverage_equal_to_the_ip_length_covers_the_whole_packet", 386);
-  run_test(test_cover_reads_the_coverage_out_of_the_datagram, "test_cover_reads_the_coverage_out_of_the_datagram", 402);
-  run_test(test_cover_runs_no_sum_and_needs_no_addresses, "test_cover_runs_no_sum_and_needs_no_addresses", 415);
-  run_test(test_rfc_1071_prints_the_one_worked_sum, "test_rfc_1071_prints_the_one_worked_sum", 441);
-  run_test(test_build_matches_the_independent_ipv4_vectors, "test_build_matches_the_independent_ipv4_vectors", 448);
-  run_test(test_build_matches_the_independent_ipv6_vectors, "test_build_matches_the_independent_ipv6_vectors", 460);
-  run_test(test_the_pseudo_header_length_is_the_ip_payload_not_the_coverage, "test_the_pseudo_header_length_is_the_ip_payload_not_the_coverage", 476);
-  run_test(test_the_pseudo_header_length_is_the_ip_payload_over_ipv6_too, "test_the_pseudo_header_length_is_the_ip_payload_over_ipv6_too", 493);
-  run_test(test_check_refuses_a_datagram_summed_at_another_ip_payload_length, "test_check_refuses_a_datagram_summed_at_another_ip_payload_length", 507);
-  run_test(test_the_pseudo_header_protocol_is_one_hundred_thirty_six, "test_the_pseudo_header_protocol_is_one_hundred_thirty_six", 524);
-  run_test(test_check_accepts_what_build_wrote, "test_check_accepts_what_build_wrote", 542);
-  run_test(test_a_flip_inside_the_coverage_is_caught_and_one_past_it_is_delivered, "test_a_flip_inside_the_coverage_is_caught_and_one_past_it_is_delivered", 566);
-  run_test(test_a_computed_zero_is_transmitted_as_all_ones, "test_a_computed_zero_is_transmitted_as_all_ones", 594);
-  run_test(test_an_all_zero_checksum_is_refused, "test_an_all_zero_checksum_is_refused", 618);
-  run_test(test_check_reports_how_far_the_coverage_reaches, "test_check_reports_how_far_the_coverage_reaches", 634);
-  run_test(test_build_writes_the_header_and_no_payload_octet, "test_build_writes_the_header_and_no_payload_octet", 655);
-  run_test(test_no_refusal_is_ever_busy, "test_no_refusal_is_ever_busy", 672);
-  run_test(test_a_version_that_names_no_pseudo_header_is_refused, "test_a_version_that_names_no_pseudo_header_is_refused", 715);
-  run_test(test_a_refused_build_leaves_the_datagram_alone, "test_a_refused_build_leaves_the_datagram_alone", 734);
-  run_test(test_an_ipv4_payload_past_the_total_length_field_is_refused, "test_an_ipv4_payload_past_the_total_length_field_is_refused", 746);
-  run_test(test_a_jumbogram_is_covered_whole_only_through_the_zero_value, "test_a_jumbogram_is_covered_whole_only_through_the_zero_value", 762);
-  run_test(test_the_borrow_map_is_compile_time, "test_the_borrow_map_is_compile_time", 801);
-  run_test(test_the_entries_refuse_a_call_that_names_no_datagram_or_no_address, "test_the_entries_refuse_a_call_that_names_no_datagram_or_no_address", 812);
-  run_test(test_a_packet_shorter_than_its_own_header_carries_no_coverage, "test_a_packet_shorter_than_its_own_header_carries_no_coverage", 843);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 187);
+  run_test(test_an_uncleared_borrow_refuses_work, "test_an_uncleared_borrow_refuses_work", 198);
+  run_test(test_clear_zeroes_the_operand_block, "test_clear_zeroes_the_operand_block", 210);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 223);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 253);
+  run_test(test_check_repeats_on_the_same_bytes, "test_check_repeats_on_the_same_bytes", 277);
+  run_test(test_coverage_of_zero_covers_the_entire_packet, "test_coverage_of_zero_covers_the_entire_packet", 295);
+  run_test(test_coverage_one_to_seven_is_discarded, "test_coverage_one_to_seven_is_discarded", 308);
+  run_test(test_coverage_of_eight_is_the_smallest_one_kept, "test_coverage_of_eight_is_the_smallest_one_kept", 327);
+  run_test(test_coverage_past_the_ip_length_is_discarded, "test_coverage_past_the_ip_length_is_discarded", 339);
+  run_test(test_an_ip_payload_under_the_header_is_discarded, "test_an_ip_payload_under_the_header_is_discarded", 356);
+  run_test(test_an_ip_payload_of_exactly_the_header_is_kept, "test_an_ip_payload_of_exactly_the_header_is_kept", 376);
+  run_test(test_coverage_equal_to_the_ip_length_covers_the_whole_packet, "test_coverage_equal_to_the_ip_length_covers_the_whole_packet", 392);
+  run_test(test_cover_reads_the_coverage_out_of_the_datagram, "test_cover_reads_the_coverage_out_of_the_datagram", 408);
+  run_test(test_cover_runs_no_sum_and_needs_no_addresses, "test_cover_runs_no_sum_and_needs_no_addresses", 421);
+  run_test(test_rfc_1071_prints_the_one_worked_sum, "test_rfc_1071_prints_the_one_worked_sum", 447);
+  run_test(test_build_matches_the_independent_ipv4_vectors, "test_build_matches_the_independent_ipv4_vectors", 454);
+  run_test(test_build_matches_the_independent_ipv6_vectors, "test_build_matches_the_independent_ipv6_vectors", 466);
+  run_test(test_the_pseudo_header_length_is_the_ip_payload_not_the_coverage, "test_the_pseudo_header_length_is_the_ip_payload_not_the_coverage", 482);
+  run_test(test_the_pseudo_header_length_is_the_ip_payload_over_ipv6_too, "test_the_pseudo_header_length_is_the_ip_payload_over_ipv6_too", 499);
+  run_test(test_check_refuses_a_datagram_summed_at_another_ip_payload_length, "test_check_refuses_a_datagram_summed_at_another_ip_payload_length", 513);
+  run_test(test_the_pseudo_header_protocol_is_one_hundred_thirty_six, "test_the_pseudo_header_protocol_is_one_hundred_thirty_six", 530);
+  run_test(test_check_accepts_what_build_wrote, "test_check_accepts_what_build_wrote", 548);
+  run_test(test_a_flip_inside_the_coverage_is_caught_and_one_past_it_is_delivered, "test_a_flip_inside_the_coverage_is_caught_and_one_past_it_is_delivered", 572);
+  run_test(test_a_computed_zero_is_transmitted_as_all_ones, "test_a_computed_zero_is_transmitted_as_all_ones", 600);
+  run_test(test_an_all_zero_checksum_is_refused, "test_an_all_zero_checksum_is_refused", 624);
+  run_test(test_check_reports_how_far_the_coverage_reaches, "test_check_reports_how_far_the_coverage_reaches", 640);
+  run_test(test_build_writes_the_header_and_no_payload_octet, "test_build_writes_the_header_and_no_payload_octet", 661);
+  run_test(test_no_refusal_is_ever_busy, "test_no_refusal_is_ever_busy", 678);
+  run_test(test_a_version_that_names_no_pseudo_header_is_refused, "test_a_version_that_names_no_pseudo_header_is_refused", 721);
+  run_test(test_a_refused_build_leaves_the_datagram_alone, "test_a_refused_build_leaves_the_datagram_alone", 740);
+  run_test(test_an_ipv4_payload_past_the_total_length_field_is_refused, "test_an_ipv4_payload_past_the_total_length_field_is_refused", 752);
+  run_test(test_a_jumbogram_is_covered_whole_only_through_the_zero_value, "test_a_jumbogram_is_covered_whole_only_through_the_zero_value", 768);
+  run_test(test_the_borrow_map_is_compile_time, "test_the_borrow_map_is_compile_time", 807);
+  run_test(test_the_entries_refuse_a_call_that_names_no_datagram_or_no_address, "test_the_entries_refuse_a_call_that_names_no_datagram_or_no_address", 818);
+  run_test(test_a_packet_shorter_than_its_own_header_carries_no_coverage, "test_a_packet_shorter_than_its_own_header_carries_no_coverage", 849);
 
   return UNITY_END();
 }

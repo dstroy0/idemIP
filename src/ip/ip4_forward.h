@@ -40,7 +40,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief What the forwarder decided to do with the datagram.
@@ -50,11 +50,7 @@ IDEMIP_BEGIN_DECLS
  * @var IDEMIP_IP4_FORWARD_SEND    the datagram is forwarded to @ref Ip4ForwardIo::next_hop with
  *                                 @ref Ip4ForwardIo::ttl written into its Time to Live
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IP4_FORWARD_DISCARD = 0,
-    IDEMIP_IP4_FORWARD_SEND,
-} IdemIpIp4ForwardAction;
+EMBED_ENUM_BYTE(IdemIpIp4ForwardAction, IDEMIP_IP4_FORWARD_DISCARD = 0, IDEMIP_IP4_FORWARD_SEND, );
 
 /**
  * @brief Which rule decided, each in the RFC's own words.
@@ -92,23 +88,11 @@ typedef enum IDEMIP_ENUM_PACKED
  * @var IDEMIP_IP4_FORWARD_R_SRC_BCAST   RFC 1812 sec 4.2.2.11 (d), of { <Network-prefix>, -1 }: "It
  *                                       MUST NOT be used as a source address"
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IP4_FORWARD_R_OK = 0,
-    IDEMIP_IP4_FORWARD_R_HEADER,
-    IDEMIP_IP4_FORWARD_R_LINK_BCAST,
-    IDEMIP_IP4_FORWARD_R_SRC,
-    IDEMIP_IP4_FORWARD_R_DST,
-    IDEMIP_IP4_FORWARD_R_LIMITED,
-    IDEMIP_IP4_FORWARD_R_DIRECTED,
-    IDEMIP_IP4_FORWARD_R_STRICT,
-    IDEMIP_IP4_FORWARD_R_NO_ROUTE,
-    IDEMIP_IP4_FORWARD_R_TTL,
-    IDEMIP_IP4_FORWARD_R_DF,
-    IDEMIP_IP4_FORWARD_R_NO_ROUTE_TOS,
-    IDEMIP_IP4_FORWARD_R_LINK_LOCAL,
-    IDEMIP_IP4_FORWARD_R_SRC_BCAST,
-} IdemIpIp4ForwardReason;
+EMBED_ENUM_BYTE(IdemIpIp4ForwardReason, IDEMIP_IP4_FORWARD_R_OK = 0, IDEMIP_IP4_FORWARD_R_HEADER,
+                IDEMIP_IP4_FORWARD_R_LINK_BCAST, IDEMIP_IP4_FORWARD_R_SRC, IDEMIP_IP4_FORWARD_R_DST,
+                IDEMIP_IP4_FORWARD_R_LIMITED, IDEMIP_IP4_FORWARD_R_DIRECTED, IDEMIP_IP4_FORWARD_R_STRICT,
+                IDEMIP_IP4_FORWARD_R_NO_ROUTE, IDEMIP_IP4_FORWARD_R_TTL, IDEMIP_IP4_FORWARD_R_DF,
+                IDEMIP_IP4_FORWARD_R_NO_ROUTE_TOS, IDEMIP_IP4_FORWARD_R_LINK_LOCAL, IDEMIP_IP4_FORWARD_R_SRC_BCAST, );
 
 /**
  * @brief The switches RFC 1812 requires, one bit each. clear raises both.
@@ -173,11 +157,11 @@ typedef struct
     uint16_t out_mtu;
     uint8_t in_netif;
     uint8_t out_netif;
-    idemip_bool routed;
-    idemip_bool direct;
-    idemip_bool tos_blocked;
-    idemip_bool ll_broadcast;
-    idemip_bool ll_multicast;
+    embed_bool routed;
+    embed_bool direct;
+    embed_bool tos_blocked;
+    embed_bool ll_broadcast;
+    embed_bool ll_multicast;
 } Ip4ForwardArgs;
 
 /**
@@ -237,9 +221,9 @@ typedef struct
     uint8_t icmp_code;
     uint8_t icmp_ptr;
     uint8_t policy;
-    idemip_bool icmp;
-    idemip_bool fragment;
-    idemip_bool redirect;
+    embed_bool icmp;
+    embed_bool fragment;
+    embed_bool redirect;
 } Ip4ForwardIo;
 
 // ---------------------------------------------------------------------------
@@ -262,7 +246,7 @@ typedef struct
  *   Ip4Forward.clear(work);
  *   IDEMIP_IP4_FORWARD_IO(work)->fwd_args.hdr = datagram;
  *   IDEMIP_IP4_FORWARD_IO(work)->fwd_args.len = len;
- *   IDEMIP_IP4_FORWARD_IO(work)->fwd_args.routed = IDEMIP_TRUE;
+ *   IDEMIP_IP4_FORWARD_IO(work)->fwd_args.routed = EMBED_TRUE;
  *   IDEMIP_IP4_FORWARD_IO(work)->fwd_args.next_hop = gw;
  *   IDEMIP_IP4_FORWARD_IO(work)->fwd_args.out_mtu = 1500u;
  *   Ip4Forward.decide(work);
@@ -314,11 +298,10 @@ void idemip_ip4_forward_decide(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Ip4ForwardNs Ip4Forward IDEMIP_UNUSED = {
-    .clear = idemip_ip4_forward_clear,
-    .set_policy = idemip_ip4_forward_set_policy,
-    .decide = idemip_ip4_forward_decide};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE Ip4ForwardNs Ip4Forward EMBED_UNUSED = {.clear = idemip_ip4_forward_clear,
+                                                            .set_policy = idemip_ip4_forward_set_policy,
+                                                            .decide = idemip_ip4_forward_decide};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

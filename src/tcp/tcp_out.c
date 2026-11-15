@@ -18,7 +18,7 @@
 #include "src/common_defines.h"
 #include "src/tcp/tcp_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The one definition, private to this TU. A borrow that was never cleared carries no mark, so every
 // entry refuses it.
@@ -36,8 +36,9 @@ IDEMIP_ASSERT_REGION(IDEMIP_TCP_OUT_OFF_CTX, sizeof(TcpOutCtx), IDEMIP_TCP_OUT_B
 
 // The caller's borrow, split: the operand block, then the context. tcp_out.h publishes the offsets;
 // the assert below proves the span covers them before anything runs.
-static_assert(IDEMIP_TCP_OUT_OFF_CTX + sizeof(TcpOutCtx) <= IDEMIP_TCP_OUT_BORROW,
-              "IDEMIP_TCP_OUT_BORROW is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_TCP_OUT_OFF_CTX + sizeof(TcpOutCtx) <= IDEMIP_TCP_OUT_BORROW,
+    "IDEMIP_TCP_OUT_BORROW is short of the operand block and the context - raise it in idemip_config.h");
 
 // The regions, at their offsets in the caller's borrow.
 #define TCP_OUT_CTX(w) ((TcpOutCtx *)(void *)((w) + IDEMIP_TCP_OUT_OFF_CTX))
@@ -104,7 +105,7 @@ static uint32_t tcp_out_iw(uint32_t smss)
 // dropped from a segment without SYN rather than refused.
 static uint16_t tcp_out_opts_len(const TcpOutBuildArgs *a)
 {
-    idemip_bool syn = ((a->flags & IDEMIP_TCP_SYN) != 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    embed_bool syn = ((a->flags & IDEMIP_TCP_SYN) != 0u) ? EMBED_TRUE : EMBED_FALSE;
     uint16_t n = 0u;
     if (syn && (a->opts & IDEMIP_TCP_OUT_OPT_MSS) != 0u)
     {
@@ -135,7 +136,7 @@ static uint16_t tcp_out_opts_len(const TcpOutBuildArgs *a)
 // kinds and lengths are the ones its RFC-verified constants name.
 static uint16_t tcp_out_put_opts(uint8_t *o, const TcpOutBuildArgs *a, const TcpPcbCtl *ctl, uint16_t room)
 {
-    idemip_bool syn = ((a->flags & IDEMIP_TCP_SYN) != 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    embed_bool syn = ((a->flags & IDEMIP_TCP_SYN) != 0u) ? EMBED_TRUE : EMBED_FALSE;
     uint16_t n = 0u;
     if (syn && (a->opts & IDEMIP_TCP_OUT_OPT_MSS) != 0u)
     {
@@ -178,7 +179,7 @@ static uint16_t tcp_out_put_opts(uint8_t *o, const TcpOutBuildArgs *a, const Tcp
     // be header padding of zeros."
     if (n < room)
     {
-        memset(o + n, 0, (size_t)room - n);
+        mmgr_zero_buf(o + n, (size_t)room - n);
     }
     return room;
 }
@@ -194,10 +195,11 @@ void idemip_tcp_out_clear(uint8_t *work)
         return; // no borrow, so nowhere to report
     }
     TcpOutIo *io = TCP_OUT_IO(work);
-    memset(work + IDEMIP_TCP_OUT_OFF_CTX, 0, (size_t)IDEMIP_TCP_OUT_BORROW - IDEMIP_TCP_OUT_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_TCP_OUT_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_TCP_OUT_BORROW - IDEMIP_TCP_OUT_OFF_CTX);
     TCP_OUT_CTX(work)->ready = TCP_OUT_READY;
-    memset(&io->reply, 0, sizeof io->reply);
-    memset(&io->res, 0, sizeof io->res);
+    io->reply = (TcpOutReply){0};
+    io->res = (TcpOutResult){0};
     io->status = IDEMIP_OK;
 }
 
@@ -279,7 +281,7 @@ void idemip_tcp_out_build(uint8_t *work)
     }
     if (a->len != 0u)
     {
-        memcpy(h + hdr, a->data, (size_t)a->len);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = h + hdr, .at = a->data, .size = (size_t)a->len);
     }
 
     uint32_t sum = 0u;
@@ -309,7 +311,7 @@ void idemip_tcp_out_send(uint8_t *work)
     io->status = IDEMIP_ERR;
     io->res.usable = 0u;
     io->res.send_len = 0u;
-    io->res.send_now = IDEMIP_FALSE;
+    io->res.send_now = EMBED_FALSE;
     if (TCP_OUT_CTX(work)->ready != TCP_OUT_READY || io->send_args.eff_snd_mss == 0u)
     {
         return;
@@ -351,30 +353,30 @@ void idemip_tcp_out_send(uint8_t *work)
     uint32_t m = (d < u) ? d : u; // min(D,U)
     // The bracketed condition of rules (2) and (3), which sec 3.8.6.2.1 says "is imposed by the Nagle
     // algorithm". sec 3.7.4 (MUST-17) requires a way to turn that algorithm off.
-    idemip_bool nagle_ok = (io->send_args.nodelay || flight == 0u) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    embed_bool nagle_ok = (io->send_args.nodelay || flight == 0u) ? EMBED_TRUE : EMBED_FALSE;
 
     // (1) "if a maximum-sized segment can be sent, i.e., if: min(D,U) >= Eff.snd.MSS"
     if (m >= io->send_args.eff_snd_mss)
     {
-        io->res.send_now = IDEMIP_TRUE;
+        io->res.send_now = EMBED_TRUE;
     }
     // (2) "or if the data is pushed and all queued data can be sent now, i.e., if:
     // [SND.NXT = SND.UNA and] PUSHed and D <= U"
     else if (nagle_ok && io->send_args.push && d != 0u && d <= u)
     {
-        io->res.send_now = IDEMIP_TRUE;
+        io->res.send_now = EMBED_TRUE;
     }
     // (3) "or if at least a fraction Fs of the maximum window can be sent, i.e., if:
     // [SND.NXT = SND.UNA and] min(D,U) >= Fs * Max(SND.WND)", Fs being "a fraction whose recommended
     // value is 1/2".
     else if (nagle_ok && m != 0u && m >= (io->ctl.max_snd_wnd >> IDEMIP_TCP_SWS_FS_SHIFT))
     {
-        io->res.send_now = IDEMIP_TRUE;
+        io->res.send_now = EMBED_TRUE;
     }
     // (4) "or if the override timeout occurs."
     else if (io->send_args.force && m != 0u)
     {
-        io->res.send_now = IDEMIP_TRUE;
+        io->res.send_now = EMBED_TRUE;
     }
 
     if (io->res.send_now)
@@ -387,7 +389,7 @@ void idemip_tcp_out_send(uint8_t *work)
         // decision to send nothing is not one the caller should be handed.
         if (io->res.send_len == 0u) // GCOVR_EXCL_BR_LINE
         {
-            io->res.send_now = IDEMIP_FALSE; // GCOVR_EXCL_LINE
+            io->res.send_now = EMBED_FALSE; // GCOVR_EXCL_LINE
         }
         else
         {
@@ -408,7 +410,7 @@ void idemip_tcp_out_ack(uint8_t *work)
     }
     TcpOutIo *io = TCP_OUT_IO(work);
     io->status = IDEMIP_ERR;
-    memset(&io->reply, 0, sizeof io->reply);
+    io->reply = (TcpOutReply){0};
     if (TCP_OUT_CTX(work)->ready != TCP_OUT_READY)
     {
         return;
@@ -430,7 +432,7 @@ void idemip_tcp_out_rst(uint8_t *work)
     }
     TcpOutIo *io = TCP_OUT_IO(work);
     io->status = IDEMIP_ERR;
-    memset(&io->reply, 0, sizeof io->reply);
+    io->reply = (TcpOutReply){0};
     if (TCP_OUT_CTX(work)->ready != TCP_OUT_READY)
     {
         return;
@@ -599,7 +601,7 @@ void idemip_tcp_out_rtx_expire(uint8_t *work)
     }
     TcpOutIo *io = TCP_OUT_IO(work);
     io->status = IDEMIP_ERR;
-    io->res.r2 = IDEMIP_FALSE;
+    io->res.r2 = EMBED_FALSE;
     if (TCP_OUT_CTX(work)->ready != TCP_OUT_READY || io->timer_args.smss == 0u)
     {
         return;
@@ -642,7 +644,7 @@ void idemip_tcp_out_rtx_expire(uint8_t *work)
                      : io->ctl.r2;
     if (r2 != 0u && io->ctl.nrtx >= r2)
     {
-        io->res.r2 = IDEMIP_TRUE;
+        io->res.r2 = EMBED_TRUE;
     }
     io->status = IDEMIP_OK;
 }
@@ -781,4 +783,4 @@ void idemip_tcp_out_cc_recover(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

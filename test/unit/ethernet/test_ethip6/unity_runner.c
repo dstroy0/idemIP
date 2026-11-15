@@ -5,7 +5,7 @@
 #include "src/ethernet/ethip6.h"
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ip/ipv6_defines.h"
-#include <string.h>
+#include "support/borrows.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);
@@ -107,42 +107,42 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/ethernet/test_ethip6/test_ethip6.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 109);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 119);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 138);
-  run_test(test_repeating_a_call_repeats_its_answer, "test_repeating_a_call_repeats_its_answer", 155);
-  run_test(test_an_uncleared_borrow_refuses_work, "test_an_uncleared_borrow_refuses_work", 167);
-  run_test(test_clear_reports_ok_and_opens_the_borrow, "test_clear_reports_ok_and_opens_the_borrow", 177);
-  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 186);
-  run_test(test_the_published_map_covers_the_private_layout, "test_the_published_map_covers_the_private_layout", 200);
-  run_test(test_rfc2464_sec4_printed_example, "test_rfc2464_sec4_printed_example", 212);
-  run_test(test_eui64_sets_the_fourth_and_fifth_octets_to_fffe, "test_eui64_sets_the_fourth_and_fifth_octets_to_fffe", 221);
-  run_test(test_eui64_carries_the_oui_into_the_company_id, "test_eui64_carries_the_oui_into_the_company_id", 231);
-  run_test(test_eui64_carries_the_last_three_octets, "test_eui64_carries_the_last_three_octets", 242);
-  run_test(test_eui64_complements_the_ul_bit_in_both_directions, "test_eui64_complements_the_ul_bit_in_both_directions", 254);
-  run_test(test_eui64_touches_only_the_ul_bit_of_the_first_octet, "test_eui64_touches_only_the_ul_bit_of_the_first_octet", 264);
-  run_test(test_eui64_reports_a_universally_administered_address, "test_eui64_reports_a_universally_administered_address", 281);
-  run_test(test_eui64_refuses_a_null_address, "test_eui64_refuses_a_null_address", 290);
-  run_test(test_eui64_zeroes_its_answer_when_refused, "test_eui64_zeroes_its_answer_when_refused", 298);
-  run_test(test_linklocal_prefix_is_fe80_and_fifty_four_zero_bits, "test_linklocal_prefix_is_fe80_and_fifty_four_zero_bits", 314);
-  run_test(test_linklocal_appends_the_sec4_identifier, "test_linklocal_appends_the_sec4_identifier", 328);
-  run_test(test_linklocal_of_the_sec4_printed_example, "test_linklocal_of_the_sec4_printed_example", 339);
-  run_test(test_linklocal_also_reports_the_identifier, "test_linklocal_also_reports_the_identifier", 348);
-  run_test(test_linklocal_refuses_a_null_address, "test_linklocal_refuses_a_null_address", 356);
-  run_test(test_linklocal_zeroes_its_answer_when_refused, "test_linklocal_zeroes_its_answer_when_refused", 363);
-  run_test(test_two_borrows_derive_two_link_local_addresses, "test_two_borrows_derive_two_link_local_addresses", 375);
-  run_test(test_multicast_map_writes_3333_then_the_last_four_octets, "test_multicast_map_writes_3333_then_the_last_four_octets", 390);
-  run_test(test_multicast_map_of_the_all_nodes_address, "test_multicast_map_of_the_all_nodes_address", 405);
-  run_test(test_multicast_map_of_a_solicited_node_address, "test_multicast_map_of_a_solicited_node_address", 414);
-  run_test(test_multicast_map_reads_only_the_last_four_octets, "test_multicast_map_reads_only_the_last_four_octets", 424);
-  run_test(test_multicast_map_carries_every_one_of_the_four_octets, "test_multicast_map_carries_every_one_of_the_four_octets", 444);
-  run_test(test_multicast_map_refuses_a_unicast_destination, "test_multicast_map_refuses_a_unicast_destination", 460);
-  run_test(test_multicast_map_refuses_a_first_octet_one_short_of_ff, "test_multicast_map_refuses_a_first_octet_one_short_of_ff", 473);
-  run_test(test_multicast_map_refuses_a_null_destination, "test_multicast_map_refuses_a_null_destination", 483);
-  run_test(test_multicast_map_accepts_every_scope, "test_multicast_map_accepts_every_scope", 491);
-  run_test(test_sec2_default_mtu_is_1500, "test_sec2_default_mtu_is_1500", 507);
-  run_test(test_sec3_type_code_is_86dd, "test_sec3_type_code_is_86dd", 514);
-  run_test(test_the_field_widths_are_the_stated_ones, "test_the_field_widths_are_the_stated_ones", 520);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 114);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 124);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 143);
+  run_test(test_repeating_a_call_repeats_its_answer, "test_repeating_a_call_repeats_its_answer", 160);
+  run_test(test_an_uncleared_borrow_refuses_work, "test_an_uncleared_borrow_refuses_work", 172);
+  run_test(test_clear_reports_ok_and_opens_the_borrow, "test_clear_reports_ok_and_opens_the_borrow", 182);
+  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 191);
+  run_test(test_the_published_map_covers_the_private_layout, "test_the_published_map_covers_the_private_layout", 205);
+  run_test(test_rfc2464_sec4_printed_example, "test_rfc2464_sec4_printed_example", 217);
+  run_test(test_eui64_sets_the_fourth_and_fifth_octets_to_fffe, "test_eui64_sets_the_fourth_and_fifth_octets_to_fffe", 226);
+  run_test(test_eui64_carries_the_oui_into_the_company_id, "test_eui64_carries_the_oui_into_the_company_id", 236);
+  run_test(test_eui64_carries_the_last_three_octets, "test_eui64_carries_the_last_three_octets", 247);
+  run_test(test_eui64_complements_the_ul_bit_in_both_directions, "test_eui64_complements_the_ul_bit_in_both_directions", 259);
+  run_test(test_eui64_touches_only_the_ul_bit_of_the_first_octet, "test_eui64_touches_only_the_ul_bit_of_the_first_octet", 269);
+  run_test(test_eui64_reports_a_universally_administered_address, "test_eui64_reports_a_universally_administered_address", 286);
+  run_test(test_eui64_refuses_a_null_address, "test_eui64_refuses_a_null_address", 295);
+  run_test(test_eui64_zeroes_its_answer_when_refused, "test_eui64_zeroes_its_answer_when_refused", 303);
+  run_test(test_linklocal_prefix_is_fe80_and_fifty_four_zero_bits, "test_linklocal_prefix_is_fe80_and_fifty_four_zero_bits", 319);
+  run_test(test_linklocal_appends_the_sec4_identifier, "test_linklocal_appends_the_sec4_identifier", 333);
+  run_test(test_linklocal_of_the_sec4_printed_example, "test_linklocal_of_the_sec4_printed_example", 344);
+  run_test(test_linklocal_also_reports_the_identifier, "test_linklocal_also_reports_the_identifier", 353);
+  run_test(test_linklocal_refuses_a_null_address, "test_linklocal_refuses_a_null_address", 361);
+  run_test(test_linklocal_zeroes_its_answer_when_refused, "test_linklocal_zeroes_its_answer_when_refused", 368);
+  run_test(test_two_borrows_derive_two_link_local_addresses, "test_two_borrows_derive_two_link_local_addresses", 380);
+  run_test(test_multicast_map_writes_3333_then_the_last_four_octets, "test_multicast_map_writes_3333_then_the_last_four_octets", 395);
+  run_test(test_multicast_map_of_the_all_nodes_address, "test_multicast_map_of_the_all_nodes_address", 410);
+  run_test(test_multicast_map_of_a_solicited_node_address, "test_multicast_map_of_a_solicited_node_address", 419);
+  run_test(test_multicast_map_reads_only_the_last_four_octets, "test_multicast_map_reads_only_the_last_four_octets", 429);
+  run_test(test_multicast_map_carries_every_one_of_the_four_octets, "test_multicast_map_carries_every_one_of_the_four_octets", 449);
+  run_test(test_multicast_map_refuses_a_unicast_destination, "test_multicast_map_refuses_a_unicast_destination", 465);
+  run_test(test_multicast_map_refuses_a_first_octet_one_short_of_ff, "test_multicast_map_refuses_a_first_octet_one_short_of_ff", 478);
+  run_test(test_multicast_map_refuses_a_null_destination, "test_multicast_map_refuses_a_null_destination", 488);
+  run_test(test_multicast_map_accepts_every_scope, "test_multicast_map_accepts_every_scope", 496);
+  run_test(test_sec2_default_mtu_is_1500, "test_sec2_default_mtu_is_1500", 512);
+  run_test(test_sec3_type_code_is_86dd, "test_sec3_type_code_is_86dd", 519);
+  run_test(test_the_field_widths_are_the_stated_ones, "test_the_field_widths_are_the_stated_ones", 525);
 
   return UNITY_END();
 }

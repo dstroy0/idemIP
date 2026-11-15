@@ -103,18 +103,18 @@
 // ---------------------------------------------------------------------------
 // Each offset is the one before it plus that field's width, and the last lands on the header length.
 
-static_assert(IDEMIP_ETH_OFF_DST + IDEMIP_MAC_LEN == IDEMIP_ETH_OFF_SRC,
-              "the destination address is the first 48 bits of the header (RFC 2464 sec 3)");
-static_assert(IDEMIP_ETH_OFF_SRC + IDEMIP_MAC_LEN == IDEMIP_ETH_OFF_TYPE,
-              "the source address is the second 48 bits of the header (RFC 2464 sec 3)");
-static_assert(IDEMIP_ETH_OFF_TYPE + IDEMIP_ETH_TYPE_LEN == IDEMIP_ETH_OFF_PAYLOAD,
-              "the type code is the last 16 bits of the header (RFC 2464 sec 3)");
-static_assert(IDEMIP_ETH_OFF_PAYLOAD == IDEMIP_ETH_HDR_LEN,
-              "the field offsets must sum to the Ethernet II header length");
+EMBED_STATIC_ASSERT(IDEMIP_ETH_OFF_DST + IDEMIP_MAC_LEN == IDEMIP_ETH_OFF_SRC,
+                    "the destination address is the first 48 bits of the header (RFC 2464 sec 3)");
+EMBED_STATIC_ASSERT(IDEMIP_ETH_OFF_SRC + IDEMIP_MAC_LEN == IDEMIP_ETH_OFF_TYPE,
+                    "the source address is the second 48 bits of the header (RFC 2464 sec 3)");
+EMBED_STATIC_ASSERT(IDEMIP_ETH_OFF_TYPE + IDEMIP_ETH_TYPE_LEN == IDEMIP_ETH_OFF_PAYLOAD,
+                    "the type code is the last 16 bits of the header (RFC 2464 sec 3)");
+EMBED_STATIC_ASSERT(IDEMIP_ETH_OFF_PAYLOAD == IDEMIP_ETH_HDR_LEN,
+                    "the field offsets must sum to the Ethernet II header length");
 
 // RFC 894 encourages full-length packets, and a receiver that cannot take one has to advertise a
 // smaller MSS instead. The link buffer therefore carries a whole frame or the tree does not build.
-static_assert(IDEMIP_ETH_MAX_PAYLOAD >= IDEMIP_IPV4_MIN_MTU,
-              "an Ethernet frame carries at least the IPv4 minimum reassembly buffer (RFC 1122 sec 3.3.2)");
+EMBED_STATIC_ASSERT(IDEMIP_ETH_MAX_PAYLOAD >= IDEMIP_IPV4_MIN_MTU,
+                    "an Ethernet frame carries at least the IPv4 minimum reassembly buffer (RFC 1122 sec 3.3.2)");
 
 #endif // IDEMIP_ETHERNET_DEFINES_H

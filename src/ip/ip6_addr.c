@@ -17,13 +17,13 @@
 #include "src/ip/ip6_addr.h"
 #include "src/ip/ipv6_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The one definition, private to this TU. ready is the mark clear leaves, so a borrow no one
 // cleared is refused rather than answered out of whatever was in those bytes.
 typedef struct
 {
-    idemip_bool ready;
+    embed_bool ready;
 } Ip6AddrCtx;
 
 // Where this unit's context sits, as a compile-time fact: on the alignment, and inside what
@@ -32,11 +32,11 @@ IDEMIP_ASSERT_REGION(IDEMIP_IP6_ADDR_OFF_CTX, sizeof(Ip6AddrCtx), IDEMIP_IP6_ADD
 
 // The caller's borrow, split: the operand block, then the context. ip6_addr.h publishes the
 // offsets; these two asserts prove the span covers them before anything runs.
-static_assert(IDEMIP_IP6_ADDR_OFF_CTX + sizeof(Ip6AddrCtx) <= IDEMIP_IP6_ADDR_OFF_END,
-              "IDEMIP_IP6_ADDR_CTX_BYTES is short of the operand block and the context - raise it in "
-              "idemip_config.h");
-static_assert(IDEMIP_IP6_ADDR_OFF_END <= IDEMIP_IP6_ADDR_BORROW,
-              "IDEMIP_IP6_ADDR_BORROW is short of the map - raise IDEMIP_IP6_ADDR_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_ADDR_OFF_CTX + sizeof(Ip6AddrCtx) <= IDEMIP_IP6_ADDR_OFF_END,
+                    "IDEMIP_IP6_ADDR_CTX_BYTES is short of the operand block and the context - raise it in "
+                    "idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_ADDR_OFF_END <= IDEMIP_IP6_ADDR_BORROW,
+                    "IDEMIP_IP6_ADDR_BORROW is short of the map - raise IDEMIP_IP6_ADDR_CTX_BYTES in idemip_config.h");
 
 // The regions, at their offsets in the caller's borrow.
 #define IP6_ADDR_IO(w) IDEMIP_IP6_ADDR_IO(w)
@@ -53,8 +53,8 @@ void idemip_ip6_addr_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IP6_ADDR_OFF_CTX, 0, IP6_ADDR_STATE_BYTES);
-    IP6_ADDR_CTX(work)->ready = IDEMIP_TRUE;
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_IP6_ADDR_OFF_CTX, .val = 0, .bytes = IP6_ADDR_STATE_BYTES);
+    IP6_ADDR_CTX(work)->ready = EMBED_TRUE;
     IP6_ADDR_IO(work)->status = IDEMIP_OK;
 }
 
@@ -92,7 +92,7 @@ void idemip_ip6_addr_solicited_io(uint8_t *work)
     }
     Ip6AddrIo *io = IP6_ADDR_IO(work);
     io->status = IDEMIP_ERR;
-    memset(io->solicited, 0, IDEMIP_IP6_ADDR_LEN);
+    mmgr_zero_buf(io->solicited, IDEMIP_IP6_ADDR_LEN);
     const uint8_t *addr = io->solicited_args.addr;
     if (!IP6_ADDR_CTX(work)->ready || addr == NULL)
     {
@@ -127,7 +127,7 @@ void idemip_ip6_addr_zone(uint8_t *work)
     Ip6AddrIo *io = IP6_ADDR_IO(work);
     io->status = IDEMIP_ERR;
     io->zone = IDEMIP_IP6_ZONE_DEFAULT;
-    io->zone_derived = IDEMIP_FALSE;
+    io->zone_derived = EMBED_FALSE;
     const uint8_t *addr = io->zone_args.addr;
     if (!IP6_ADDR_CTX(work)->ready || addr == NULL)
     {
@@ -150,16 +150,16 @@ void idemip_ip6_addr_zone(uint8_t *work)
         // each scope SHOULD be reserved to mean 'use the default zone'". Interface zero is a real
         // interface here, so the derived index is biased off the reserved one.
         io->zone = (uint32_t)io->zone_args.netif + 1u;
-        io->zone_derived = IDEMIP_TRUE;
+        io->zone_derived = EMBED_TRUE;
         break;
     case IDEMIP_IP6_SCOPE_GLOBAL:
     case IDEMIP_IP6_SCOPE_RESERVED_F:
         io->zone = IDEMIP_IP6_ZONE_DEFAULT;
-        io->zone_derived = IDEMIP_TRUE;
+        io->zone_derived = EMBED_TRUE;
         break;
     default:
         io->zone = IDEMIP_IP6_ZONE_DEFAULT;
-        io->zone_derived = IDEMIP_FALSE;
+        io->zone_derived = EMBED_FALSE;
         break;
     }
     io->status = IDEMIP_OK;
@@ -178,8 +178,8 @@ void idemip_ip6_addr_match(uint8_t *work)
     }
     Ip6AddrIo *io = IP6_ADDR_IO(work);
     io->status = IDEMIP_ERR;
-    io->equal = IDEMIP_FALSE;
-    io->prefix_equal = IDEMIP_FALSE;
+    io->equal = EMBED_FALSE;
+    io->prefix_equal = EMBED_FALSE;
     const uint8_t *a = io->match_args.a;
     const uint8_t *b = io->match_args.b;
     if (!IP6_ADDR_CTX(work)->ready || a == NULL || b == NULL || io->match_args.prefix_len > IDEMIP_IP6_ADDR_BITS)
@@ -190,13 +190,13 @@ void idemip_ip6_addr_match(uint8_t *work)
     if (idemip_bytes_eq(a, b, IDEMIP_IP6_ADDR_LEN))
     {
         IdemIpIp6Scope scope = idemip_ip6_addr_scope(a);
-        io->equal = (scope == IDEMIP_IP6_SCOPE_GLOBAL || io->match_args.a_zone == io->match_args.b_zone ||
-                     io->match_args.a_zone == IDEMIP_IP6_ZONE_DEFAULT ||
-                     io->match_args.b_zone == IDEMIP_IP6_ZONE_DEFAULT)
-                        ? IDEMIP_TRUE
-                        : IDEMIP_FALSE;
+        io->equal =
+            (scope == IDEMIP_IP6_SCOPE_GLOBAL || io->match_args.a_zone == io->match_args.b_zone ||
+             io->match_args.a_zone == IDEMIP_IP6_ZONE_DEFAULT || io->match_args.b_zone == IDEMIP_IP6_ZONE_DEFAULT)
+                ? EMBED_TRUE
+                : EMBED_FALSE;
     }
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

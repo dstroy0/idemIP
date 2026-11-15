@@ -25,29 +25,29 @@
 
 #include "src/checksum.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief Dispatch table. Addressed by offset, so the layout is asserted below. */
 typedef struct
 {
-    idemip_bool (*accum)(uint32_t *sum, uint8_t ip_version, uint8_t proto, const uint8_t *src, const uint8_t *dst,
-                         uint32_t upper_len);
-    idemip_bool (*accum4)(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst, uint32_t upper_len);
-    idemip_bool (*accum6)(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst, uint32_t upper_len);
+    embed_bool (*accum)(uint32_t *sum, uint8_t ip_version, uint8_t proto, const uint8_t *src, const uint8_t *dst,
+                        uint32_t upper_len);
+    embed_bool (*accum4)(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst, uint32_t upper_len);
+    embed_bool (*accum6)(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst, uint32_t upper_len);
 } PseudoNs;
-IDEMIP_NS_LAYOUT(PseudoNs, accum, accum4, accum6);
+EMBED_TABLE_LAYOUT(PseudoNs, accum, accum4, accum6);
 
 /** @name The entries the table points at.
  *  @brief Nameable so a static const table can name them, and for no other reason. The table is
  *         still the whole surface: call through it. The halves are named here because the version
  *         branch calls them across translation units, the build having selected which one each is.
  *  @{ */
-idemip_bool idemip_pseudo_accum(uint32_t *sum, uint8_t ip_version, uint8_t proto, const uint8_t *src,
-                                const uint8_t *dst, uint32_t upper_len);
-idemip_bool idemip_pseudo4_accum(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst,
-                                 uint32_t upper_len);
-idemip_bool idemip_pseudo6_accum(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst,
-                                 uint32_t upper_len);
+embed_bool idemip_pseudo_accum(uint32_t *sum, uint8_t ip_version, uint8_t proto, const uint8_t *src, const uint8_t *dst,
+                               uint32_t upper_len);
+embed_bool idemip_pseudo4_accum(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst,
+                                uint32_t upper_len);
+embed_bool idemip_pseudo6_accum(uint32_t *sum, uint8_t proto, const uint8_t *src, const uint8_t *dst,
+                                uint32_t upper_len);
 /** @} */
 
 /**
@@ -57,12 +57,12 @@ idemip_bool idemip_pseudo6_accum(uint32_t *sum, uint8_t proto, const uint8_t *sr
  * inlined body and cannot do that through an extern one, where the table is in another
  * translation unit and every call is a load and an indirect jump.
  */
-IDEMIP_NS PseudoNs pseudo IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE PseudoNs pseudo EMBED_UNUSED = {
     .accum = idemip_pseudo_accum,
     .accum4 = idemip_pseudo4_accum,
     .accum6 = idemip_pseudo6_accum,
 };
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_PSEUDO_H

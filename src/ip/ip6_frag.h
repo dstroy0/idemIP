@@ -41,7 +41,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief Why a call was refused.
@@ -50,17 +50,16 @@ IDEMIP_BEGIN_DECLS
  * being a receiver's. A refusal here is the send path's own, and MTU is the one a caller acts on:
  * the packet cannot be made to fit the path.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IP6_FRAG_ERR_NONE = 0,   ///< nothing refused
-    IDEMIP_IP6_FRAG_ERR_HEADER,     ///< the packet's own header or extension chain did not hold up
-    IDEMIP_IP6_FRAG_ERR_FRAGMENTED, ///< a Fragment header is already in the chain
-    IDEMIP_IP6_FRAG_ERR_MTU,        ///< an MTU below RFC 8200 sec 5's 1280-octet minimum link MTU
-    IDEMIP_IP6_FRAG_ERR_HEADERS,    ///< the headers leave no room for an 8-octet fragment behind them
-    IDEMIP_IP6_FRAG_ERR_ROOM,       ///< the caller's buffer is short of this fragment packet
-    IDEMIP_IP6_FRAG_ERR_DONE,       ///< every fragment of this packet has been written
-    IDEMIP_IP6_FRAG_ERR_STATE,      ///< no split is open, or clear has not run on this borrow
-} IdemIpIp6FragError;
+EMBED_ENUM_BYTE(IdemIpIp6FragError,
+                IDEMIP_IP6_FRAG_ERR_NONE = 0,   ///< nothing refused
+                IDEMIP_IP6_FRAG_ERR_HEADER,     ///< the packet's own header or extension chain did not hold up
+                IDEMIP_IP6_FRAG_ERR_FRAGMENTED, ///< a Fragment header is already in the chain
+                IDEMIP_IP6_FRAG_ERR_MTU,        ///< an MTU below RFC 8200 sec 5's 1280-octet minimum link MTU
+                IDEMIP_IP6_FRAG_ERR_HEADERS,    ///< the headers leave no room for an 8-octet fragment behind them
+                IDEMIP_IP6_FRAG_ERR_ROOM,       ///< the caller's buffer is short of this fragment packet
+                IDEMIP_IP6_FRAG_ERR_DONE,       ///< every fragment of this packet has been written
+                IDEMIP_IP6_FRAG_ERR_STATE,      ///< no split is open, or clear has not run on this borrow
+);
 
 /**
  * @brief What begin takes: the packet to split, the MTU it has to fit, and its Identification.
@@ -123,8 +122,8 @@ typedef struct
 
     IdemIpStatus status;
     IdemIpIp6FragError err;
-    idemip_bool split;
-    idemip_bool more;
+    embed_bool split;
+    embed_bool more;
     uint16_t index;
     uint16_t offset;
     uint16_t len;
@@ -149,13 +148,13 @@ typedef struct
 
 // RFC 8200 sec 5: "IPv6 requires that every link in the Internet have an MTU of 1280 octets or
 // greater." At that floor the fixed header and one Fragment header still leave whole 8-octet units.
-static_assert(IDEMIP_IPV6_MIN_MTU > IDEMIP_IPV6_HDR_LEN + IDEMIP_IP6_FRAG_HDR_LEN + IDEMIP_IP6_EXT_UNIT,
-              "RFC 8200 sec 5's 1280-octet floor must leave whole 8-octet fragments behind the two headers");
+EMBED_STATIC_ASSERT(IDEMIP_IPV6_MIN_MTU > IDEMIP_IPV6_HDR_LEN + IDEMIP_IP6_FRAG_HDR_LEN + IDEMIP_IP6_EXT_UNIT,
+                    "RFC 8200 sec 5's 1280-octet floor must leave whole 8-octet fragments behind the two headers");
 
 // The 13-bit Fragment Offset sits three places up in its field, so the field already carries the
 // octet position and reaches every offset a 65,535-octet fragmentable part can hold.
-static_assert(IDEMIP_IP6_FRAG_OFF_MASK >= (IDEMIP_IP6_PAYLOAD_MAX & ~(IDEMIP_IP6_EXT_UNIT - 1u)),
-              "the Fragment Offset field must reach the last 8-octet unit of a full-length packet");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_FRAG_OFF_MASK >= (IDEMIP_IP6_PAYLOAD_MAX & ~(IDEMIP_IP6_EXT_UNIT - 1u)),
+                    "the Fragment Offset field must reach the last 8-octet unit of a full-length packet");
 
 /**
  * @brief The fragmenter, RFC 8200 sec 4.5.
@@ -219,11 +218,9 @@ void idemip_ip6_frag_next(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Ip6FragNs Ip6Frag IDEMIP_UNUSED = {
-    .clear = idemip_ip6_frag_clear,
-    .begin = idemip_ip6_frag_begin,
-    .next = idemip_ip6_frag_next};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE Ip6FragNs Ip6Frag EMBED_UNUSED = {
+    .clear = idemip_ip6_frag_clear, .begin = idemip_ip6_frag_begin, .next = idemip_ip6_frag_next};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

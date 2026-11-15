@@ -4,7 +4,7 @@
 #include "unity.h"
 #include "src/ip/ip4_addr.h"
 #include "src/ethernet/ethernet_defines.h"
-#include <string.h>
+#include "support/borrows.h"
 
 /*=======External Functions This Runner Calls=====*/
 extern void setUp(void);
@@ -98,34 +98,34 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/ip/test_ip4_addr/test_ip4_addr.c");
-  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 76);
-  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 87);
-  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 105);
-  run_test(test_uncleared_borrow_refuses_work, "test_uncleared_borrow_refuses_work", 124);
-  run_test(test_clear_admits_the_borrow, "test_clear_admits_the_borrow", 134);
-  run_test(test_rfc791_class_a_is_the_leading_zero_bit, "test_rfc791_class_a_is_the_leading_zero_bit", 146);
-  run_test(test_rfc791_class_b_is_the_leading_10_bits, "test_rfc791_class_b_is_the_leading_10_bits", 157);
-  run_test(test_rfc791_class_c_is_the_leading_110_bits, "test_rfc791_class_c_is_the_leading_110_bits", 166);
-  run_test(test_rfc1122_splits_the_791_escape_into_class_d_and_e, "test_rfc1122_splits_the_791_escape_into_class_d_and_e", 176);
-  run_test(test_rfc1112_class_d_spans_224_through_239, "test_rfc1112_class_d_spans_224_through_239", 191);
-  run_test(test_limited_broadcast_is_its_own_type_inside_class_e, "test_limited_broadcast_is_its_own_type_inside_class_e", 210);
-  run_test(test_case_a_and_case_b_are_separate, "test_case_a_and_case_b_are_separate", 219);
-  run_test(test_case_g_loopback_is_127_slash_8, "test_case_g_loopback_is_127_slash_8", 231);
-  run_test(test_rfc3927_link_local_is_the_whole_169_254_slash_16, "test_rfc3927_link_local_is_the_whole_169_254_slash_16", 250);
-  run_test(test_rfc3927_link_local_broadcast, "test_rfc3927_link_local_broadcast", 267);
-  run_test(test_rfc919_directed_broadcast_of_net_36, "test_rfc919_directed_broadcast_of_net_36", 282);
-  run_test(test_limited_broadcast_is_a_broadcast_under_every_mask, "test_limited_broadcast_is_a_broadcast_under_every_mask", 294);
-  run_test(test_match_reports_network_host_and_prefix_len, "test_match_reports_network_host_and_prefix_len", 302);
-  run_test(test_match_reports_an_address_off_the_subnet, "test_match_reports_an_address_off_the_subnet", 315);
-  run_test(test_a_slash_32_has_no_directed_broadcast, "test_a_slash_32_has_no_directed_broadcast", 325);
-  run_test(test_a_slash_31_has_two_host_addresses_and_no_directed_broadcast, "test_a_slash_31_has_two_host_addresses_and_no_directed_broadcast", 337);
-  run_test(test_a_slash_0_covers_everything, "test_a_slash_0_covers_everything", 361);
-  run_test(test_a_non_contiguous_mask_is_reported_not_refused, "test_a_non_contiguous_mask_is_reported_not_refused", 373);
-  run_test(test_rfc1112_map_places_the_low_23_bits_under_01_00_5e, "test_rfc1112_map_places_the_low_23_bits_under_01_00_5e", 388);
-  run_test(test_rfc1112_map_keeps_the_24th_bit_clear, "test_rfc1112_map_keeps_the_24th_bit_clear", 398);
-  run_test(test_rfc1112_map_aliases_groups_that_differ_above_23_bits, "test_rfc1112_map_aliases_groups_that_differ_above_23_bits", 412);
-  run_test(test_map_refuses_an_address_outside_class_d, "test_map_refuses_an_address_outside_class_d", 432);
-  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 451);
+  run_test(test_every_entry_survives_a_null_borrow, "test_every_entry_survives_a_null_borrow", 81);
+  run_test(test_two_borrows_share_no_byte, "test_two_borrows_share_no_byte", 92);
+  run_test(test_a_call_is_a_function_of_its_borrow_alone, "test_a_call_is_a_function_of_its_borrow_alone", 110);
+  run_test(test_uncleared_borrow_refuses_work, "test_uncleared_borrow_refuses_work", 129);
+  run_test(test_clear_admits_the_borrow, "test_clear_admits_the_borrow", 139);
+  run_test(test_rfc791_class_a_is_the_leading_zero_bit, "test_rfc791_class_a_is_the_leading_zero_bit", 151);
+  run_test(test_rfc791_class_b_is_the_leading_10_bits, "test_rfc791_class_b_is_the_leading_10_bits", 162);
+  run_test(test_rfc791_class_c_is_the_leading_110_bits, "test_rfc791_class_c_is_the_leading_110_bits", 171);
+  run_test(test_rfc1122_splits_the_791_escape_into_class_d_and_e, "test_rfc1122_splits_the_791_escape_into_class_d_and_e", 181);
+  run_test(test_rfc1112_class_d_spans_224_through_239, "test_rfc1112_class_d_spans_224_through_239", 196);
+  run_test(test_limited_broadcast_is_its_own_type_inside_class_e, "test_limited_broadcast_is_its_own_type_inside_class_e", 215);
+  run_test(test_case_a_and_case_b_are_separate, "test_case_a_and_case_b_are_separate", 224);
+  run_test(test_case_g_loopback_is_127_slash_8, "test_case_g_loopback_is_127_slash_8", 236);
+  run_test(test_rfc3927_link_local_is_the_whole_169_254_slash_16, "test_rfc3927_link_local_is_the_whole_169_254_slash_16", 255);
+  run_test(test_rfc3927_link_local_broadcast, "test_rfc3927_link_local_broadcast", 272);
+  run_test(test_rfc919_directed_broadcast_of_net_36, "test_rfc919_directed_broadcast_of_net_36", 287);
+  run_test(test_limited_broadcast_is_a_broadcast_under_every_mask, "test_limited_broadcast_is_a_broadcast_under_every_mask", 299);
+  run_test(test_match_reports_network_host_and_prefix_len, "test_match_reports_network_host_and_prefix_len", 307);
+  run_test(test_match_reports_an_address_off_the_subnet, "test_match_reports_an_address_off_the_subnet", 320);
+  run_test(test_a_slash_32_has_no_directed_broadcast, "test_a_slash_32_has_no_directed_broadcast", 330);
+  run_test(test_a_slash_31_has_two_host_addresses_and_no_directed_broadcast, "test_a_slash_31_has_two_host_addresses_and_no_directed_broadcast", 342);
+  run_test(test_a_slash_0_covers_everything, "test_a_slash_0_covers_everything", 366);
+  run_test(test_a_non_contiguous_mask_is_reported_not_refused, "test_a_non_contiguous_mask_is_reported_not_refused", 378);
+  run_test(test_rfc1112_map_places_the_low_23_bits_under_01_00_5e, "test_rfc1112_map_places_the_low_23_bits_under_01_00_5e", 393);
+  run_test(test_rfc1112_map_keeps_the_24th_bit_clear, "test_rfc1112_map_keeps_the_24th_bit_clear", 403);
+  run_test(test_rfc1112_map_aliases_groups_that_differ_above_23_bits, "test_rfc1112_map_aliases_groups_that_differ_above_23_bits", 417);
+  run_test(test_map_refuses_an_address_outside_class_d, "test_map_refuses_an_address_outside_class_d", 437);
+  run_test(test_no_entry_ever_reports_busy, "test_no_entry_ever_reports_busy", 456);
 
   return UNITY_END();
 }

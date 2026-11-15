@@ -32,9 +32,10 @@
 
 #include "src/udp/udplite.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/udp/udp_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // --- the vectors -------------------------------------------------------------
 
@@ -78,8 +79,10 @@ static const uint8_t v_rfc1071[8] = {0x00, 0x01, 0xf2, 0x03, 0xf4, 0xf5, 0xf6, 0
 // visible.
 
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_UDPLITE_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_UDPLITE_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_UDPLITE_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_UDPLITE_BORROW + 16))
+static uint8_t *work_b;
 
 // The datagram buffers, the caller's, outside the borrow. A canary follows each.
 static uint8_t buf[64];
@@ -92,8 +95,9 @@ static uint8_t jumbo[JUMBO_IPL + 16u];
 
 static void arm_work(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_UDPLITE_BORROW, CANARY, cap - IDEMIP_UDPLITE_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_UDPLITE_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_UDPLITE_BORROW);
 }
 
 static void check_work_canary(const uint8_t *w, size_t cap)
@@ -106,18 +110,20 @@ static void check_work_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm_work(work_a, sizeof work_a);
-    arm_work(work_b, sizeof work_b);
-    memset(buf, CANARY, sizeof buf);
-    memset(buf_b, CANARY, sizeof buf_b);
-    memcpy(buf, v_lite, sizeof v_lite);
-    memcpy(buf_b, v_lite, sizeof v_lite);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_udplite);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_udplite);
+    arm_work(work_a, WORK_A_BYTES);
+    arm_work(work_b, WORK_B_BYTES);
+    fill_bytes(buf, CANARY, sizeof buf);
+    fill_bytes(buf_b, CANARY, sizeof buf_b);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf_b, .at = v_lite, .size = sizeof v_lite);
 }
 
 void tearDown(void)
 {
-    check_work_canary(work_a, sizeof work_a);
-    check_work_canary(work_b, sizeof work_b);
+    check_work_canary(work_a, WORK_A_BYTES);
+    check_work_canary(work_b, WORK_B_BYTES);
 }
 
 // --- helpers -----------------------------------------------------------------
@@ -449,11 +455,11 @@ void test_build_matches_the_independent_ipv4_vectors(void)
 {
     ready(work_a);
     TEST_ASSERT_EQUAL_HEX16(V4_COV0_CKSUM, build_v4(work_a, buf, V_IPL, IDEMIP_UDPLITE_COV_ALL));
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     TEST_ASSERT_EQUAL_HEX16(V4_COV8_CKSUM, build_v4(work_a, buf, V_IPL, 8u));
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     TEST_ASSERT_EQUAL_HEX16(V4_COV12_CKSUM, build_v4(work_a, buf, V_IPL, 12u));
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     TEST_ASSERT_EQUAL_HEX16(V4_COV24_CKSUM, build_v4(work_a, buf, V_IPL, (uint16_t)V_IPL));
 }
 
@@ -461,11 +467,11 @@ void test_build_matches_the_independent_ipv6_vectors(void)
 {
     ready(work_a);
     TEST_ASSERT_EQUAL_HEX16(V6_COV0_CKSUM, build_v6(work_a, buf, V_IPL, IDEMIP_UDPLITE_COV_ALL));
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     TEST_ASSERT_EQUAL_HEX16(V6_COV8_CKSUM, build_v6(work_a, buf, V_IPL, 8u));
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     TEST_ASSERT_EQUAL_HEX16(V6_COV12_CKSUM, build_v6(work_a, buf, V_IPL, 12u));
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     TEST_ASSERT_EQUAL_HEX16(V6_COV24_CKSUM, build_v6(work_a, buf, V_IPL, (uint16_t)V_IPL));
 }
 
@@ -477,7 +483,7 @@ void test_the_pseudo_header_length_is_the_ip_payload_not_the_coverage(void)
 {
     ready(work_a);
     uint16_t at24 = build_v4(work_a, buf, V_IPL, 8u);
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     uint16_t at32 = build_v4(work_a, buf, 32u, 8u);
 
     TEST_ASSERT_EQUAL_HEX16(V4_COV8_CKSUM, at24);
@@ -494,7 +500,7 @@ void test_the_pseudo_header_length_is_the_ip_payload_over_ipv6_too(void)
 {
     ready(work_a);
     uint16_t at24 = build_v6(work_a, buf, V_IPL, 8u);
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     uint16_t at32 = build_v6(work_a, buf, 32u, 8u);
 
     TEST_ASSERT_EQUAL_HEX16(V6_COV8_CKSUM, at24);
@@ -545,14 +551,14 @@ void test_check_accepts_what_build_wrote(void)
     static const uint16_t covs[4] = {IDEMIP_UDPLITE_COV_ALL, 8u, 12u, (uint16_t)V_IPL};
     for (size_t i = 0; i < 4; i++)
     {
-        memcpy(buf, v_lite, sizeof v_lite);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
         (void)build_v4(work_a, buf, V_IPL, covs[i]);
         set_check4(work_a, buf, V_IPL);
         UdpLite.check(work_a);
         TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_UDPLITE_IO(work_a)->status, "an IPv4 round trip failed");
         TEST_ASSERT_EQUAL_UINT16(covs[i], IDEMIP_UDPLITE_IO(work_a)->res.cov);
 
-        memcpy(buf, v_lite, sizeof v_lite);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
         (void)build_v6(work_a, buf, V_IPL, covs[i]);
         set_check6(work_a, buf, V_IPL);
         UdpLite.check(work_a);
@@ -570,7 +576,7 @@ void test_a_flip_inside_the_coverage_is_caught_and_one_past_it_is_delivered(void
 
     for (size_t i = 0; i < 12u; i++)
     {
-        memcpy(buf_b, buf, sizeof v_lite);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = buf_b, .at = buf, .size = sizeof v_lite);
         buf_b[i] ^= 0x01u;
         set_check4(work_a, buf_b, V_IPL);
         UdpLite.check(work_a);
@@ -579,7 +585,7 @@ void test_a_flip_inside_the_coverage_is_caught_and_one_past_it_is_delivered(void
     }
     for (size_t i = 12u; i < sizeof v_lite; i++)
     {
-        memcpy(buf_b, buf, sizeof v_lite);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = buf_b, .at = buf, .size = sizeof v_lite);
         buf_b[i] ^= 0x01u;
         set_check4(work_a, buf_b, V_IPL);
         UdpLite.check(work_a);
@@ -643,7 +649,7 @@ void test_check_reports_how_far_the_coverage_reaches(void)
     TEST_ASSERT_EQUAL_UINT32(12u, IDEMIP_UDPLITE_IO(work_a)->res.cov_bytes);
     TEST_ASSERT_FALSE(IDEMIP_UDPLITE_IO(work_a)->res.covered);
 
-    memcpy(buf, v_lite, sizeof v_lite);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = v_lite, .size = sizeof v_lite);
     (void)build_v4(work_a, buf, V_IPL, IDEMIP_UDPLITE_COV_ALL);
     set_check4(work_a, buf, V_IPL);
     UdpLite.check(work_a);
@@ -762,8 +768,8 @@ void test_an_ipv4_payload_past_the_total_length_field_is_refused(void)
 void test_a_jumbogram_is_covered_whole_only_through_the_zero_value(void)
 {
     ready(work_a);
-    memset(jumbo, 0x5Au, sizeof jumbo);
-    memcpy(jumbo, v_lite, sizeof v_lite);
+    fill_bytes(jumbo, 0x5Au, sizeof jumbo);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = jumbo, .at = v_lite, .size = sizeof v_lite);
 
     // Zero covers all 66000 octets.
     (void)build_v6(work_a, jumbo, JUMBO_IPL, IDEMIP_UDPLITE_COV_ALL);

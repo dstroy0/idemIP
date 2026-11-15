@@ -16,22 +16,25 @@
 
 #include "src/ip/ip4_addr.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/ethernet/ethernet_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 #define IP4(a, b, c, d) (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) | (uint32_t)(d))
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_IP4_ADDR_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_IP4_ADDR_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_IP4_ADDR_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_IP4_ADDR_BORROW + 16))
+static uint8_t *work_b;
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_IP4_ADDR_BORROW, CANARY, cap - IDEMIP_IP4_ADDR_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_IP4_ADDR_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_IP4_ADDR_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -44,14 +47,16 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_ip4_addr);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_ip4_addr);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void classify(uint8_t *w, uint32_t addr)
@@ -112,7 +117,7 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
 
     Ip4Addr.mcast_mac(work_a);
     uint8_t first[IDEMIP_MAC_LEN];
-    memcpy(first, IDEMIP_IP4_ADDR_IO(work_a)->mac, IDEMIP_MAC_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = first, .at = IDEMIP_IP4_ADDR_IO(work_a)->mac, .size = IDEMIP_MAC_LEN);
     Ip4Addr.mcast_mac(work_b);
     Ip4Addr.mcast_mac(work_a);
 
@@ -415,7 +420,7 @@ void test_rfc1112_map_aliases_groups_that_differ_above_23_bits(void)
     IDEMIP_IP4_ADDR_IO(work_a)->mcast_args.group = IP4(224, 0, 0, 1);
     Ip4Addr.mcast_mac(work_a);
     uint8_t first[IDEMIP_MAC_LEN];
-    memcpy(first, IDEMIP_IP4_ADDR_IO(work_a)->mac, IDEMIP_MAC_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = first, .at = IDEMIP_IP4_ADDR_IO(work_a)->mac, .size = IDEMIP_MAC_LEN);
 
     // 224.128.0.1 and 225.0.0.1 differ from 224.0.0.1 only above the low 23 bits.
     IDEMIP_IP4_ADDR_IO(work_a)->mcast_args.group = IP4(224, 128, 0, 1);

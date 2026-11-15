@@ -27,7 +27,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief No entry. Every index below is a table slot, so this names none of them. */
 #define IDEMIP_DAD_NONE 0xFFu
@@ -40,15 +40,14 @@ IDEMIP_BEGIN_DECLS
  * of the tests indicate the presence of a duplicate address within RetransTimer milliseconds after
  * having sent DupAddrDetectTransmits Neighbor Solicitations".
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_DAD_STATE_FREE = 0,  ///< the slot holds no address, which is what clear leaves
-    IDEMIP_DAD_STATE_DELAY,     ///< sec 5.4.2, waiting out the delay before joining and soliciting
-    IDEMIP_DAD_STATE_PROBING,   ///< sec 5.4.2, sending DupAddrDetectTransmits solicitations
-    IDEMIP_DAD_STATE_WAIT,      ///< sec 5.4, the RetransTimer after the last solicitation
-    IDEMIP_DAD_STATE_UNIQUE,    ///< the procedure completed, so the address "may be assigned"
-    IDEMIP_DAD_STATE_DUPLICATE, ///< sec 5.4.5, the address "MUST NOT be assigned to an interface"
-} IdemIpDadState;
+EMBED_ENUM_BYTE(IdemIpDadState,
+                IDEMIP_DAD_STATE_FREE = 0,  ///< the slot holds no address, which is what clear leaves
+                IDEMIP_DAD_STATE_DELAY,     ///< sec 5.4.2, waiting out the delay before joining and soliciting
+                IDEMIP_DAD_STATE_PROBING,   ///< sec 5.4.2, sending DupAddrDetectTransmits solicitations
+                IDEMIP_DAD_STATE_WAIT,      ///< sec 5.4, the RetransTimer after the last solicitation
+                IDEMIP_DAD_STATE_UNIQUE,    ///< the procedure completed, so the address "may be assigned"
+                IDEMIP_DAD_STATE_DUPLICATE, ///< sec 5.4.5, the address "MUST NOT be assigned to an interface"
+);
 
 /**
  * @brief What this interface is configured with, in the caller's rodata.
@@ -70,7 +69,7 @@ typedef enum IDEMIP_ENUM_PACKED
 typedef struct
 {
     uint8_t transmits;
-    idemip_bool loopback;
+    embed_bool loopback;
 } IdemIpDadCfg;
 
 /** @brief What bind takes. */
@@ -106,12 +105,12 @@ typedef struct
     uint32_t retrans_ms;
     uint32_t rand;
     uint32_t now_ms;
-    idemip_bool delay;
-    idemip_bool hw_derived;
+    embed_bool delay;
+    embed_bool hw_derived;
     /** RFC 4862 sec 5.4: "Duplicate Address Detection MUST NOT be performed on anycast addresses
      *  (note that anycast addresses cannot syntactically be distinguished from unicast addresses)."
      *  The octets cannot say which it is, so the caller that assigned the address says. */
-    idemip_bool anycast;
+    embed_bool anycast;
 } DadStartArgs;
 
 /** @brief What a call keyed on an address takes. */
@@ -131,7 +130,7 @@ typedef struct
 typedef struct
 {
     const uint8_t *target;
-    idemip_bool unspecified;
+    embed_bool unspecified;
 } DadNsInArgs;
 
 /**
@@ -206,12 +205,12 @@ typedef struct
     IdemIpDadState state;
     uint8_t sent;
     uint8_t received;
-    idemip_bool join;
-    idemip_bool send_ns;
-    idemip_bool unique;
-    idemip_bool duplicate;
-    idemip_bool disable_ip;
-    idemip_bool tentative;
+    embed_bool join;
+    embed_bool send_ns;
+    embed_bool unique;
+    embed_bool duplicate;
+    embed_bool disable_ip;
+    embed_bool tentative;
 } DadIo;
 
 // ---------------------------------------------------------------------------
@@ -305,24 +304,23 @@ void idemip_dad_tick(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const DadNs Dad IDEMIP_UNUSED = {
-    .clear = idemip_dad_clear,
-    .bind = idemip_dad_bind,
-    .start = idemip_dad_start,
-    .stop = idemip_dad_stop,
-    .find = idemip_dad_find,
-    .ns_in = idemip_dad_ns_in,
-    .na_in = idemip_dad_na_in,
-    .tick = idemip_dad_tick};
+EMBED_TABLE_STORAGE DadNs Dad EMBED_UNUSED = {.clear = idemip_dad_clear,
+                                              .bind = idemip_dad_bind,
+                                              .start = idemip_dad_start,
+                                              .stop = idemip_dad_stop,
+                                              .find = idemip_dad_find,
+                                              .ns_in = idemip_dad_ns_in,
+                                              .na_in = idemip_dad_na_in,
+                                              .tick = idemip_dad_tick};
 // Every slot index counts the machines the borrow holds, so IDEMIP_DAD_NONE names none of them.
-static_assert(IDEMIP_IP6_ADDRESSES < IDEMIP_DAD_NONE,
-              "the table is wider than the index a result member carries");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_ADDRESSES < IDEMIP_DAD_NONE,
+                    "the table is wider than the index a result member carries");
 
 // sec 5.4.2 sends DupAddrDetectTransmits solicitations and sec 5.4.3 counts what arrives, both held
 // in one octet of the operand block.
-static_assert(IDEMIP_DAD_TRANSMITS_DEFAULT <= 0xFFu, "DupAddrDetectTransmits is counted in one octet");
+EMBED_STATIC_ASSERT(IDEMIP_DAD_TRANSMITS_DEFAULT <= 0xFFu, "DupAddrDetectTransmits is counted in one octet");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

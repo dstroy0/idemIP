@@ -28,7 +28,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief No entry. Every index below is a table slot, so this names none of them. */
 #define IDEMIP_RDNSS_NONE 0xFFu
@@ -145,9 +145,9 @@ typedef struct
     uint8_t updated;
     uint8_t deleted;
     uint8_t evicted;
-    idemip_bool expired;
-    idemip_bool ignored;
-    idemip_bool infinite;
+    embed_bool expired;
+    embed_bool ignored;
+    embed_bool infinite;
 } RdnssIo;
 
 // ---------------------------------------------------------------------------
@@ -241,27 +241,26 @@ void idemip_rdnss_tick(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const RdnssNs Rdnss IDEMIP_UNUSED = {
-    .clear = idemip_rdnss_clear,
-    .option_in = idemip_rdnss_option_in,
-    .get = idemip_rdnss_get,
-    .find = idemip_rdnss_find,
-    .remove = idemip_rdnss_remove,
-    .tick = idemip_rdnss_tick};
+EMBED_TABLE_STORAGE RdnssNs Rdnss EMBED_UNUSED = {.clear = idemip_rdnss_clear,
+                                                  .option_in = idemip_rdnss_option_in,
+                                                  .get = idemip_rdnss_get,
+                                                  .find = idemip_rdnss_find,
+                                                  .remove = idemip_rdnss_remove,
+                                                  .tick = idemip_rdnss_tick};
 // Every slot index counts the entries the borrow holds, so IDEMIP_RDNSS_NONE names none of them.
-static_assert(IDEMIP_RDNSS_SERVERS < IDEMIP_RDNSS_NONE,
-              "the list is wider than the index a result member carries");
+EMBED_STATIC_ASSERT(IDEMIP_RDNSS_SERVERS < IDEMIP_RDNSS_NONE,
+                    "the list is wider than the index a result member carries");
 
 // sec 5.1: the minimum Length of 3 covers the Type, Length, Reserved and Lifetime fields and one
 // 16-octet address.
-static_assert(IDEMIP_RDNSS_OPT_LEN_MIN * IDEMIP_RDNSS_OPT_UNIT == IDEMIP_RDNSS_OPT_OFF_ADDRS + IDEMIP_IP6_ADDR_LEN,
-              "RFC 8106 sec 5.1: Length 3 is the header and exactly one address");
+EMBED_STATIC_ASSERT(IDEMIP_RDNSS_OPT_LEN_MIN *IDEMIP_RDNSS_OPT_UNIT == IDEMIP_RDNSS_OPT_OFF_ADDRS + IDEMIP_IP6_ADDR_LEN,
+                    "RFC 8106 sec 5.1: Length 3 is the header and exactly one address");
 
 // sec 5.1: "Every additional RDNSS address increases the length by 2", so one address is two units.
-static_assert(IDEMIP_IP6_ADDR_LEN == 2u * IDEMIP_RDNSS_OPT_UNIT,
-              "RFC 8106 sec 5.1: one RDNSS address is two Length units");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_ADDR_LEN == 2u * IDEMIP_RDNSS_OPT_UNIT,
+                    "RFC 8106 sec 5.1: one RDNSS address is two Length units");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

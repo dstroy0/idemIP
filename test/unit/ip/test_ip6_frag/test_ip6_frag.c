@@ -29,21 +29,24 @@
 
 #include "src/ip/ip6_frag.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // --- the borrow, the caller's ------------------------------------------------
 
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_IP6_FRAG_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_IP6_FRAG_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_IP6_FRAG_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_IP6_FRAG_BORROW + 16))
+static uint8_t *work_b;
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_IP6_FRAG_BORROW, CANARY, cap - IDEMIP_IP6_FRAG_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_IP6_FRAG_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_IP6_FRAG_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -76,7 +79,7 @@ static const uint8_t g_dst[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0d, 0xb8, 0, 0,
 
 static void pkt_start(uint8_t first_nh)
 {
-    memset(g_pkt, 0, sizeof g_pkt);
+    mmgr_zero_buf(g_pkt, sizeof g_pkt);
     g_build = IDEMIP_IPV6_HDR_LEN;
     g_first_nh = first_nh;
 }
@@ -93,7 +96,7 @@ static void pkt_ext(uint8_t next_nh, uint8_t hdr_ext_len)
 // A Fragment header, which sec 4.5 fixes at eight octets rather than sizing by a length field.
 static void pkt_frag_hdr(uint8_t next_nh)
 {
-    idemip_ip6_frag_build(g_pkt + g_build, next_nh, 0u, IDEMIP_FALSE, IDENT);
+    idemip_ip6_frag_build(g_pkt + g_build, next_nh, 0u, EMBED_FALSE, IDENT);
     g_build += IDEMIP_IP6_FRAG_HDR_LEN;
 }
 
@@ -105,7 +108,7 @@ static uint16_t pkt_finish(uint16_t data_len)
     }
     const uint16_t payload = (uint16_t)(g_build + data_len - IDEMIP_IPV6_HDR_LEN);
     IdemIpIp6BuildArgs a;
-    memset(&a, 0, sizeof a);
+    a = (IdemIpIp6BuildArgs){0};
     a.src = g_src;
     a.dst = g_dst;
     a.flow_label = 0x12345u;
@@ -161,7 +164,7 @@ static void drain(uint8_t *w)
         }
         TEST_ASSERT_LESS_THAN_INT(FRAGS_MAX, g_frags);
         g_frag_len[g_frags] = IDEMIP_IP6_FRAG_IO(w)->len;
-        memcpy(g_frag[g_frags], g_out, g_frag_len[g_frags]);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = g_frag[g_frags], .at = g_out, .size = g_frag_len[g_frags]);
         g_frags++;
     }
     TEST_ASSERT_EQUAL_INT(IDEMIP_IP6_FRAG_ERR_DONE, IDEMIP_IP6_FRAG_IO(w)->err);
@@ -169,10 +172,12 @@ static void drain(uint8_t *w)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(g_pkt, 0, sizeof g_pkt);
-    memset(g_out, 0, sizeof g_out);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_ip6_frag);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_ip6_frag);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(g_pkt, sizeof g_pkt);
+    mmgr_zero_buf(g_out, sizeof g_out);
     g_pkt_len = 0;
     g_build = IDEMIP_IPV6_HDR_LEN;
     g_frags = 0;
@@ -182,8 +187,8 @@ void setUp(void)
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // --- the borrow --------------------------------------------------------------
@@ -199,7 +204,7 @@ void test_every_entry_survives_a_null_borrow(void)
 void test_an_uncleared_borrow_refuses_work(void)
 {
     make_plain(64u);
-    arm(work_a, sizeof work_a); // zeroed, so the mark clear leaves is absent
+    arm(work_a, WORK_A_BYTES); // zeroed, so the mark clear leaves is absent
     IDEMIP_IP6_FRAG_IO(work_a)->begin_args.pkt = g_pkt;
     IDEMIP_IP6_FRAG_IO(work_a)->begin_args.len = g_pkt_len;
     IDEMIP_IP6_FRAG_IO(work_a)->begin_args.mtu = IDEMIP_IPV6_MIN_MTU;
@@ -621,14 +626,14 @@ void test_the_fragments_carry_the_whole_fragmentable_part(void)
     drain(work_a);
 
     static uint8_t rebuilt[PKT_MAX];
-    memset(rebuilt, 0, sizeof rebuilt);
+    mmgr_zero_buf(rebuilt, sizeof rebuilt);
     uint32_t total = 0u;
     for (int i = 0; i < g_frags; i++)
     {
         const uint8_t *f = g_frag[i] + unfrag;
         const uint16_t off = idemip_ip6_frag_offset_bytes(f);
         const uint16_t data = (uint16_t)(g_frag_len[i] - unfrag - IDEMIP_IP6_FRAG_HDR_LEN);
-        memcpy(rebuilt + off, f + IDEMIP_IP6_FRAG_HDR_LEN, data);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = rebuilt + off, .at = f + IDEMIP_IP6_FRAG_HDR_LEN, .size = data);
         total += data;
     }
     TEST_ASSERT_EQUAL_UINT32((uint32_t)(g_pkt_len - unfrag), total);

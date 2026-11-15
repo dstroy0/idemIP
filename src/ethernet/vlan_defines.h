@@ -106,29 +106,30 @@
 // ---------------------------------------------------------------------------
 
 // RFC 6325 sec 4.1 Figure 7: the C-Tag Ethertype and the Tag Control Information, two 16-bit fields.
-static_assert(IDEMIP_VLAN_OFF_TYPE - IDEMIP_VLAN_OFF_TPID == IDEMIP_VLAN_TAG_LEN,
-              "the tag is the C-Tag Ethertype and the Tag Control Information, four octets");
+EMBED_STATIC_ASSERT(IDEMIP_VLAN_OFF_TYPE - IDEMIP_VLAN_OFF_TPID == IDEMIP_VLAN_TAG_LEN,
+                    "the tag is the C-Tag Ethertype and the Tag Control Information, four octets");
 
 // The tag sits where an untagged frame's type code sits, and the payload's type code follows it.
-static_assert(IDEMIP_VLAN_OFF_TPID == IDEMIP_ETH_OFF_TYPE,
-              "the C-Tag Ethertype occupies the Ethernet II type field (RFC 6325 sec 4.1 Figure 7)");
-static_assert(IDEMIP_VLAN_OFF_PAYLOAD == IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_VLAN_TAG_LEN,
-              "a tag moves the data field four octets further in");
-static_assert(IDEMIP_VLAN_HDR_LEN == IDEMIP_VLAN_OFF_PAYLOAD,
-              "the field offsets must sum to the tagged header length");
+EMBED_STATIC_ASSERT(IDEMIP_VLAN_OFF_TPID == IDEMIP_ETH_OFF_TYPE,
+                    "the C-Tag Ethertype occupies the Ethernet II type field (RFC 6325 sec 4.1 Figure 7)");
+EMBED_STATIC_ASSERT(IDEMIP_VLAN_OFF_PAYLOAD == IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_VLAN_TAG_LEN,
+                    "a tag moves the data field four octets further in");
+EMBED_STATIC_ASSERT(IDEMIP_VLAN_HDR_LEN == IDEMIP_VLAN_OFF_PAYLOAD,
+                    "the field offsets must sum to the tagged header length");
 
 // RFC 6325 sec 4.1.1 Figure 8: three bits of Priority, one C bit, twelve bits of VLAN ID.
-static_assert(IDEMIP_VLAN_PCP_SHIFT == IDEMIP_VLAN_DEI_SHIFT + 1u,
-              "the C bit sits directly below the three Priority bits (RFC 6325 sec 4.1.1)");
-static_assert(IDEMIP_VLAN_DEI_SHIFT == 12u && IDEMIP_VLAN_VID_MASK == 0x0FFFu,
-              "the VLAN ID is the twelve low bits, the C bit the one above them");
-static_assert(((IDEMIP_VLAN_PCP_MASK << IDEMIP_VLAN_PCP_SHIFT) | (IDEMIP_VLAN_DEI_MASK << IDEMIP_VLAN_DEI_SHIFT) |
-               IDEMIP_VLAN_VID_MASK) == 0xFFFFu,
-              "the three fields must cover the whole 16-bit Tag Control Information");
-static_assert(IDEMIP_VLAN_PCP_MAX == IDEMIP_VLAN_PCP_MASK,
-              "RFC 6325 sec 4.1.1 puts the Priority at 0 through 7, which is the three-bit field");
-static_assert(IDEMIP_VLAN_VIDS == IDEMIP_VLAN_VID_MASK + 1u, "the VLAN ID field spans IDEMIP_VLAN_VIDS values");
-static_assert(IDEMIP_VLAN_VID_RESERVED == IDEMIP_VLAN_VID_MASK && IDEMIP_VLAN_VID_LAST + 1u == IDEMIP_VLAN_VID_RESERVED,
-              "RFC 6325 sec 4.1.1 runs the usable range 0x001 through 0xFFE and reserves 0xFFF");
+EMBED_STATIC_ASSERT(IDEMIP_VLAN_PCP_SHIFT == IDEMIP_VLAN_DEI_SHIFT + 1u,
+                    "the C bit sits directly below the three Priority bits (RFC 6325 sec 4.1.1)");
+EMBED_STATIC_ASSERT(IDEMIP_VLAN_DEI_SHIFT == 12u && IDEMIP_VLAN_VID_MASK == 0x0FFFu,
+                    "the VLAN ID is the twelve low bits, the C bit the one above them");
+EMBED_STATIC_ASSERT(((IDEMIP_VLAN_PCP_MASK << IDEMIP_VLAN_PCP_SHIFT) | (IDEMIP_VLAN_DEI_MASK << IDEMIP_VLAN_DEI_SHIFT) |
+                     IDEMIP_VLAN_VID_MASK) == 0xFFFFu,
+                    "the three fields must cover the whole 16-bit Tag Control Information");
+EMBED_STATIC_ASSERT(IDEMIP_VLAN_PCP_MAX == IDEMIP_VLAN_PCP_MASK,
+                    "RFC 6325 sec 4.1.1 puts the Priority at 0 through 7, which is the three-bit field");
+EMBED_STATIC_ASSERT(IDEMIP_VLAN_VIDS == IDEMIP_VLAN_VID_MASK + 1u, "the VLAN ID field spans IDEMIP_VLAN_VIDS values");
+EMBED_STATIC_ASSERT(IDEMIP_VLAN_VID_RESERVED == IDEMIP_VLAN_VID_MASK &&
+                        IDEMIP_VLAN_VID_LAST + 1u == IDEMIP_VLAN_VID_RESERVED,
+                    "RFC 6325 sec 4.1.1 runs the usable range 0x001 through 0xFFE and reserves 0xFFF");
 
 #endif // IDEMIP_VLAN_DEFINES_H

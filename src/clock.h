@@ -39,7 +39,7 @@
 #ifndef IDEMIP_CLOCK_H
 #define IDEMIP_CLOCK_H
 
-#include "src/endian.h" // the fixed widths, IdemIpWord, and IDEMIP_INLINE
+#include "src/endian.h" // the fixed widths, embed_word, and EMBED_INLINE
 #include "src/ms.h"     // IdemIpMs, the epoch every reading here is carried onto
 
 /** @brief Microseconds in a millisecond, the scale between the two grades below. */
@@ -85,7 +85,7 @@
 /** @brief True when the pad is measured against a reading of its own rather than the epoch's. */
 #define IDEMIP_DETERMINISM_HAS_TICK (IDEMIP_TIME_DETERMINISM_GRADE >= IDEMIP_DETERMINISM_FINE)
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief The three words a module keeps so the readings can be answered.
@@ -146,7 +146,7 @@ typedef struct
     uint32_t (*elapsed)(const IdemIpClock *c);
     IdemIpMs (*epoch)(const IdemIpClock *c);
 } ClockNs;
-IDEMIP_NS_LAYOUT(ClockNs, refresh, open, now, stamp, elapsed, epoch);
+EMBED_TABLE_LAYOUT(ClockNs, refresh, open, now, stamp, elapsed, epoch);
 
 /** @name The entries the table points at.
  *  @brief Nameable so a static const table can name them, and for no other reason. The table is
@@ -170,7 +170,7 @@ IdemIpMs idemip_clock_epoch(const IdemIpClock *c);
  * Named clk rather than clock: <time.h> declares clock(), and a file that reads both would have
  * one spelling naming two things.
  */
-IDEMIP_NS ClockNs clk IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE ClockNs clk EMBED_UNUSED = {
     .refresh = idemip_clock_refresh,
     .open = idemip_clock_open,
     .now = idemip_clock_now,
@@ -179,6 +179,6 @@ IDEMIP_NS ClockNs clk IDEMIP_UNUSED = {
     .epoch = idemip_clock_epoch,
 };
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_CLOCK_H

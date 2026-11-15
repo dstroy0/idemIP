@@ -24,7 +24,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief No entry. Every index in this contract reads this when it names none. */
 #define IDEMIP_IGMP_NONE 0xFFu
@@ -68,13 +68,12 @@ IDEMIP_BEGIN_DECLS
  * sec 2.1 names three types "of concern to the host-router interaction" and one more "for
  * backwards-compatibility with IGMPv1". "Unrecognized message types should be silently ignored."
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IGMP_TYPE_QUERY = 0x11u,     ///< Membership Query, General or Group-Specific
-    IDEMIP_IGMP_TYPE_REPORT_V1 = 0x12u, ///< Version 1 Membership Report (RFC 1112 Appendix I type 2)
-    IDEMIP_IGMP_TYPE_REPORT_V2 = 0x16u, ///< Version 2 Membership Report
-    IDEMIP_IGMP_TYPE_LEAVE = 0x17u,     ///< Leave Group
-} IdemIpIgmpType;
+EMBED_ENUM_BYTE(IdemIpIgmpType,
+                IDEMIP_IGMP_TYPE_QUERY = 0x11u,     ///< Membership Query, General or Group-Specific
+                IDEMIP_IGMP_TYPE_REPORT_V1 = 0x12u, ///< Version 1 Membership Report (RFC 1112 Appendix I type 2)
+                IDEMIP_IGMP_TYPE_REPORT_V2 = 0x16u, ///< Version 2 Membership Report
+                IDEMIP_IGMP_TYPE_LEAVE = 0x17u,     ///< Leave Group
+);
 
 /**
  * @brief Where a message goes (RFC 2236 sec 9).
@@ -119,12 +118,11 @@ typedef enum IDEMIP_ENUM_PACKED
  * on any single network interface". Non-Member "is the initial state for all memberships on all
  * network interfaces; it requires no storage in the host", so a cleared entry is in it.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IGMP_NON_MEMBER = 0,     ///< not a member of the group on the interface
-    IDEMIP_IGMP_DELAYING_MEMBER,    ///< a member, with a report delay timer running
-    IDEMIP_IGMP_IDLE_MEMBER,        ///< a member, with no report delay timer running
-} IdemIpIgmpState;
+EMBED_ENUM_BYTE(IdemIpIgmpState,
+                IDEMIP_IGMP_NON_MEMBER = 0,  ///< not a member of the group on the interface
+                IDEMIP_IGMP_DELAYING_MEMBER, ///< a member, with a report delay timer running
+                IDEMIP_IGMP_IDLE_MEMBER,     ///< a member, with no report delay timer running
+);
 
 /**
  * @brief What a membership call takes.
@@ -171,8 +169,8 @@ typedef struct
     uint32_t rand;
     uint32_t now_ms;
     uint8_t netif;
-    idemip_bool general;
-    idemip_bool v1;
+    embed_bool general;
+    embed_bool v1;
 } IgmpQueryArgs;
 
 /**
@@ -239,10 +237,10 @@ typedef struct
     uint8_t index;
     uint8_t netif;
     uint8_t expired;
-    idemip_bool last_reporter;
-    idemip_bool send_report;
-    idemip_bool send_leave;
-    idemip_bool report_v1;
+    embed_bool last_reporter;
+    embed_bool send_report;
+    embed_bool send_leave;
+    embed_bool report_v1;
 } IgmpIo;
 
 // ---------------------------------------------------------------------------
@@ -333,39 +331,38 @@ void idemip_igmp_tick(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const IgmpNs Igmp IDEMIP_UNUSED = {
-    .clear = idemip_igmp_clear,
-    .join = idemip_igmp_join,
-    .leave = idemip_igmp_leave,
-    .find = idemip_igmp_find,
-    .query_in = idemip_igmp_query_in,
-    .report_in = idemip_igmp_report_in,
-    .tick = idemip_igmp_tick};
+EMBED_TABLE_STORAGE IgmpNs Igmp EMBED_UNUSED = {.clear = idemip_igmp_clear,
+                                                .join = idemip_igmp_join,
+                                                .leave = idemip_igmp_leave,
+                                                .find = idemip_igmp_find,
+                                                .query_in = idemip_igmp_query_in,
+                                                .report_in = idemip_igmp_report_in,
+                                                .tick = idemip_igmp_tick};
 // RFC 2236 sec 2 draws Type, Max Resp Time and Checksum above the 32-bit Group Address, which is the 8
 // octets sec 2.5 bounds the processed part of a message at.
-static_assert(IDEMIP_IGMP_OFF_GROUP + 4u == IDEMIP_IGMP_MSG_LEN,
-              "the RFC 2236 sec 2 fields must sum to the 8 octets sec 2.5 processes");
+EMBED_STATIC_ASSERT(IDEMIP_IGMP_OFF_GROUP + 4u == IDEMIP_IGMP_MSG_LEN,
+                    "the RFC 2236 sec 2 fields must sum to the 8 octets sec 2.5 processes");
 
 // RFC 2113 sec 2.1: the type octet is the copied flag over class 0 and option number 20.
-static_assert(IDEMIP_IGMP_RA_TYPE == (0x80u | 20u),
-              "RFC 2113 sec 2.1: Router Alert is copied flag 1, option class 0, option number 20");
+EMBED_STATIC_ASSERT(IDEMIP_IGMP_RA_TYPE == (0x80u | 20u),
+                    "RFC 2113 sec 2.1: Router Alert is copied flag 1, option class 0, option number 20");
 
 // sec 4 reads a zero Max Response Time as 100 units, and sec 8.3's default Query Response Interval is
 // the same 100, which is the 10 seconds both name.
-static_assert(IDEMIP_IGMP_V1_MAX_RESP * IDEMIP_IGMP_MAX_RESP_UNIT_MS == 10000u,
-              "RFC 2236 sec 4: a zero Max Response Time is \"a value of 100 (10 seconds)\"");
+EMBED_STATIC_ASSERT(IDEMIP_IGMP_V1_MAX_RESP *IDEMIP_IGMP_MAX_RESP_UNIT_MS == 10000u,
+                    "RFC 2236 sec 4: a zero Max Response Time is \"a value of 100 (10 seconds)\"");
 
 // RFC 2236 sec 9 sends a General Query to ALL-SYSTEMS and a Leave to ALL-ROUTERS, both in 224/4.
-static_assert((IDEMIP_IGMP_ALL_SYSTEMS & 0xF0000000u) == 0xE0000000u &&
-                  (IDEMIP_IGMP_ALL_ROUTERS & 0xF0000000u) == 0xE0000000u,
-              "RFC 1112 sec 4: a host group address is class D, the high four bits 1110");
+EMBED_STATIC_ASSERT((IDEMIP_IGMP_ALL_SYSTEMS & 0xF0000000u) == 0xE0000000u &&
+                        (IDEMIP_IGMP_ALL_ROUTERS & 0xF0000000u) == 0xE0000000u,
+                    "RFC 1112 sec 4: a host group address is class D, the high four bits 1110");
 
 // An entry index and the result member that carries it are one octet, so a count at or above the
 // value that means "no entry" is unaddressable.
-static_assert(IDEMIP_IGMP_GROUPS < IDEMIP_IGMP_NONE,
-              "IDEMIP_IGMP_GROUPS must stay below IDEMIP_IGMP_NONE: an entry index is one octet");
+EMBED_STATIC_ASSERT(IDEMIP_IGMP_GROUPS < IDEMIP_IGMP_NONE,
+                    "IDEMIP_IGMP_GROUPS must stay below IDEMIP_IGMP_NONE: an entry index is one octet");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

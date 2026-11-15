@@ -17,17 +17,19 @@
 
 #include "src/nd/nd6.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because RFC 4861 sec 5.1 keeps this state "for each
 // interface". A canary follows each so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(IDEMIP_ALIGN) uint8_t work_a[IDEMIP_ND6_BORROW + 16];
-static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_ND6_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_ND6_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_ND6_BORROW + 16))
+static uint8_t *work_b;
 
 // The span clear owns: the context and the five tables.
 #define STATE_OFF ((size_t)IDEMIP_ND6_OFF_CTX)
@@ -41,8 +43,8 @@ static const uint8_t g_lladdr_2[IDEMIP_MAC_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00,
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_ND6_BORROW, CANARY, cap - IDEMIP_ND6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_ND6_BORROW, .val = CANARY, .bytes = cap - IDEMIP_ND6_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -55,14 +57,16 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_nd6);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_nd6);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // Every entry, in namespace order, so a new one added to Nd6Ns is added here too.
@@ -121,7 +125,7 @@ void test_two_borrows_share_no_byte(void)
 // this module has.
 void test_clear_on_one_borrow_leaves_the_other_untouched(void)
 {
-    memset(work_b + STATE_OFF, 0xC3, STATE_END - STATE_OFF);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b + STATE_OFF, .val = 0xC3, .bytes = STATE_END - STATE_OFF);
     IDEMIP_ND6_IO(work_b)->pending_args.desc = 0x7777u;
 
     Nd6.clear(work_a);
@@ -190,7 +194,7 @@ void test_clear_reports_ok(void)
 // prefix, router or queued frame survives into the next use of the borrow.
 void test_clear_zeroes_the_tables(void)
 {
-    memset(work_a, 0xFF, IDEMIP_ND6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_ND6_BORROW);
     Nd6.clear(work_a);
     for (size_t i = TABLE_OFF; i < STATE_END; i++)
     {
@@ -203,7 +207,7 @@ void test_clear_zeroes_the_tables(void)
 // zeroed with it.
 void test_clear_zeroes_the_context_apart_from_the_cleared_mark(void)
 {
-    memset(work_a, 0xFF, IDEMIP_ND6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_ND6_BORROW);
     Nd6.clear(work_a);
     size_t set = 0;
     for (size_t i = STATE_OFF; i < TABLE_OFF; i++)
@@ -231,9 +235,9 @@ void test_clear_leaves_the_operand_block_alone(void)
 // once.
 void test_clear_is_idempotent(void)
 {
-    memset(work_a, 0xFF, IDEMIP_ND6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_ND6_BORROW);
     Nd6.clear(work_a);
-    memcpy(work_b, work_a, IDEMIP_ND6_BORROW);
+    EMBED_CALL(memor.cpy, MemoriaCfg, .dst = work_b, .src = work_a, .bytes = IDEMIP_ND6_BORROW);
     Nd6.clear(work_a);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(work_b + STATE_OFF, work_a + STATE_OFF, STATE_END - STATE_OFF);
 }
@@ -346,16 +350,16 @@ static const uint8_t g_mcast[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 
 static const uint8_t g_lladdr2[IDEMIP_MAC_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x02};
 static uint8_t g_scratch_addr[IDEMIP_IP6_ADDR_LEN];
 
-#define T IDEMIP_TRUE
-#define F IDEMIP_FALSE
+#define T EMBED_TRUE
+#define F EMBED_FALSE
 
-static void at(uint8_t *w, uint32_t ms)
+static void at(uint8_t *w, uint32_t tick_ms)
 {
-    IDEMIP_ND6_IO(w)->tick_args.now_ms = ms;
+    IDEMIP_ND6_IO(w)->tick_args.now_ms = tick_ms;
 }
 
-static uint8_t nb_set(uint8_t *w, const uint8_t *addr, const uint8_t *ll, IdemIpNd6State st, idemip_bool router,
-                      idemip_bool solicited, idemip_bool override)
+static uint8_t nb_set(uint8_t *w, const uint8_t *addr, const uint8_t *ll, IdemIpNd6State st, embed_bool router,
+                      embed_bool solicited, embed_bool override)
 {
     Nd6Io *io = IDEMIP_ND6_IO(w);
     io->neighbor_args.addr = addr;
@@ -386,7 +390,7 @@ static void nb_index(uint8_t *w, uint8_t i)
     IDEMIP_ND6_IO(w)->neighbor_args.index = i;
 }
 
-static void pfx_set(uint8_t *w, const uint8_t *prefix, uint8_t len, uint32_t life_s, idemip_bool on_link)
+static void pfx_set(uint8_t *w, const uint8_t *prefix, uint8_t len, uint32_t life_s, embed_bool on_link)
 {
     Nd6Io *io = IDEMIP_ND6_IO(w);
     io->prefix_args.prefix = prefix;
@@ -397,7 +401,7 @@ static void pfx_set(uint8_t *w, const uint8_t *prefix, uint8_t len, uint32_t lif
     Nd6.prefix_set(w);
 }
 
-static idemip_bool on_link_of(uint8_t *w, const uint8_t *addr)
+static embed_bool on_link_of(uint8_t *w, const uint8_t *addr)
 {
     IDEMIP_ND6_IO(w)->prefix_args.prefix = addr;
     Nd6.prefix_on_link(w);
@@ -435,7 +439,7 @@ static uint8_t g_many[24][IDEMIP_IP6_ADDR_LEN];
 static const uint8_t *nth(unsigned n)
 {
     uint8_t *a = g_many[n];
-    memset(a, 0, IDEMIP_IP6_ADDR_LEN);
+    mmgr_zero_buf(a, IDEMIP_IP6_ADDR_LEN);
     a[0] = 0x20u;
     a[1] = 0x01u;
     a[2] = 0x0Du;
@@ -508,10 +512,14 @@ void test_a_full_prefix_list_is_busy(void)
 // sec 6.1.2's first validity check: "IP Source Address is a link-local address. Routers must use their
 // link-local address as the source for Router Advertisement and Redirect messages so that hosts can
 // uniquely identify routers." So a router is named by an fe80:: address and nothing else.
+// Storage of its own, apart from nth's. A call that passes nth(i) and nth_ll(i) as two arguments then
+// gets two addresses, whichever argument the compiler evaluates first.
+static uint8_t g_many_ll[24][IDEMIP_IP6_ADDR_LEN];
+
 static const uint8_t *nth_ll(unsigned n)
 {
-    uint8_t *a = g_many[n];
-    memset(a, 0, IDEMIP_IP6_ADDR_LEN);
+    uint8_t *a = g_many_ll[n];
+    mmgr_zero_buf(a, IDEMIP_IP6_ADDR_LEN);
     a[0] = 0xFEu;
     a[1] = 0x80u;
     a[15] = (uint8_t)(n + 1u);
@@ -565,7 +573,7 @@ void test_an_l_clear_option_takes_no_prefix_list_slot(void)
     for (uint8_t i = 0u; i < IDEMIP_ND6_NUM_PREFIXES + 1u; i++)
     {
         uint8_t p[IDEMIP_IP6_ADDR_LEN];
-        memcpy(p, g_pfx64, IDEMIP_IP6_ADDR_LEN);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = p, .at = g_pfx64, .size = IDEMIP_IP6_ADDR_LEN);
         p[7] = (uint8_t)(0x10u + i);
         pfx_set(work_a, p, 64u, 1800u, F);
         TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status, "an L=0 option was refused");
@@ -943,7 +951,7 @@ void test_the_reachable_time_is_drawn_over_the_default_base_until_a_router_names
 
     // params_set is what reports ReachableTime, and one naming no value of its own leaves the draw
     // the tick above made.
-    memset(&IDEMIP_ND6_IO(work_a)->params_args, 0, sizeof IDEMIP_ND6_IO(work_a)->params_args);
+    IDEMIP_ND6_IO(work_a)->params_args = (Nd6ParamsArgs){0};
     Nd6.params_set(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
     const uint32_t drawn = IDEMIP_ND6_IO(work_a)->reachable_ms;
@@ -1261,7 +1269,7 @@ void test_a_full_neighbor_cache_is_busy(void)
 {
     Nd6.clear(work_a);
     at(work_a, 0u);
-    memcpy(g_scratch_addr, g_addr_a, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_scratch_addr, .at = g_addr_a, .size = IDEMIP_IP6_ADDR_LEN);
     for (unsigned k = 0; k < IDEMIP_ND6_NUM_NEIGHBORS; k++)
     {
         g_scratch_addr[15] = (uint8_t)(0x10u + k);
@@ -1427,7 +1435,7 @@ void test_a_retrans_timer_past_the_deadline_span_still_rate_limits(void)
 {
     Nd6.clear(work_a);
     at(work_a, 0u);
-    memset(&IDEMIP_ND6_IO(work_a)->params_args, 0, sizeof IDEMIP_ND6_IO(work_a)->params_args);
+    IDEMIP_ND6_IO(work_a)->params_args = (Nd6ParamsArgs){0};
     IDEMIP_ND6_IO(work_a)->params_args.retrans_timer_ms = 0xFFFFFFFFu;
     Nd6.params_set(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
@@ -2257,7 +2265,7 @@ void test_the_entries_refuse_an_index_past_a_table_and_a_state_with_no_name(void
     IDEMIP_ND6_IO(work_a)->neighbor_args.addr = g_addr_a;
     IDEMIP_ND6_IO(work_a)->neighbor_args.lladdr = g_lladdr;
     IDEMIP_ND6_IO(work_a)->neighbor_args.state = (uint8_t)(IDEMIP_ND6_PROBE + 1u);
-    IDEMIP_ND6_IO(work_a)->neighbor_args.is_router = IDEMIP_FALSE;
+    IDEMIP_ND6_IO(work_a)->neighbor_args.is_router = EMBED_FALSE;
     Nd6.neighbor_set(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status,
                                   "a neighbor took a state sec 7.3.2 does not name");
@@ -2307,8 +2315,8 @@ void test_a_router_advertised_reachable_time_replaces_the_default(void)
     IDEMIP_ND6_IO(work_a)->params_args.link_mtu = 0u;
     IDEMIP_ND6_IO(work_a)->params_args.cur_hop_limit = 0u;
     IDEMIP_ND6_IO(work_a)->params_args.rand = 0u;
-    IDEMIP_ND6_IO(work_a)->params_args.managed = IDEMIP_FALSE;
-    IDEMIP_ND6_IO(work_a)->params_args.other = IDEMIP_FALSE;
+    IDEMIP_ND6_IO(work_a)->params_args.managed = EMBED_FALSE;
+    IDEMIP_ND6_IO(work_a)->params_args.other = EMBED_FALSE;
     Nd6.params_set(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
 
@@ -2340,13 +2348,13 @@ void test_a_prefix_advertised_without_the_on_link_flag_puts_nothing_on_link(void
     Nd6.clear(work_a);
     at(work_a, 1000u);
 
-    pfx_set(work_a, g_pfx64, 64u, 3600u, IDEMIP_FALSE);
+    pfx_set(work_a, g_pfx64, 64u, 3600u, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
     TEST_ASSERT_FALSE_MESSAGE(on_link_of(work_a, g_in64),
                               "a prefix advertised with the on-link flag clear put an address on-link");
 
     // The same prefix advertised with the flag does.
-    pfx_set(work_a, g_pfx64, 64u, 3600u, IDEMIP_TRUE);
+    pfx_set(work_a, g_pfx64, 64u, 3600u, EMBED_TRUE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);
     TEST_ASSERT_TRUE(on_link_of(work_a, g_in64));
 }
@@ -2414,7 +2422,7 @@ void test_the_round_robin_comes_back_round_from_the_last_router_in_the_list(void
     uint8_t addr[IDEMIP_ND6_NUM_ROUTERS][IDEMIP_IP6_ADDR_LEN];
     for (uint8_t k = 0u; k < (uint8_t)IDEMIP_ND6_NUM_ROUTERS; k++)
     {
-        memcpy(addr[k], g_addr_a, IDEMIP_IP6_ADDR_LEN);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = addr[k], .at = g_addr_a, .size = IDEMIP_IP6_ADDR_LEN);
         addr[k][IDEMIP_IP6_ADDR_LEN - 1u] = (uint8_t)(0x10u + k);
         rtr_set(work_a, addr[k], 1800u);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(work_a)->status);

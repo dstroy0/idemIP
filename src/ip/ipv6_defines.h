@@ -167,35 +167,35 @@
 // The maps close on themselves
 // ---------------------------------------------------------------------------
 
-static_assert(IDEMIP_IP6_OFF_PAYLOAD == IDEMIP_IPV6_HDR_LEN,
-              "the RFC 8200 field offsets must sum to the fixed header length");
-static_assert(IDEMIP_IP6_OFF_DST + IDEMIP_IP6_ADDR_LEN == IDEMIP_IPV6_HDR_LEN,
-              "the destination address must end the RFC 8200 sec 3 header");
-static_assert(IDEMIP_IP6_EXT_BYTES(0u) == IDEMIP_IP6_EXT_UNIT,
-              "a Hdr Ext Len of zero is one 8-octet unit (RFC 8200 sec 4.3)");
-static_assert(IDEMIP_IP6_EXT_BYTES_MAX == 2048u,
-              "an 8-bit Hdr Ext Len reaches 256 units of 8 octets (RFC 8200 sec 4.3)");
-static_assert(IDEMIP_IP6_FRAG_OFF_IDENT + 4u == IDEMIP_IP6_FRAG_HDR_LEN,
-              "the RFC 8200 sec 4.5 fields must sum to the fragment header length");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_OFF_PAYLOAD == IDEMIP_IPV6_HDR_LEN,
+                    "the RFC 8200 field offsets must sum to the fixed header length");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_OFF_DST + IDEMIP_IP6_ADDR_LEN == IDEMIP_IPV6_HDR_LEN,
+                    "the destination address must end the RFC 8200 sec 3 header");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_EXT_BYTES(0u) == IDEMIP_IP6_EXT_UNIT,
+                    "a Hdr Ext Len of zero is one 8-octet unit (RFC 8200 sec 4.3)");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_EXT_BYTES_MAX == 2048u,
+                    "an 8-bit Hdr Ext Len reaches 256 units of 8 octets (RFC 8200 sec 4.3)");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_FRAG_OFF_IDENT + 4u == IDEMIP_IP6_FRAG_HDR_LEN,
+                    "the RFC 8200 sec 4.5 fields must sum to the fragment header length");
 
 // The packed fields fill their word and do not overlap, as the sec 3 and sec 4.5 figures lay them out.
-static_assert((((uint32_t)IDEMIP_IP6_VER_MASK << IDEMIP_IP6_VER_SHIFT) |
-               ((uint32_t)IDEMIP_IP6_TC_MASK << IDEMIP_IP6_TC_SHIFT) | IDEMIP_IP6_FLOW_MASK) == 0xFFFFFFFFu,
-              "Version, Traffic Class and Flow Label must fill the first word (RFC 8200 sec 3)");
-static_assert((((uint32_t)IDEMIP_IP6_VER_MASK << IDEMIP_IP6_VER_SHIFT) &
-               ((uint32_t)IDEMIP_IP6_TC_MASK << IDEMIP_IP6_TC_SHIFT)) == 0u,
-              "Version must not overlap Traffic Class (RFC 8200 sec 3)");
-static_assert((((uint32_t)IDEMIP_IP6_TC_MASK << IDEMIP_IP6_TC_SHIFT) & IDEMIP_IP6_FLOW_MASK) == 0u,
-              "Traffic Class must not overlap the Flow Label (RFC 8200 sec 3)");
-static_assert((IDEMIP_IP6_FRAG_OFF_MASK | IDEMIP_IP6_FRAG_RES_MASK | IDEMIP_IP6_FRAG_M) == 0xFFFFu,
-              "the 13-bit Fragment Offset, the 2-bit Res and the M flag must fill the field "
-              "(RFC 8200 sec 4.5)");
-static_assert((IDEMIP_IP6_FRAG_OFF_MASK & (IDEMIP_IP6_FRAG_RES_MASK | IDEMIP_IP6_FRAG_M)) == 0u,
-              "the Fragment Offset must not overlap Res or the M flag (RFC 8200 sec 4.5)");
-static_assert((IDEMIP_IP6_OPT_ACT_MASK | IDEMIP_IP6_OPT_CHG_MASK) == 0xE0u,
-              "the two action bits and the change bit are the three high-order bits of an Option Type "
-              "(RFC 8200 sec 4.2)");
-static_assert(IDEMIP_IP6_RT_OFF_SEGS_LEFT < IDEMIP_IP6_EXT_UNIT,
-              "the four named Routing header octets lie in its first 8-octet unit (RFC 8200 sec 4.4)");
+EMBED_STATIC_ASSERT((((uint32_t)IDEMIP_IP6_VER_MASK << IDEMIP_IP6_VER_SHIFT) |
+                     ((uint32_t)IDEMIP_IP6_TC_MASK << IDEMIP_IP6_TC_SHIFT) | IDEMIP_IP6_FLOW_MASK) == 0xFFFFFFFFu,
+                    "Version, Traffic Class and Flow Label must fill the first word (RFC 8200 sec 3)");
+EMBED_STATIC_ASSERT((((uint32_t)IDEMIP_IP6_VER_MASK << IDEMIP_IP6_VER_SHIFT) &
+                     ((uint32_t)IDEMIP_IP6_TC_MASK << IDEMIP_IP6_TC_SHIFT)) == 0u,
+                    "Version must not overlap Traffic Class (RFC 8200 sec 3)");
+EMBED_STATIC_ASSERT((((uint32_t)IDEMIP_IP6_TC_MASK << IDEMIP_IP6_TC_SHIFT) & IDEMIP_IP6_FLOW_MASK) == 0u,
+                    "Traffic Class must not overlap the Flow Label (RFC 8200 sec 3)");
+EMBED_STATIC_ASSERT((IDEMIP_IP6_FRAG_OFF_MASK | IDEMIP_IP6_FRAG_RES_MASK | IDEMIP_IP6_FRAG_M) == 0xFFFFu,
+                    "the 13-bit Fragment Offset, the 2-bit Res and the M flag must fill the field "
+                    "(RFC 8200 sec 4.5)");
+EMBED_STATIC_ASSERT((IDEMIP_IP6_FRAG_OFF_MASK & (IDEMIP_IP6_FRAG_RES_MASK | IDEMIP_IP6_FRAG_M)) == 0u,
+                    "the Fragment Offset must not overlap Res or the M flag (RFC 8200 sec 4.5)");
+EMBED_STATIC_ASSERT((IDEMIP_IP6_OPT_ACT_MASK | IDEMIP_IP6_OPT_CHG_MASK) == 0xE0u,
+                    "the two action bits and the change bit are the three high-order bits of an Option Type "
+                    "(RFC 8200 sec 4.2)");
+EMBED_STATIC_ASSERT(IDEMIP_IP6_RT_OFF_SEGS_LEFT < IDEMIP_IP6_EXT_UNIT,
+                    "the four named Routing header octets lie in its first 8-octet unit (RFC 8200 sec 4.4)");
 
 #endif // IDEMIP_IPV6_DEFINES_H

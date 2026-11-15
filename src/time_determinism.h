@@ -28,7 +28,7 @@
 
 #if IDEMIP_ENABLE_TIME_DETERMINISM
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief The four answers, so the reading that tunes a pad and the reading that waits on one are
@@ -37,13 +37,12 @@ IDEMIP_BEGIN_DECLS
  * Told apart because a function needs all four: two of them mean carry on, one means come back, and
  * the last is the only evidence a pad is too small to hold.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_CLOCK_PAD_UNSET = 0, ///< no pad tuned on this function, so there is nothing to run to
-    IDEMIP_CLOCK_PAD_EARLY,     ///< inside the pad: the unit reports IDEMIP_BUSY and is called again
-    IDEMIP_CLOCK_PAD_MET,       ///< the pad elapsed exactly, which is what a tuned one does
-    IDEMIP_CLOCK_PAD_OVER,      ///< the work outran the pad, so the pad is short and wants raising
-} IdemIpClockPad;
+EMBED_ENUM_BYTE(IdemIpClockPad,
+                IDEMIP_CLOCK_PAD_UNSET = 0, ///< no pad tuned on this function, so there is nothing to run to
+                IDEMIP_CLOCK_PAD_EARLY,     ///< inside the pad: the unit reports IDEMIP_BUSY and is called again
+                IDEMIP_CLOCK_PAD_MET,       ///< the pad elapsed exactly, which is what a tuned one does
+                IDEMIP_CLOCK_PAD_OVER,      ///< the work outran the pad, so the pad is short and wants raising
+);
 
 /** @brief Dispatch table. Addressed by offset, so the layout is asserted below. */
 typedef struct
@@ -57,7 +56,7 @@ typedef struct
     IdemIpClockPad (*pad_state)(const IdemIpClock *c, uint32_t word);
     uint32_t (*tune)(uint32_t word, IdemIpClockPad state, uint32_t lo, uint32_t hi);
 } TimeDeterminismNs;
-IDEMIP_NS_LAYOUT(TimeDeterminismNs, refresh_fine, pad, tick, tick_stamp, spent, pad_ticks, pad_state, tune);
+EMBED_TABLE_LAYOUT(TimeDeterminismNs, refresh_fine, pad, tick, tick_stamp, spent, pad_ticks, pad_state, tune);
 
 /** @name The entries the table points at.
  *  @brief Nameable so a static const table can name them, and for no other reason. The table is
@@ -80,7 +79,7 @@ uint32_t idemip_determinism_tune(uint32_t word, IdemIpClockPad state, uint32_t l
  * inlined body and cannot do that through an extern one, where the table is in another
  * translation unit and every call is a load and an indirect jump.
  */
-IDEMIP_NS TimeDeterminismNs time_determinism IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE TimeDeterminismNs time_determinism EMBED_UNUSED = {
     .refresh_fine = idemip_clock_refresh_fine,
     .pad = idemip_determinism_pad,
     .tick = idemip_determinism_tick,
@@ -91,7 +90,7 @@ IDEMIP_NS TimeDeterminismNs time_determinism IDEMIP_UNUSED = {
     .tune = idemip_determinism_tune,
 };
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_TIME_DETERMINISM
 

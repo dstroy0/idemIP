@@ -15,20 +15,23 @@
 
 #include "src/netif/dma.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/ethernet/ethernet_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_DMA_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_DMA_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_DMA_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_DMA_BORROW + 16))
+static uint8_t *work_b;
 
 // The frame buffers are the DRIVER's storage, not the borrow's, so the suite owns them here the way
 // a board's driver would.
-static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t rx_bufs[IDEMIP_RX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE];
-static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t tx_bufs[IDEMIP_TX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE];
+ParsMemoriaeInternae(rx_bufs, IDEMIP_RX_DESCRIPTORS *IDEMIP_DMA_BUF_STRIDE);
+ParsMemoriaeInternae(tx_bufs, IDEMIP_TX_DESCRIPTORS *IDEMIP_DMA_BUF_STRIDE);
 
 // What the driver was asked to do, in the order it was asked.
 #define EV_INVALIDATE 1
@@ -61,11 +64,11 @@ static int g_released;
 
 static uint8_t *rx_buf_at(unsigned i)
 {
-    return rx_bufs + ((size_t)i * IDEMIP_DMA_BUF_STRIDE);
+    return mmgr_pars_storage_rx_bufs + ((size_t)i * IDEMIP_DMA_BUF_STRIDE);
 }
 static uint8_t *tx_buf_at(unsigned i)
 {
-    return tx_bufs + ((size_t)i * IDEMIP_DMA_BUF_STRIDE);
+    return mmgr_pars_storage_tx_bufs + ((size_t)i * IDEMIP_DMA_BUF_STRIDE);
 }
 
 // One frame into buffer i, stamped so a later case can prove the octets are still there.
@@ -73,7 +76,7 @@ static void engine_fill(unsigned i, uint16_t len, uint8_t stamp)
 {
     if (len <= IDEMIP_DMA_BUF_STRIDE)
     {
-        memset(rx_buf_at(i), stamp, len);
+        fill_bytes(rx_buf_at(i), stamp, len);
     }
     g_eng_idx[g_eng_head & (ENGINE_Q - 1u)] = i;
     g_eng_len[g_eng_head & (ENGINE_Q - 1u)] = len;
@@ -161,16 +164,16 @@ static uint8_t *fake_tx_claim(size_t len)
     }
     return NULL;
 }
-static idemip_bool fake_tx_commit(size_t len)
+static embed_bool fake_tx_commit(size_t len)
 {
     ev(EV_TX_COMMIT);
     if (g_tx_commit_fails)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     g_committed++;
     g_commit_len = len;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 static void fake_invalidate(const void *p, size_t len)
 {
@@ -184,19 +187,19 @@ static void fake_clean(const void *p, size_t len)
     (void)len;
     ev(EV_CLEAN);
 }
-static idemip_bool fake_mdio_read(uint8_t addr, uint8_t reg, uint16_t *out)
+static embed_bool fake_mdio_read(uint8_t addr, uint8_t reg, uint16_t *out)
 {
     (void)addr;
     (void)reg;
     *out = 0u;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
-static idemip_bool fake_mdio_write(uint8_t addr, uint8_t reg, uint16_t val)
+static embed_bool fake_mdio_write(uint8_t addr, uint8_t reg, uint16_t val)
 {
     (void)addr;
     (void)reg;
     (void)val;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 static const IdemIpPhyDriver g_drv = {
@@ -214,8 +217,8 @@ static const IdemIpPhyDriver g_drv = {
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_DMA_BORROW, CANARY, cap - IDEMIP_DMA_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_DMA_BORROW, .val = CANARY, .bytes = cap - IDEMIP_DMA_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -228,10 +231,14 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(rx_bufs, 0xA5, sizeof rx_bufs);
-    memset(tx_bufs, 0, sizeof tx_bufs);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_dma);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_dma);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = mmgr_pars_storage_rx_bufs, .val = 0xA5,
+               .bytes = sizeof mmgr_pars_storage_rx_bufs);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = mmgr_pars_storage_tx_bufs, .val = 0,
+               .bytes = sizeof mmgr_pars_storage_tx_bufs);
     g_ev_n = 0;
     g_eng_head = 0;
     g_eng_tail = 0;
@@ -248,8 +255,8 @@ void setUp(void)
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // Every entry, so a case that walks the whole namespace cannot miss one.
@@ -270,8 +277,8 @@ static void call_every_entry(uint8_t *w)
 static void set_bind_args(uint8_t *w)
 {
     IDEMIP_DMA_IO(w)->bind_args.drv = &g_drv;
-    IDEMIP_DMA_IO(w)->bind_args.rx_base = rx_bufs;
-    IDEMIP_DMA_IO(w)->bind_args.tx_base = tx_bufs;
+    IDEMIP_DMA_IO(w)->bind_args.rx_base = mmgr_pars_storage_rx_bufs;
+    IDEMIP_DMA_IO(w)->bind_args.tx_base = mmgr_pars_storage_tx_bufs;
 }
 
 // --- the borrow --------------------------------------------------------------
@@ -290,24 +297,24 @@ void test_two_borrows_share_no_byte(void)
     Dma.clear(work_a);
     Dma.clear(work_b);
 
-    IDEMIP_DMA_IO(work_a)->bind_args.rx_base = rx_bufs;
+    IDEMIP_DMA_IO(work_a)->bind_args.rx_base = mmgr_pars_storage_rx_bufs;
     IDEMIP_DMA_IO(work_a)->desc_args.index = 3u;
     IDEMIP_DMA_IO(work_a)->desc_args.len = 64u;
-    IDEMIP_DMA_IO(work_b)->bind_args.rx_base = tx_bufs;
+    IDEMIP_DMA_IO(work_b)->bind_args.rx_base = mmgr_pars_storage_tx_bufs;
     IDEMIP_DMA_IO(work_b)->desc_args.index = 7u;
     IDEMIP_DMA_IO(work_b)->desc_args.len = 128u;
 
     // Setting b's operands did not disturb a's.
-    TEST_ASSERT_EQUAL_PTR(rx_bufs, IDEMIP_DMA_IO(work_a)->bind_args.rx_base);
+    TEST_ASSERT_EQUAL_PTR(mmgr_pars_storage_rx_bufs, IDEMIP_DMA_IO(work_a)->bind_args.rx_base);
     TEST_ASSERT_EQUAL_UINT8(3u, IDEMIP_DMA_IO(work_a)->desc_args.index);
     TEST_ASSERT_EQUAL_UINT16(64u, IDEMIP_DMA_IO(work_a)->desc_args.len);
-    TEST_ASSERT_EQUAL_PTR(tx_bufs, IDEMIP_DMA_IO(work_b)->bind_args.rx_base);
+    TEST_ASSERT_EQUAL_PTR(mmgr_pars_storage_tx_bufs, IDEMIP_DMA_IO(work_b)->bind_args.rx_base);
     TEST_ASSERT_EQUAL_UINT8(7u, IDEMIP_DMA_IO(work_b)->desc_args.index);
     TEST_ASSERT_EQUAL_UINT16(128u, IDEMIP_DMA_IO(work_b)->desc_args.len);
 
     // And running every entry on b leaves a's operands where a left them.
     call_every_entry(work_b);
-    TEST_ASSERT_EQUAL_PTR(rx_bufs, IDEMIP_DMA_IO(work_a)->bind_args.rx_base);
+    TEST_ASSERT_EQUAL_PTR(mmgr_pars_storage_rx_bufs, IDEMIP_DMA_IO(work_a)->bind_args.rx_base);
     TEST_ASSERT_EQUAL_UINT8(3u, IDEMIP_DMA_IO(work_a)->desc_args.index);
     TEST_ASSERT_EQUAL_UINT16(64u, IDEMIP_DMA_IO(work_a)->desc_args.len);
 }
@@ -384,7 +391,7 @@ void test_clear_reports_ok(void)
 // it.
 void test_clear_zeroes_both_rings(void)
 {
-    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_DMA_BORROW);
     Dma.clear(work_a);
     for (size_t i = (size_t)IDEMIP_DMA_OFF_RX; i < (size_t)IDEMIP_DMA_OFF_END; i++)
     {
@@ -395,17 +402,17 @@ void test_clear_zeroes_both_rings(void)
 // clear is the caller's, so it does not touch the operands the caller put in the borrow.
 void test_clear_leaves_the_operands_alone(void)
 {
-    IDEMIP_DMA_IO(work_a)->bind_args.rx_base = rx_bufs;
+    IDEMIP_DMA_IO(work_a)->bind_args.rx_base = mmgr_pars_storage_rx_bufs;
     IDEMIP_DMA_IO(work_a)->desc_args.len = 64u;
     Dma.clear(work_a);
-    TEST_ASSERT_EQUAL_PTR(rx_bufs, IDEMIP_DMA_IO(work_a)->bind_args.rx_base);
+    TEST_ASSERT_EQUAL_PTR(mmgr_pars_storage_rx_bufs, IDEMIP_DMA_IO(work_a)->bind_args.rx_base);
     TEST_ASSERT_EQUAL_UINT16(64u, IDEMIP_DMA_IO(work_a)->desc_args.len);
 }
 
 // Clearing one borrow does not clear the other.
 void test_clear_reaches_one_borrow_only(void)
 {
-    memset(work_b, 0xFF, IDEMIP_DMA_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b, .val = 0xFF, .bytes = IDEMIP_DMA_BORROW);
     Dma.clear(work_a);
     for (size_t i = (size_t)IDEMIP_DMA_OFF_RX; i < (size_t)IDEMIP_DMA_OFF_END; i++)
     {
@@ -419,48 +426,48 @@ void test_clear_reaches_one_borrow_only(void)
 // engine a descriptor built out of whatever was there.
 void test_an_uncleared_borrow_is_refused(void)
 {
-    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_DMA_BORROW);
     set_bind_args(work_a);
     Dma.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
 
-    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_DMA_BORROW);
     Dma.rx_take(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
 
-    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_DMA_BORROW);
     Dma.tx_take(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
 
-    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_DMA_BORROW);
     Dma.pinned(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
 
     // The five that name a descriptor read the ring out of those same bytes, so each refuses them
     // before the index is used to reach one.
-    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_DMA_BORROW);
     IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
     IDEMIP_DMA_IO(work_a)->desc_args.len = 64u;
     Dma.rx_post(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status, "rx_post read an uncleared borrow");
 
-    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_DMA_BORROW);
     IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
     Dma.pin(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status, "pin read an uncleared borrow");
 
-    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_DMA_BORROW);
     IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
     Dma.unpin(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status, "unpin read an uncleared borrow");
 
-    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_DMA_BORROW);
     IDEMIP_DMA_IO(work_a)->desc_args.index = 0u;
     IDEMIP_DMA_IO(work_a)->desc_args.len = 64u;
     Dma.tx_post(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status, "tx_post read an uncleared borrow");
 
-    memset(work_a, 0xFF, IDEMIP_DMA_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_DMA_BORROW);
     Dma.tx_reap(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status, "tx_reap read an uncleared borrow");
 }
@@ -487,14 +494,14 @@ void test_bind_refuses_a_driver_without_the_cache_hooks(void)
     IdemIpPhyDriver partial;
 
     Dma.clear(work_a);
-    memcpy(&partial, &g_drv, sizeof partial);
+    partial = g_drv;
     partial.cache_invalidate = NULL;
     set_bind_args(work_a);
     IDEMIP_DMA_IO(work_a)->bind_args.drv = &partial;
     Dma.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
 
-    memcpy(&partial, &g_drv, sizeof partial);
+    partial = g_drv;
     partial.cache_clean = NULL;
     Dma.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
@@ -629,23 +636,23 @@ void test_bind_refuses_a_driver_without_the_frame_path(void)
     Dma.clear(work_a);
     set_bind_args(work_a);
 
-    memcpy(&partial, &g_drv, sizeof partial);
+    partial = g_drv;
     partial.rx_claim = NULL;
     IDEMIP_DMA_IO(work_a)->bind_args.drv = &partial;
     Dma.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
 
-    memcpy(&partial, &g_drv, sizeof partial);
+    partial = g_drv;
     partial.rx_release = NULL;
     Dma.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
 
-    memcpy(&partial, &g_drv, sizeof partial);
+    partial = g_drv;
     partial.tx_claim = NULL;
     Dma.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
 
-    memcpy(&partial, &g_drv, sizeof partial);
+    partial = g_drv;
     partial.tx_commit = NULL;
     Dma.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
@@ -657,12 +664,12 @@ void test_bind_refuses_a_buffer_array_off_the_cache_line(void)
 {
     Dma.clear(work_a);
     set_bind_args(work_a);
-    IDEMIP_DMA_IO(work_a)->bind_args.rx_base = rx_bufs + 1;
+    IDEMIP_DMA_IO(work_a)->bind_args.rx_base = mmgr_pars_storage_rx_bufs + 1;
     Dma.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
 
     set_bind_args(work_a);
-    IDEMIP_DMA_IO(work_a)->bind_args.tx_base = tx_bufs + 1;
+    IDEMIP_DMA_IO(work_a)->bind_args.tx_base = mmgr_pars_storage_tx_bufs + 1;
     Dma.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_DMA_IO(work_a)->status);
 }

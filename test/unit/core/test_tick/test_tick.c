@@ -22,48 +22,69 @@
 #include "src/ip/ipv6.h"
 #endif
 
-#include <string.h>
-#include <unity.h>
+#include "src/arp/arp_defines.h"
 #include "src/common_defines.h"
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ethernet/vlan_defines.h"
-#include "src/arp/arp_defines.h"
 #include "src/ip/ipv4_defines.h"
 #include "src/ip/ipv6_defines.h"
 #include "src/tcp/tcp_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_TICK_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_TICK_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_TICK_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_TICK_BORROW + 16))
+static uint8_t *work_b;
 
 // The borrows the scheduler drives, and the ones the receive path under it drives.
-static _Alignas(8) uint8_t dispatch_mem[IDEMIP_DISPATCH_BORROW];
-static _Alignas(8) uint8_t timeouts_mem[IDEMIP_TIMEOUTS_BORROW];
-static _Alignas(8) uint8_t stats_mem[IDEMIP_STATS_BORROW];
-static _Alignas(8) uint8_t netif_mem[IDEMIP_NETIF_BORROW];
-static _Alignas(8) uint8_t loopif_mem[IDEMIP_LOOPIF_BORROW];
-static _Alignas(8) uint8_t vlan_mem[IDEMIP_VLAN_BORROW];
-static _Alignas(8) uint8_t arp_mem[IDEMIP_ARP_BORROW];
-static _Alignas(8) uint8_t ip4_addr_mem[IDEMIP_IP4_ADDR_BORROW];
-static _Alignas(8) uint8_t ip4_reass_mem[IDEMIP_IP4_REASS_BORROW];
-static _Alignas(8) uint8_t igmp_mem[IDEMIP_IGMP_BORROW];
+#define DISPATCH_MEM_BYTES ((size_t)(IDEMIP_DISPATCH_BORROW))
+static uint8_t *dispatch_mem;
+#define TIMEOUTS_MEM_BYTES ((size_t)(IDEMIP_TIMEOUTS_BORROW))
+static uint8_t *timeouts_mem;
+#define STATS_MEM_BYTES ((size_t)(IDEMIP_STATS_BORROW))
+static uint8_t *stats_mem;
+#define NETIF_MEM_BYTES ((size_t)(IDEMIP_NETIF_BORROW))
+static uint8_t *netif_mem;
+#define LOOPIF_MEM_BYTES ((size_t)(IDEMIP_LOOPIF_BORROW))
+static uint8_t *loopif_mem;
+#define VLAN_MEM_BYTES ((size_t)(IDEMIP_VLAN_BORROW))
+static uint8_t *vlan_mem;
+#define ARP_MEM_BYTES ((size_t)(IDEMIP_ARP_BORROW))
+static uint8_t *arp_mem;
+#define IP4_ADDR_MEM_BYTES ((size_t)(IDEMIP_IP4_ADDR_BORROW))
+static uint8_t *ip4_addr_mem;
+#define IP4_REASS_MEM_BYTES ((size_t)(IDEMIP_IP4_REASS_BORROW))
+static uint8_t *ip4_reass_mem;
+#define IGMP_MEM_BYTES ((size_t)(IDEMIP_IGMP_BORROW))
+static uint8_t *igmp_mem;
 #if IDEMIP_ENABLE_IPV6
-static _Alignas(8) uint8_t ip6_reass_mem[IDEMIP_IP6_REASS_BORROW];
-static _Alignas(8) uint8_t mld6_mem[IDEMIP_MLD6_BORROW];
-static _Alignas(8) uint8_t nd6_mem[IDEMIP_ND6_BORROW];
+#define IP6_REASS_MEM_BYTES ((size_t)(IDEMIP_IP6_REASS_BORROW))
+static uint8_t *ip6_reass_mem;
+#define MLD6_MEM_BYTES ((size_t)(IDEMIP_MLD6_BORROW))
+static uint8_t *mld6_mem;
+#define ND6_MEM_BYTES ((size_t)(IDEMIP_ND6_BORROW))
+static uint8_t *nd6_mem;
 #if IDEMIP_ENABLE_TCP
-static _Alignas(8) uint8_t tcp_pcb_mem[IDEMIP_TCP_PCB_BORROW];
-static _Alignas(8) uint8_t tcp_in_mem[IDEMIP_TCP_IN_BORROW];
+#define TCP_PCB_MEM_BYTES ((size_t)(IDEMIP_TCP_PCB_BORROW))
+static uint8_t *tcp_pcb_mem;
+#define TCP_IN_MEM_BYTES ((size_t)(IDEMIP_TCP_IN_BORROW))
+static uint8_t *tcp_in_mem;
 #endif
 #endif
-static _Alignas(8) uint8_t dma_mem[IDEMIP_DMA_BORROW];
-static _Alignas(8) uint8_t dma1_mem[IDEMIP_DMA_BORROW]; // the second interface's ring
-static _Alignas(8) uint8_t phy_mem[IDEMIP_PHY_BORROW];
+#define DMA_MEM_BYTES ((size_t)(IDEMIP_DMA_BORROW))
+static uint8_t *dma_mem;
+#define DMA1_MEM_BYTES ((size_t)(IDEMIP_DMA_BORROW))
+static uint8_t *dma1_mem; // the second interface's ring
+#define PHY_MEM_BYTES ((size_t)(IDEMIP_PHY_BORROW))
+static uint8_t *phy_mem;
 static uint8_t out_buf[256];
 
 // The frame buffers are the DRIVER's storage, the way a board's driver owns them.
-static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t rx_bufs[IDEMIP_RX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE];
-static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t tx_bufs[IDEMIP_TX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE];
+ParsMemoriaeInternae(rx_bufs, IDEMIP_RX_DESCRIPTORS *IDEMIP_DMA_BUF_STRIDE);
+ParsMemoriaeInternae(tx_bufs, IDEMIP_TX_DESCRIPTORS *IDEMIP_DMA_BUF_STRIDE);
 
 #define LOCAL_IP4 0xC0000201u
 #define REMOTE_IP4 0xC0000209u
@@ -84,7 +105,7 @@ static int g_committed;
 
 static uint8_t *rx_buf_at(unsigned i)
 {
-    return rx_bufs + ((size_t)i * IDEMIP_DMA_BUF_STRIDE);
+    return mmgr_pars_storage_rx_bufs + ((size_t)i * IDEMIP_DMA_BUF_STRIDE);
 }
 
 static void engine_queue(unsigned i, uint16_t len)
@@ -120,13 +141,13 @@ static void fake_rx_release(void)
 }
 static uint8_t *fake_tx_claim(size_t len)
 {
-    return (len > IDEMIP_DMA_BUF_STRIDE) ? NULL : tx_bufs;
+    return (len > IDEMIP_DMA_BUF_STRIDE) ? NULL : mmgr_pars_storage_tx_bufs;
 }
-static idemip_bool fake_tx_commit(size_t len)
+static embed_bool fake_tx_commit(size_t len)
 {
     (void)len;
     g_committed++;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 static void fake_invalidate(const void *p, size_t len)
 {
@@ -138,19 +159,19 @@ static void fake_clean(const void *p, size_t len)
     (void)p;
     (void)len;
 }
-static idemip_bool fake_mdio_read(uint8_t addr, uint8_t reg, uint16_t *out)
+static embed_bool fake_mdio_read(uint8_t addr, uint8_t reg, uint16_t *out)
 {
     (void)addr;
     (void)reg;
     *out = 0u;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
-static idemip_bool fake_mdio_write(uint8_t addr, uint8_t reg, uint16_t val)
+static embed_bool fake_mdio_write(uint8_t addr, uint8_t reg, uint16_t val)
 {
     (void)addr;
     (void)reg;
     (void)val;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 static const IdemIpPhyDriver g_drv = {
@@ -168,8 +189,8 @@ static const IdemIpPhyDriver g_drv = {
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_TICK_BORROW, CANARY, cap - IDEMIP_TICK_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_TICK_BORROW, .val = CANARY, .bytes = cap - IDEMIP_TICK_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -202,8 +223,8 @@ static void wire_units(void)
     Loopif.clear(loopif_mem);
     Dma.clear(dma_mem);
     IDEMIP_DMA_IO(dma_mem)->bind_args.drv = &g_drv;
-    IDEMIP_DMA_IO(dma_mem)->bind_args.rx_base = rx_bufs;
-    IDEMIP_DMA_IO(dma_mem)->bind_args.tx_base = tx_bufs;
+    IDEMIP_DMA_IO(dma_mem)->bind_args.rx_base = mmgr_pars_storage_rx_bufs;
+    IDEMIP_DMA_IO(dma_mem)->bind_args.tx_base = mmgr_pars_storage_tx_bufs;
     Dma.bind(dma_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(dma_mem)->status);
 
@@ -244,7 +265,7 @@ static void wire_units(void)
     di->if_args.index = 0u;
     di->if_args.dma = dma_mem;
     di->if_args.vid = 0u;
-    di->if_args.tagged = IDEMIP_FALSE;
+    di->if_args.tagged = EMBED_FALSE;
     Dispatch.if_bind(dispatch_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, di->status);
 }
@@ -280,17 +301,17 @@ static void bind_tick(uint8_t *w)
 // Runs one phase to exhaustion, capped. False when it kept reporting steps past any real count,
 // which is a phase whose cursor never advances.
 #define TICK_PHASE_STEP_MAX 64
-static idemip_bool run_phase(uint8_t *w, void (*const phase)(uint8_t *work))
+static embed_bool run_phase(uint8_t *w, void (*const phase)(uint8_t *work))
 {
     for (int i = 0; i < TICK_PHASE_STEP_MAX; i++)
     {
         phase(w);
         if (IDEMIP_TICK_IO(w)->status != IDEMIP_OK)
         {
-            return IDEMIP_TRUE;
+            return EMBED_TRUE;
         }
     }
-    return IDEMIP_FALSE;
+    return EMBED_FALSE;
 }
 
 // The random word a tick opens with. Deliberately not derivable from the now_ms beside it, so a
@@ -323,10 +344,10 @@ static void open_tick(uint8_t *w, uint32_t now_ms)
 static uint16_t fill_ip4_id(unsigned slot, uint32_t dst, uint16_t flags_frag, uint16_t id)
 {
     uint8_t *f = rx_buf_at(slot);
-    memset(f, 0, IDEMIP_DMA_BUF_STRIDE);
+    mmgr_zero_buf(f, IDEMIP_DMA_BUF_STRIDE);
     idemip_eth_build(f, g_local_mac, g_remote_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     IdemIpIp4Fields fields;
-    memset(&fields, 0, sizeof fields);
+    fields = (IdemIpIp4Fields){0};
     fields.total_len = (uint16_t)(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + TICK_TEST_DATA);
     fields.id = id;
     fields.flags_frag = flags_frag;
@@ -335,7 +356,7 @@ static uint16_t fill_ip4_id(unsigned slot, uint32_t dst, uint16_t flags_frag, ui
     fields.src = REMOTE_IP4;
     fields.dst = dst;
     idemip_ip4_build(f + IDEMIP_ETH_OFF_PAYLOAD, &fields);
-    memset(f + IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN), 0x5A, TICK_TEST_DATA);
+    fill_bytes(f + IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN), 0x5A, TICK_TEST_DATA);
     return (uint16_t)(IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + TICK_TEST_DATA);
 }
 
@@ -351,10 +372,10 @@ static uint16_t fill_ip4(unsigned slot, uint32_t dst, uint16_t flags_frag)
 static uint16_t fill_tcp(unsigned slot, uint32_t seq, uint32_t ack, uint8_t flags, uint16_t data_len)
 {
     uint8_t *f = rx_buf_at(slot);
-    memset(f, 0, IDEMIP_DMA_BUF_STRIDE);
+    mmgr_zero_buf(f, IDEMIP_DMA_BUF_STRIDE);
     idemip_eth_build(f, g_local_mac, g_remote_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     IdemIpIp4Fields fields;
-    memset(&fields, 0, sizeof fields);
+    fields = (IdemIpIp4Fields){0};
     fields.total_len = (uint16_t)(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + IDEMIP_TCP_HDR_LEN + data_len);
     fields.id = 0x4243u;
     fields.ttl = TICK_TEST_TTL;
@@ -372,7 +393,7 @@ static uint16_t fill_tcp(unsigned slot, uint32_t seq, uint32_t ack, uint8_t flag
     idemip_wr16(seg + IDEMIP_TCP_OFF_OFFS_FLAGS,
                 (uint16_t)(((uint16_t)IDEMIP_TCP_DOFF_MIN << IDEMIP_TCP_DOFF_SHIFT) | flags));
     idemip_wr16(seg + IDEMIP_TCP_OFF_WINDOW, (uint16_t)IDEMIP_TCP_WND);
-    memset(seg + IDEMIP_TCP_HDR_LEN, 0x5A, data_len);
+    fill_bytes(seg + IDEMIP_TCP_HDR_LEN, 0x5A, data_len);
     idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM, 0u);
     idemip_wr16(seg + IDEMIP_TCP_OFF_CKSUM,
                 idemip_tcp_cksum_compute(seg, (size_t)IDEMIP_TCP_HDR_LEN + data_len, REMOTE_IP4, LOCAL_IP4));
@@ -383,12 +404,38 @@ static uint16_t fill_tcp(unsigned slot, uint32_t seq, uint32_t ack, uint8_t flag
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(rx_bufs, 0, sizeof rx_bufs);
-    memset(tx_bufs, 0, sizeof tx_bufs);
-    memset(out_buf, 0, sizeof out_buf);
-    memset(phy_mem, 0, sizeof phy_mem);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_tick);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_tick);
+    idemip_test_borrow(&dispatch_mem, DISPATCH_MEM_BYTES, idemip_owner_dispatch);
+    idemip_test_borrow(&timeouts_mem, TIMEOUTS_MEM_BYTES, idemip_owner_timeouts);
+    idemip_test_borrow(&stats_mem, STATS_MEM_BYTES, idemip_owner_stats);
+    idemip_test_borrow(&netif_mem, NETIF_MEM_BYTES, idemip_owner_netif);
+    idemip_test_borrow(&loopif_mem, LOOPIF_MEM_BYTES, idemip_owner_loopif);
+    idemip_test_borrow(&vlan_mem, VLAN_MEM_BYTES, idemip_owner_vlan);
+    idemip_test_borrow(&arp_mem, ARP_MEM_BYTES, idemip_owner_arp);
+    idemip_test_borrow(&ip4_addr_mem, IP4_ADDR_MEM_BYTES, idemip_owner_ip4_addr);
+    idemip_test_borrow(&ip4_reass_mem, IP4_REASS_MEM_BYTES, idemip_owner_ip4_reass);
+    idemip_test_borrow(&igmp_mem, IGMP_MEM_BYTES, idemip_owner_igmp);
+#if IDEMIP_ENABLE_IPV6
+    idemip_test_borrow(&ip6_reass_mem, IP6_REASS_MEM_BYTES, idemip_owner_ip6_reass);
+    idemip_test_borrow(&mld6_mem, MLD6_MEM_BYTES, idemip_owner_mld6);
+    idemip_test_borrow(&nd6_mem, ND6_MEM_BYTES, idemip_owner_nd6);
+#if IDEMIP_ENABLE_TCP
+    idemip_test_borrow(&tcp_pcb_mem, TCP_PCB_MEM_BYTES, idemip_owner_tcp_pcb);
+    idemip_test_borrow(&tcp_in_mem, TCP_IN_MEM_BYTES, idemip_owner_tcp_in);
+#endif
+#endif
+    idemip_test_borrow(&dma_mem, DMA_MEM_BYTES, idemip_owner_dma);
+    idemip_test_borrow(&dma1_mem, DMA1_MEM_BYTES, idemip_owner_dma);
+    idemip_test_borrow(&phy_mem, PHY_MEM_BYTES, idemip_owner_phy);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = mmgr_pars_storage_rx_bufs, .val = 0,
+               .bytes = sizeof mmgr_pars_storage_rx_bufs);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = mmgr_pars_storage_tx_bufs, .val = 0,
+               .bytes = sizeof mmgr_pars_storage_tx_bufs);
+    mmgr_zero_buf(out_buf, sizeof out_buf);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = phy_mem, .val = 0, .bytes = PHY_MEM_BYTES);
     g_eng_head = 0u;
     g_eng_tail = 0u;
     g_released = 0;
@@ -401,8 +448,8 @@ void setUp(void)
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // --- the borrow --------------------------------------------------------------
@@ -422,7 +469,7 @@ void test_every_entry_survives_a_null_borrow(void)
 void test_every_entry_refuses_an_uncleared_borrow(void)
 {
     static _Alignas(8) uint8_t raw[IDEMIP_TICK_BORROW];
-    memset(raw, 0, sizeof raw);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = raw, .val = 0, .bytes = sizeof raw);
     Tick.bind(raw);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_TICK_IO(raw)->status);
     Tick.if_bind(raw);
@@ -893,15 +940,15 @@ static void give_the_interface_an_ipv6_address(void)
 
 // One IPv6 fragment into receive buffer @p slot. TICK_TEST_DATA is eight octets, so a fragment
 // carrying M is the multiple of 8 sec 4.5 requires of one.
-static uint16_t fill_ip6_fragment(unsigned slot, uint16_t frag_off, idemip_bool more)
+static uint16_t fill_ip6_fragment(unsigned slot, uint16_t frag_off, embed_bool more)
 {
     uint8_t *f = rx_buf_at(slot);
-    memset(f, 0, IDEMIP_DMA_BUF_STRIDE);
+    mmgr_zero_buf(f, IDEMIP_DMA_BUF_STRIDE);
     idemip_eth_build(f, g_local_mac, g_remote_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
 
     uint8_t *ip = f + IDEMIP_ETH_OFF_PAYLOAD;
     IdemIpIp6BuildArgs a;
-    memset(&a, 0, sizeof a);
+    a = (IdemIpIp6BuildArgs){0};
     a.src = g_tick_ip6_far;
     a.dst = g_tick_ip6;
     a.payload_len = (uint16_t)(IDEMIP_IP6_FRAG_HDR_LEN + TICK_TEST_DATA);
@@ -911,7 +958,7 @@ static uint16_t fill_ip6_fragment(unsigned slot, uint16_t frag_off, idemip_bool 
 
     uint8_t *fh = ip + IDEMIP_IPV6_HDR_LEN;
     idemip_ip6_frag_build(fh, TICK_TEST_PROTO, frag_off, more, 0x4242u);
-    memset(fh + IDEMIP_IP6_FRAG_HDR_LEN, 0x5A, TICK_TEST_DATA);
+    fill_bytes(fh + IDEMIP_IP6_FRAG_HDR_LEN, 0x5A, TICK_TEST_DATA);
     return (uint16_t)(IDEMIP_ETH_OFF_PAYLOAD + IDEMIP_IPV6_HDR_LEN + IDEMIP_IP6_FRAG_HDR_LEN + TICK_TEST_DATA);
 }
 
@@ -919,7 +966,7 @@ void test_an_expired_ipv6_datagram_returns_every_descriptor_it_pinned(void)
 {
     give_the_interface_an_ipv6_address();
 
-    uint16_t len = fill_ip6_fragment(0u, 0u, IDEMIP_TRUE);
+    uint16_t len = fill_ip6_fragment(0u, 0u, EMBED_TRUE);
     engine_queue(0u, len);
     open_tick(work_a, 1000u);
     Tick.drain(work_a);
@@ -962,11 +1009,11 @@ void test_an_expired_ipv6_datagram_returns_the_descriptors_of_every_fragment(voi
 {
     give_the_interface_an_ipv6_address();
 
-    uint16_t len = fill_ip6_fragment(0u, 0u, IDEMIP_TRUE);
+    uint16_t len = fill_ip6_fragment(0u, 0u, EMBED_TRUE);
     engine_queue(0u, len);
     // Offset 2 * TICK_TEST_DATA leaves a hole the missing middle fragment would fill, so the datagram
     // is held rather than completed.
-    len = fill_ip6_fragment(1u, (uint16_t)(TICK_TEST_DATA * 2u), IDEMIP_TRUE);
+    len = fill_ip6_fragment(1u, (uint16_t)(TICK_TEST_DATA * 2u), EMBED_TRUE);
     engine_queue(1u, len);
 
     open_tick(work_a, 1000u);
@@ -992,9 +1039,9 @@ void test_a_completed_ipv6_datagram_still_holds_its_descriptors(void)
 {
     give_the_interface_an_ipv6_address();
 
-    uint16_t len = fill_ip6_fragment(0u, 0u, IDEMIP_TRUE);
+    uint16_t len = fill_ip6_fragment(0u, 0u, EMBED_TRUE);
     engine_queue(0u, len);
-    len = fill_ip6_fragment(1u, TICK_TEST_DATA, IDEMIP_FALSE);
+    len = fill_ip6_fragment(1u, TICK_TEST_DATA, EMBED_FALSE);
     engine_queue(1u, len);
 
     open_tick(work_a, 1000u);
@@ -1107,19 +1154,19 @@ void test_the_drain_takes_a_frame_addressed_to_our_directed_broadcast(void)
 void test_the_drain_reads_a_tagged_frame_behind_its_tag(void)
 {
     uint8_t *f = rx_buf_at(0u);
-    memset(f, 0, IDEMIP_DMA_BUF_STRIDE);
+    mmgr_zero_buf(f, IDEMIP_DMA_BUF_STRIDE);
     idemip_eth_build(f, g_local_mac, g_remote_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     VlanIo *v = IDEMIP_VLAN_IO(vlan_mem);
     v->build_args.frame = f;
     v->build_args.type = (uint16_t)IDEMIP_ETHERTYPE_IPV4;
     v->tag_args.vid = 100u;
     v->tag_args.pcp = 0u;
-    v->tag_args.dei = IDEMIP_FALSE;
+    v->tag_args.dei = EMBED_FALSE;
     Vlan.build(vlan_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, v->status);
 
     IdemIpIp4Fields fields;
-    memset(&fields, 0, sizeof fields);
+    fields = (IdemIpIp4Fields){0};
     fields.total_len = (uint16_t)(IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + TICK_TEST_DATA);
     fields.id = 0x4242u;
     fields.ttl = TICK_TEST_TTL;
@@ -1278,9 +1325,9 @@ void test_a_frame_waiting_on_neighbor_discovery_comes_back_from_the_service_phas
     nd->neighbor_args.addr = unresolved;
     nd->neighbor_args.lladdr = NULL;
     nd->neighbor_args.state = IDEMIP_ND6_INCOMPLETE;
-    nd->neighbor_args.is_router = IDEMIP_FALSE;
-    nd->neighbor_args.solicited = IDEMIP_FALSE;
-    nd->neighbor_args.override = IDEMIP_FALSE;
+    nd->neighbor_args.is_router = EMBED_FALSE;
+    nd->neighbor_args.solicited = EMBED_FALSE;
+    nd->neighbor_args.override = EMBED_FALSE;
     Nd6.neighbor_set(nd6_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, nd->status);
     const uint8_t neighbor = nd->neighbor;
@@ -1294,7 +1341,7 @@ void test_a_frame_waiting_on_neighbor_discovery_comes_back_from_the_service_phas
     // Past every deadline the queued frame has, so the sweep hands it back.
     open_tick(work_a, 0xFFFFFu);
     TEST_ASSERT_TRUE(run_phase(work_a, Tick.drain));
-    idemip_bool seen = IDEMIP_FALSE;
+    embed_bool seen = EMBED_FALSE;
     for (int i = 0; i < 64; i++)
     {
         Tick.service(work_a);
@@ -1306,7 +1353,7 @@ void test_a_frame_waiting_on_neighbor_discovery_comes_back_from_the_service_phas
         {
             TEST_ASSERT_EQUAL_UINT16_MESSAGE(IDEMIP_DISPATCH_DESC_HANDLE(0u, desc), IDEMIP_TICK_IO(work_a)->desc,
                                              "the report named another descriptor");
-            seen = IDEMIP_TRUE;
+            seen = EMBED_TRUE;
             break;
         }
     }
@@ -1330,7 +1377,7 @@ void test_the_flush_phase_sends_the_acknowledgment_the_batch_aggregated(void)
     // A listener, and the handshake that puts a connection behind it.
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
     uint8_t local[IDEMIP_TCP_PCB_ADDR_BYTES];
-    memset(local, 0, sizeof local);
+    mmgr_zero_buf(local, sizeof local);
     idemip_wr32(local, LOCAL_IP4);
     tp->listen_args.ip = local;
     tp->listen_args.port = 5001u;
@@ -1375,7 +1422,7 @@ void test_the_flush_phase_sends_the_acknowledgment_the_batch_aggregated(void)
     // The phases run in order, so the service phase has to be run through before the flush is open.
     (void)run_phase(work_a, Tick.service);
 
-    idemip_bool seen = IDEMIP_FALSE;
+    embed_bool seen = EMBED_FALSE;
     for (int i = 0; i < 32; i++)
     {
         Tick.flush(work_a);
@@ -1385,7 +1432,7 @@ void test_the_flush_phase_sends_the_acknowledgment_the_batch_aggregated(void)
         }
         if (IDEMIP_TICK_IO(work_a)->unit == IDEMIP_TICK_UNIT_TCP_ACK)
         {
-            seen = IDEMIP_TRUE;
+            seen = EMBED_TRUE;
             break;
         }
     }
@@ -1415,7 +1462,7 @@ void test_the_flush_phase_reports_its_units_in_order(void)
     give_the_interface_an_ipv6_address();
     uint16_t len4 = fill_ip4(0u, LOCAL_IP4, IDEMIP_IP4_FLAG_MF);
     engine_queue(0u, len4);
-    uint16_t len6 = fill_ip6_fragment(1u, 0u, IDEMIP_TRUE);
+    uint16_t len6 = fill_ip6_fragment(1u, 0u, EMBED_TRUE);
     engine_queue(1u, len6);
     open_tick(work_a, 1000u);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
@@ -1528,7 +1575,7 @@ void test_an_expired_ipv4_datagram_is_reported_for_a_time_exceeded(void)
 void test_an_abandoned_ipv6_datagram_is_reported_for_a_time_exceeded(void)
 {
     give_the_interface_an_ipv6_address();
-    uint16_t len = fill_ip6_fragment(0u, 0u, IDEMIP_TRUE);
+    uint16_t len = fill_ip6_fragment(0u, 0u, EMBED_TRUE);
     engine_queue(0u, len);
     open_tick(work_a, 1000u);
     while (Tick.drain(work_a), IDEMIP_TICK_IO(work_a)->status == IDEMIP_OK)
@@ -1605,8 +1652,8 @@ void test_a_descriptor_from_the_second_interface_goes_back_to_it(void)
     // Two rings, so the case can tell "returned to the right one" from "returned to the only one".
     Dma.clear(dma1_mem);
     IDEMIP_DMA_IO(dma1_mem)->bind_args.drv = &g_drv;
-    IDEMIP_DMA_IO(dma1_mem)->bind_args.rx_base = rx_bufs;
-    IDEMIP_DMA_IO(dma1_mem)->bind_args.tx_base = tx_bufs;
+    IDEMIP_DMA_IO(dma1_mem)->bind_args.rx_base = mmgr_pars_storage_rx_bufs;
+    IDEMIP_DMA_IO(dma1_mem)->bind_args.tx_base = mmgr_pars_storage_tx_bufs;
     Dma.bind(dma1_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(dma1_mem)->status);
 
@@ -1650,7 +1697,7 @@ void test_a_descriptor_from_the_second_interface_goes_back_to_it(void)
 
     // Run whole ticks until the service phase reports the timed-out hold, then one more step so the
     // deferred unpin lands (tick.h: the descriptor stays pinned until the step after the report).
-    idemip_bool reported = IDEMIP_FALSE;
+    embed_bool reported = EMBED_FALSE;
     for (uint32_t t = 1000u; t <= 1000u + (IDEMIP_ARP_MAXPENDING_S * 2000u); t += 1000u)
     {
         if (reported) // the answer is in hand; the counter above only bounds a corrupt list
@@ -1668,7 +1715,7 @@ void test_a_descriptor_from_the_second_interface_goes_back_to_it(void)
             if (io->len != 0u && io->desc != IDEMIP_DISPATCH_DESC_NONE)
             {
                 TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, io->netif, "the hold was reported on the wrong interface");
-                reported = IDEMIP_TRUE;
+                reported = EMBED_TRUE;
             }
         }
         while (Tick.flush(work_a), io->status == IDEMIP_OK)

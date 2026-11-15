@@ -17,15 +17,17 @@
 
 #include "src/autoip/autoip.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/arp/arp_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the interface. A canary follows each so
 // a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(IDEMIP_ALIGN) uint8_t work_a[IDEMIP_AUTOIP_BORROW + 16];
-static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_AUTOIP_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_AUTOIP_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_AUTOIP_BORROW + 16))
+static uint8_t *work_b;
 
 // The span clear owns: the context, behind the operand block.
 #define STATE_OFF ((size_t)IDEMIP_AUTOIP_OFF_CTX)
@@ -37,8 +39,9 @@ static const uint8_t g_mac[IDEMIP_ARP_HLN_ETHERNET] = {0x02, 0x00, 0x00, 0x00, 0
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_AUTOIP_BORROW, CANARY, cap - IDEMIP_AUTOIP_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_AUTOIP_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_AUTOIP_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -51,14 +54,16 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_autoip);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_autoip);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // Every entry, in namespace order, so a new one added to AutoIpNs is added here too.
@@ -122,7 +127,7 @@ void test_two_borrows_share_no_byte(void)
 // this module has.
 void test_clear_on_one_borrow_leaves_the_other_untouched(void)
 {
-    memset(work_b + STATE_OFF, 0xC3, STATE_END - STATE_OFF);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b + STATE_OFF, .val = 0xC3, .bytes = STATE_END - STATE_OFF);
     IDEMIP_AUTOIP_IO(work_b)->start_args.rand = 0x2222u;
 
     AutoIp.clear(work_a);
@@ -193,8 +198,8 @@ void test_clear_reports_ok(void)
 // interface that is about to draw one.
 void test_clear_takes_the_context_to_one_state(void)
 {
-    memset(work_a, 0x00, IDEMIP_AUTOIP_BORROW);
-    memset(work_b, 0xFF, IDEMIP_AUTOIP_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0x00, .bytes = IDEMIP_AUTOIP_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b, .val = 0xFF, .bytes = IDEMIP_AUTOIP_BORROW);
     AutoIp.clear(work_a);
     AutoIp.clear(work_b);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(work_a + STATE_OFF, work_b + STATE_OFF, STATE_END - STATE_OFF);
@@ -204,7 +209,7 @@ void test_clear_takes_the_context_to_one_state(void)
 // uncleared borrow tell itself apart from a cleared one.
 void test_clear_zeroes_the_context_apart_from_the_mark(void)
 {
-    memset(work_a, 0xFF, IDEMIP_AUTOIP_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_AUTOIP_BORROW);
     AutoIp.clear(work_a);
     size_t set = 0;
     for (size_t i = STATE_OFF; i < STATE_END; i++)
@@ -232,9 +237,9 @@ void test_clear_leaves_the_operand_block_alone(void)
 // An entry is a function of its borrow alone, so clearing twice leaves the same bytes as clearing once.
 void test_clear_is_idempotent(void)
 {
-    memset(work_a, 0xFF, IDEMIP_AUTOIP_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_AUTOIP_BORROW);
     AutoIp.clear(work_a);
-    memcpy(work_b, work_a, IDEMIP_AUTOIP_BORROW);
+    EMBED_CALL(memor.cpy, MemoriaCfg, .dst = work_b, .src = work_a, .bytes = IDEMIP_AUTOIP_BORROW);
     AutoIp.clear(work_a);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(work_b + STATE_OFF, work_a + STATE_OFF, STATE_END - STATE_OFF);
 }
@@ -423,19 +428,19 @@ void test_no_draw_lands_on_a_reserved_address(void)
 // range lands inside it, so neither branch can put an address in a reserved 256.
 void test_the_fold_span_lands_inside_the_reserved_range_bounds(void)
 {
-    const uint32_t span = IDEMIP_AUTOIP_LAST - IDEMIP_AUTOIP_FIRST + 1u;
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(254u * 256u, span, "the fold does not step by the whole range");
+    const uint32_t addresses = IDEMIP_AUTOIP_LAST - IDEMIP_AUTOIP_FIRST + 1u;
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(254u * 256u, addresses, "the fold does not step by the whole range");
 
     // The lowest address the low limb can hold is the prefix itself; raising it by the span must not
     // run past the last usable address.
-    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_AUTOIP_PREFIX + span <= IDEMIP_AUTOIP_LAST,
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_AUTOIP_PREFIX + addresses <= IDEMIP_AUTOIP_LAST,
                              "a fold up from the bottom of the prefix leaves the range");
-    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_PREFIX + span >= IDEMIP_AUTOIP_FIRST);
+    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_PREFIX + addresses >= IDEMIP_AUTOIP_FIRST);
 
     // The highest is the broadcast address; lowering it by the span must not fall below the first.
-    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_AUTOIP_BROADCAST - span >= IDEMIP_AUTOIP_FIRST,
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_AUTOIP_BROADCAST - addresses >= IDEMIP_AUTOIP_FIRST,
                              "a fold down from the top of the prefix leaves the range");
-    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_BROADCAST - span <= IDEMIP_AUTOIP_LAST);
+    TEST_ASSERT_TRUE(IDEMIP_AUTOIP_BROADCAST - addresses <= IDEMIP_AUTOIP_LAST);
 
     // And the step-off a taken address takes wraps inside the range rather than past its end.
     assert_in_range(IDEMIP_AUTOIP_FIRST);
@@ -502,13 +507,13 @@ void test_two_interfaces_do_not_walk_the_same_sequence(void)
 void test_every_octet_of_the_interface_address_reaches_the_draw(void)
 {
     uint8_t mac[IDEMIP_ARP_HLN_ETHERNET];
-    memcpy(mac, g_mac, sizeof mac);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = mac, .at = g_mac, .size = sizeof mac);
     fresh_start(work_a, mac, 0x5EEDu);
     uint32_t base = IO(work_a)->ipaddr;
 
     for (size_t i = 0; i < sizeof mac; i++)
     {
-        memcpy(mac, g_mac, sizeof mac);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = mac, .at = g_mac, .size = sizeof mac);
         mac[i] = (uint8_t)(mac[i] ^ 0x40u);
         fresh_start(work_b, mac, 0x5EEDu);
         TEST_ASSERT_NOT_EQUAL_MESSAGE(base, IO(work_b)->ipaddr, "an octet of the interface address is not seeded in");
@@ -843,7 +848,7 @@ void test_a_tick_with_nothing_due_repeats(void)
 {
     fresh_start(work_a, g_mac, 0x0F0Fu);
     tick_at(work_a, 5000u, 0x11u);
-    memcpy(work_b, work_a, IDEMIP_AUTOIP_BORROW);
+    EMBED_CALL(memor.cpy, MemoriaCfg, .dst = work_b, .src = work_a, .bytes = IDEMIP_AUTOIP_BORROW);
     tick_at(work_a, 5000u, 0x11u);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(work_b, work_a, IDEMIP_AUTOIP_BORROW);
 }

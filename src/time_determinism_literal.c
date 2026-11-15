@@ -24,12 +24,12 @@
 
 #if IDEMIP_ENABLE_TIME_DETERMINISM
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // Four states is two bits, which is what leaves the state room in the top of the pad word and the
 // hysteresis able to read its own previous answer out of the load that fetched the pad.
-static_assert((uint32_t)IDEMIP_CLOCK_PAD_OVER <= IDEMIP_CLOCK_PAD_STATE_MASK,
-              "the four pad states must fit the two bits the pad word carries them in");
+EMBED_STATIC_ASSERT((uint32_t)IDEMIP_CLOCK_PAD_OVER <= IDEMIP_CLOCK_PAD_STATE_MASK,
+                    "the four pad states must fit the two bits the pad word carries them in");
 
 /** @brief One pad reading, or one step of one. */
 typedef struct
@@ -47,19 +47,19 @@ typedef struct
  * @brief Take the caller's microsecond reading, which is the one a pad is measured against.
  * @param t The reading.
  */
-IDEMIP_INLINE void td_refresh_fine(const TimeDeterminismCtx *t)
+EMBED_INLINE void td_refresh_fine(const TimeDeterminismCtx *t)
 {
     t->clk->tick = t->now_us;
 }
 
 /** @brief What one unit of a pad is: microseconds at this grade. */
-IDEMIP_INLINE uint32_t td_tick(const TimeDeterminismCtx *t)
+EMBED_INLINE uint32_t td_tick(const TimeDeterminismCtx *t)
 {
     return t->ro->tick;
 }
 
 /** @brief The stamp in that same unit, which is what the pad adds to. */
-IDEMIP_INLINE uint32_t td_tick_stamp(const TimeDeterminismCtx *t)
+EMBED_INLINE uint32_t td_tick_stamp(const TimeDeterminismCtx *t)
 {
     return t->ro->tick_stamp;
 }
@@ -73,19 +73,19 @@ IDEMIP_INLINE uint32_t td_tick_stamp(const TimeDeterminismCtx *t)
  * keeps no copy, because a function retunes its own pad and the clock is never told: a deadline
  * cached here would be one taken against a pad that no longer exists.
  */
-IDEMIP_INLINE uint32_t td_pad(const TimeDeterminismCtx *t)
+EMBED_INLINE uint32_t td_pad(const TimeDeterminismCtx *t)
 {
     return (uint32_t)(t->ro->tick_stamp + (t->word & IDEMIP_CLOCK_PAD_MASK));
 }
 
 /** @brief What this pass has cost so far, in the pad's unit. What the ceiling is checked against. */
-IDEMIP_INLINE uint32_t td_spent(const TimeDeterminismCtx *t)
+EMBED_INLINE uint32_t td_spent(const TimeDeterminismCtx *t)
 {
     return (td_tick(t) - td_tick_stamp(t));
 }
 
 /** @brief The pad out of that word, for a caller that wants the microseconds alone. */
-IDEMIP_INLINE uint32_t td_pad_ticks(const TimeDeterminismCtx *t)
+EMBED_INLINE uint32_t td_pad_ticks(const TimeDeterminismCtx *t)
 {
     return t->word & IDEMIP_CLOCK_PAD_MASK;
 }
@@ -103,7 +103,7 @@ IDEMIP_INLINE uint32_t td_pad_ticks(const TimeDeterminismCtx *t)
  * The difference is taken unsigned between two of the caller's own readings, so a wrap between them
  * subtracts out and no pad shorter than the reading's period is disturbed by one.
  */
-IDEMIP_INLINE IdemIpClockPad td_pad_state(const TimeDeterminismCtx *t)
+EMBED_INLINE IdemIpClockPad td_pad_state(const TimeDeterminismCtx *t)
 {
     const uint32_t want = t->word & IDEMIP_CLOCK_PAD_MASK;
     if (want == 0u)
@@ -127,7 +127,7 @@ IDEMIP_INLINE IdemIpClockPad td_pad_state(const TimeDeterminismCtx *t)
  * thing kept here is which state the pass ended in: OVER at this grade is a fault the caller reads,
  * not a step this takes. The bounds are the caller's and this reads neither.
  */
-IDEMIP_INLINE uint32_t td_tune(const TimeDeterminismCtx *t)
+EMBED_INLINE uint32_t td_tune(const TimeDeterminismCtx *t)
 {
     return (uint32_t)((((uint32_t)t->state & IDEMIP_CLOCK_PAD_STATE_MASK) << IDEMIP_CLOCK_PAD_SHIFT) |
                       (t->word & IDEMIP_CLOCK_PAD_MASK));
@@ -138,44 +138,44 @@ IDEMIP_INLINE uint32_t td_tune(const TimeDeterminismCtx *t)
 
 void idemip_clock_refresh_fine(IdemIpClock *c, uint32_t now_us)
 {
-    IDEMIP_CALL(td_refresh_fine, TimeDeterminismCtx, .clk = c, .now_us = now_us);
+    EMBED_CALL(td_refresh_fine, TimeDeterminismCtx, .clk = c, .now_us = now_us);
 }
 
 uint32_t idemip_determinism_pad(const IdemIpClock *c, uint32_t word)
 {
-    return IDEMIP_CALL(td_pad, TimeDeterminismCtx, .ro = c, .word = word);
+    return EMBED_CALL(td_pad, TimeDeterminismCtx, .ro = c, .word = word);
 }
 
 uint32_t idemip_determinism_tick(const IdemIpClock *c)
 {
-    return IDEMIP_CALL(td_tick, TimeDeterminismCtx, .ro = c);
+    return EMBED_CALL(td_tick, TimeDeterminismCtx, .ro = c);
 }
 
 uint32_t idemip_determinism_tick_stamp(const IdemIpClock *c)
 {
-    return IDEMIP_CALL(td_tick_stamp, TimeDeterminismCtx, .ro = c);
+    return EMBED_CALL(td_tick_stamp, TimeDeterminismCtx, .ro = c);
 }
 
 uint32_t idemip_determinism_spent(const IdemIpClock *c)
 {
-    return IDEMIP_CALL(td_spent, TimeDeterminismCtx, .ro = c);
+    return EMBED_CALL(td_spent, TimeDeterminismCtx, .ro = c);
 }
 
 uint32_t idemip_determinism_pad_ticks(uint32_t word)
 {
-    return IDEMIP_CALL(td_pad_ticks, TimeDeterminismCtx, .word = word);
+    return EMBED_CALL(td_pad_ticks, TimeDeterminismCtx, .word = word);
 }
 
 IdemIpClockPad idemip_clock_pad_state(const IdemIpClock *c, uint32_t word)
 {
-    return IDEMIP_CALL(td_pad_state, TimeDeterminismCtx, .ro = c, .word = word);
+    return EMBED_CALL(td_pad_state, TimeDeterminismCtx, .ro = c, .word = word);
 }
 
 uint32_t idemip_determinism_tune(uint32_t word, IdemIpClockPad state, uint32_t lo, uint32_t hi)
 {
-    return IDEMIP_CALL(td_tune, TimeDeterminismCtx, .word = word, .state = state, .lo = lo, .hi = hi);
+    return EMBED_CALL(td_tune, TimeDeterminismCtx, .word = word, .state = state, .lo = lo, .hi = hi);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_TIME_DETERMINISM

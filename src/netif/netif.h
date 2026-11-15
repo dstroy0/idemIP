@@ -29,7 +29,7 @@
 
 #if IDEMIP_ENABLE_ETHERNET
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /**
  * @brief What an interface reports about itself, one bit each.
@@ -41,15 +41,9 @@ IDEMIP_BEGIN_DECLS
  * @var IDEMIP_NETIF_FLAG_MULTICAST the link carries group traffic (RFC 1112, RFC 2710)
  * @var IDEMIP_NETIF_FLAG_ETHARP    RFC 826 resolution runs on this interface
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_NETIF_FLAG_UP = 0x0001,
-    IDEMIP_NETIF_FLAG_LINK_UP = 0x0002,
-    IDEMIP_NETIF_FLAG_BROADCAST = 0x0004,
-    IDEMIP_NETIF_FLAG_LOOPBACK = 0x0008,
-    IDEMIP_NETIF_FLAG_MULTICAST = 0x0010,
-    IDEMIP_NETIF_FLAG_ETHARP = 0x0020,
-} IdemIpNetifFlag;
+EMBED_ENUM_BYTE(IdemIpNetifFlag, IDEMIP_NETIF_FLAG_UP = 0x0001, IDEMIP_NETIF_FLAG_LINK_UP = 0x0002,
+                IDEMIP_NETIF_FLAG_BROADCAST = 0x0004, IDEMIP_NETIF_FLAG_LOOPBACK = 0x0008,
+                IDEMIP_NETIF_FLAG_MULTICAST = 0x0010, IDEMIP_NETIF_FLAG_ETHARP = 0x0020, );
 
 /** @brief Every flag a caller may set, so a reserved bit is refused rather than stored. */
 #define IDEMIP_NETIF_FLAG_MASK                                                                                         \
@@ -63,16 +57,10 @@ typedef enum IDEMIP_ENUM_PACKED
  * RFC 9293 sec 3.1 the TCP checksum, RFC 792 the ICMP checksum, and RFC 4443 sec 2.3 the ICMPv6
  * checksum, which is computed over the RFC 8200 pseudo-header.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_NETIF_CHKSUM_IP4 = 0x0001,
-    IDEMIP_NETIF_CHKSUM_UDP4 = 0x0002,
-    IDEMIP_NETIF_CHKSUM_TCP4 = 0x0004,
-    IDEMIP_NETIF_CHKSUM_ICMP4 = 0x0008,
-    IDEMIP_NETIF_CHKSUM_UDP6 = 0x0010,
-    IDEMIP_NETIF_CHKSUM_TCP6 = 0x0020,
-    IDEMIP_NETIF_CHKSUM_ICMP6 = 0x0040,
-} IdemIpNetifChksum;
+EMBED_ENUM_BYTE(IdemIpNetifChksum, IDEMIP_NETIF_CHKSUM_IP4 = 0x0001, IDEMIP_NETIF_CHKSUM_UDP4 = 0x0002,
+                IDEMIP_NETIF_CHKSUM_TCP4 = 0x0004, IDEMIP_NETIF_CHKSUM_ICMP4 = 0x0008,
+                IDEMIP_NETIF_CHKSUM_UDP6 = 0x0010, IDEMIP_NETIF_CHKSUM_TCP6 = 0x0020,
+                IDEMIP_NETIF_CHKSUM_ICMP6 = 0x0040, );
 
 /** @brief Every offload bit a caller may set. */
 #define IDEMIP_NETIF_CHKSUM_MASK                                                                                       \
@@ -94,14 +82,8 @@ typedef enum IDEMIP_ENUM_PACKED
  * @var IDEMIP_NETIF_ADDR6_DUPLICATE  RFC 4862 sec 5.4.5, a tentative address Duplicate Address
  *                                    Detection found in use
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_NETIF_ADDR6_INVALID = 0,
-    IDEMIP_NETIF_ADDR6_TENTATIVE,
-    IDEMIP_NETIF_ADDR6_PREFERRED,
-    IDEMIP_NETIF_ADDR6_DEPRECATED,
-    IDEMIP_NETIF_ADDR6_DUPLICATE,
-} IdemIpNetifAddr6State;
+EMBED_ENUM_BYTE(IdemIpNetifAddr6State, IDEMIP_NETIF_ADDR6_INVALID = 0, IDEMIP_NETIF_ADDR6_TENTATIVE,
+                IDEMIP_NETIF_ADDR6_PREFERRED, IDEMIP_NETIF_ADDR6_DEPRECATED, IDEMIP_NETIF_ADDR6_DUPLICATE, );
 
 /**
  * @brief A lifetime that never expires.
@@ -203,7 +185,7 @@ typedef struct
     IdemIpNetifAddr6State state;
     uint8_t index;
     uint8_t slot;
-    idemip_bool tentative;
+    embed_bool tentative;
 } NetifAddr6Args;
 
 #endif // IDEMIP_ENABLE_IPV6
@@ -268,7 +250,7 @@ typedef struct
     uint16_t flags;
     uint16_t chksum;
     uint8_t index;
-    idemip_bool local;
+    embed_bool local;
 #if IDEMIP_ENABLE_IPV6
     const uint8_t *addr6;
     uint32_t preferred_s;
@@ -400,7 +382,7 @@ void idemip_netif_tick(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const NetifNs Netif IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE NetifNs Netif EMBED_UNUSED = {
     .clear = idemip_netif_clear,
     .bind = idemip_netif_bind,
     .unbind = idemip_netif_unbind,
@@ -419,7 +401,7 @@ static const NetifNs Netif IDEMIP_UNUSED = {
     .tick = idemip_netif_tick,
 #endif
 };
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET
 

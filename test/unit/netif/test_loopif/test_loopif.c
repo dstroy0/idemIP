@@ -15,17 +15,20 @@
 
 #include "src/netif/loopif.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_LOOPIF_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_LOOPIF_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_LOOPIF_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_LOOPIF_BORROW + 16))
+static uint8_t *work_b;
 
 // A frame to loop. RFC 1122 sec 3.2.1.3 case (g) keeps it inside the host, so nothing about its
 // contents matters here beyond its length.
@@ -42,8 +45,9 @@ static const uint8_t g_other6[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0x80, 0, 0, 0, 0, 0,
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_LOOPIF_BORROW, CANARY, cap - IDEMIP_LOOPIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_LOOPIF_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_LOOPIF_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -56,15 +60,17 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(g_frame, 0xA5, sizeof g_frame);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_loopif);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_loopif);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    fill_bytes(g_frame, 0xA5, sizeof g_frame);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // Every entry, so a case that walks the whole namespace cannot miss one.
@@ -185,7 +191,7 @@ void test_clear_reports_ok(void)
 // Every frame region is zero after clear, whatever was in it before.
 void test_clear_zeroes_the_frame_regions(void)
 {
-    memset(work_a, 0xFF, IDEMIP_LOOPIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_LOOPIF_BORROW);
     Loopif.clear(work_a);
     for (size_t i = (size_t)IDEMIP_LOOPIF_OFF_FRAMES; i < (size_t)IDEMIP_LOOPIF_OFF_END; i++)
     {
@@ -206,7 +212,7 @@ void test_clear_leaves_the_operands_alone(void)
 // Clearing one borrow does not clear the other.
 void test_clear_reaches_one_borrow_only(void)
 {
-    memset(work_b, 0xFF, IDEMIP_LOOPIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b, .val = 0xFF, .bytes = IDEMIP_LOOPIF_BORROW);
     Loopif.clear(work_a);
     for (size_t i = (size_t)IDEMIP_LOOPIF_OFF_FRAMES; i < (size_t)IDEMIP_LOOPIF_OFF_END; i++)
     {
@@ -220,26 +226,26 @@ void test_clear_reaches_one_borrow_only(void)
 // frame length out of whatever was there.
 void test_an_uncleared_borrow_is_refused(void)
 {
-    memset(work_a, 0xFF, IDEMIP_LOOPIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_LOOPIF_BORROW);
     set_bind_args(work_a);
     Loopif.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status);
 
-    memset(work_a, 0xFF, IDEMIP_LOOPIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_LOOPIF_BORROW);
     IDEMIP_LOOPIF_IO(work_a)->output_args.frame = g_frame;
     IDEMIP_LOOPIF_IO(work_a)->output_args.len = sizeof g_frame;
     Loopif.output(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status);
 
-    memset(work_a, 0xFF, IDEMIP_LOOPIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_LOOPIF_BORROW);
     Loopif.claim(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status);
 
-    memset(work_a, 0xFF, IDEMIP_LOOPIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_LOOPIF_BORROW);
     Loopif.release(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status);
 
-    memset(work_a, 0xFF, IDEMIP_LOOPIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_LOOPIF_BORROW);
     IDEMIP_LOOPIF_IO(work_a)->match_args.addr4 = LO4;
     Loopif.owns4(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status);
@@ -504,7 +510,7 @@ void test_owns6_disowns_an_address_one_bit_off(void)
     Loopif.clear(work_a);
     for (size_t bit = 0; bit < (IDEMIP_IP6_ADDR_LEN * 8u); bit++)
     {
-        memcpy(addr, g_lo6, sizeof addr);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = addr, .at = g_lo6, .size = sizeof addr);
         addr[bit >> 3] ^= (uint8_t)(0x80u >> (bit & 7u));
         IDEMIP_LOOPIF_IO(work_a)->match_args.addr6 = addr;
         Loopif.owns6(work_a);
@@ -577,11 +583,11 @@ void test_the_looped_frame_does_not_follow_the_callers_buffer(void)
     uint8_t sent[48];
     uint8_t expect[48];
     fill(sent, sizeof sent, 0x30u);
-    memcpy(expect, sent, sizeof expect);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = expect, .at = sent, .size = sizeof expect);
 
     bind_ok(work_a);
     output_ok(work_a, sent, sizeof sent);
-    memset(sent, 0xEE, sizeof sent);
+    fill_bytes(sent, 0xEE, sizeof sent);
 
     // Nothing reads sent after the overwrite, so a compiler may drop the memset as a dead store, and
     // a dropped one leaves sent holding what it was written with: the case would then pass whether
@@ -925,7 +931,7 @@ void test_a_match_that_names_no_address_is_refused(void)
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status, "a match was made against no address");
 
     // And bytes clear has not run on are not an interface to match against either.
-    memset(work_a, 0xFF, IDEMIP_LOOPIF_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_LOOPIF_BORROW);
     IDEMIP_LOOPIF_IO(work_a)->match_args.addr6 = g_lo6;
     Loopif.owns6(work_a);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_LOOPIF_IO(work_a)->status, "owns6 read an uncleared borrow");

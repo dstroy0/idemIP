@@ -19,13 +19,18 @@
 
 #include "src/dhcp/dhcp6.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_DHCP6_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_DHCP6_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_DHCP6_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_DHCP6_BORROW + 16))
+static uint8_t *work_b;
+#define PROBE_BYTES ((size_t)(IDEMIP_DHCP6_BORROW))
+static uint8_t *probe;
 
 // A DUID-LL (RFC 8415 sec 11.4): the 2-octet type 3, a 2-octet hardware type, then a link-layer
 // address.
@@ -36,19 +41,20 @@ static const IdemIpDhcp6Cfg g_cfg_a = {.duid = g_duid_a,
                                        .iaid = 0x0A0A0A0Au,
                                        .duid_len = (uint16_t)sizeof g_duid_a,
                                        .netif = 0u,
-                                       .stateless = IDEMIP_FALSE,
-                                       .rapid_commit = IDEMIP_FALSE};
+                                       .stateless = EMBED_FALSE,
+                                       .rapid_commit = EMBED_FALSE};
 static const IdemIpDhcp6Cfg g_cfg_b = {.duid = g_duid_b,
                                        .iaid = 0x0B0B0B0Bu,
                                        .duid_len = (uint16_t)sizeof g_duid_b,
                                        .netif = 1u,
-                                       .stateless = IDEMIP_TRUE,
-                                       .rapid_commit = IDEMIP_TRUE};
+                                       .stateless = EMBED_TRUE,
+                                       .rapid_commit = EMBED_TRUE};
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_DHCP6_BORROW, CANARY, cap - IDEMIP_DHCP6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_DHCP6_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_DHCP6_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -61,14 +67,17 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_dhcp6);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_dhcp6);
+    idemip_test_borrow(&probe, PROBE_BYTES, idemip_owner_dhcp6);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void bind_ok(uint8_t *w, const IdemIpDhcp6Cfg *cfg)
@@ -124,7 +133,7 @@ void test_the_io_macro_lands_on_the_published_offset(void)
 // clear zeroes the whole borrow, the DUID region included, so a client restarts from IDLE.
 void test_clear_zeroes_the_regions(void)
 {
-    memset(work_a, 0xA5, IDEMIP_DHCP6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xA5, .bytes = IDEMIP_DHCP6_BORROW);
     Dhcp6.clear(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP6_IO(work_a)->status);
 
@@ -146,8 +155,8 @@ void test_clear_zeroes_the_regions(void)
 
 void test_clear_touches_one_borrow_only(void)
 {
-    memset(work_a, 0xA5, IDEMIP_DHCP6_BORROW);
-    memset(work_b, 0xA5, IDEMIP_DHCP6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xA5, .bytes = IDEMIP_DHCP6_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b, .val = 0xA5, .bytes = IDEMIP_DHCP6_BORROW);
     Dhcp6.clear(work_a);
 
     for (size_t i = 0; i < IDEMIP_DHCP6_BORROW; i++)
@@ -312,7 +321,6 @@ void test_the_constants_are_as_the_rfc_prints_them(void)
 // The behavior half: the RFC 8415 exchanges
 // =============================================================================
 
-static _Alignas(8) uint8_t probe[IDEMIP_DHCP6_BORROW];
 static uint8_t g_msg[512];
 static size_t g_msg_len;
 static uint8_t g_out[512];
@@ -330,8 +338,8 @@ static const IdemIpDhcp6Cfg g_cfg_rc = {.duid = g_duid_a,
                                         .iaid = 0x0A0A0A0Au,
                                         .duid_len = (uint16_t)sizeof g_duid_a,
                                         .netif = 0u,
-                                        .stateless = IDEMIP_FALSE,
-                                        .rapid_commit = IDEMIP_TRUE};
+                                        .stateless = EMBED_FALSE,
+                                        .rapid_commit = EMBED_TRUE};
 
 static void put16(uint8_t *p, uint16_t v)
 {
@@ -360,7 +368,7 @@ static uint32_t rd32(const uint8_t *p)
 // RFC 8415 sec 8, Figure 2: msg-type then the 3-octet transaction-id.
 static void msg_begin(uint8_t type, uint32_t xid)
 {
-    memset(g_msg, 0, sizeof g_msg);
+    mmgr_zero_buf(g_msg, sizeof g_msg);
     g_msg[IDEMIP_DHCP6_MSG_OFF_TYPE] = type;
     g_msg[IDEMIP_DHCP6_MSG_OFF_XID] = (uint8_t)(xid >> 16);
     g_msg[IDEMIP_DHCP6_MSG_OFF_XID + 1u] = (uint8_t)(xid >> 8);
@@ -380,12 +388,13 @@ static uint8_t *msg_opt(uint16_t code, uint16_t len)
 
 static void msg_clientid(const IdemIpDhcp6Cfg *cfg)
 {
-    memcpy(msg_opt(IDEMIP_DHCP6_OPT_CLIENTID, cfg->duid_len), cfg->duid, cfg->duid_len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg_opt(IDEMIP_DHCP6_OPT_CLIENTID, cfg->duid_len), .at = cfg->duid,
+               .size = cfg->duid_len);
 }
 
 static void msg_serverid(const uint8_t *duid, uint16_t len)
 {
-    memcpy(msg_opt(IDEMIP_DHCP6_OPT_SERVERID, len), duid, len);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg_opt(IDEMIP_DHCP6_OPT_SERVERID, len), .at = duid, .size = len);
 }
 
 static void msg_pref(uint8_t value)
@@ -440,13 +449,13 @@ static void msg_ia_na_ctx(const MsgIaNaArgs *args)
         put16(sub, IDEMIP_DHCP6_OPT_IAADDR);
         put16(sub + 2u, IDEMIP_DHCP6_IAADDR_FIXED_LEN);
         uint8_t *a = sub + IDEMIP_DHCP6_OPT_HDR_LEN;
-        memcpy(a, args->addr, IDEMIP_IP6_ADDR_LEN);
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = a, .at = args->addr, .size = IDEMIP_IP6_ADDR_LEN);
         put32(a + IDEMIP_IP6_ADDR_LEN, args->preferred);
         put32(a + IDEMIP_IP6_ADDR_LEN + 4u, args->valid);
     }
 }
 
-#define msg_ia_na(...) IDEMIP_CALL(msg_ia_na_ctx, MsgIaNaArgs, __VA_ARGS__)
+#define msg_ia_na(...) EMBED_CALL(msg_ia_na_ctx, MsgIaNaArgs, __VA_ARGS__)
 
 static void feed(uint8_t *w)
 {
@@ -465,7 +474,7 @@ static void tick(uint8_t *w, uint32_t now_ms, uint32_t rand)
 
 static size_t build(uint8_t *w)
 {
-    memset(g_out, 0, sizeof g_out);
+    mmgr_zero_buf(g_out, sizeof g_out);
     IDEMIP_DHCP6_IO(w)->build_args.out = g_out;
     IDEMIP_DHCP6_IO(w)->build_args.cap = sizeof g_out;
     Dhcp6.build(w);
@@ -507,7 +516,7 @@ static void arm_start(uint8_t *w, const IdemIpDhcp6Cfg *cfg, uint32_t xid)
 // Does a tick at @p now move the client on? Run on a copy of the borrow, so the real one is untouched.
 static int owes_at(const uint8_t *w, uint32_t now, uint32_t rand)
 {
-    memcpy(probe, w, IDEMIP_DHCP6_BORROW);
+    EMBED_CALL(memor.cpy, MemoriaCfg, .dst = probe, .src = w, .bytes = IDEMIP_DHCP6_BORROW);
     tick(probe, now, rand);
     return (IDEMIP_DHCP6_IO(probe)->status == IDEMIP_OK) ? 1 : 0;
 }
@@ -620,19 +629,19 @@ void test_the_elapsed_time_reciprocal_is_exact_over_the_whole_field(void)
 {
     uint32_t bad = 0u;
     uint32_t first_bad = 0u;
-    for (uint32_t ms = 0u; ms <= IDEMIP_DHCP6_ELAPSED_MAX_MS; ms++)
+    for (uint32_t elapsed = 0u; elapsed <= IDEMIP_DHCP6_ELAPSED_MAX_MS; elapsed++)
     {
-        uint32_t got = (uint32_t)(((uint64_t)ms * (uint64_t)IDEMIP_DHCP6_CS_RECIP) >> IDEMIP_DHCP6_CS_SHIFT);
-        if (got != ms / 100u)
+        uint32_t got = (uint32_t)(((uint64_t)elapsed * (uint64_t)IDEMIP_DHCP6_CS_RECIP) >> IDEMIP_DHCP6_CS_SHIFT);
+        if (got != elapsed / 100u)
         {
             if (bad == 0u)
             {
-                first_bad = ms;
+                first_bad = elapsed;
             }
             bad++;
         }
     }
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, bad, "the sec 21.9 reciprocal does not land on floor(ms/100)");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, bad, "the sec 21.9 reciprocal does not land on floor(elapsed/100)");
     TEST_ASSERT_EQUAL_UINT32(0u, first_bad);
 }
 
@@ -1407,7 +1416,7 @@ void test_a_server_identifier_outside_its_bounds_is_not_one(void)
 
         msg_begin((uint8_t)IDEMIP_DHCP6_ADVERTISE, 0x00ABCDEFu);
         msg_clientid(&g_cfg_a);
-        memset(msg_opt(IDEMIP_DHCP6_OPT_SERVERID, lens[r]), 0xAB, lens[r]);
+        fill_bytes(msg_opt(IDEMIP_DHCP6_OPT_SERVERID, lens[r]), 0xAB, lens[r]);
         msg_ia_na(g_cfg_a.iaid, 0u, 0u, g_lease, 100u, 200u, 0, 0u);
         feed(work_a);
 
@@ -1498,7 +1507,8 @@ void test_an_ia_na_with_no_usable_address_option_offers_nothing(void)
     uint8_t *sub = ia + IDEMIP_DHCP6_IA_NA_FIXED_LEN;
     put16(sub, IDEMIP_DHCP6_OPT_IAADDR);
     put16(sub + 2u, short_addr);
-    memcpy(sub + IDEMIP_DHCP6_OPT_HDR_LEN, g_lease, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = sub + IDEMIP_DHCP6_OPT_HDR_LEN, .at = g_lease,
+               .size = IDEMIP_IP6_ADDR_LEN);
     feed(work_a);
 
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DHCP6_SOLICITING, IDEMIP_DHCP6_IO(work_a)->state,
@@ -2246,8 +2256,8 @@ void test_the_dns_servers_option_is_read_out_of_the_message(void)
     msg_clientid(&g_cfg_b);
     msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
     uint8_t *dns = msg_opt(IDEMIP_DHCP6_OPT_DNS_SERVERS, 2u * IDEMIP_IP6_ADDR_LEN);
-    memcpy(dns, g_lease, IDEMIP_IP6_ADDR_LEN);
-    memcpy(dns + IDEMIP_IP6_ADDR_LEN, g_lease2, IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = dns, .at = g_lease, .size = IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = dns + IDEMIP_IP6_ADDR_LEN, .at = g_lease2, .size = IDEMIP_IP6_ADDR_LEN);
     feed(work_b);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP6_IO(work_b)->status);
     TEST_ASSERT_EQUAL_UINT8(2u, IDEMIP_DHCP6_IO(work_b)->dns_count);
@@ -2263,7 +2273,8 @@ void test_a_dns_servers_option_of_a_ragged_length_is_ignored(void)
     msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, 0x00112233u);
     msg_clientid(&g_cfg_b);
     msg_serverid(g_sduid, (uint16_t)sizeof g_sduid);
-    memcpy(msg_opt(IDEMIP_DHCP6_OPT_DNS_SERVERS, IDEMIP_IP6_ADDR_LEN - 1u), g_lease, IDEMIP_IP6_ADDR_LEN - 1u);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = msg_opt(IDEMIP_DHCP6_OPT_DNS_SERVERS, IDEMIP_IP6_ADDR_LEN - 1u),
+               .at = g_lease, .size = IDEMIP_IP6_ADDR_LEN - 1u);
     feed(work_b);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DHCP6_IO(work_b)->status);
     TEST_ASSERT_EQUAL_UINT8(0u, IDEMIP_DHCP6_IO(work_b)->dns_count);
@@ -2482,7 +2493,7 @@ void test_an_advertise_under_the_top_preference_waits_for_the_first_retransmissi
                                   "the first Advertise ended the solicitation before the first RT was out");
 
     // A second client, left to retransmit because nothing answered its first Solicit at all.
-    arm(work_b, sizeof work_b);
+    arm(work_b, WORK_B_BYTES);
     arm_start(work_b, &g_cfg_a, 0x00ABCDEFu);
     build(work_b);
     const uint32_t due = due_at_from(work_b, 0u, 4u * IDEMIP_DHCP6_SOL_MAX_RT_MS, 0u);
@@ -2513,7 +2524,7 @@ void test_an_identifier_this_client_cannot_hold_or_does_not_own_is_refused(void)
 
     // A Reply with Rapid Commit, whose Server Identifier is one octet past the bound.
     static uint8_t huge[IDEMIP_DHCP6_DUID_MAX + 1u];
-    memset(huge, 0xAB, sizeof huge);
+    fill_bytes(huge, 0xAB, sizeof huge);
     msg_begin((uint8_t)IDEMIP_DHCP6_REPLY, 0x00ABCDEFu);
     msg_clientid(&g_cfg_rc);
     msg_serverid(huge, (uint16_t)sizeof huge);
@@ -2578,7 +2589,7 @@ void test_the_first_solicit_interval_is_past_the_initial_timeout_on_any_draw(voi
                                      "a zero draw did not take the smallest step past IRT");
 
     // A draw that gives it the whole term: the interval is IRT and that term.
-    arm(work_b, sizeof work_b);
+    arm(work_b, WORK_B_BYTES);
     bind_ok(work_b, &g_cfg_a);
     IDEMIP_DHCP6_IO(work_b)->start_args.xid = 0x00ABCDEFu;
     IDEMIP_DHCP6_IO(work_b)->start_args.now_ms = 0u;
@@ -2665,7 +2676,7 @@ void test_a_no_binding_reply_that_is_not_a_renew_or_a_rebind_sends_no_request(vo
 
     // In RENEWING, answered by a server whose DUID is one octet past what sec 21.2 allows.
     static uint8_t huge[IDEMIP_DHCP6_DUID_MAX + 1u];
-    memset(huge, 0xCD, sizeof huge);
+    fill_bytes(huge, 0xCD, sizeof huge);
     to_bound(work_b, &g_cfg_a, 10u, 20u, 300u, 400u);
     tick(work_b, 10000u, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DHCP6_RENEWING, IDEMIP_DHCP6_IO(work_b)->state);

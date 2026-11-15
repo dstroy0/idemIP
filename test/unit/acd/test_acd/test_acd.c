@@ -17,15 +17,17 @@
 
 #include "src/acd/acd.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/arp/arp_defines.h"
+#include "support/borrows.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the interface. A canary follows each so
 // a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(IDEMIP_ALIGN) uint8_t work_a[IDEMIP_ACD_BORROW + 16];
-static _Alignas(IDEMIP_ALIGN) uint8_t work_b[IDEMIP_ACD_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_ACD_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_ACD_BORROW + 16))
+static uint8_t *work_b;
 
 // The span clear owns: the context, behind the operand block.
 #define STATE_OFF ((size_t)IDEMIP_ACD_OFF_CTX)
@@ -39,8 +41,8 @@ static const uint8_t g_mac[IDEMIP_ARP_HLN_ETHERNET] = {0x02, 0x00, 0x00, 0x00, 0
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_ACD_BORROW, CANARY, cap - IDEMIP_ACD_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_ACD_BORROW, .val = CANARY, .bytes = cap - IDEMIP_ACD_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -53,14 +55,16 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_acd);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_acd);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 // Every entry, in namespace order, so a new one added to AcdNs is added here too.
@@ -127,7 +131,7 @@ void test_two_borrows_share_no_byte(void)
 // this module has.
 void test_clear_on_one_borrow_leaves_the_other_untouched(void)
 {
-    memset(work_b + STATE_OFF, 0xC3, STATE_END - STATE_OFF);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b + STATE_OFF, .val = 0xC3, .bytes = STATE_END - STATE_OFF);
     IDEMIP_ACD_IO(work_b)->start_args.ipaddr = ADDR_B;
 
     Acd.clear(work_a);
@@ -198,8 +202,8 @@ void test_clear_reports_ok(void)
 // is about to probe an address.
 void test_clear_takes_the_context_to_one_state(void)
 {
-    memset(work_a, 0x00, IDEMIP_ACD_BORROW);
-    memset(work_b, 0xFF, IDEMIP_ACD_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0x00, .bytes = IDEMIP_ACD_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_b, .val = 0xFF, .bytes = IDEMIP_ACD_BORROW);
     Acd.clear(work_a);
     Acd.clear(work_b);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(work_a + STATE_OFF, work_b + STATE_OFF, STATE_END - STATE_OFF);
@@ -209,7 +213,7 @@ void test_clear_takes_the_context_to_one_state(void)
 // uncleared borrow tell itself apart from a cleared one.
 void test_clear_zeroes_the_context_apart_from_the_mark(void)
 {
-    memset(work_a, 0xFF, IDEMIP_ACD_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_ACD_BORROW);
     Acd.clear(work_a);
     size_t set = 0;
     for (size_t i = STATE_OFF; i < STATE_END; i++)
@@ -237,9 +241,9 @@ void test_clear_leaves_the_operand_block_alone(void)
 // An entry is a function of its borrow alone, so clearing twice leaves the same bytes as clearing once.
 void test_clear_is_idempotent(void)
 {
-    memset(work_a, 0xFF, IDEMIP_ACD_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work_a, .val = 0xFF, .bytes = IDEMIP_ACD_BORROW);
     Acd.clear(work_a);
-    memcpy(work_b, work_a, IDEMIP_ACD_BORROW);
+    EMBED_CALL(memor.cpy, MemoriaCfg, .dst = work_b, .src = work_a, .bytes = IDEMIP_ACD_BORROW);
     Acd.clear(work_a);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(work_b + STATE_OFF, work_a + STATE_OFF, STATE_END - STATE_OFF);
 }

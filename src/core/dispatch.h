@@ -26,6 +26,7 @@
 
 #include "src/core/stats.h"
 #include "src/ethernet/vlan.h"
+#include "src/ethernet/vlan_defines.h"
 #include "src/netif/dma.h"
 #include "src/netif/loopif.h"
 #include "src/netif/netif.h"
@@ -57,12 +58,11 @@
 
 #if IDEMIP_ENABLE_IPV4 || IDEMIP_ENABLE_IPV6
 #include "src/raw/raw_pcb.h"
-#include "src/ethernet/vlan_defines.h"
 #endif
 
 #if IDEMIP_ENABLE_ETHERNET
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // ---------------------------------------------------------------------------
 // The interface a call names, and the descriptor a frame lies in
@@ -139,76 +139,73 @@ IDEMIP_BEGIN_DECLS
  * The three link-layer reasons are the ones the phase order fixes. Each names a counter whose own
  * RFC 1213 wording is the reason it is the right one.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_DISPATCH_DROP_NONE = 0, ///< nothing was dropped
+EMBED_ENUM_BYTE(IdemIpDispatchDrop,
+                IDEMIP_DISPATCH_DROP_NONE = 0, ///< nothing was dropped
 
-    /** Shorter than the header it claims. ifInErrors: "contained errors preventing them from being
-     *  deliverable to a higher-layer protocol." */
-    IDEMIP_DISPATCH_DROP_SHORT,
-    /** A tag this interface is not a member of. ifInDiscards: "chosen to be discarded even though no
-     *  errors had been detected". */
-    IDEMIP_DISPATCH_DROP_VLAN_POLICY,
-    /** A tag carrying the reserved VLAN ID 0xFFF, which RFC 6325 sec 4.1.1 says "MUST NOT be used"
-     *  and MUST be discarded, so the frame is malformed: ifInErrors. */
-    IDEMIP_DISPATCH_DROP_VLAN_RESERVED,
-    /** A type code nothing here handles. ifInUnknownProtos: "discarded because of an unknown or
-     *  unsupported protocol." */
-    IDEMIP_DISPATCH_DROP_ETHERTYPE,
+                /** Shorter than the header it claims. ifInErrors: "contained errors preventing them from being
+                 *  deliverable to a higher-layer protocol." */
+                IDEMIP_DISPATCH_DROP_SHORT,
+                /** A tag this interface is not a member of. ifInDiscards: "chosen to be discarded even though no
+                 *  errors had been detected". */
+                IDEMIP_DISPATCH_DROP_VLAN_POLICY,
+                /** A tag carrying the reserved VLAN ID 0xFFF, which RFC 6325 sec 4.1.1 says "MUST NOT be used"
+                 *  and MUST be discarded, so the frame is malformed: ifInErrors. */
+                IDEMIP_DISPATCH_DROP_VLAN_RESERVED,
+                /** A type code nothing here handles. ifInUnknownProtos: "discarded because of an unknown or
+                 *  unsupported protocol." */
+                IDEMIP_DISPATCH_DROP_ETHERTYPE,
 
-    IDEMIP_DISPATCH_DROP_IP_HEADER,  ///< ipInHdrErrors: version, IHL, length or checksum
-    IDEMIP_DISPATCH_DROP_IP_ADDRESS, ///< ipInAddrErrors: the destination is not this host's
-    IDEMIP_DISPATCH_DROP_IP_SOURCE,  ///< ipInHdrErrors: the source is one RFC 1122 sec 3.2.1.3 bars
-    /**
-     * @brief ipInUnknownProtos: no pcb kind claims the Protocol or Next Header field.
-     *
-     * Over IPv6 this is RFC 8200 sec 4's unrecognized Next Header, which "should discard the packet
-     * and send an ICMP Parameter Problem message to the source of the packet, with an ICMP Code value
-     * of 1 ('unrecognized Next Header type encountered') and the ICMP Pointer field containing the
-     * offset of the unrecognized value within the original packet". @ref DispatchIo::err_ptr carries
-     * that offset.
-     */
-    IDEMIP_DISPATCH_DROP_IP_PROTO,
-    /** ipInHdrErrors: a RFC 8200 sec 4.4 Routing header carrying a non-zero Segments Left, whose
-     *  Routing Type this library executes none of. sec 4.4: "the node must discard the packet and send
-     *  an ICMP Parameter Problem, Code 0, message to the packet's Source Address, pointing to the
-     *  unrecognized Routing Type." The discard is here; the message is the caller's to build through
-     *  icmp6_in.h, the same division DROP_NO_PCB uses for Port Unreachable. */
-    IDEMIP_DISPATCH_DROP_IP6_ROUTING,
-    /** ipInHdrErrors: an RFC 8200 sec 4.2 option this node does not recognize whose two high-order
-     *  bits are 01, 10 or 11. All three discard; 10 and 11 also owe a Parameter Problem, Code 2,
-     *  pointing to the Option Type, which @ref DispatchIo::err_ptr names and whose own octet says
-     *  which. 11 owes it "only if the packet's Destination Address was not a multicast address". */
-    IDEMIP_DISPATCH_DROP_IP6_OPTION,
-    /** RFC 6980 sec 5: "Nodes MUST silently ignore the following Neighbor Discovery and SEcure
-     *  Neighbor Discovery messages if the packets carrying them include an IPv6 Fragmentation
-     *  Header". The rule is on the presence of the header, so an atomic fragment is covered too. */
-    IDEMIP_DISPATCH_DROP_IP6_FRAG_ND,
-    IDEMIP_DISPATCH_DROP_NO_PCB,     ///< ipInDiscards: nothing is bound to the port or protocol
-    IDEMIP_DISPATCH_DROP_REASS,      ///< ipInDiscards: the reassembler had no room, or refused it
-    IDEMIP_DISPATCH_DROP_NO_DESC,    ///< ipInDiscards: retention needs a descriptor and there is none
-    IDEMIP_DISPATCH_DROP_UNBOUND,    ///< the borrow the path needs was never bound
+                IDEMIP_DISPATCH_DROP_IP_HEADER,  ///< ipInHdrErrors: version, IHL, length or checksum
+                IDEMIP_DISPATCH_DROP_IP_ADDRESS, ///< ipInAddrErrors: the destination is not this host's
+                IDEMIP_DISPATCH_DROP_IP_SOURCE,  ///< ipInHdrErrors: the source is one RFC 1122 sec 3.2.1.3 bars
+                /**
+                 * @brief ipInUnknownProtos: no pcb kind claims the Protocol or Next Header field.
+                 *
+                 * Over IPv6 this is RFC 8200 sec 4's unrecognized Next Header, which "should discard the packet
+                 * and send an ICMP Parameter Problem message to the source of the packet, with an ICMP Code value
+                 * of 1 ('unrecognized Next Header type encountered') and the ICMP Pointer field containing the
+                 * offset of the unrecognized value within the original packet". @ref DispatchIo::err_ptr carries
+                 * that offset.
+                 */
+                IDEMIP_DISPATCH_DROP_IP_PROTO,
+                /** ipInHdrErrors: a RFC 8200 sec 4.4 Routing header carrying a non-zero Segments Left, whose
+                 *  Routing Type this library executes none of. sec 4.4: "the node must discard the packet and send
+                 *  an ICMP Parameter Problem, Code 0, message to the packet's Source Address, pointing to the
+                 *  unrecognized Routing Type." The discard is here; the message is the caller's to build through
+                 *  icmp6_in.h, the same division DROP_NO_PCB uses for Port Unreachable. */
+                IDEMIP_DISPATCH_DROP_IP6_ROUTING,
+                /** ipInHdrErrors: an RFC 8200 sec 4.2 option this node does not recognize whose two high-order
+                 *  bits are 01, 10 or 11. All three discard; 10 and 11 also owe a Parameter Problem, Code 2,
+                 *  pointing to the Option Type, which @ref DispatchIo::err_ptr names and whose own octet says
+                 *  which. 11 owes it "only if the packet's Destination Address was not a multicast address". */
+                IDEMIP_DISPATCH_DROP_IP6_OPTION,
+                /** RFC 6980 sec 5: "Nodes MUST silently ignore the following Neighbor Discovery and SEcure
+                 *  Neighbor Discovery messages if the packets carrying them include an IPv6 Fragmentation
+                 *  Header". The rule is on the presence of the header, so an atomic fragment is covered too. */
+                IDEMIP_DISPATCH_DROP_IP6_FRAG_ND,
+                IDEMIP_DISPATCH_DROP_NO_PCB,  ///< ipInDiscards: nothing is bound to the port or protocol
+                IDEMIP_DISPATCH_DROP_REASS,   ///< ipInDiscards: the reassembler had no room, or refused it
+                IDEMIP_DISPATCH_DROP_NO_DESC, ///< ipInDiscards: retention needs a descriptor and there is none
+                IDEMIP_DISPATCH_DROP_UNBOUND, ///< the borrow the path needs was never bound
 
-    /** The transport or control checksum over the datagram did not check out. Kept apart from
-     *  DROP_SHORT so a bad sum reads as a bad sum: RFC 1122 sec 4.1.3.4 requires a UDP datagram
-     *  with a non-zero invalid checksum to be discarded silently, and RFC 2236 sec 2.3 requires an
-     *  IGMP checksum to be "verified before processing a packet". */
-    IDEMIP_DISPATCH_DROP_CKSUM,
-} IdemIpDispatchDrop;
+                /** The transport or control checksum over the datagram did not check out. Kept apart from
+                 *  DROP_SHORT so a bad sum reads as a bad sum: RFC 1122 sec 4.1.3.4 requires a UDP datagram
+                 *  with a non-zero invalid checksum to be discarded silently, and RFC 2236 sec 2.3 requires an
+                 *  IGMP checksum to be "verified before processing a packet". */
+                IDEMIP_DISPATCH_DROP_CKSUM, );
 
 /** @brief Which table the pcb index a delivery names belongs to. */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_DISPATCH_PCB_NONE = 0, ///< no pcb was reached
-    IDEMIP_DISPATCH_PCB_RAW,      ///< raw_pcb, RFC 1122 sec 3.2
-    IDEMIP_DISPATCH_PCB_UDP,      ///< udp_pcb, RFC 768
-    IDEMIP_DISPATCH_PCB_TCP,      ///< tcp_pcb, RFC 9293 sec 3.3.1
-    IDEMIP_DISPATCH_PCB_LISTEN,   ///< a tcp_pcb listener, RFC 9293 sec 3.10.7.2
-    IDEMIP_DISPATCH_PCB_ICMP,     ///< the message went to icmp_in or icmp6_in
-    IDEMIP_DISPATCH_PCB_GROUP,    ///< the message went to igmp or mld6
-    IDEMIP_DISPATCH_PCB_ARP,      ///< the packet went to the RFC 826 table
-    IDEMIP_DISPATCH_PCB_ND,       ///< the message is one of RFC 4861 sec 4's five, for nd6, dad, slaac or rdnss
-} IdemIpDispatchPcb;
+EMBED_ENUM_BYTE(IdemIpDispatchPcb,
+                IDEMIP_DISPATCH_PCB_NONE = 0, ///< no pcb was reached
+                IDEMIP_DISPATCH_PCB_RAW,      ///< raw_pcb, RFC 1122 sec 3.2
+                IDEMIP_DISPATCH_PCB_UDP,      ///< udp_pcb, RFC 768
+                IDEMIP_DISPATCH_PCB_TCP,      ///< tcp_pcb, RFC 9293 sec 3.3.1
+                IDEMIP_DISPATCH_PCB_LISTEN,   ///< a tcp_pcb listener, RFC 9293 sec 3.10.7.2
+                IDEMIP_DISPATCH_PCB_ICMP,     ///< the message went to icmp_in or icmp6_in
+                IDEMIP_DISPATCH_PCB_GROUP,    ///< the message went to igmp or mld6
+                IDEMIP_DISPATCH_PCB_ARP,      ///< the packet went to the RFC 826 table
+                IDEMIP_DISPATCH_PCB_ND, ///< the message is one of RFC 4861 sec 4's five, for nd6, dad, slaac or rdnss
+);
 
 /**
  * @brief The borrows the receive path calls into, each the caller's own.
@@ -290,7 +287,7 @@ typedef struct
 {
     uint8_t *dma;
     uint16_t vid;
-    idemip_bool tagged;
+    embed_bool tagged;
     uint8_t index;
 } DispatchIfArgs;
 
@@ -400,7 +397,7 @@ typedef struct
     uint16_t vid;
     uint16_t last_vid;
     uint8_t pcp;
-    idemip_bool tagged;
+    embed_bool tagged;
 
     size_t ip_off;
     size_t payload_off;
@@ -452,7 +449,7 @@ typedef struct
  *   Dispatch.bind(work);
  *   IDEMIP_DISPATCH_IO(work)->if_args.index = 0u;
  *   IDEMIP_DISPATCH_IO(work)->if_args.vid = 100u;
- *   IDEMIP_DISPATCH_IO(work)->if_args.tagged = IDEMIP_TRUE;
+ *   IDEMIP_DISPATCH_IO(work)->if_args.tagged = EMBED_TRUE;
  *   Dispatch.if_bind(work);
  *   IDEMIP_DISPATCH_IO(work)->input_args.frame = frame;
  *   IDEMIP_DISPATCH_IO(work)->input_args.rand = my_random_word;
@@ -525,7 +522,7 @@ void idemip_dispatch_tcp_ack(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const DispatchNs Dispatch IDEMIP_UNUSED = {
+EMBED_TABLE_STORAGE DispatchNs Dispatch EMBED_UNUSED = {
     .clear = idemip_dispatch_clear,
     .bind = idemip_dispatch_bind,
     .if_bind = idemip_dispatch_if_bind,
@@ -537,23 +534,23 @@ static const DispatchNs Dispatch IDEMIP_UNUSED = {
 #endif
 };
 // RFC 6325 sec 4.1.1 reserves 0xFFF, so no membership can ever equal the sentinel.
-static_assert(IDEMIP_DISPATCH_VID_NONE > IDEMIP_VLAN_VID_LAST,
-              "the sentinel must lie above the usable VLAN ID range (RFC 6325 sec 4.1.1)");
+EMBED_STATIC_ASSERT(IDEMIP_DISPATCH_VID_NONE > IDEMIP_VLAN_VID_LAST,
+                    "the sentinel must lie above the usable VLAN ID range (RFC 6325 sec 4.1.1)");
 
 // An interface index and a descriptor index each fit the width the row and the operand block hold.
-static_assert(IDEMIP_NETIF_COUNT < IDEMIP_DISPATCH_NETIF_NONE,
-              "IDEMIP_NETIF_COUNT must stay below IDEMIP_DISPATCH_NETIF_NONE: an index is one octet");
-static_assert(IDEMIP_RX_DESCRIPTORS < IDEMIP_DISPATCH_DESC_NONE,
-              "IDEMIP_RX_DESCRIPTORS must stay below IDEMIP_DISPATCH_DESC_NONE: the sentinel names no "
-              "descriptor");
-static_assert(IDEMIP_RX_DESCRIPTORS <= 0x100u,
-              "IDEMIP_RX_DESCRIPTORS must fit the low octet of a descriptor handle, which carries the "
-              "ring index; the high octet carries the interface");
-static_assert(IDEMIP_NETIF_COUNT < IDEMIP_DISPATCH_NETIF_NONE,
-              "IDEMIP_NETIF_COUNT must fit the high octet of a descriptor handle, below the value "
-              "IDEMIP_DISPATCH_DESC_NONE reserves");
+EMBED_STATIC_ASSERT(IDEMIP_NETIF_COUNT < IDEMIP_DISPATCH_NETIF_NONE,
+                    "IDEMIP_NETIF_COUNT must stay below IDEMIP_DISPATCH_NETIF_NONE: an index is one octet");
+EMBED_STATIC_ASSERT(IDEMIP_RX_DESCRIPTORS < IDEMIP_DISPATCH_DESC_NONE,
+                    "IDEMIP_RX_DESCRIPTORS must stay below IDEMIP_DISPATCH_DESC_NONE: the sentinel names no "
+                    "descriptor");
+EMBED_STATIC_ASSERT(IDEMIP_RX_DESCRIPTORS <= 0x100u,
+                    "IDEMIP_RX_DESCRIPTORS must fit the low octet of a descriptor handle, which carries the "
+                    "ring index; the high octet carries the interface");
+EMBED_STATIC_ASSERT(IDEMIP_NETIF_COUNT < IDEMIP_DISPATCH_NETIF_NONE,
+                    "IDEMIP_NETIF_COUNT must fit the high octet of a descriptor handle, below the value "
+                    "IDEMIP_DISPATCH_DESC_NONE reserves");
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_ETHERNET
 

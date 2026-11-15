@@ -25,7 +25,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief No neighbor, no destination, no prefix, no router, no queued frame. */
 #define IDEMIP_ND6_NONE 0xFFu
@@ -44,14 +44,13 @@ IDEMIP_BEGIN_DECLS
  * sec 5.1: "a neighbor's reachability state, which is one of five possible values", and sec 7.3.2
  * gives each its precise definition.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_ND6_INCOMPLETE = 0, ///< "Address resolution is being performed on the entry"
-    IDEMIP_ND6_REACHABLE,      ///< positive confirmation within the last ReachableTime milliseconds
-    IDEMIP_ND6_STALE,          ///< more than ReachableTime has elapsed since that confirmation
-    IDEMIP_ND6_DELAY,          ///< a packet was sent within the last DELAY_FIRST_PROBE_TIME
-    IDEMIP_ND6_PROBE,          ///< unicast solicitations sent every RetransTimer milliseconds
-} IdemIpNd6State;
+EMBED_ENUM_BYTE(IdemIpNd6State,
+                IDEMIP_ND6_INCOMPLETE = 0, ///< "Address resolution is being performed on the entry"
+                IDEMIP_ND6_REACHABLE,      ///< positive confirmation within the last ReachableTime milliseconds
+                IDEMIP_ND6_STALE,          ///< more than ReachableTime has elapsed since that confirmation
+                IDEMIP_ND6_DELAY,          ///< a packet was sent within the last DELAY_FIRST_PROBE_TIME
+                IDEMIP_ND6_PROBE,          ///< unicast solicitations sent every RetransTimer milliseconds
+);
 
 /**
  * @brief What a Neighbor Cache call takes (RFC 4861 sec 5.1).
@@ -77,9 +76,9 @@ typedef struct
     const uint8_t *addr;
     const uint8_t *lladdr;
     IdemIpNd6State state;
-    idemip_bool is_router;
-    idemip_bool solicited;
-    idemip_bool override;
+    embed_bool is_router;
+    embed_bool solicited;
+    embed_bool override;
     uint8_t index;
 } Nd6NeighborArgs;
 
@@ -120,8 +119,8 @@ typedef struct
     const uint8_t *prefix;
     uint32_t lifetime_s;
     uint8_t prefix_len;
-    idemip_bool on_link;
-    idemip_bool autonomous;
+    embed_bool on_link;
+    embed_bool autonomous;
 } Nd6PrefixArgs;
 
 /**
@@ -188,8 +187,8 @@ typedef struct
     uint32_t link_mtu;
     uint32_t rand;
     uint8_t cur_hop_limit;
-    idemip_bool managed;
-    idemip_bool other;
+    embed_bool managed;
+    embed_bool other;
 } Nd6ParamsArgs;
 
 /**
@@ -280,12 +279,12 @@ typedef struct
     uint8_t probes;
     uint8_t cur_hop_limit;
     uint8_t expired;
-    idemip_bool is_router;
-    idemip_bool on_link;
-    idemip_bool solicit;
-    idemip_bool multicast;
-    idemip_bool managed;
-    idemip_bool other;
+    embed_bool is_router;
+    embed_bool on_link;
+    embed_bool solicit;
+    embed_bool multicast;
+    embed_bool managed;
+    embed_bool other;
 } Nd6Io;
 
 // ---------------------------------------------------------------------------
@@ -416,24 +415,23 @@ void idemip_nd6_tick(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Nd6Ns Nd6 IDEMIP_UNUSED = {
-    .clear = idemip_nd6_clear,
-    .neighbor_find = idemip_nd6_neighbor_find,
-    .neighbor_set = idemip_nd6_neighbor_set,
-    .neighbor_confirm = idemip_nd6_neighbor_confirm,
-    .neighbor_used = idemip_nd6_neighbor_used,
-    .neighbor_remove = idemip_nd6_neighbor_remove,
-    .dest_find = idemip_nd6_dest_find,
-    .dest_set = idemip_nd6_dest_set,
-    .prefix_set = idemip_nd6_prefix_set,
-    .prefix_on_link = idemip_nd6_prefix_on_link,
-    .router_set = idemip_nd6_router_set,
-    .router_select = idemip_nd6_router_select,
-    .pending_push = idemip_nd6_pending_push,
-    .pending_pop = idemip_nd6_pending_pop,
-    .params_set = idemip_nd6_params_set,
-    .tick = idemip_nd6_tick};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE Nd6Ns Nd6 EMBED_UNUSED = {.clear = idemip_nd6_clear,
+                                              .neighbor_find = idemip_nd6_neighbor_find,
+                                              .neighbor_set = idemip_nd6_neighbor_set,
+                                              .neighbor_confirm = idemip_nd6_neighbor_confirm,
+                                              .neighbor_used = idemip_nd6_neighbor_used,
+                                              .neighbor_remove = idemip_nd6_neighbor_remove,
+                                              .dest_find = idemip_nd6_dest_find,
+                                              .dest_set = idemip_nd6_dest_set,
+                                              .prefix_set = idemip_nd6_prefix_set,
+                                              .prefix_on_link = idemip_nd6_prefix_on_link,
+                                              .router_set = idemip_nd6_router_set,
+                                              .router_select = idemip_nd6_router_select,
+                                              .pending_push = idemip_nd6_pending_push,
+                                              .pending_pop = idemip_nd6_pending_pop,
+                                              .params_set = idemip_nd6_params_set,
+                                              .tick = idemip_nd6_tick};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 

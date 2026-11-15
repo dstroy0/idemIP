@@ -17,16 +17,20 @@
 #include "src/tcp/tcp_in.h"
 #include "src/tcp/tcp_out.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
 #include "src/ip/ipv6_defines.h"
 #include "src/tcp/tcp_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_TCP_OUT_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_TCP_OUT_BORROW + 16];
-static _Alignas(8) uint8_t work_in[IDEMIP_TCP_IN_BORROW];
+#define WORK_A_BYTES ((size_t)(IDEMIP_TCP_OUT_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_TCP_OUT_BORROW + 16))
+static uint8_t *work_b;
+#define WORK_IN_BYTES ((size_t)(IDEMIP_TCP_IN_BORROW))
+static uint8_t *work_in;
 
 #define IO(w) IDEMIP_TCP_OUT_IO(w)
 
@@ -41,8 +45,9 @@ static const uint8_t g_remote6[IDEMIP_TCP_PCB_ADDR_BYTES] = {0x20u, 0x01u, 0x0Du
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_TCP_OUT_BORROW, CANARY, cap - IDEMIP_TCP_OUT_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_TCP_OUT_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_TCP_OUT_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -55,15 +60,18 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(g_buf, 0xEE, sizeof g_buf);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_tcp_out);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_tcp_out);
+    idemip_test_borrow(&work_in, WORK_IN_BYTES, idemip_owner_tcp_in);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    fill_bytes(g_buf, 0xEE, sizeof g_buf);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void call_every_entry(uint8_t *w)
@@ -113,8 +121,8 @@ static void every_entry_is_refused(uint8_t *w)
 static void aim_build(uint8_t *w, uint32_t seq, uint32_t ack, uint8_t flags, uint16_t len, const uint8_t *data)
 {
     TcpOut.clear(w);
-    memset(&IO(w)->build_args, 0, sizeof IO(w)->build_args);
-    memset(&IO(w)->ctl, 0, sizeof IO(w)->ctl);
+    IO(w)->build_args = (TcpOutBuildArgs){0};
+    IO(w)->ctl = (TcpPcbCtl){0};
     IO(w)->build_args.buf = g_buf;
     IO(w)->build_args.cap = (uint16_t)sizeof g_buf;
     IO(w)->build_args.local_ip = g_local;
@@ -134,10 +142,10 @@ static void aim_build(uint8_t *w, uint32_t seq, uint32_t ack, uint8_t flags, uin
 static void conn(uint8_t *w, uint32_t una, uint32_t nxt, uint32_t snd_wnd)
 {
     TcpOut.clear(w);
-    memset(&IO(w)->vars, 0, sizeof IO(w)->vars);
-    memset(&IO(w)->ctl, 0, sizeof IO(w)->ctl);
-    memset(&IO(w)->send_args, 0, sizeof IO(w)->send_args);
-    memset(&IO(w)->timer_args, 0, sizeof IO(w)->timer_args);
+    IO(w)->vars = (IdemIpTcpVars){0};
+    IO(w)->ctl = (TcpPcbCtl){0};
+    IO(w)->send_args = (TcpOutSendArgs){0};
+    IO(w)->timer_args = (TcpOutTimerArgs){0};
     IO(w)->vars.snd_una = una;
     IO(w)->vars.snd_nxt = nxt;
     IO(w)->vars.snd_wnd = snd_wnd;
@@ -185,7 +193,7 @@ void test_clear_repeats(void)
     TcpOut.clear(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     uint8_t first[IDEMIP_TCP_OUT_BORROW];
-    memcpy(first, work_a, sizeof first);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = first, .at = work_a, .size = sizeof first);
     TcpOut.clear(work_a);
     TEST_ASSERT_EQUAL_MEMORY(first, work_a, sizeof first);
 }
@@ -195,7 +203,7 @@ void test_two_borrows_share_no_byte(void)
 {
     TcpOut.clear(work_a);
     uint8_t before[IDEMIP_TCP_OUT_BORROW];
-    memcpy(before, work_b, sizeof before);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = before, .at = work_b, .size = sizeof before);
     aim_build(work_a, 100u, 300u, (uint8_t)IDEMIP_TCP_ACK, 0u, NULL);
     TcpOut.build(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -520,7 +528,7 @@ void test_nagle_holds_a_short_pushed_segment_while_data_is_unacknowledged(void)
     conn(work_a, 1000u, 1400u, 4000u);
     IO(work_a)->send_args.eff_snd_mss = 536u;
     IO(work_a)->send_args.queued = 20u;
-    IO(work_a)->send_args.push = IDEMIP_TRUE;
+    IO(work_a)->send_args.push = EMBED_TRUE;
     IO(work_a)->ctl.max_snd_wnd = 4000u;
     TcpOut.send(work_a);
     TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.send_now, "Nagle buffers short data while SND.NXT > SND.UNA");
@@ -529,7 +537,7 @@ void test_nagle_holds_a_short_pushed_segment_while_data_is_unacknowledged(void)
     conn(work_a, 1400u, 1400u, 4000u);
     IO(work_a)->send_args.eff_snd_mss = 536u;
     IO(work_a)->send_args.queued = 20u;
-    IO(work_a)->send_args.push = IDEMIP_TRUE;
+    IO(work_a)->send_args.push = EMBED_TRUE;
     IO(work_a)->ctl.max_snd_wnd = 4000u;
     TcpOut.send(work_a);
     TEST_ASSERT_TRUE(IO(work_a)->res.send_now);
@@ -543,8 +551,8 @@ void test_nagle_can_be_disabled_on_the_connection(void)
     conn(work_a, 1000u, 1400u, 4000u);
     IO(work_a)->send_args.eff_snd_mss = 536u;
     IO(work_a)->send_args.queued = 20u;
-    IO(work_a)->send_args.push = IDEMIP_TRUE;
-    IO(work_a)->send_args.nodelay = IDEMIP_TRUE;
+    IO(work_a)->send_args.push = EMBED_TRUE;
+    IO(work_a)->send_args.nodelay = EMBED_TRUE;
     TcpOut.send(work_a);
     TEST_ASSERT_TRUE(IO(work_a)->res.send_now);
     TEST_ASSERT_EQUAL_UINT32(20u, IO(work_a)->res.send_len);
@@ -587,7 +595,7 @@ void test_rule_4_the_override_timeout_sends_what_is_there(void)
     TcpOut.send(work_a);
     TEST_ASSERT_FALSE(IO(work_a)->res.send_now);
 
-    IO(work_a)->send_args.force = IDEMIP_TRUE;
+    IO(work_a)->send_args.force = EMBED_TRUE;
     TcpOut.send(work_a);
     TEST_ASSERT_TRUE(IO(work_a)->res.send_now);
     TEST_ASSERT_EQUAL_UINT32(10u, IO(work_a)->res.send_len);
@@ -619,8 +627,8 @@ void test_a_zero_offered_window_sends_nothing(void)
     conn(work_a, 1000u, 1000u, 0u);
     IO(work_a)->send_args.eff_snd_mss = 536u;
     IO(work_a)->send_args.queued = 4000u;
-    IO(work_a)->send_args.push = IDEMIP_TRUE;
-    IO(work_a)->send_args.force = IDEMIP_TRUE;
+    IO(work_a)->send_args.push = EMBED_TRUE;
+    IO(work_a)->send_args.force = EMBED_TRUE;
     TcpOut.send(work_a);
     TEST_ASSERT_EQUAL_UINT32(0u, IO(work_a)->res.usable);
     TEST_ASSERT_FALSE(IO(work_a)->res.send_now);
@@ -880,7 +888,7 @@ void test_a_segment_already_retransmitted_holds_ssthresh_constant(void)
     IO(work_a)->ctl.ssthresh = 4000u;
     IO(work_a)->timer_args.smss = 536u;
     IO(work_a)->timer_args.flight = 10000u;
-    IO(work_a)->timer_args.resent = IDEMIP_TRUE;
+    IO(work_a)->timer_args.resent = EMBED_TRUE;
     TcpOut.rtx_expire(work_a);
     TEST_ASSERT_EQUAL_UINT32(4000u, IO(work_a)->ctl.ssthresh);
     TEST_ASSERT_EQUAL_UINT32(536u, IO(work_a)->ctl.cwnd);
@@ -1041,15 +1049,15 @@ void test_the_acknowledgment_is_the_challenge_ack_tcp_in_asks_for(void)
 
     // The same fields tcp_in reports for an in-window reset that is not RCV.NXT.
     TcpIn.clear(work_in);
-    memset(&IDEMIP_TCP_IN_IO(work_in)->vars, 0, sizeof(IdemIpTcpVars));
-    memset(&IDEMIP_TCP_IN_IO(work_in)->ctl, 0, sizeof(TcpPcbCtl));
+    IDEMIP_TCP_IN_IO(work_in)->vars = (IdemIpTcpVars){0};
+    IDEMIP_TCP_IN_IO(work_in)->ctl = (TcpPcbCtl){0};
     IDEMIP_TCP_IN_IO(work_in)->vars.snd_una = 100u;
     IDEMIP_TCP_IN_IO(work_in)->vars.snd_nxt = 140u;
     IDEMIP_TCP_IN_IO(work_in)->vars.rcv_nxt = 500u;
     IDEMIP_TCP_IN_IO(work_in)->vars.rcv_wnd = 100u;
     IDEMIP_TCP_IN_IO(work_in)->state = IDEMIP_TCP_STATE_ESTABLISHED;
     IDEMIP_TCP_IN_IO(work_in)->listener = IDEMIP_TCP_PCB_NONE;
-    memset(&IDEMIP_TCP_IN_IO(work_in)->seg, 0, sizeof(TcpInSegArgs));
+    IDEMIP_TCP_IN_IO(work_in)->seg = (TcpInSegArgs){0};
     IDEMIP_TCP_IN_IO(work_in)->seg.seq = 550u;
     IDEMIP_TCP_IN_IO(work_in)->seg.flags = (uint8_t)IDEMIP_TCP_RST;
     TcpIn.segment(work_in);
@@ -1064,7 +1072,7 @@ void test_the_acknowledgment_is_the_challenge_ack_tcp_in_asks_for(void)
 void test_the_reset_of_figure_10_takes_its_sequence_from_the_ack_field(void)
 {
     TcpOut.clear(work_a);
-    memset(&IO(work_a)->seg_args, 0, sizeof IO(work_a)->seg_args);
+    IO(work_a)->seg_args = (TcpOutSegArgs){0};
     IO(work_a)->seg_args.seq = 300u;
     IO(work_a)->seg_args.ack = 100u;
     IO(work_a)->seg_args.len = 10u;
@@ -1080,7 +1088,7 @@ void test_the_reset_of_figure_10_takes_its_sequence_from_the_ack_field(void)
 void test_the_reset_for_a_segment_without_an_ack_takes_sequence_zero(void)
 {
     TcpOut.clear(work_a);
-    memset(&IO(work_a)->seg_args, 0, sizeof IO(work_a)->seg_args);
+    IO(work_a)->seg_args = (TcpOutSegArgs){0};
     IO(work_a)->seg_args.seq = 100u;
     IO(work_a)->seg_args.len = 1u; // a SYN occupies one sequence number
     IO(work_a)->seg_args.flags = (uint8_t)IDEMIP_TCP_SYN;
@@ -1094,7 +1102,7 @@ void test_the_reset_for_a_segment_without_an_ack_takes_sequence_zero(void)
 void test_a_reset_built_onto_the_wire_reads_back(void)
 {
     TcpOut.clear(work_a);
-    memset(&IO(work_a)->seg_args, 0, sizeof IO(work_a)->seg_args);
+    IO(work_a)->seg_args = (TcpOutSegArgs){0};
     IO(work_a)->seg_args.seq = 300u;
     IO(work_a)->seg_args.ack = 100u;
     IO(work_a)->seg_args.flags = (uint8_t)IDEMIP_TCP_ACK;
@@ -1181,7 +1189,7 @@ void test_the_initial_window_takes_the_three_way_table(void)
 void test_a_new_connection_starts_in_slow_start_and_can_send(void)
 {
     conn(work_a, 1000u, 1000u, 65535u);
-    memset(&IO(work_a)->ctl, 0, sizeof IO(work_a)->ctl); // what TcpPcb.load hands over
+    IO(work_a)->ctl = (TcpPcbCtl){0}; // what TcpPcb.load hands over
     IO(work_a)->timer_args.smss = 1460u;
     TcpOut.cc_init(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1411,7 +1419,7 @@ void test_a_push_with_nothing_queued_sends_nothing(void)
     conn(work_a, 1000u, 1000u, 4000u);
     IO(work_a)->send_args.eff_snd_mss = 536u;
     IO(work_a)->send_args.queued = 0u;
-    IO(work_a)->send_args.push = IDEMIP_TRUE;
+    IO(work_a)->send_args.push = EMBED_TRUE;
     TcpOut.send(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->res.send_now, "a push with nothing queued put a segment on the wire");
@@ -1468,7 +1476,7 @@ void test_a_measurement_above_the_estimate_moves_the_variance_the_same_way_one_b
 
     // The same estimate, met from below. The distance is what the variance takes, not the direction.
     TcpOut.clear(work_a);
-    memset(&IO(work_a)->ctl, 0, sizeof IO(work_a)->ctl);
+    IO(work_a)->ctl = (TcpPcbCtl){0};
     IO(work_a)->timer_args.sample_ms = 400u;
     TcpOut.rtt(work_a);
     IO(work_a)->timer_args.sample_ms = 100u; // R under SRTT, |SRTT - R| is 300
@@ -1493,7 +1501,7 @@ void test_a_timer_started_before_any_measurement_runs_at_one_second(void)
 
     // (5.6) restarts it on the transmission that ends Karn's ambiguity, from the same second.
     TcpOut.clear(work_a);
-    memset(&IO(work_a)->ctl, 0, sizeof IO(work_a)->ctl);
+    IO(work_a)->ctl = (TcpPcbCtl){0};
     IO(work_a)->state = IDEMIP_TCP_STATE_ESTABLISHED;
     IO(work_a)->timer_args.now_ms = 5000u;
     TcpOut.rtx_restart(work_a);
@@ -1504,7 +1512,7 @@ void test_a_timer_started_before_any_measurement_runs_at_one_second(void)
 
     // (5.5) doubles it on expiry, and the doubling starts from that same second.
     TcpOut.clear(work_a);
-    memset(&IO(work_a)->ctl, 0, sizeof IO(work_a)->ctl);
+    IO(work_a)->ctl = (TcpPcbCtl){0};
     IO(work_a)->state = IDEMIP_TCP_STATE_ESTABLISHED;
     IO(work_a)->timer_args.now_ms = 5000u;
     IO(work_a)->timer_args.smss = 536u;

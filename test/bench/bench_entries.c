@@ -22,13 +22,14 @@
 
 #include "bench_harness.h"
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 #include "src/common_defines.h"
 #include "src/ip/ipv4_defines.h"
 #include "src/ip/ipv6_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
 
 #if !defined(__GNUC__) && !defined(__clang__)
 volatile uint64_t idemip_bench_sink;
@@ -36,7 +37,8 @@ volatile uint64_t idemip_bench_sink;
 
 #define FRAME_MAX 1600u
 
-static _Alignas(IDEMIP_ALIGN) uint8_t g_work[IDEMIP_TOTAL_BORROW];
+// One cell of IDEMIP_TOTAL_BORROW bytes, which each row uses as the borrow of the unit it times.
+static uint8_t *g_work;
 static uint8_t g_frame[FRAME_MAX];
 static uint8_t g_out[FRAME_MAX];
 static uint8_t *g_borrow;
@@ -52,11 +54,11 @@ static uint8_t *g_borrow;
 static void pattern_fill(uint8_t *p, size_t n, unsigned density_pct, unsigned pattern)
 {
     const size_t set = (n * density_pct) / 100u;
-    memset(p, 0, n);
+    mmgr_zero_buf(p, n);
     switch (pattern)
     {
     case 0: // clustered: the set octets first
-        memset(p, 0xFFu, set);
+        fill_bytes(p, 0xFFu, set);
         break;
     case 1: // spread: every k-th octet
         for (size_t i = 0; i < set; i++)
@@ -95,9 +97,9 @@ static void setup_ip4_frag(unsigned density_pct, unsigned pattern)
     const uint16_t hdr = (uint16_t)(ihl * 4u);
     const uint16_t data = 1200u;
 
-    memset(g_frame, 0, sizeof g_frame);
+    mmgr_zero_buf(g_frame, sizeof g_frame);
     IdemIpIp4Fields f;
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.total_len = (uint16_t)(hdr + data);
     f.id = 0xBEEFu;
     f.ttl = 64u;
@@ -116,7 +118,7 @@ static void setup_ip4_frag(unsigned density_pct, unsigned pattern)
         opts[i] = (uint8_t)((opts[i] & 0x80u) | 0x07u);
         opts[i + 1u] = 4u;
     }
-    memcpy(g_frame + IDEMIP_IPV4_HDR_LEN, opts, sizeof opts);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_frame + IDEMIP_IPV4_HDR_LEN, .at = opts, .size = sizeof opts);
     idemip_ip4_set_ver_ihl(g_frame, ihl);
     idemip_ip4_recksum(g_frame);
     g_frag_len = (uint16_t)(hdr + data);
@@ -229,7 +231,7 @@ static void run_cksum(void)
 
 // --- the span helpers as shipped -------------------------------------------
 // bench_words models a word by turning the vectorizer off. This is the other half: common.h's own
-// helper, at the host's IdemIpWord, compiled and optimised exactly as the library compiles it. The
+// helper, at the host's embed_word, compiled and optimised exactly as the library compiles it. The
 // gap between the two is what the vector unit is worth on this host.
 
 static size_t g_span_len;
@@ -239,19 +241,19 @@ static _Alignas(IDEMIP_ALIGN) uint8_t g_span_b[1536u + 16u];
 static void setup_span16(unsigned density_pct, unsigned pattern)
 {
     g_span_len = IDEMIP_IP6_ADDR_LEN;
-    memset(g_span_a, 0, sizeof g_span_a);
-    memset(g_span_b, 0, sizeof g_span_b);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = g_span_a, .val = 0, .bytes = sizeof g_span_a);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = g_span_b, .val = 0, .bytes = sizeof g_span_b);
     pattern_fill(g_span_a, g_span_len, density_pct, pattern);
-    memcpy(g_span_b, g_span_a, g_span_len);
+    EMBED_CALL(memor.cpy, MemoriaCfg, .dst = g_span_b, .src = g_span_a, .bytes = g_span_len);
 }
 
 static void setup_span1500(unsigned density_pct, unsigned pattern)
 {
     g_span_len = 1500u;
-    memset(g_span_a, 0, sizeof g_span_a);
-    memset(g_span_b, 0, sizeof g_span_b);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = g_span_a, .val = 0, .bytes = sizeof g_span_a);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = g_span_b, .val = 0, .bytes = sizeof g_span_b);
     pattern_fill(g_span_a, g_span_len, density_pct, pattern);
-    memcpy(g_span_b, g_span_a, g_span_len);
+    EMBED_CALL(memor.cpy, MemoriaCfg, .dst = g_span_b, .src = g_span_a, .bytes = g_span_len);
 }
 
 static void run_bytes_zero(void)
@@ -344,6 +346,7 @@ static double g_best[POINTS];
 
 int main(void)
 {
+    g_work = idemip_test_take(IDEMIP_TOTAL_BORROW, idemip_test_owner_node);
     g_borrow = g_work;
 
     printf("# idemIP entry bench: cost per call against input density and distribution\n");

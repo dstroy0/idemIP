@@ -21,7 +21,7 @@
 #include "src/ip/ipv6_defines.h"
 #endif
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // One binding: the RFC 1122 sec 3.4 SEND parameters src, dst, prot, TOS and TTL, the RFC 4007 sec 6
 // zone of each address, the interface it is pinned to, its option bits, and the RFC 3542 sec 3.1
@@ -39,8 +39,8 @@ typedef struct
     uint8_t ttl;
     uint8_t flags;
     uint8_t ip_version;
-    idemip_bool connected;
-    idemip_bool in_use;
+    embed_bool connected;
+    embed_bool in_use;
 } RawPcbFields;
 
 // Entry i sits at (i << IDEMIP_RAW_PCB_ENTRY_SHIFT), so the entry is exactly that wide.
@@ -49,10 +49,10 @@ typedef union {
     uint8_t raw[1u << IDEMIP_RAW_PCB_ENTRY_SHIFT];
 } RawPcbEntry;
 
-static_assert(sizeof(RawPcbEntry) == (1u << IDEMIP_RAW_PCB_ENTRY_SHIFT),
-              "a raw binding must be 1 << IDEMIP_RAW_PCB_ENTRY_SHIFT wide - raise the shift in idemip_config.h");
-static_assert(sizeof(RawPcbFields) <= sizeof(RawPcbEntry),
-              "the RFC 1122 sec 3.4 field set outgrew one entry - raise IDEMIP_RAW_PCB_ENTRY_SHIFT");
+EMBED_STATIC_ASSERT(sizeof(RawPcbEntry) == (1u << IDEMIP_RAW_PCB_ENTRY_SHIFT),
+                    "a raw binding must be 1 << IDEMIP_RAW_PCB_ENTRY_SHIFT wide - raise the shift in idemip_config.h");
+EMBED_STATIC_ASSERT(sizeof(RawPcbFields) <= sizeof(RawPcbEntry),
+                    "the RFC 1122 sec 3.4 field set outgrew one entry - raise IDEMIP_RAW_PCB_ENTRY_SHIFT");
 
 // The one definition, private to this TU. A borrow that was never cleared carries no mark, so every
 // entry refuses it rather than reading a table that was never zeroed.
@@ -70,14 +70,16 @@ IDEMIP_ASSERT_REGION(IDEMIP_RAW_PCB_OFF_CTX, sizeof(RawPcbCtx), IDEMIP_RAW_PCB_O
 
 // The caller's borrow, split: the operand block, the context, then the table. raw_pcb.h publishes
 // the offsets; the asserts below prove the span covers them before anything runs.
-static_assert(IDEMIP_RAW_PCB_OFF_CTX + sizeof(RawPcbCtx) <= IDEMIP_RAW_PCB_CTX_BYTES,
-              "IDEMIP_RAW_PCB_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_RAW_PCB_OFF_TAB + (IDEMIP_RAW_PCBS << IDEMIP_RAW_PCB_ENTRY_SHIFT) <= IDEMIP_RAW_PCB_BORROW,
-              "IDEMIP_RAW_PCB_BORROW is short of the context and the table - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(
+    IDEMIP_RAW_PCB_OFF_CTX + sizeof(RawPcbCtx) <= IDEMIP_RAW_PCB_CTX_BYTES,
+    "IDEMIP_RAW_PCB_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_RAW_PCB_OFF_TAB + (IDEMIP_RAW_PCBS << IDEMIP_RAW_PCB_ENTRY_SHIFT) <= IDEMIP_RAW_PCB_BORROW,
+                    "IDEMIP_RAW_PCB_BORROW is short of the context and the table - raise it in idemip_config.h");
 
 // Every index reported through the operand block is 16 bits, so the table may hold no more entries
 // than that, and IDEMIP_RAW_PCB_NONE must name none of them.
-static_assert(IDEMIP_RAW_PCBS < IDEMIP_RAW_PCB_NONE, "the table outgrew the 16-bit index the operand block reports");
+EMBED_STATIC_ASSERT(IDEMIP_RAW_PCBS < IDEMIP_RAW_PCB_NONE,
+                    "the table outgrew the 16-bit index the operand block reports");
 
 // The regions, at their offsets in the caller's borrow.
 #define RAW_PCB_CTX(w) ((RawPcbCtx *)(void *)((w) + IDEMIP_RAW_PCB_OFF_CTX))
@@ -121,7 +123,7 @@ static size_t raw_pcb_addr_len(uint8_t ip_version)
 
 // RFC 1122 sec 3.2.1.3 (a) { 0, 0 } and RFC 4291 sec 2.5.2's unspecified address are all-zero
 // octets. A binding holding one names no address, and a find matches it against any.
-static idemip_bool raw_pcb_is_any(const uint8_t *addr, size_t len)
+static embed_bool raw_pcb_is_any(const uint8_t *addr, size_t len)
 {
     return idemip_bytes_zero(addr, len);
 }
@@ -131,34 +133,34 @@ static idemip_bool raw_pcb_is_any(const uint8_t *addr, size_t len)
 // { -1, -1 } is its (c) limited broadcast, "It MUST NOT be used as a source address". RFC 4291
 // sec 2.7: "Multicast addresses must not be used as source addresses in IPv6 packets", which
 // sec 2.7's figure identifies by a leading 11111111.
-static idemip_bool raw_pcb_src_allowed(uint8_t ip_version, const uint8_t *addr)
+static embed_bool raw_pcb_src_allowed(uint8_t ip_version, const uint8_t *addr)
 {
     if (ip_version == 4u)
     {
         if ((addr[0] & 0xF0u) == 0xE0u)
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         if (addr[0] == 0xFFu && addr[1] == 0xFFu && addr[2] == 0xFFu && addr[3] == 0xFFu)
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
-    return (addr[0] == 0xFFu) ? IDEMIP_FALSE : IDEMIP_TRUE;
+    return (addr[0] == 0xFFu) ? EMBED_FALSE : EMBED_TRUE;
 }
 
 // RFC 4007 sec 6 qualifies a non-global address by a zone index, since "the same non-global address
 // may be in use in more than one zone of the same scope". Index zero is that section's default
 // zone, which names no one zone, so a binding carrying it is compared on the octets alone. Only an
 // RFC 4291 address is scoped.
-static idemip_bool raw_pcb_zone_ok(uint8_t ip_version, uint8_t entry_zone, uint8_t dgram_zone)
+static embed_bool raw_pcb_zone_ok(uint8_t ip_version, uint8_t entry_zone, uint8_t dgram_zone)
 {
     if (ip_version != 6u || entry_zone == 0u)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
-    return (entry_zone == dgram_zone) ? IDEMIP_TRUE : IDEMIP_FALSE;
+    return (entry_zone == dgram_zone) ? EMBED_TRUE : EMBED_FALSE;
 }
 
 // --- the statics the entries delegate to -----------------------------------
@@ -177,13 +179,13 @@ static void raw_pcb_take(uint8_t *work, uint8_t proto, uint8_t ip_version)
         {
             continue;
         }
-        memset(e->raw, 0, sizeof e->raw);
+        mmgr_zero_buf(e->raw, sizeof e->raw);
         e->f.proto = proto;
         e->f.ip_version = ip_version;
         e->f.tos = 0u;
         e->f.ttl = (uint8_t)IDEMIP_IP_DEFAULT_TTL;
         e->f.cksum_offset = RAW_PCB_CKSUM_OFF_NONE;
-        e->f.in_use = IDEMIP_TRUE;
+        e->f.in_use = EMBED_TRUE;
         io->index = i;
         io->status = IDEMIP_OK;
         return;
@@ -210,8 +212,8 @@ static void raw_pcb_set_local(uint8_t *work, const RawPcbAddrArgs *args)
     {
         return;
     }
-    memset(e->f.local_ip, 0, sizeof e->f.local_ip);
-    memcpy(e->f.local_ip, args->ip, len);
+    mmgr_zero_buf(e->f.local_ip, sizeof e->f.local_ip);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = e->f.local_ip, .at = args->ip, .size = len);
     e->f.local_zone = args->zone;
     e->f.netif = args->netif;
     io->status = IDEMIP_OK;
@@ -242,10 +244,10 @@ static void raw_pcb_set_remote(uint8_t *work, const RawPcbAddrArgs *args)
     {
         return;
     }
-    memset(e->f.remote_ip, 0, sizeof e->f.remote_ip);
-    memcpy(e->f.remote_ip, args->ip, len);
+    mmgr_zero_buf(e->f.remote_ip, sizeof e->f.remote_ip);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = e->f.remote_ip, .at = args->ip, .size = len);
     e->f.remote_zone = args->zone;
-    e->f.connected = IDEMIP_TRUE;
+    e->f.connected = EMBED_TRUE;
     io->status = IDEMIP_OK;
 }
 
@@ -253,27 +255,27 @@ static void raw_pcb_set_remote(uint8_t *work, const RawPcbAddrArgs *args)
 // offset: "specifying a positive odd value as offset is invalid". The option is IPV6_CHECKSUM, and
 // that section fails it on a socket that is not a raw IPv6 one and on an ICMPv6 one, "since this
 // checksum is mandatory" and the kernel writes it.
-static idemip_bool raw_pcb_cksum_ok(const RawPcbEntry *e, int16_t offset)
+static embed_bool raw_pcb_cksum_ok(const RawPcbEntry *e, int16_t offset)
 {
     if (offset == RAW_PCB_CKSUM_OFF_NONE)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     if (offset < 0 || (offset & 1) != 0)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (e->f.ip_version != 6u)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
 #if IDEMIP_ENABLE_IPV6
     if (e->f.proto == IDEMIP_IP6_NH_ICMPV6)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
 #endif
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // Reports every RFC 1122 sec 3.4 SEND parameter the entry carries. The two addresses point into the
@@ -306,15 +308,15 @@ static void raw_pcb_read(uint8_t *work, uint16_t index)
 // not a rank, as lwIP applies it at src/core/raw.c:74-77. A binding whose src is all-zero is the
 // wildcard and matches any destination, per RFC 1122 sec 3.2.1.3 (a). One with no dst matches any
 // source, one with a dst matches only that source.
-static idemip_bool raw_pcb_score(const RawPcbEntry *e, const RawPcbFindArgs *a, uint8_t *score)
+static embed_bool raw_pcb_score(const RawPcbEntry *e, const RawPcbFindArgs *a, uint8_t *score)
 {
     if (!e->f.in_use || e->f.ip_version != a->ip_version || e->f.proto != a->proto)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if (e->f.netif != 0u && e->f.netif != a->netif)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     size_t len = raw_pcb_addr_len(e->f.ip_version);
     // Not measured on the width: idemip_raw_pcb_open refuses a version this build has no address
@@ -322,7 +324,7 @@ static idemip_bool raw_pcb_score(const RawPcbEntry *e, const RawPcbFindArgs *a, 
     // the store and the compare below are handed, and a width of zero is neither.
     if (len == 0u) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE; // GCOVR_EXCL_LINE
+        return EMBED_FALSE; // GCOVR_EXCL_LINE
     }
     uint8_t s = 0u;
     if (!raw_pcb_is_any(e->f.local_ip, len))
@@ -330,7 +332,7 @@ static idemip_bool raw_pcb_score(const RawPcbEntry *e, const RawPcbFindArgs *a, 
         if (!idemip_bytes_eq(e->f.local_ip, a->local_ip, len) ||
             !raw_pcb_zone_ok(e->f.ip_version, e->f.local_zone, a->local_zone))
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         s = (uint8_t)(s + RAW_PCB_SCORE_LOCAL);
     }
@@ -339,12 +341,12 @@ static idemip_bool raw_pcb_score(const RawPcbEntry *e, const RawPcbFindArgs *a, 
         if (!idemip_bytes_eq(e->f.remote_ip, a->remote_ip, len) ||
             !raw_pcb_zone_ok(e->f.ip_version, e->f.remote_zone, a->remote_zone))
         {
-            return IDEMIP_FALSE;
+            return EMBED_FALSE;
         }
         s = (uint8_t)(s + RAW_PCB_SCORE_REMOTE);
     }
     *score = s;
-    return IDEMIP_TRUE;
+    return EMBED_TRUE;
 }
 
 // Walks the table once and keeps the highest-scoring binding, the lowest index breaking a tie.
@@ -387,9 +389,10 @@ void idemip_raw_pcb_clear(uint8_t *work)
         return; // no borrow, so nowhere to report
     }
     RawPcbIo *io = RAW_PCB_IO(work);
-    memset(work + IDEMIP_RAW_PCB_OFF_CTX, 0, (size_t)IDEMIP_RAW_PCB_BORROW - IDEMIP_RAW_PCB_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_RAW_PCB_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_RAW_PCB_BORROW - IDEMIP_RAW_PCB_OFF_CTX);
     RAW_PCB_CTX(work)->ready = RAW_PCB_READY;
-    memset(&io->info, 0, sizeof io->info);
+    io->info = (RawPcbInfo){0};
     io->index = IDEMIP_RAW_PCB_NONE;
     io->status = IDEMIP_OK;
 }
@@ -437,7 +440,7 @@ void idemip_raw_pcb_close(uint8_t *work)
     {
         return;
     }
-    memset(e->raw, 0, sizeof e->raw);
+    mmgr_zero_buf(e->raw, sizeof e->raw);
     io->status = IDEMIP_OK;
 }
 
@@ -493,9 +496,9 @@ void idemip_raw_pcb_disconnect(uint8_t *work)
     {
         return;
     }
-    memset(e->f.remote_ip, 0, sizeof e->f.remote_ip);
+    mmgr_zero_buf(e->f.remote_ip, sizeof e->f.remote_ip);
     e->f.remote_zone = 0u;
-    e->f.connected = IDEMIP_FALSE;
+    e->f.connected = EMBED_FALSE;
     io->status = IDEMIP_OK;
 }
 
@@ -540,7 +543,7 @@ void idemip_raw_pcb_load(uint8_t *work)
     }
     RawPcbIo *io = RAW_PCB_IO(work);
     io->status = IDEMIP_ERR;
-    memset(&io->info, 0, sizeof io->info);
+    io->info = (RawPcbInfo){0};
     if (RAW_PCB_CTX(work)->ready != RAW_PCB_READY || io->pcb_args.index >= IDEMIP_RAW_PCBS)
     {
         return;
@@ -572,4 +575,4 @@ void idemip_raw_pcb_find(uint8_t *work)
     raw_pcb_scan(work);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

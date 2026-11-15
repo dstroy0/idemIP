@@ -17,14 +17,16 @@
 
 #include "src/pmtu/pmtu4.h"
 
-#include <string.h>
+#include "support/borrows.h"
 #include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_PMTU4_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_PMTU4_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_PMTU4_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_PMTU4_BORROW + 16))
+static uint8_t *work_b;
 
 // RFC 1191 Table 7-1, the Plateau column as printed, largest first. The suite carries its own copy
 // so a change to the module's table has to be made twice to go unnoticed.
@@ -44,7 +46,7 @@ static void put16(uint8_t *p, uint16_t v)
 // type, code, the whole unused word, then a quoted header of ihl words carrying dst, tos and total.
 static size_t build(uint8_t type, uint8_t code, uint32_t unused, uint8_t ihl, uint8_t tos, uint16_t total, uint32_t dst)
 {
-    memset(g_msg, 0, sizeof g_msg);
+    mmgr_zero_buf(g_msg, sizeof g_msg);
     g_msg[0] = type;
     g_msg[1] = code;
     put16(g_msg + 2, 0u); // checksum, not this module's
@@ -71,8 +73,9 @@ static size_t datagram_too_big(uint16_t next_hop_mtu, uint16_t total)
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_PMTU4_BORROW, CANARY, cap - IDEMIP_PMTU4_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_PMTU4_BORROW, .val = CANARY,
+               .bytes = cap - IDEMIP_PMTU4_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -85,15 +88,17 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(g_msg, 0, sizeof g_msg);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_pmtu4);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_pmtu4);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(g_msg, sizeof g_msg);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
 }
 
 static void ready(uint8_t *w)

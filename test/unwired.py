@@ -32,7 +32,7 @@ LIB = os.path.join(ROOT, "src")
 TEST = os.path.join(ROOT, "test")
 
 # What a header defines: an inline function, a function-like or object-like macro, an enumerator.
-DEF_INLINE = re.compile(r"^IDEMIP_INLINE\s+[A-Za-z_][\w \*]*?\b(\w+)\s*\(", re.M)
+DEF_INLINE = re.compile(r"^EMBED_INLINE\s+[A-Za-z_][\w \*]*?\b(\w+)\s*\(", re.M)
 DEF_MACRO = re.compile(r"^#define\s+(\w+)", re.M)
 DEF_ENUM = re.compile(r"^\s*(IDEMIP_[A-Z0-9_]+)\s*(?:=[^,]*)?,\s*(?:///<.*)?$", re.M)
 

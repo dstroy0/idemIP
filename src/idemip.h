@@ -12,17 +12,25 @@
  *
  * WHAT THE CALLER ALLOCATES
  * -------------------------
- * One `static _Alignas(IDEMIP_ALIGN) uint8_t` array per borrow, sized by that unit's
- * IDEMIP_<UNIT>_BORROW. The library allocates nothing and holds no file-scope mutable, so the
- * whole footprint is these arrays. IDEMIP_TOTAL_BORROW is their sum:
+ * One MMgr cell per borrow, sized by that unit's IDEMIP_<UNIT>_BORROW, from a LocusCarcerum site the
+ * program declares over its own pool. The library allocates nothing and holds no file-scope mutable,
+ * so the whole footprint is these cells. IDEMIP_TOTAL_BORROW is their sum:
  * IDEMIP_SHARED_BORROW for the units holding one table across every interface, plus
  * IDEMIP_NETIF_COUNT times IDEMIP_PER_NETIF_BORROW for the units the RFC puts on one interface.
- * tools/idemip_sizes.c prints every term and the sum the compiler computed.
+ * tools/idemip_sizes.c prints every term and the sum the compiler computed. Each cell also costs the
+ * pool two words beyond its payload, and a cellblock holds at most MMGR_CARCER_BYTES_MAX bytes.
  *
- * Two further arrays are the DRIVER's frame storage and are in no borrow, so IDEMIP_TOTAL_BORROW
+ * Each cell counts to its unit's owner. src/idemip_owners.h lists them as IDEMIP_OWNERS, and the
+ * program splices that list into the one MMGR_OWNERS it declares.
+ *
+ * Two further buffer sets are the DRIVER's frame storage and are in no borrow, so IDEMIP_TOTAL_BORROW
  * does not count them: IDEMIP_RX_DESCRIPTORS and IDEMIP_TX_DESCRIPTORS buffers of
- * IDEMIP_DMA_BUF_STRIDE octets each, both `_Alignas(IDEMIP_CACHE_LINE_BYTES)`, one pair per
- * interface. Dma.bind refuses a base that does not start on a cache line.
+ * IDEMIP_DMA_BUF_STRIDE octets each, one pair per interface. Each set is its own ParsMemoriaeInternae
+ * pool, which MMGR_ALIGN_BYTES puts on a cache line, and the program passes the pool's storage array
+ * to Dma.bind. Dma.bind refuses a base that does not start on a cache line.
+ *
+ * A program also defines the three host hooks MMgr's turnstiles call: embed_word_wait,
+ * embed_word_wake and embed_clock_ns.
  *
  * THE ORDER
  * ---------
@@ -47,29 +55,43 @@
  * ----------------
  *   #include "src/idemip.h"
  *
- *   // the borrows, one array each, all .bss
- *   static _Alignas(IDEMIP_ALIGN) uint8_t phy_w[IDEMIP_PHY_BORROW];
- *   static _Alignas(IDEMIP_ALIGN) uint8_t dma_w[IDEMIP_DMA_BORROW];
- *   static _Alignas(IDEMIP_ALIGN) uint8_t netif_w[IDEMIP_NETIF_BORROW];
- *   static _Alignas(IDEMIP_ALIGN) uint8_t arp_w[IDEMIP_ARP_BORROW];
- *   static _Alignas(IDEMIP_ALIGN) uint8_t reass_w[IDEMIP_IP4_REASS_BORROW];
- *   static _Alignas(IDEMIP_ALIGN) uint8_t icmp_w[IDEMIP_ICMP_IN_BORROW];
- *   static _Alignas(IDEMIP_ALIGN) uint8_t udp_w[IDEMIP_UDP_PCB_BORROW];
- *   static _Alignas(IDEMIP_ALIGN) uint8_t stats_w[IDEMIP_STATS_BORROW];
- *   static _Alignas(IDEMIP_ALIGN) uint8_t timeouts_w[IDEMIP_TIMEOUTS_BORROW];
- *   static _Alignas(IDEMIP_ALIGN) uint8_t dispatch_w[IDEMIP_DISPATCH_BORROW];
- *   static _Alignas(IDEMIP_ALIGN) uint8_t tick_w[IDEMIP_TICK_BORROW];
+ *   // the program's memory: one pool, one site over it, and the owner table with idemIP's owners
+ *   ParsMemoriaeInternae(net_pool, IDEMIP_TOTAL_BORROW + 1024u);
+ *   LocusCarcerum(net_site, MMGR_MINIMUM_SECURITY(net_pool));
+ *   MMGR_OWNERS(IDEMIP_OWNERS)
  *
- *   // the driver's frame storage, not a borrow
- *   static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t rx_bufs[IDEMIP_RX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE];
- *   static _Alignas(IDEMIP_CACHE_LINE_BYTES) uint8_t tx_bufs[IDEMIP_TX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE];
+ *   // the driver's frame storage, not a borrow: one line-aligned pool each
+ *   ParsMemoriaeInternae(rx_bufs, IDEMIP_RX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE);
+ *   ParsMemoriaeInternae(tx_bufs, IDEMIP_TX_DESCRIPTORS * IDEMIP_DMA_BUF_STRIDE);
+ *
+ *   static uint8_t *phy_w, *dma_w, *netif_w, *arp_w, *reass_w, *icmp_w, *udp_w, *stats_w;
+ *   static uint8_t *timeouts_w, *dispatch_w, *tick_w;
  *
  *   static const uint8_t mac[IDEMIP_MAC_LEN] = {0x02, 0, 0, 0, 0, 1};
  *
+ *   static uint8_t *take(size_t bytes, const CellOwner *owner)
+ *   {
+ *       return net_site.net_pool.persistent_buf_alloc(bytes, owner);
+ *   }
+ *
  *   void net_start(const IdemIpPhyDriver *drv)
  *   {
- *       // phy exports no clear: its whole context is what bind writes, and the array is already
- *       // zero, being .bss
+ *       // the borrows, one cell each
+ *       phy_w = take(IDEMIP_PHY_BORROW, idemip_owner_phy);
+ *       dma_w = take(IDEMIP_DMA_BORROW, idemip_owner_dma);
+ *       netif_w = take(IDEMIP_NETIF_BORROW, idemip_owner_netif);
+ *       arp_w = take(IDEMIP_ARP_BORROW, idemip_owner_arp);
+ *       reass_w = take(IDEMIP_IP4_REASS_BORROW, idemip_owner_ip4_reass);
+ *       icmp_w = take(IDEMIP_ICMP_IN_BORROW, idemip_owner_icmp_in);
+ *       udp_w = take(IDEMIP_UDP_PCB_BORROW, idemip_owner_udp_pcb);
+ *       stats_w = take(IDEMIP_STATS_BORROW, idemip_owner_stats);
+ *       timeouts_w = take(IDEMIP_TIMEOUTS_BORROW, idemip_owner_timeouts);
+ *       dispatch_w = take(IDEMIP_DISPATCH_BORROW, idemip_owner_dispatch);
+ *       tick_w = take(IDEMIP_TICK_BORROW, idemip_owner_tick);
+ *
+ *       // a cell's bytes are as the pool left them, and phy exports no clear, so its cell is
+ *       // zeroed here before bind writes it
+ *       EMBED_CALL(memor.set, MemoriaCfg, .dst = phy_w, .val = 0, .bytes = IDEMIP_PHY_BORROW);
  *       Dma.clear(dma_w);
  *       Netif.clear(netif_w);
  *       ArpTable.clear(arp_w);
@@ -83,8 +105,8 @@
  *       Phy.bind(phy_w);
  *
  *       IDEMIP_DMA_IO(dma_w)->bind_args.drv = drv;
- *       IDEMIP_DMA_IO(dma_w)->bind_args.rx_base = rx_bufs;
- *       IDEMIP_DMA_IO(dma_w)->bind_args.tx_base = tx_bufs;
+ *       IDEMIP_DMA_IO(dma_w)->bind_args.rx_base = mmgr_pars_storage_rx_bufs;
+ *       IDEMIP_DMA_IO(dma_w)->bind_args.tx_base = mmgr_pars_storage_tx_bufs;
  *       Dma.bind(dma_w);
  *
  *       IDEMIP_NETIF_IO(netif_w)->bind_args.index = 0u;
@@ -173,11 +195,13 @@
 #define IDEMIP_IDEMIP_H
 
 #include "src/idemip_config.h" // the entry point: every count, every constant, every borrow
+#include "src/idemip_owners.h" // the MMgr owner of each unit's borrow
 
 // --- base ----------------------------------------------------------------------------------------
-#include "src/checksum.h" // RFC 1071
-#include "src/common.h"   // the sizes and widths each standard fixes
-#include "src/endian.h"   // the wire-integer accessors
+#include "src/checksum.h"         // RFC 1071
+#include "src/common.h"           // the sizes and widths each standard fixes
+#include "src/endian.h"           // the wire-integer accessors
+#include "src/time_determinism.h" // determinism_pad(), the reading a build chooses
 
 // --- link ----------------------------------------------------------------------------------------
 #include "src/ethernet/ethernet.h" // RFC 894 framing
@@ -228,6 +252,7 @@
 #include "src/pmtu/pmtu6.h"        // RFC 8201
 
 // --- transport -----------------------------------------------------------------------------------
+#include "src/ip/pseudo.h"    // RFC 768, RFC 9293 sec 3.1 and RFC 8200 sec 8.1 pseudo-headers
 #include "src/raw/raw_pcb.h"  // RFC 1122 sec 3.4 raw bindings
 #include "src/tcp/tcp.h"      // RFC 9293 sec 3.1 header and sec 3.2 options
 #include "src/tcp/tcp_in.h"   // RFC 9293 sec 3.10.7 SEGMENT ARRIVES

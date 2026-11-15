@@ -17,7 +17,7 @@
 #include "src/acd/acd.h"
 #include "src/arp/arp_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads something else here and
 // every entry but clear refuses it.
@@ -38,7 +38,7 @@ typedef struct
     IdemIpAcdDefense defense;
     uint8_t sent;
     uint8_t conflicts;
-    idemip_bool defended;
+    embed_bool defended;
     uint8_t reserved[3];
 } AcdCtx;
 
@@ -49,26 +49,26 @@ IDEMIP_ASSERT_REGION(IDEMIP_ACD_OFF_CTX, sizeof(AcdCtx), IDEMIP_ACD_OFF_END, "ac
 // The caller's borrow, split: the operand block, then the context. acd.h publishes the offsets; these
 // two asserts prove the span covers them before anything runs. The first keeps the context inside the
 // region IDEMIP_ACD_CTX_BYTES names, the second the whole map inside the borrow.
-static_assert(IDEMIP_ACD_OFF_CTX + sizeof(AcdCtx) <= IDEMIP_ACD_OFF_END,
-              "IDEMIP_ACD_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
-static_assert(IDEMIP_ACD_OFF_END <= IDEMIP_ACD_BORROW,
-              "IDEMIP_ACD_BORROW is short of the map - raise IDEMIP_ACD_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_ACD_OFF_CTX + sizeof(AcdCtx) <= IDEMIP_ACD_OFF_END,
+                    "IDEMIP_ACD_CTX_BYTES is short of the operand block and the context - raise it in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_ACD_OFF_END <= IDEMIP_ACD_BORROW,
+                    "IDEMIP_ACD_BORROW is short of the map - raise IDEMIP_ACD_CTX_BYTES in idemip_config.h");
 
 // clear zeroes the context, so the state a cleared borrow reads is the zero one.
-static_assert(IDEMIP_ACD_STATE_OFF == 0, "IDEMIP_ACD_STATE_OFF must be zero: clear zeroes the context");
+EMBED_STATIC_ASSERT(IDEMIP_ACD_STATE_OFF == 0, "IDEMIP_ACD_STATE_OFF must be zero: clear zeroes the context");
 
 // A draw over [0, span] scales a 16-bit slice of a random word by span + 1 and shifts the 16 bits back
 // off, so each span the RFC names bounds a product that stays inside 32 bits.
-static_assert(IDEMIP_ACD_PROBE_WAIT_MS < 0x10000u,
-              "the [0, PROBE_WAIT] draw multiplies a 16-bit word by PROBE_WAIT + 1 in 32 bits");
-static_assert(IDEMIP_ACD_PROBE_MAX_MS - IDEMIP_ACD_PROBE_MIN_MS < 0x10000u,
-              "the [PROBE_MIN, PROBE_MAX] draw multiplies a 16-bit word by the span + 1 in 32 bits");
+EMBED_STATIC_ASSERT(IDEMIP_ACD_PROBE_WAIT_MS < 0x10000u,
+                    "the [0, PROBE_WAIT] draw multiplies a 16-bit word by PROBE_WAIT + 1 in 32 bits");
+EMBED_STATIC_ASSERT(IDEMIP_ACD_PROBE_MAX_MS - IDEMIP_ACD_PROBE_MIN_MS < 0x10000u,
+                    "the [PROBE_MIN, PROBE_MAX] draw multiplies a 16-bit word by the span + 1 in 32 bits");
 
 // sec 2.1.1 counts probes and sec 2.3 announcements from zero upward in one octet of the context, so a
 // count of zero would send forever.
-static_assert(IDEMIP_ACD_PROBE_NUM >= 1u, "RFC 5227 sec 1.1 PROBE_NUM is 3: at least one probe goes out");
-static_assert(IDEMIP_ACD_ANNOUNCE_NUM >= 1u,
-              "RFC 5227 sec 1.1 ANNOUNCE_NUM is 2: at least one Announcement goes out");
+EMBED_STATIC_ASSERT(IDEMIP_ACD_PROBE_NUM >= 1u, "RFC 5227 sec 1.1 PROBE_NUM is 3: at least one probe goes out");
+EMBED_STATIC_ASSERT(IDEMIP_ACD_ANNOUNCE_NUM >= 1u,
+                    "RFC 5227 sec 1.1 ANNOUNCE_NUM is 2: at least one Announcement goes out");
 
 // The regions, at their offsets in the caller's borrow.
 #define ACD_IO(w) IDEMIP_ACD_IO(w)
@@ -81,9 +81,9 @@ static_assert(IDEMIP_ACD_ANNOUNCE_NUM >= 1u,
 #define ACD_CONFLICTS_MAX 0xFFu
 
 // A borrow clear has not run on holds no mark, so every entry but clear refuses it.
-static idemip_bool acd_ready(uint8_t *work)
+static embed_bool acd_ready(uint8_t *work)
 {
-    return (idemip_bool)(ACD_CTX(work)->ready == ACD_READY);
+    return (embed_bool)(ACD_CTX(work)->ready == ACD_READY);
 }
 
 // --- the clock and the draw ------------------------------------------------
@@ -91,18 +91,18 @@ static idemip_bool acd_ready(uint8_t *work)
 // True once @p now has reached @p deadline. The difference is taken in 32 unsigned bits and read as a
 // span below half the range, so a deadline the millisecond clock has passed stays passed across its
 // wrap at 2^32.
-static idemip_bool acd_due(uint32_t now, uint32_t deadline)
+static embed_bool acd_due(uint32_t now, uint32_t deadline)
 {
-    return (idemip_bool)((now - deadline) < 0x80000000u);
+    return (embed_bool)((now - deadline) < 0x80000000u);
 }
 
 // A draw over [0, span]. sec 2.1.1 selects the first delay "uniformly in the range zero to PROBE_WAIT
 // seconds" and spaces each later probe "randomly and uniformly, PROBE_MIN to PROBE_MAX seconds apart".
 // The low 16 bits scale by span + 1 and shift back, so the result covers 0 through span and no divide
 // runs.
-static uint32_t acd_draw(uint32_t rand, uint32_t span)
+static uint32_t acd_draw(uint32_t rand, uint32_t range)
 {
-    return (uint32_t)(((rand & 0xFFFFu) * (span + 1u)) >> 16);
+    return (uint32_t)(((rand & 0xFFFFu) * (range + 1u)) >> 16);
 }
 
 // --- the machine -----------------------------------------------------------
@@ -123,10 +123,10 @@ static void acd_publish(uint8_t *work)
 // did.
 static void acd_clear_results(AcdIo *io)
 {
-    io->send_probe = IDEMIP_FALSE;
-    io->send_announce = IDEMIP_FALSE;
-    io->conflict = IDEMIP_FALSE;
-    io->abandon = IDEMIP_FALSE;
+    io->send_probe = EMBED_FALSE;
+    io->send_announce = EMBED_FALSE;
+    io->conflict = EMBED_FALSE;
+    io->abandon = EMBED_FALSE;
 }
 
 // sec 2.1.1 counts "MAX_CONFLICTS or more address conflicts on a given interface", holding the count at
@@ -156,7 +156,7 @@ static void acd_abandon(uint8_t *work, uint32_t now_ms)
     acd_count_conflict(ctx, now_ms);
     ctx->ipaddr = 0u;
     ctx->sent = 0u;
-    ctx->defended = IDEMIP_FALSE;
+    ctx->defended = EMBED_FALSE;
     ctx->last_defend_ms = 0u;
     if (ctx->conflicts >= IDEMIP_ACD_MAX_CONFLICTS)
     {
@@ -168,34 +168,34 @@ static void acd_abandon(uint8_t *work, uint32_t now_ms)
         ctx->state = IDEMIP_ACD_STATE_OFF;
         ctx->deadline_ms = 0u;
     }
-    ACD_IO(work)->abandon = IDEMIP_TRUE;
+    ACD_IO(work)->abandon = EMBED_TRUE;
 }
 
 // sec 2.1.1's two tests over the window "from the beginning of the probing process until ANNOUNCE_WAIT
 // seconds after the last probe packet is sent": any ARP packet whose 'sender IP address' (ar$spa) is
 // the address being probed for, and any ARP Probe whose 'target IP address' (ar$tpa) is it from a
 // 'sender hardware address' (ar$sha) that is none of this host's interfaces.
-static idemip_bool acd_probe_conflict(const AcdCtx *ctx, const uint8_t *packet)
+static embed_bool acd_probe_conflict(const AcdCtx *ctx, const uint8_t *packet)
 {
     if (idemip_arp_spa(packet) == ctx->ipaddr)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     // sec 1.1 names an 'ARP Probe' an ARP Request with an all-zero 'sender IP address'. The ar$sha test
     // is what the sec 2.1.1 NOTE requires, so a hub echoing this host's own probe back is not a
     // conflict.
-    return (idemip_bool)(idemip_arp_is_request(packet) && idemip_arp_spa(packet) == 0u &&
-                         idemip_arp_tpa(packet) == ctx->ipaddr &&
-                         !idemip_bytes_eq(idemip_arp_sha(packet), ctx->mac, IDEMIP_ARP_HLN_ETHERNET));
+    return (embed_bool)(idemip_arp_is_request(packet) && idemip_arp_spa(packet) == 0u &&
+                        idemip_arp_tpa(packet) == ctx->ipaddr &&
+                        !idemip_bytes_eq(idemip_arp_sha(packet), ctx->mac, IDEMIP_ARP_HLN_ETHERNET));
 }
 
 // sec 2.4: an ARP packet "where the 'sender IP address' is (one of) the host's own IP address(es)
 // configured on that interface, but the 'sender hardware address' does not match any of the host's own
 // interface addresses" is a conflicting ARP packet.
-static idemip_bool acd_ongoing_conflict(const AcdCtx *ctx, const uint8_t *packet)
+static embed_bool acd_ongoing_conflict(const AcdCtx *ctx, const uint8_t *packet)
 {
-    return (idemip_bool)(idemip_arp_spa(packet) == ctx->ipaddr &&
-                         !idemip_bytes_eq(idemip_arp_sha(packet), ctx->mac, IDEMIP_ARP_HLN_ETHERNET));
+    return (embed_bool)(idemip_arp_spa(packet) == ctx->ipaddr &&
+                        !idemip_bytes_eq(idemip_arp_sha(packet), ctx->mac, IDEMIP_ARP_HLN_ETHERNET));
 }
 
 // sec 2.4's (a), (b) and (c) over one conflicting ARP packet, as IdemIpAcdDefense selects.
@@ -215,8 +215,8 @@ static void acd_defend(uint8_t *work, uint32_t now_ms)
         return;
     }
 
-    idemip_bool recent = (idemip_bool)(ctx->defended && (now_ms - ctx->last_defend_ms) <
-                                                            (uint32_t)IDEMIP_ACD_DEFEND_INTERVAL_MS);
+    embed_bool recent =
+        (embed_bool)(ctx->defended && (now_ms - ctx->last_defend_ms) < (uint32_t)IDEMIP_ACD_DEFEND_INTERVAL_MS);
     if (recent)
     {
         if (ctx->defense == IDEMIP_ACD_DEFEND_ONCE)
@@ -230,8 +230,8 @@ static void acd_defend(uint8_t *work, uint32_t now_ms)
         return;
     }
     ctx->last_defend_ms = now_ms;
-    ctx->defended = IDEMIP_TRUE;
-    io->send_announce = IDEMIP_TRUE;
+    ctx->defended = EMBED_TRUE;
+    io->send_announce = EMBED_TRUE;
     acd_count_conflict(ctx, now_ms);
 }
 
@@ -262,7 +262,7 @@ static void acd_receive(uint8_t *work)
         case IDEMIP_ACD_STATE_ANNOUNCE_WAIT:
             if (acd_probe_conflict(ctx, packet))
             {
-                io->conflict = IDEMIP_TRUE;
+                io->conflict = EMBED_TRUE;
                 acd_abandon(work, now_ms);
             }
             break;
@@ -270,7 +270,7 @@ static void acd_receive(uint8_t *work)
         case IDEMIP_ACD_STATE_ONGOING:
             if (acd_ongoing_conflict(ctx, packet))
             {
-                io->conflict = IDEMIP_TRUE;
+                io->conflict = EMBED_TRUE;
                 acd_defend(work, now_ms);
             }
             break;
@@ -288,7 +288,7 @@ static void acd_send_probe(uint8_t *work, uint32_t now_ms, uint32_t rand)
 {
     AcdIo *io = ACD_IO(work);
     AcdCtx *ctx = ACD_CTX(work);
-    io->send_probe = IDEMIP_TRUE;
+    io->send_probe = EMBED_TRUE;
     ctx->sent++;
     if (ctx->sent >= IDEMIP_ACD_PROBE_NUM)
     {
@@ -308,7 +308,7 @@ static void acd_send_announce(uint8_t *work, uint32_t now_ms)
 {
     AcdIo *io = ACD_IO(work);
     AcdCtx *ctx = ACD_CTX(work);
-    io->send_announce = IDEMIP_TRUE;
+    io->send_announce = EMBED_TRUE;
     ctx->sent++;
     if (ctx->sent >= IDEMIP_ACD_ANNOUNCE_NUM)
     {
@@ -402,7 +402,7 @@ static void acd_claim(uint8_t *work)
     ctx->defense = io->start_args.defense;
     ctx->state = IDEMIP_ACD_STATE_PROBE_WAIT;
     ctx->sent = 0u;
-    ctx->defended = IDEMIP_FALSE;
+    ctx->defended = EMBED_FALSE;
     ctx->last_defend_ms = 0u;
     ctx->deadline_ms = io->start_args.now_ms + acd_draw(io->start_args.rand, IDEMIP_ACD_PROBE_WAIT_MS);
     acd_publish(work);
@@ -420,7 +420,7 @@ static void acd_cease(uint8_t *work)
     AcdCtx *ctx = ACD_CTX(work);
     ctx->ipaddr = 0u;
     ctx->sent = 0u;
-    ctx->defended = IDEMIP_FALSE;
+    ctx->defended = EMBED_FALSE;
     ctx->last_defend_ms = 0u;
     if (ctx->state != IDEMIP_ACD_STATE_RATE_LIMIT)
     {
@@ -441,7 +441,7 @@ void idemip_acd_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_ACD_OFF_CTX, 0, ACD_STATE_BYTES);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_ACD_OFF_CTX, .val = 0, .bytes = ACD_STATE_BYTES);
     ACD_CTX(work)->ready = ACD_READY;
     ACD_IO(work)->status = IDEMIP_OK;
 }
@@ -511,4 +511,4 @@ void idemip_acd_tick(uint8_t *work)
     acd_fire(work);
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

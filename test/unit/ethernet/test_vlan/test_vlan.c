@@ -26,16 +26,19 @@
 
 #include "src/ethernet/vlan.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ethernet/vlan_defines.h"
+#include "support/borrows.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // The borrow, the caller's. Two of them, because the borrow is the instance. A canary follows each
 // so a write past the map is visible.
 #define CANARY 0x5Au
-static _Alignas(8) uint8_t work_a[IDEMIP_VLAN_BORROW + 16];
-static _Alignas(8) uint8_t work_b[IDEMIP_VLAN_BORROW + 16];
+#define WORK_A_BYTES ((size_t)(IDEMIP_VLAN_BORROW + 16))
+static uint8_t *work_a;
+#define WORK_B_BYTES ((size_t)(IDEMIP_VLAN_BORROW + 16))
+static uint8_t *work_b;
 
 // A frame, the caller's too, with its own canary past the octets a build may touch.
 #define FRAME_BYTES 32u
@@ -47,8 +50,8 @@ static const uint8_t src_mac[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
 
 static void arm(uint8_t *w, size_t cap)
 {
-    memset(w, 0, cap);
-    memset(w + IDEMIP_VLAN_BORROW, CANARY, cap - IDEMIP_VLAN_BORROW);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w, .val = 0, .bytes = cap);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = w + IDEMIP_VLAN_BORROW, .val = CANARY, .bytes = cap - IDEMIP_VLAN_BORROW);
 }
 
 static void check_canary(const uint8_t *w, size_t cap)
@@ -61,18 +64,20 @@ static void check_canary(const uint8_t *w, size_t cap)
 
 void setUp(void)
 {
-    arm(work_a, sizeof work_a);
-    arm(work_b, sizeof work_b);
-    memset(frame, 0, FRAME_BYTES);
-    memset(frame + FRAME_BYTES, FRAME_CANARY, sizeof frame - FRAME_BYTES);
-    memcpy(frame + IDEMIP_ETH_OFF_DST, dst_mac, 6);
-    memcpy(frame + IDEMIP_ETH_OFF_SRC, src_mac, 6);
+    idemip_test_borrow(&work_a, WORK_A_BYTES, idemip_owner_vlan);
+    idemip_test_borrow(&work_b, WORK_B_BYTES, idemip_owner_vlan);
+    arm(work_a, WORK_A_BYTES);
+    arm(work_b, WORK_B_BYTES);
+    mmgr_zero_buf(frame, FRAME_BYTES);
+    fill_bytes(frame + FRAME_BYTES, FRAME_CANARY, sizeof frame - FRAME_BYTES);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = frame + IDEMIP_ETH_OFF_DST, .at = dst_mac, .size = 6);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = frame + IDEMIP_ETH_OFF_SRC, .at = src_mac, .size = 6);
 }
 
 void tearDown(void)
 {
-    check_canary(work_a, sizeof work_a);
-    check_canary(work_b, sizeof work_b);
+    check_canary(work_a, WORK_A_BYTES);
+    check_canary(work_b, WORK_B_BYTES);
     for (size_t i = FRAME_BYTES; i < sizeof frame; i++)
     {
         TEST_ASSERT_EQUAL_HEX8_MESSAGE(FRAME_CANARY, frame[i], "a write landed past the caller's frame");
@@ -117,7 +122,7 @@ static void parse_frame(uint8_t *w, size_t len)
     Vlan.parse(w);
 }
 
-static void build_tag(uint8_t *w, uint8_t pcp, idemip_bool dei, uint16_t vid, uint16_t type)
+static void build_tag(uint8_t *w, uint8_t pcp, embed_bool dei, uint16_t vid, uint16_t type)
 {
     IDEMIP_VLAN_IO(w)->build_args.frame = frame;
     IDEMIP_VLAN_IO(w)->build_args.type = type;
@@ -127,7 +132,7 @@ static void build_tag(uint8_t *w, uint8_t pcp, idemip_bool dei, uint16_t vid, ui
     Vlan.build(w);
 }
 
-static void pack_tag(uint8_t *w, uint8_t pcp, idemip_bool dei, uint16_t vid)
+static void pack_tag(uint8_t *w, uint8_t pcp, embed_bool dei, uint16_t vid)
 {
     IDEMIP_VLAN_IO(w)->tag_args.pcp = pcp;
     IDEMIP_VLAN_IO(w)->tag_args.dei = dei;
@@ -198,9 +203,9 @@ void test_an_uncleared_borrow_refuses_work(void)
     make_untagged((uint16_t)IDEMIP_ETHERTYPE_IPV4);
     parse_frame(work_a, FRAME_BYTES);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status);
-    build_tag(work_a, 0u, IDEMIP_FALSE, 100u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    build_tag(work_a, 0u, EMBED_FALSE, 100u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status);
-    pack_tag(work_a, 0u, IDEMIP_FALSE, 100u);
+    pack_tag(work_a, 0u, EMBED_FALSE, 100u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status);
     split_tci(work_a, 0u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status);
@@ -210,7 +215,7 @@ void test_an_uncleared_borrow_refuses_work(void)
 void test_a_refused_build_writes_no_octet(void)
 {
     make_untagged((uint16_t)IDEMIP_ETHERTYPE_IPV4);
-    build_tag(work_a, 0u, IDEMIP_FALSE, 100u, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    build_tag(work_a, 0u, EMBED_FALSE, 100u, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     TEST_ASSERT_EQUAL_HEX16((uint16_t)IDEMIP_ETHERTYPE_IPV4, get16(frame + IDEMIP_ETH_OFF_TYPE));
     TEST_ASSERT_EQUAL_HEX16(0x0000u, get16(frame + IDEMIP_VLAN_OFF_TCI));
 }
@@ -231,9 +236,9 @@ void test_no_entry_ever_reports_busy(void)
     IDEMIP_VLAN_IO(work_a)->parse_args.len = 0u;
     Vlan.parse(work_a);
     TEST_ASSERT_NOT_EQUAL(IDEMIP_BUSY, IDEMIP_VLAN_IO(work_a)->status);
-    build_tag(work_a, 9u, IDEMIP_FALSE, 100u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    build_tag(work_a, 9u, EMBED_FALSE, 100u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     TEST_ASSERT_NOT_EQUAL(IDEMIP_BUSY, IDEMIP_VLAN_IO(work_a)->status);
-    pack_tag(work_a, 0u, IDEMIP_FALSE, (uint16_t)IDEMIP_VLAN_VID_RESERVED);
+    pack_tag(work_a, 0u, EMBED_FALSE, (uint16_t)IDEMIP_VLAN_VID_RESERVED);
     TEST_ASSERT_NOT_EQUAL(IDEMIP_BUSY, IDEMIP_VLAN_IO(work_a)->status);
     split_tci(work_a, 0xFFFFu);
     TEST_ASSERT_NOT_EQUAL(IDEMIP_BUSY, IDEMIP_VLAN_IO(work_a)->status);
@@ -537,7 +542,7 @@ void test_parse_writes_no_octet_of_the_frame(void)
     uint8_t before[FRAME_BYTES];
     ready(work_a);
     make_tagged(0xA064u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
-    memcpy(before, frame, sizeof before);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = before, .at = frame, .size = sizeof before);
     parse_frame(work_a, FRAME_BYTES);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(before, frame, FRAME_BYTES);
 }
@@ -549,7 +554,7 @@ void test_parse_writes_no_octet_of_the_frame(void)
 void test_build_writes_the_tag_and_the_encapsulated_type(void)
 {
     ready(work_a);
-    build_tag(work_a, 5u, IDEMIP_FALSE, 100u, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    build_tag(work_a, 5u, EMBED_FALSE, 100u, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_VLAN_IO(work_a)->status);
     TEST_ASSERT_EQUAL_HEX16(0x8100u, get16(frame + IDEMIP_VLAN_OFF_TPID));
     TEST_ASSERT_EQUAL_HEX16(0xA064u, get16(frame + IDEMIP_VLAN_OFF_TCI));
@@ -560,7 +565,7 @@ void test_build_writes_the_tag_and_the_encapsulated_type(void)
 void test_build_reports_what_it_wrote(void)
 {
     ready(work_a);
-    build_tag(work_a, 5u, IDEMIP_TRUE, 100u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    build_tag(work_a, 5u, EMBED_TRUE, 100u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     TEST_ASSERT_TRUE(IDEMIP_VLAN_IO(work_a)->tagged);
     TEST_ASSERT_EQUAL_HEX16(0xB064u, IDEMIP_VLAN_IO(work_a)->tci);
     TEST_ASSERT_EQUAL_UINT8(5u, IDEMIP_VLAN_IO(work_a)->pcp);
@@ -577,7 +582,7 @@ void test_build_and_parse_round_trip(void)
     {
         for (unsigned dei = 0; dei < 2u; dei++)
         {
-            build_tag(work_a, (uint8_t)pcp, (idemip_bool)dei, (uint16_t)(0x123u), (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+            build_tag(work_a, (uint8_t)pcp, (embed_bool)dei, (uint16_t)(0x123u), (uint16_t)IDEMIP_ETHERTYPE_IPV4);
             TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_VLAN_IO(work_a)->status);
             parse_frame(work_a, FRAME_BYTES);
             TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_VLAN_IO(work_a)->status);
@@ -596,7 +601,7 @@ void test_build_and_parse_round_trip_every_vlan_id(void)
     ready(work_a);
     for (unsigned vid = IDEMIP_VLAN_VID_NULL; vid <= IDEMIP_VLAN_VID_LAST; vid++)
     {
-        build_tag(work_a, 3u, IDEMIP_FALSE, (uint16_t)vid, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+        build_tag(work_a, 3u, EMBED_FALSE, (uint16_t)vid, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
         TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_OK, IDEMIP_VLAN_IO(work_a)->status, "a VLAN ID in range was refused");
         parse_frame(work_a, FRAME_BYTES);
         TEST_ASSERT_EQUAL_UINT16((uint16_t)vid, IDEMIP_VLAN_IO(work_a)->vid);
@@ -609,9 +614,9 @@ void test_build_touches_only_the_six_octets_it_names(void)
 {
     uint8_t before[FRAME_BYTES];
     ready(work_a);
-    memset(frame + IDEMIP_VLAN_OFF_PAYLOAD, 0xEE, FRAME_BYTES - IDEMIP_VLAN_OFF_PAYLOAD);
-    memcpy(before, frame, sizeof before);
-    build_tag(work_a, 1u, IDEMIP_FALSE, 7u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    fill_bytes(frame + IDEMIP_VLAN_OFF_PAYLOAD, 0xEE, FRAME_BYTES - IDEMIP_VLAN_OFF_PAYLOAD);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = before, .at = frame, .size = sizeof before);
+    build_tag(work_a, 1u, EMBED_FALSE, 7u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(before, frame, IDEMIP_VLAN_OFF_TPID, "the addresses moved");
     TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(before + IDEMIP_VLAN_OFF_PAYLOAD, frame + IDEMIP_VLAN_OFF_PAYLOAD,
                                           FRAME_BYTES - IDEMIP_VLAN_OFF_PAYLOAD, "the data field moved");
@@ -622,7 +627,7 @@ void test_build_touches_only_the_six_octets_it_names(void)
 void test_build_refuses_a_priority_above_seven(void)
 {
     ready(work_a);
-    build_tag(work_a, (uint8_t)(IDEMIP_VLAN_PCP_MAX + 1u), IDEMIP_FALSE, 100u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    build_tag(work_a, (uint8_t)(IDEMIP_VLAN_PCP_MAX + 1u), EMBED_FALSE, 100u, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status);
     TEST_ASSERT_EQUAL_HEX16(0x0000u, get16(frame + IDEMIP_VLAN_OFF_TPID));
 }
@@ -631,7 +636,7 @@ void test_build_refuses_a_priority_above_seven(void)
 void test_build_refuses_a_vlan_id_outside_the_field(void)
 {
     ready(work_a);
-    build_tag(work_a, 0u, IDEMIP_FALSE, (uint16_t)(IDEMIP_VLAN_VID_MASK + 1u), (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    build_tag(work_a, 0u, EMBED_FALSE, (uint16_t)(IDEMIP_VLAN_VID_MASK + 1u), (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status);
     TEST_ASSERT_EQUAL_HEX16(0x0000u, get16(frame + IDEMIP_VLAN_OFF_TPID));
 }
@@ -640,7 +645,7 @@ void test_build_refuses_a_vlan_id_outside_the_field(void)
 void test_build_refuses_the_reserved_vlan_id(void)
 {
     ready(work_a);
-    build_tag(work_a, 0u, IDEMIP_FALSE, (uint16_t)IDEMIP_VLAN_VID_RESERVED, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    build_tag(work_a, 0u, EMBED_FALSE, (uint16_t)IDEMIP_VLAN_VID_RESERVED, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status);
     TEST_ASSERT_EQUAL_HEX16(0x0000u, get16(frame + IDEMIP_VLAN_OFF_TPID));
 }
@@ -649,7 +654,7 @@ void test_build_refuses_the_reserved_vlan_id(void)
 void test_build_accepts_the_null_vlan_identifier(void)
 {
     ready(work_a);
-    build_tag(work_a, 6u, IDEMIP_FALSE, (uint16_t)IDEMIP_VLAN_VID_NULL, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
+    build_tag(work_a, 6u, EMBED_FALSE, (uint16_t)IDEMIP_VLAN_VID_NULL, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_VLAN_IO(work_a)->status);
     TEST_ASSERT_TRUE(IDEMIP_VLAN_IO(work_a)->vid_null);
     TEST_ASSERT_EQUAL_HEX16(0xC000u, get16(frame + IDEMIP_VLAN_OFF_TCI));
@@ -661,7 +666,7 @@ void test_build_refuses_a_null_frame(void)
     IDEMIP_VLAN_IO(work_a)->build_args.frame = NULL;
     IDEMIP_VLAN_IO(work_a)->build_args.type = (uint16_t)IDEMIP_ETHERTYPE_IPV4;
     IDEMIP_VLAN_IO(work_a)->tag_args.pcp = 0u;
-    IDEMIP_VLAN_IO(work_a)->tag_args.dei = IDEMIP_FALSE;
+    IDEMIP_VLAN_IO(work_a)->tag_args.dei = EMBED_FALSE;
     IDEMIP_VLAN_IO(work_a)->tag_args.vid = 100u;
     Vlan.build(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status);
@@ -673,11 +678,11 @@ void test_build_refuses_a_null_frame(void)
 void test_pack_places_each_field_where_the_figure_draws_it(void)
 {
     ready(work_a);
-    pack_tag(work_a, 7u, IDEMIP_FALSE, 0u);
+    pack_tag(work_a, 7u, EMBED_FALSE, 0u);
     TEST_ASSERT_EQUAL_HEX16(0xE000u, IDEMIP_VLAN_IO(work_a)->tci);
-    pack_tag(work_a, 0u, IDEMIP_TRUE, 0u);
+    pack_tag(work_a, 0u, EMBED_TRUE, 0u);
     TEST_ASSERT_EQUAL_HEX16(0x1000u, IDEMIP_VLAN_IO(work_a)->tci);
-    pack_tag(work_a, 0u, IDEMIP_FALSE, 0x0FFEu);
+    pack_tag(work_a, 0u, EMBED_FALSE, 0x0FFEu);
     TEST_ASSERT_EQUAL_HEX16(0x0FFEu, IDEMIP_VLAN_IO(work_a)->tci);
 }
 
@@ -685,11 +690,11 @@ void test_pack_places_each_field_where_the_figure_draws_it(void)
 void test_pack_refuses_what_build_refuses(void)
 {
     ready(work_a);
-    pack_tag(work_a, (uint8_t)(IDEMIP_VLAN_PCP_MAX + 1u), IDEMIP_FALSE, 100u);
+    pack_tag(work_a, (uint8_t)(IDEMIP_VLAN_PCP_MAX + 1u), EMBED_FALSE, 100u);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status);
-    pack_tag(work_a, 0u, IDEMIP_FALSE, (uint16_t)(IDEMIP_VLAN_VID_MASK + 1u));
+    pack_tag(work_a, 0u, EMBED_FALSE, (uint16_t)(IDEMIP_VLAN_VID_MASK + 1u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status);
-    pack_tag(work_a, 0u, IDEMIP_FALSE, (uint16_t)IDEMIP_VLAN_VID_RESERVED);
+    pack_tag(work_a, 0u, EMBED_FALSE, (uint16_t)IDEMIP_VLAN_VID_RESERVED);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status);
 }
 
@@ -724,7 +729,7 @@ void test_split_and_pack_round_trip_over_every_value(void)
     {
         split_tci(work_a, (uint16_t)tci);
         uint8_t pcp = IDEMIP_VLAN_IO(work_a)->pcp;
-        idemip_bool dei = IDEMIP_VLAN_IO(work_a)->dei;
+        embed_bool dei = IDEMIP_VLAN_IO(work_a)->dei;
         uint16_t vid = IDEMIP_VLAN_IO(work_a)->vid;
         if (vid == IDEMIP_VLAN_VID_RESERVED)
         {
@@ -744,7 +749,7 @@ void test_split_agrees_with_parse(void)
     make_tagged(0x5ABCu, (uint16_t)IDEMIP_ETHERTYPE_IPV4);
     parse_frame(work_a, FRAME_BYTES);
     uint8_t pcp = IDEMIP_VLAN_IO(work_a)->pcp;
-    idemip_bool dei = IDEMIP_VLAN_IO(work_a)->dei;
+    embed_bool dei = IDEMIP_VLAN_IO(work_a)->dei;
     uint16_t vid = IDEMIP_VLAN_IO(work_a)->vid;
     split_tci(work_a, 0x5ABCu);
     TEST_ASSERT_EQUAL_UINT8(pcp, IDEMIP_VLAN_IO(work_a)->pcp);
@@ -758,8 +763,8 @@ void test_pack_writes_no_octet_of_the_frame(void)
     uint8_t before[FRAME_BYTES];
     ready(work_a);
     make_untagged((uint16_t)IDEMIP_ETHERTYPE_IPV4);
-    memcpy(before, frame, sizeof before);
-    pack_tag(work_a, 4u, IDEMIP_TRUE, 42u);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = before, .at = frame, .size = sizeof before);
+    pack_tag(work_a, 4u, EMBED_TRUE, 42u);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(before, frame, FRAME_BYTES);
 }
 
@@ -771,14 +776,14 @@ void test_a_length_frame_that_carries_no_snap_header_is_not_decoded(void)
     ready(work_a);
 
     // Untagged, with a Length and nothing behind it.
-    memset(frame, 0, FRAME_BYTES);
+    mmgr_zero_buf(frame, FRAME_BYTES);
     make_untagged(46u);
     parse_frame(work_a, (size_t)IDEMIP_ETH_HDR_LEN + 4u);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status,
                                   "a frame with no room for the LLC and SNAP headers was decoded");
 
     // Untagged, with the eight octets there and something other than a SNAP header in them.
-    memset(frame, 0, FRAME_BYTES);
+    mmgr_zero_buf(frame, FRAME_BYTES);
     make_untagged(46u);
     frame[IDEMIP_ETH_OFF_PAYLOAD] = 0x42u;
     parse_frame(work_a, (size_t)IDEMIP_ETH_HDR_LEN + IDEMIP_LLC_SNAP_LEN + 4u);
@@ -786,7 +791,7 @@ void test_a_length_frame_that_carries_no_snap_header_is_not_decoded(void)
                                   "a frame carrying something other than a SNAP header was decoded");
 
     // Tagged, with a Length behind the tag and nothing behind that.
-    memset(frame, 0, FRAME_BYTES);
+    mmgr_zero_buf(frame, FRAME_BYTES);
     make_tagged(0x0064u, 46u);
     parse_frame(work_a, (size_t)IDEMIP_VLAN_OFF_PAYLOAD + 4u);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, IDEMIP_VLAN_IO(work_a)->status,
@@ -795,7 +800,7 @@ void test_a_length_frame_that_carries_no_snap_header_is_not_decoded(void)
                               "a tagged frame this does not decode was still reported as tagged");
 
     // Tagged, with the eight octets there and something other than a SNAP header in them.
-    memset(frame, 0, FRAME_BYTES);
+    mmgr_zero_buf(frame, FRAME_BYTES);
     make_tagged(0x0064u, 46u);
     frame[IDEMIP_VLAN_OFF_PAYLOAD] = 0x42u;
     parse_frame(work_a, (size_t)IDEMIP_VLAN_OFF_PAYLOAD + IDEMIP_LLC_SNAP_LEN);

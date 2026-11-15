@@ -21,10 +21,10 @@
 #include "src/checksum.h"
 #include "src/ip/ipv4.h"
 
-#include <string.h>
-#include <unity.h>
 #include "src/common_defines.h"
 #include "src/ip/ipv4_defines.h"
+#include "support/fill_bytes.h"
+#include <unity.h>
 
 // The figures leave the addresses unspecified. 10.0.0.1 and 10.0.0.2.
 #define VEC_SRC 0x0A000001u
@@ -37,8 +37,8 @@
 
 static void arm(uint8_t *b, size_t cap, size_t used)
 {
-    memset(b, 0, used);
-    memset(b + used, CANARY, cap - used);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = b, .val = 0, .bytes = used);
+    fill_bytes(b + used, CANARY, cap - used);
 }
 
 static void check_canary(const uint8_t *b, size_t cap, size_t used)
@@ -53,7 +53,7 @@ static void check_canary(const uint8_t *b, size_t cap, size_t used)
 static void build_figure5(uint8_t *h)
 {
     IdemIpIp4Fields f;
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.tos = 0u;
     f.total_len = 21u;
     f.id = VEC_ID;
@@ -69,7 +69,7 @@ static void build_figure5(uint8_t *h)
 static void build_figure6(uint8_t *h)
 {
     IdemIpIp4Fields f;
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.total_len = 472u;
     f.id = VEC_ID;
     f.ttl = 123u;
@@ -83,7 +83,7 @@ static void build_figure6(uint8_t *h)
 static void build_figure7(uint8_t *h)
 {
     IdemIpIp4Fields f;
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.total_len = 276u;
     f.id = VEC_ID;
     f.flags_frag = IDEMIP_IP4_FLAG_MF;
@@ -98,7 +98,7 @@ static void build_figure7(uint8_t *h)
 static void build_figure8(uint8_t *h)
 {
     IdemIpIp4Fields f;
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.total_len = 216u;
     f.id = VEC_ID;
     f.flags_frag = 32u;
@@ -145,50 +145,50 @@ void test_each_accessor_reads_only_its_own_field(void)
 {
     uint8_t h[24];
 
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
     idemip_ip4_set_total_len(h, 0xFFFFu);
     TEST_ASSERT_EQUAL_HEX16(0xFFFFu, idemip_ip4_total_len(h));
     TEST_ASSERT_EQUAL_UINT8(0u, h[IDEMIP_IP4_OFF_VER_IHL]);
     TEST_ASSERT_EQUAL_UINT8(0u, idemip_ip4_tos(h));
     TEST_ASSERT_EQUAL_HEX16(0u, idemip_ip4_id(h));
 
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
     idemip_ip4_set_id(h, 0xFFFFu);
     TEST_ASSERT_EQUAL_HEX16(0xFFFFu, idemip_ip4_id(h));
     TEST_ASSERT_EQUAL_HEX16(0u, idemip_ip4_total_len(h));
     TEST_ASSERT_EQUAL_HEX16(0u, idemip_ip4_flags_frag(h));
 
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
     idemip_ip4_set_flags_frag(h, 0xFFFFu);
     TEST_ASSERT_EQUAL_HEX16(0xFFFFu, idemip_ip4_flags_frag(h));
     TEST_ASSERT_EQUAL_HEX16(0u, idemip_ip4_id(h));
     TEST_ASSERT_EQUAL_UINT8(0u, idemip_ip4_ttl(h));
 
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
     idemip_ip4_set_ttl(h, 0xFFu);
     TEST_ASSERT_EQUAL_UINT8(0xFFu, idemip_ip4_ttl(h));
     TEST_ASSERT_EQUAL_UINT8(0u, idemip_ip4_proto(h));
     TEST_ASSERT_EQUAL_HEX16(0u, idemip_ip4_flags_frag(h));
 
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
     idemip_ip4_set_proto(h, 0xFFu);
     TEST_ASSERT_EQUAL_UINT8(0xFFu, idemip_ip4_proto(h));
     TEST_ASSERT_EQUAL_UINT8(0u, idemip_ip4_ttl(h));
     TEST_ASSERT_EQUAL_HEX16(0u, idemip_ip4_cksum(h));
 
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
     idemip_ip4_set_cksum(h, 0xFFFFu);
     TEST_ASSERT_EQUAL_HEX16(0xFFFFu, idemip_ip4_cksum(h));
     TEST_ASSERT_EQUAL_UINT8(0u, idemip_ip4_proto(h));
     TEST_ASSERT_EQUAL_HEX32(0u, idemip_ip4_src(h));
 
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
     idemip_ip4_set_src(h, 0xFFFFFFFFu);
     TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFFu, idemip_ip4_src(h));
     TEST_ASSERT_EQUAL_HEX16(0u, idemip_ip4_cksum(h));
     TEST_ASSERT_EQUAL_HEX32(0u, idemip_ip4_dst(h));
 
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
     idemip_ip4_set_dst(h, 0xFFFFFFFFu);
     TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFFu, idemip_ip4_dst(h));
     TEST_ASSERT_EQUAL_HEX32(0u, idemip_ip4_src(h));
@@ -201,7 +201,7 @@ void test_version_and_ihl_share_the_first_octet(void)
 {
     uint8_t h[20];
 
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
     idemip_ip4_set_ver_ihl(h, 5u);
     TEST_ASSERT_EQUAL_HEX8(0x45u, h[IDEMIP_IP4_OFF_VER_IHL]);
     TEST_ASSERT_EQUAL_UINT8(4u, idemip_ip4_version(h));
@@ -224,7 +224,7 @@ void test_version_and_ihl_share_the_first_octet(void)
 void test_ihl_bounds_are_five_through_fifteen(void)
 {
     uint8_t h[20];
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
 
     TEST_ASSERT_EQUAL_UINT8(5u, IDEMIP_IP4_IHL_MIN);
     TEST_ASSERT_EQUAL_UINT8(15u, IDEMIP_IP4_IHL_MAX);
@@ -277,7 +277,7 @@ void test_flag_bit_positions(void)
 void test_each_flag_predicate_reads_its_own_bit(void)
 {
     uint8_t h[20];
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
 
     idemip_ip4_set_flags_frag(h, IDEMIP_IP4_FLAG_RESERVED);
     TEST_ASSERT_TRUE(idemip_ip4_reserved(h));
@@ -310,7 +310,7 @@ void test_each_flag_predicate_reads_its_own_bit(void)
 void test_fragment_offset_is_units_of_eight_octets(void)
 {
     uint8_t h[20];
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
 
     TEST_ASSERT_EQUAL_size_t(8u, IDEMIP_IP4_FRAG_UNIT);
     TEST_ASSERT_EQUAL_size_t(8u, (size_t)1u << IDEMIP_IP4_FRAG_SHIFT);
@@ -337,7 +337,7 @@ void test_fragment_offset_is_units_of_eight_octets(void)
 void test_unfragmented_has_all_zero_fragmentation_information(void)
 {
     uint8_t h[20];
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
 
     idemip_ip4_set_flags_frag(h, 0u);
     TEST_ASSERT_FALSE(idemip_ip4_is_fragment(h));
@@ -472,9 +472,9 @@ void test_rfc791_appendix_a_fragments_cover_the_original(void)
     uint8_t whole[32];
     uint8_t first[32];
     uint8_t second[32];
-    memset(whole, 0, sizeof whole);
-    memset(first, 0, sizeof first);
-    memset(second, 0, sizeof second);
+    mmgr_zero_buf(whole, sizeof whole);
+    mmgr_zero_buf(first, sizeof first);
+    mmgr_zero_buf(second, sizeof second);
     build_figure6(whole);
     build_figure7(first);
     build_figure8(second);
@@ -512,7 +512,7 @@ void test_rfc791_example_fragmentation_procedure(void)
     // RFC 791 sec 3.2: "If an internet datagram is fragmented, its data portion must be broken on 8
     // octet boundaries", so the first fragment's data is a whole number of units.
     uint8_t first[32];
-    memset(first, 0, sizeof first);
+    mmgr_zero_buf(first, sizeof first);
     build_figure7(first);
     TEST_ASSERT_EQUAL_UINT16(0u, (uint16_t)(idemip_ip4_payload_len(first) & (IDEMIP_IP4_FRAG_UNIT - 1u)));
 }
@@ -530,7 +530,7 @@ void test_rfc791_figure9_options_datagram(void)
     arm(buf, sizeof buf, 576u);
 
     IdemIpIp4Fields f;
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.total_len = 576u;
     f.id = VEC_ID;
     f.ttl = 123u;
@@ -540,7 +540,7 @@ void test_rfc791_figure9_options_datagram(void)
     idemip_ip4_build(buf, &f);
 
     // The options raise IHL from 5 to 8 words, and the checksum is taken again over all of it.
-    memcpy(buf + IDEMIP_IP4_OFF_OPTIONS, opts, sizeof opts);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf + IDEMIP_IP4_OFF_OPTIONS, .at = opts, .size = sizeof opts);
     idemip_ip4_set_ver_ihl(buf, 8u);
     idemip_ip4_recksum(buf);
 
@@ -584,7 +584,7 @@ void test_recksum_computes_with_the_field_zero(void)
     arm(buf, sizeof buf, 21u);
     build_figure5(buf);
 
-    memcpy(zeroed, buf, sizeof zeroed);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = zeroed, .at = buf, .size = sizeof zeroed);
     idemip_ip4_set_cksum(zeroed, 0u);
     TEST_ASSERT_EQUAL_HEX16(idemip_cksum(zeroed, 20u), idemip_ip4_cksum(buf));
 }
@@ -614,7 +614,7 @@ void test_verify_rejects_every_single_bit_flip(void)
         for (unsigned b = 0u; b < 8u; b++)
         {
             uint8_t bad[32];
-            memcpy(bad, good, sizeof bad);
+            EMBED_CALL(proxim.read, ProximusCfg, .dst = bad, .at = good, .size = sizeof bad);
             bad[i] ^= (uint8_t)(1u << b);
             TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, idemip_ip4_verify(bad, 21u),
                                           "a one-bit change in the header was accepted");
@@ -790,7 +790,7 @@ void test_build_round_trips_every_field(void)
     arm(buf, sizeof buf, 20u);
 
     IdemIpIp4Fields f;
-    memset(&f, 0, sizeof f);
+    f = (IdemIpIp4Fields){0};
     f.tos = 0xB8u;
     f.total_len = 1500u;
     f.id = 0xBEEFu;
@@ -916,7 +916,7 @@ void test_a_contiguous_mask_is_rebuilt_from_its_own_count(void)
 void test_a_header_length_below_the_minimum_is_not_a_header(void)
 {
     uint8_t h[IDEMIP_IPV4_HDR_LEN];
-    memset(h, 0, sizeof h);
+    mmgr_zero_buf(h, sizeof h);
 
     for (uint8_t ihl = 0u; ihl < (uint8_t)IDEMIP_IP4_IHL_MIN; ihl++)
     {

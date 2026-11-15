@@ -16,7 +16,7 @@
 #include "src/ip/ipv4_defines.h"
 #include "src/icmp/icmp_defines.h"
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 // The mark clear leaves in the context. A borrow that was never cleared reads zero here and every
 // entry but clear refuses it.
@@ -71,69 +71,70 @@ IDEMIP_ASSERT_REGION(IDEMIP_IP4_FORWARD_OFF_CTX, sizeof(Ip4ForwardCtx), IDEMIP_I
 
 // The caller's borrow, split: the operand block, then the context. ip4_forward.h publishes the
 // offsets; the assert proves the span covers them before anything runs.
-static_assert(IDEMIP_IP4_FORWARD_OFF_CTX + sizeof(Ip4ForwardCtx) <= IDEMIP_IP4_FORWARD_BORROW,
-              "IDEMIP_IP4_FORWARD_BORROW is short of the operand block and the context - raise "
-              "IDEMIP_IP4_FORWARD_CTX_BYTES in idemip_config.h");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_FORWARD_OFF_CTX + sizeof(Ip4ForwardCtx) <= IDEMIP_IP4_FORWARD_BORROW,
+                    "IDEMIP_IP4_FORWARD_BORROW is short of the operand block and the context - raise "
+                    "IDEMIP_IP4_FORWARD_CTX_BYTES in idemip_config.h");
 
 // The borrow abuts the next one the caller placed, so its length keeps that one's alignment.
-static_assert((IDEMIP_IP4_FORWARD_BORROW & (IDEMIP_ALIGN - 1u)) == 0u,
-              "IDEMIP_IP4_FORWARD_BORROW must be a multiple of IDEMIP_ALIGN");
+EMBED_STATIC_ASSERT((IDEMIP_IP4_FORWARD_BORROW & (IDEMIP_ALIGN - 1u)) == 0u,
+                    "IDEMIP_IP4_FORWARD_BORROW must be a multiple of IDEMIP_ALIGN");
 
 // clear zeroes the context, so the reason a passing decision reports is the zero state.
-static_assert(IDEMIP_IP4_FORWARD_R_OK == 0, "IDEMIP_IP4_FORWARD_R_OK must be zero: it is the reason of a clean pass");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_FORWARD_R_OK == 0,
+                    "IDEMIP_IP4_FORWARD_R_OK must be zero: it is the reason of a clean pass");
 
 // The regions, at their offsets in the caller's borrow.
 #define IP4_FORWARD_IO(w) IDEMIP_IP4_FORWARD_IO(w)
 #define IP4_FORWARD_CTX(w) ((Ip4ForwardCtx *)(void *)((w) + IDEMIP_IP4_FORWARD_OFF_CTX))
 
 // A borrow clear has not run on carries no switches, so every entry but clear refuses it.
-static idemip_bool ip4_forward_ready(uint8_t *work)
+static embed_bool ip4_forward_ready(uint8_t *work)
 {
-    return (idemip_bool)(IP4_FORWARD_CTX(work)->ready == IP4_FORWARD_READY);
+    return (embed_bool)(IP4_FORWARD_CTX(work)->ready == IP4_FORWARD_READY);
 }
 
 // --- the addresses ---------------------------------------------------------
 
 // RFC 1812 sec 4.2.2.11: Class D, the top four bits 1110.
-static idemip_bool ip4_forward_is_multicast(uint32_t a)
+static embed_bool ip4_forward_is_multicast(uint32_t a)
 {
-    return (idemip_bool)((a & IP4_FORWARD_CLASS_MASK) == IP4_FORWARD_CLASS_D);
+    return (embed_bool)((a & IP4_FORWARD_CLASS_MASK) == IP4_FORWARD_CLASS_D);
 }
 
 // RFC 1812 sec 4.2.2.11: Class E, the top four bits 1111, which holds the limited broadcast too.
-static idemip_bool ip4_forward_is_class_e(uint32_t a)
+static embed_bool ip4_forward_is_class_e(uint32_t a)
 {
-    return (idemip_bool)((a & IP4_FORWARD_CLASS_MASK) == IP4_FORWARD_CLASS_E);
+    return (embed_bool)((a & IP4_FORWARD_CLASS_MASK) == IP4_FORWARD_CLASS_E);
 }
 
 // RFC 1812 sec 5.3.7: "An IP source address is invalid if it is a special IP address, as defined in
 // 4.2.2.11 or 5.3.7, or is not a unicast address", and the same section adds "a source address on
 // network 0" and "a source address on network 127". sec 4.2.2.11 (c) and (d) make both broadcast
 // forms illegal sources, and (e) the { 127, <any> } loopback which "MUST NOT appear outside a host".
-static idemip_bool ip4_forward_src_invalid(uint32_t a)
+static embed_bool ip4_forward_src_invalid(uint32_t a)
 {
     uint32_t net = a >> IP4_FORWARD_NET_SHIFT;
     if (net == IP4_FORWARD_NET_ZERO || net == IP4_FORWARD_NET_LOOPBACK)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
-    return (idemip_bool)(ip4_forward_is_multicast(a) || ip4_forward_is_class_e(a));
+    return (embed_bool)(ip4_forward_is_multicast(a) || ip4_forward_is_class_e(a));
 }
 
 // RFC 1812 sec 5.3.7: "An IP destination address is invalid if it is among those defined as illegal
 // destinations in 4.2.3.1, or is a Class E address (except 255.255.255.255)", plus that section's own
 // "a destination address on network 0" and "a destination address on network 127". sec 4.2.3.1 (2)
 // makes 0.0.0.0 the obsolete limited broadcast, which network 0 covers.
-static idemip_bool ip4_forward_dst_invalid(uint32_t a)
+static embed_bool ip4_forward_dst_invalid(uint32_t a)
 {
     uint32_t net = a >> IP4_FORWARD_NET_SHIFT;
     if (net == IP4_FORWARD_NET_ZERO || net == IP4_FORWARD_NET_LOOPBACK)
     {
-        return IDEMIP_TRUE;
+        return EMBED_TRUE;
     }
     if (a == IP4_FORWARD_LIMITED_BCAST)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     return ip4_forward_is_class_e(a);
 }
@@ -147,28 +148,28 @@ static idemip_bool ip4_forward_dst_invalid(uint32_t a)
 // the subnet structure of the destination network", which is the outgoing interface's mask, and only
 // on the last hop, which is a route that transmits directly. RFC 3021 sec 2.2.1 says a directed
 // broadcast to a 31-bit prefix "is not possible", both of its addresses being host addresses.
-static idemip_bool ip4_forward_dst_is_bcast(const Ip4ForwardArgs *a, uint32_t dst)
+static embed_bool ip4_forward_dst_is_bcast(const Ip4ForwardArgs *a, uint32_t dst)
 {
     if (a->out_mask == 0u || a->out_mask == IP4_FORWARD_LIMITED_BCAST || a->out_mask == IP4_FORWARD_MASK_31)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if ((dst & a->out_mask) != (a->out_addr & a->out_mask))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    return (idemip_bool)((dst | a->out_mask) == IP4_FORWARD_LIMITED_BCAST || (dst & ~a->out_mask) == 0u);
+    return (embed_bool)((dst | a->out_mask) == IP4_FORWARD_LIMITED_BCAST || (dst & ~a->out_mask) == 0u);
 }
 
 // The same classification under sec 5.3.5.2's own condition: the decision it requires is "by
 // definition only possible in the last hop router", which is a route that transmits directly.
 // sec 4.2.3.1 (1)'s "MUST treat as IP broadcasts" carries no such condition, so sec 4.3.2.7's ICMP
 // suppression reads the helper above.
-static idemip_bool ip4_forward_is_directed_bcast(const Ip4ForwardArgs *a, uint32_t dst)
+static embed_bool ip4_forward_is_directed_bcast(const Ip4ForwardArgs *a, uint32_t dst)
 {
     if (!a->routed || !a->direct)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     return ip4_forward_dst_is_bcast(a, dst);
 }
@@ -178,9 +179,9 @@ static idemip_bool ip4_forward_is_directed_bcast(const Ip4ForwardArgs *a, uint32
 // routing protocols", and sec 2.7 repeats it "regardless of the TTL in the IPv4 header". RFC 6890
 // Table 5 records 169.254.0.0/16 as "Forwardable | False". "Irrespective of ... configuration" puts
 // this outside the sec 5.3.7 martian switch, which a set_policy can lower.
-static idemip_bool ip4_forward_is_link_local(uint32_t a)
+static embed_bool ip4_forward_is_link_local(uint32_t a)
 {
-    return (idemip_bool)((a & IP4_FORWARD_LINK_LOCAL_MASK) == IP4_FORWARD_LINK_LOCAL_TAG);
+    return (embed_bool)((a & IP4_FORWARD_LINK_LOCAL_MASK) == IP4_FORWARD_LINK_LOCAL_TAG);
 }
 
 // RFC 1812 sec 4.2.2.11 (d), of { <Network-prefix>, -1 }: "It MUST NOT be used as a source address",
@@ -189,17 +190,17 @@ static idemip_bool ip4_forward_is_link_local(uint32_t a)
 // holds is the one the router understands, the same way sec 5.3.5.2 reads the outgoing one. RFC 3021
 // sec 3.1 rewrites RFC 1122 sec 3.2.1.3 (e) to permit the all-ones host part as a source "when the
 // originator is one of the endpoints of a point-to-point link with a 31-bit mask".
-static idemip_bool ip4_forward_src_is_bcast(const Ip4ForwardArgs *a, uint32_t src)
+static embed_bool ip4_forward_src_is_bcast(const Ip4ForwardArgs *a, uint32_t src)
 {
     if (a->in_mask == 0u || a->in_mask == IP4_FORWARD_LIMITED_BCAST || a->in_mask == IP4_FORWARD_MASK_31)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     if ((src & a->in_mask) != (a->in_addr & a->in_mask))
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
-    return (idemip_bool)((src | a->in_mask) == IP4_FORWARD_LIMITED_BCAST || (src & ~a->in_mask) == 0u);
+    return (embed_bool)((src | a->in_mask) == IP4_FORWARD_LIMITED_BCAST || (src & ~a->in_mask) == 0u);
 }
 
 // --- the options -----------------------------------------------------------
@@ -252,16 +253,16 @@ static uint8_t ip4_forward_source_route(const uint8_t *h)
 
 // RFC 1122 sec 3.2.2 splits RFC 792's types into errors and queries; the errors are Destination
 // Unreachable, Source Quench, Redirect, Time Exceeded and Parameter Problem.
-static idemip_bool ip4_forward_is_icmp_error(uint8_t type)
+static embed_bool ip4_forward_is_icmp_error(uint8_t type)
 {
-    return (idemip_bool)(type == (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE || type == (uint8_t)IDEMIP_ICMP_SOURCE_QUENCH ||
-                         type == (uint8_t)IDEMIP_ICMP_REDIRECT || type == (uint8_t)IDEMIP_ICMP_TIME_EXCEEDED ||
-                         type == (uint8_t)IDEMIP_ICMP_PARAMETER_PROBLEM);
+    return (embed_bool)(type == (uint8_t)IDEMIP_ICMP_DEST_UNREACHABLE || type == (uint8_t)IDEMIP_ICMP_SOURCE_QUENCH ||
+                        type == (uint8_t)IDEMIP_ICMP_REDIRECT || type == (uint8_t)IDEMIP_ICMP_TIME_EXCEEDED ||
+                        type == (uint8_t)IDEMIP_ICMP_PARAMETER_PROBLEM);
 }
 
 // The datagram carries an RFC 792 error message: protocol 1, offset zero so the Type octet is in this
 // fragment, and at least one octet of payload to read it from.
-static idemip_bool ip4_forward_carries_icmp_error(const uint8_t *h)
+static embed_bool ip4_forward_carries_icmp_error(const uint8_t *h)
 {
     // Not measured on the offset: the only caller is ip4_forward_icmp_allowed, which answers sec
     // 4.3.2.7's own clause about "Any fragment of a datagram other then the first fragment" before it
@@ -269,12 +270,12 @@ static idemip_bool ip4_forward_carries_icmp_error(const uint8_t *h)
     // fragment zero carries one.
     if (idemip_ip4_proto(h) != (uint8_t)IDEMIP_IP4_PROTO_ICMP || idemip_ip4_frag_units(h) != 0u) // GCOVR_EXCL_BR_LINE
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     size_t hdr = idemip_ip4_hdr_len(h);
     if ((size_t)idemip_ip4_total_len(h) <= hdr)
     {
-        return IDEMIP_FALSE;
+        return EMBED_FALSE;
     }
     return ip4_forward_is_icmp_error(h[hdr + IDEMIP_ICMP_OFF_TYPE]);
 }
@@ -282,30 +283,30 @@ static idemip_bool ip4_forward_carries_icmp_error(const uint8_t *h)
 // RFC 1812 sec 4.3.2.7, the whole list, whose note reads "THESE RESTRICTIONS TAKE PRECEDENCE OVER ANY
 // REQUIREMENT ELSEWHERE IN THIS DOCUMENT FOR SENDING ICMP ERROR MESSAGES". The header validation
 // bullet is answered by the caller of this helper, which only runs on a header sec 5.2.2 passed.
-static idemip_bool ip4_forward_icmp_allowed(const uint8_t *h, const Ip4ForwardArgs *a)
+static embed_bool ip4_forward_icmp_allowed(const uint8_t *h, const Ip4ForwardArgs *a)
 {
     uint32_t src = idemip_ip4_src(h);
     uint32_t dst = idemip_ip4_dst(h);
     if (a->ll_broadcast || a->ll_multicast)
     {
-        return IDEMIP_FALSE; // "A packet sent as a Link Layer broadcast or multicast"
+        return EMBED_FALSE; // "A packet sent as a Link Layer broadcast or multicast"
     }
     // sec 4.2.3.1 (1): a router "MUST treat as IP broadcasts packets addressed to 255.255.255.255 or
     // { <Network-prefix>, -1 }", which the router understands whenever it holds the prefix, whether or
     // not this is the last hop.
     if (dst == IP4_FORWARD_LIMITED_BCAST || ip4_forward_dst_is_bcast(a, dst) || ip4_forward_is_multicast(dst))
     {
-        return IDEMIP_FALSE; // "A packet destined to an IP broadcast or IP multicast address"
+        return EMBED_FALSE; // "A packet destined to an IP broadcast or IP multicast address"
     }
     if (ip4_forward_src_invalid(src) || ip4_forward_src_is_bcast(a, src))
     {
-        return IDEMIP_FALSE; // "a network prefix of zero or is an invalid source address"
+        return EMBED_FALSE; // "a network prefix of zero or is an invalid source address"
     }
     if (idemip_ip4_frag_units(h) != 0u)
     {
-        return IDEMIP_FALSE; // "Any fragment of a datagram other then the first fragment"
+        return EMBED_FALSE; // "Any fragment of a datagram other then the first fragment"
     }
-    return (idemip_bool)!ip4_forward_carries_icmp_error(h); // "An ICMP error message"
+    return (embed_bool)!ip4_forward_carries_icmp_error(h); // "An ICMP error message"
 }
 
 // --- the decision ----------------------------------------------------------
@@ -323,9 +324,9 @@ static void ip4_forward_reset(Ip4ForwardIo *io)
     io->icmp_type = IDEMIP_IP4_FORWARD_ICMP_NONE;
     io->icmp_code = 0;
     io->icmp_ptr = 0;
-    io->icmp = IDEMIP_FALSE;
-    io->fragment = IDEMIP_FALSE;
-    io->redirect = IDEMIP_FALSE;
+    io->icmp = EMBED_FALSE;
+    io->fragment = EMBED_FALSE;
+    io->redirect = EMBED_FALSE;
 }
 
 // A discard the RFC names, with no message owed.
@@ -338,12 +339,12 @@ static void ip4_forward_drop(Ip4ForwardIo *io, IdemIpIp4ForwardReason reason)
 
 // A discard with a message owed, subject to the sec 4.3.2.7 list.
 static void ip4_forward_drop_icmp(Ip4ForwardIo *io, IdemIpIp4ForwardReason reason, uint8_t type, uint8_t code,
-                                  idemip_bool allowed)
+                                  embed_bool allowed)
 {
     ip4_forward_drop(io, reason);
     if (allowed)
     {
-        io->icmp = IDEMIP_TRUE;
+        io->icmp = EMBED_TRUE;
         io->icmp_type = type;
         io->icmp_code = code;
     }
@@ -360,7 +361,8 @@ void idemip_ip4_forward_clear(uint8_t *work)
     {
         return; // no borrow, so nowhere to report
     }
-    memset(work + IDEMIP_IP4_FORWARD_OFF_CTX, 0, (size_t)IDEMIP_IP4_FORWARD_BORROW - IDEMIP_IP4_FORWARD_OFF_CTX);
+    EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_IP4_FORWARD_OFF_CTX, .val = 0,
+               .bytes = (size_t)IDEMIP_IP4_FORWARD_BORROW - IDEMIP_IP4_FORWARD_OFF_CTX);
     Ip4ForwardCtx *ctx = IP4_FORWARD_CTX(work);
     ctx->ready = IP4_FORWARD_READY;
     ctx->policy = IDEMIP_IP4_FORWARD_P_MASK;
@@ -437,8 +439,8 @@ void idemip_ip4_forward_decide(uint8_t *work)
 
     uint32_t src = idemip_ip4_src(h);
     uint32_t dst = idemip_ip4_dst(h);
-    idemip_bool directed = ip4_forward_is_directed_bcast(a, dst);
-    idemip_bool icmp_ok = ip4_forward_icmp_allowed(h, a);
+    embed_bool directed = ip4_forward_is_directed_bcast(a, dst);
+    embed_bool icmp_ok = ip4_forward_icmp_allowed(h, a);
     uint8_t policy = io->policy;
 
     // sec 5.3.4: "A router MUST NOT forward any packet that the router received as a Link Layer
@@ -566,7 +568,7 @@ void idemip_ip4_forward_decide(uint8_t *work)
             io->mtu = a->out_mtu;
             return;
         }
-        io->fragment = IDEMIP_TRUE;
+        io->fragment = EMBED_TRUE;
     }
 
     // sec 5.2.1.2 step (12), under sec 5.2.7.2's three conditions: "The packet is being forwarded out
@@ -577,7 +579,7 @@ void idemip_ip4_forward_decide(uint8_t *work)
     if (a->out_netif == a->in_netif && a->in_mask != 0u && source_route == 0u && icmp_ok &&
         (src & a->in_mask) == (a->next_hop & a->in_mask))
     {
-        io->redirect = IDEMIP_TRUE;
+        io->redirect = EMBED_TRUE;
         io->redirect_gw = a->next_hop;
     }
 
@@ -588,4 +590,4 @@ void idemip_ip4_forward_decide(uint8_t *work)
     io->status = IDEMIP_OK;
 }
 
-IDEMIP_END_DECLS
+EMBED_END_DECLS

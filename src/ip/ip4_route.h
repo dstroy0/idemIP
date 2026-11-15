@@ -28,7 +28,7 @@
 
 #if IDEMIP_ENABLE_IPV4
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief No row. Every index result reads this when the table held nothing. */
 #define IDEMIP_IP4_ROUTE_INDEX_NONE 0xFFu
@@ -39,11 +39,10 @@ IDEMIP_BEGIN_DECLS
  * IDEMIP_IP4_ROUTE_USED is not RFC 1122's: a row is either carrying one of the RFC's routes or it is
  * not, and clear leaves every row FREE.
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IP4_ROUTE_FREE = 0, ///< no route in this row
-    IDEMIP_IP4_ROUTE_USED,     ///< the row carries a route
-} IdemIpIp4RouteState;
+EMBED_ENUM_BYTE(IdemIpIp4RouteState,
+                IDEMIP_IP4_ROUTE_FREE = 0, ///< no route in this row
+                IDEMIP_IP4_ROUTE_USED,     ///< the row carries a route
+);
 
 /**
  * @brief The flags one row carries.
@@ -172,8 +171,8 @@ typedef struct
     IdemIpStatus status;
     uint8_t index;
     uint8_t netif;
-    idemip_bool direct;
-    idemip_bool tos_blocked;
+    embed_bool direct;
+    embed_bool tos_blocked;
 } Ip4RouteIo;
 
 // ---------------------------------------------------------------------------
@@ -196,8 +195,8 @@ typedef struct
 #define IDEMIP_IP4_ROUTE_IO(w) ((Ip4RouteIo *)(void *)((w) + IDEMIP_IP4_ROUTE_OFF_IO))
 
 // A row index is one octet, so a count at or above the terminator is unaddressable.
-static_assert(IDEMIP_IP4_ROUTES < IDEMIP_IP4_ROUTE_INDEX_NONE,
-              "IDEMIP_IP4_ROUTES must stay below IDEMIP_IP4_ROUTE_INDEX_NONE: a row index is one octet");
+EMBED_STATIC_ASSERT(IDEMIP_IP4_ROUTES < IDEMIP_IP4_ROUTE_INDEX_NONE,
+                    "IDEMIP_IP4_ROUTES must stay below IDEMIP_IP4_ROUTE_INDEX_NONE: a row index is one octet");
 
 /**
  * @brief The routing table.
@@ -267,15 +266,14 @@ void idemip_ip4_route_tick(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Ip4RouteNs Ip4Route IDEMIP_UNUSED = {
-    .clear = idemip_ip4_route_clear,
-    .add = idemip_ip4_route_add,
-    .remove = idemip_ip4_route_remove,
-    .lookup = idemip_ip4_route_lookup,
-    .redirect = idemip_ip4_route_redirect,
-    .set_pmtu = idemip_ip4_route_set_pmtu,
-    .tick = idemip_ip4_route_tick};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE Ip4RouteNs Ip4Route EMBED_UNUSED = {.clear = idemip_ip4_route_clear,
+                                                        .add = idemip_ip4_route_add,
+                                                        .remove = idemip_ip4_route_remove,
+                                                        .lookup = idemip_ip4_route_lookup,
+                                                        .redirect = idemip_ip4_route_redirect,
+                                                        .set_pmtu = idemip_ip4_route_set_pmtu,
+                                                        .tick = idemip_ip4_route_tick};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV4
 

@@ -20,7 +20,7 @@
 
 #if IDEMIP_ENABLE_IPV6
 
-IDEMIP_BEGIN_DECLS
+EMBED_BEGIN_DECLS
 
 /** @brief No datagram, no fragment. Every index in this contract reads this when it names none. */
 #define IDEMIP_IP6_REASS_NONE 0xFFu
@@ -31,15 +31,14 @@ IDEMIP_BEGIN_DECLS
  * The section lists five error conditions. Four name the ICMP message to send and where its Pointer
  * points; the fifth, overlap, says "no ICMP error messages should be sent".
  */
-typedef enum IDEMIP_ENUM_PACKED
-{
-    IDEMIP_IP6_REASS_ERR_NONE = 0,      ///< nothing to answer
-    IDEMIP_IP6_REASS_ERR_TIMEOUT,       ///< "ICMP Time Exceeded -- Fragment Reassembly Time Exceeded"
-    IDEMIP_IP6_REASS_ERR_PAYLOAD_LEN,   ///< Parameter Problem, Code 0, pointing at Payload Length
-    IDEMIP_IP6_REASS_ERR_FRAG_OFFSET,   ///< Parameter Problem, Code 0, pointing at Fragment Offset
-    IDEMIP_IP6_REASS_ERR_HEADER_CHAIN,  ///< Parameter Problem, Code 3, Pointer zero
-    IDEMIP_IP6_REASS_ERR_OVERLAP,       ///< abandoned, and "no ICMP error messages should be sent"
-} IdemIpIp6ReassError;
+EMBED_ENUM_BYTE(IdemIpIp6ReassError,
+                IDEMIP_IP6_REASS_ERR_NONE = 0,     ///< nothing to answer
+                IDEMIP_IP6_REASS_ERR_TIMEOUT,      ///< "ICMP Time Exceeded -- Fragment Reassembly Time Exceeded"
+                IDEMIP_IP6_REASS_ERR_PAYLOAD_LEN,  ///< Parameter Problem, Code 0, pointing at Payload Length
+                IDEMIP_IP6_REASS_ERR_FRAG_OFFSET,  ///< Parameter Problem, Code 0, pointing at Fragment Offset
+                IDEMIP_IP6_REASS_ERR_HEADER_CHAIN, ///< Parameter Problem, Code 3, Pointer zero
+                IDEMIP_IP6_REASS_ERR_OVERLAP,      ///< abandoned, and "no ICMP error messages should be sent"
+);
 
 /**
  * @brief What a fragment arrival takes.
@@ -116,7 +115,7 @@ typedef struct
 
     IdemIpStatus status;
     IdemIpIp6ReassError err;
-    idemip_bool complete;
+    embed_bool complete;
     uint8_t datagram;
     uint8_t frag_count;
     uint8_t next_hdr;
@@ -208,13 +207,12 @@ void idemip_ip6_reass_tick(uint8_t *work);
  * caller loads the pointer and branches through it, because nothing at the call site says what it
  * holds.
  */
-static const Ip6ReassNs Ip6Reass IDEMIP_UNUSED = {
-    .clear = idemip_ip6_reass_clear,
-    .input = idemip_ip6_reass_input,
-    .frag_at = idemip_ip6_reass_frag_at,
-    .drop = idemip_ip6_reass_drop,
-    .tick = idemip_ip6_reass_tick};
-IDEMIP_END_DECLS
+EMBED_TABLE_STORAGE Ip6ReassNs Ip6Reass EMBED_UNUSED = {.clear = idemip_ip6_reass_clear,
+                                                        .input = idemip_ip6_reass_input,
+                                                        .frag_at = idemip_ip6_reass_frag_at,
+                                                        .drop = idemip_ip6_reass_drop,
+                                                        .tick = idemip_ip6_reass_tick};
+EMBED_END_DECLS
 
 #endif // IDEMIP_ENABLE_IPV6
 
