@@ -62,19 +62,24 @@ add_child_option(IDEMIP_ENABLE_UDP "Build the UDP capability" ON
     "IDEMIP_ENABLE_UDP needs IDEMIP_ENABLE_IPV4 or IDEMIP_ENABLE_IPV6: the checksum covers a pseudo-header"
     IDEMIP_ENABLE_IPV4 IDEMIP_ENABLE_IPV6)
 
-# Determinism in the time domain: each entry runs to a pad it tunes rather than to whatever its
-# inputs cost. Not a capability - it selects no translation unit and parses no wire field - so it is
-# not in the list above, and it is off unless a build asks for it. now(), stamp() and epoch() are
-# there either way; this option is the fourth reading, determinism_pad(), and the per-entry word it
-# needs. See src/clock.h.
+# Determinism in the time domain: a padded call gives its result when its pad elapses, and the
+# input does not set when. It is not a capability, because it parses no wire field. So it is not in
+# the list above, and it is off unless a build asks for it. See src/time_determinism.h.
 option(IDEMIP_ENABLE_TIME_DETERMINISM "Enable time determinism" OFF)
 
-# What a pad is measured in. COARSE is milliseconds and costs no reading of its own; FINE is
-# microseconds, taken as a second reading beside the epoch; LITERAL is microseconds with the pad
-# pinned to a measured ceiling rather than tuned. FINE is the default because every entry in this
-# tree measures well under a millisecond, so COARSE would pad each one to many times its own cost.
-set(IDEMIP_TIME_DETERMINISM_GRADE "FINE" CACHE STRING "What a determinism pad is measured in")
+# The unit of the window in idemip_config.h, and whether a pad walks. COARSE states the window in
+# milliseconds, and FINE and LITERAL state it in microseconds. COARSE and FINE walk a pad up on an
+# overrun. LITERAL keeps the pad at its default. Every grade counts the pad in clock ticks.
+set(IDEMIP_TIME_DETERMINISM_GRADE "FINE" CACHE STRING "The unit of the pad window, and whether a pad walks")
 set_property(CACHE IDEMIP_TIME_DETERMINISM_GRADE PROPERTY STRINGS COARSE FINE LITERAL)
+
+# The clock that a pad counts, which embed_clock.h selects. Each one that is set goes to every
+# target as the embed_clock.h macro of the same field. embed_clock.h gives a build warning for each
+# one that a build with time determinism leaves unset, and names the value that it took.
+set(IDEMIP_CLOCK_HZ "" CACHE STRING "EMBED_CLOCK_HZ: ticks of the pad clock in one second")
+set(IDEMIP_CLOCK_SOURCE "" CACHE STRING "EMBED_CLOCK_SOURCE: CALLER or OWN")
+set_property(CACHE IDEMIP_CLOCK_SOURCE PROPERTY STRINGS "" CALLER OWN)
+set(IDEMIP_CLOCK_CORE "" CACHE STRING "EMBED_CLOCK_CORE: the core of the pinned counter, with OWN")
 
 # The benches, which are not tests: they measure and report and assert nothing, so ctest does not
 # run them and a normal build does not carry them. They link the library rather than including its
@@ -215,15 +220,10 @@ list(APPEND IDEMIP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/ip/pseudo.c")
 feature_source_swap(IDEMIP_SOURCES IDEMIP_ENABLE_IPV4 src/ip/pseudo_v4.c src/ip/pseudo_v4_off.c)
 feature_source_swap(IDEMIP_SOURCES IDEMIP_ENABLE_IPV6 src/ip/pseudo_v6.c src/ip/pseudo_v6_off.c)
 
-# determinism_pad(), the fourth reading. A feature, so CMake decides whether it is built at all -
-# and its grade decides which translation unit implements it: milliseconds off the epoch at COARSE,
-# microseconds off a reading of its own at FINE, and pinned to a measured ceiling at LITERAL. Each
-# file carries the whole table, so no entry comes and goes with the grade and no body branches on
-# it. IDEMIP_TIME_DETERMINISM_GRADE is checked against the three names below.
+# The padded call. A feature, so CMake decides whether the library has it. The grade is a macro of
+# the one translation unit. IDEMIP_TIME_DETERMINISM_GRADE is checked against the three names below.
 if(IDEMIP_ENABLE_TIME_DETERMINISM)
-    string(TOLOWER "${IDEMIP_TIME_DETERMINISM_GRADE}" IDEMIP_GRADE_TU)
-    list(APPEND IDEMIP_SOURCES
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/time_determinism_${IDEMIP_GRADE_TU}.c")
+    list(APPEND IDEMIP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/time_determinism.c")
 endif()
 
 # --- the library -------------------------------------------------------------
@@ -273,8 +273,8 @@ else()
     target_compile_definitions(idemip PUBLIC IDEMIP_ENABLE_TIME_DETERMINISM=0)
 endif()
 
-# COARSE is 1, FINE is 2, LITERAL is 3, and clock.h names them. The value is passed as the number
-# rather than the word so the header needs no string comparison in the preprocessor.
+# COARSE is 1, FINE is 2, LITERAL is 3, and time_determinism.h names them. The value is the number
+# and not the word, so the header needs no string comparison in the preprocessor.
 set(IDEMIP_TIME_DETERMINISM_GRADES COARSE FINE LITERAL)
 if(NOT IDEMIP_TIME_DETERMINISM_GRADE IN_LIST IDEMIP_TIME_DETERMINISM_GRADES)
     message(FATAL_ERROR
@@ -284,6 +284,19 @@ endif()
 list(FIND IDEMIP_TIME_DETERMINISM_GRADES "${IDEMIP_TIME_DETERMINISM_GRADE}" IDEMIP_GRADE_INDEX)
 math(EXPR IDEMIP_GRADE_VALUE "${IDEMIP_GRADE_INDEX} + 1")
 target_compile_definitions(idemip PUBLIC IDEMIP_TIME_DETERMINISM_GRADE=${IDEMIP_GRADE_VALUE})
+
+if(NOT IDEMIP_CLOCK_HZ STREQUAL "")
+    target_compile_definitions(idemip PUBLIC EMBED_CLOCK_HZ=${IDEMIP_CLOCK_HZ}u)
+endif()
+if(NOT IDEMIP_CLOCK_SOURCE STREQUAL "")
+    if(NOT IDEMIP_CLOCK_SOURCE MATCHES "^(CALLER|OWN)$")
+        message(FATAL_ERROR "IDEMIP_CLOCK_SOURCE is '${IDEMIP_CLOCK_SOURCE}': it must be CALLER or OWN")
+    endif()
+    target_compile_definitions(idemip PUBLIC EMBED_CLOCK_SOURCE=EMBED_CLOCK_${IDEMIP_CLOCK_SOURCE})
+endif()
+if(NOT IDEMIP_CLOCK_CORE STREQUAL "")
+    target_compile_definitions(idemip PUBLIC EMBED_CLOCK_CORE=${IDEMIP_CLOCK_CORE}u)
+endif()
 
 list(LENGTH IDEMIP_SOURCES IDEMIP_SOURCE_COUNT)
 message(STATUS "idemIP: ${IDEMIP_SOURCE_COUNT} translation units")
@@ -315,7 +328,8 @@ endif()
 # --- the program around idemIP on this host -----------------------------------
 # The sizes tool, a suite, a bench and the fuzz harness are each a program on this host. A program
 # defines the three hooks locus_carcerum's turnstiles wait, wake and read the clock through:
-# embed_word_wait, embed_word_wake and embed_clock_ns. idemip_host_hooks holds the host definitions
+# embed_word_wait, embed_word_wake and embed_clock_ns. It defines embed_thread_place too where the
+# build sets MMGR_CARCER_REGIONS above 0. idemip_host_hooks holds the host definitions
 # MMgr's own suites link, from include/MMgr/test/support/host_wait.c, compiled at idemIP's word. That
 # file sets the GNU feature set itself, ahead of its first include.
 #

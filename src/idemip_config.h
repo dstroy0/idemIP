@@ -304,44 +304,52 @@ EMBED_STATIC_ASSERT((MMGR_ALIGN_BYTES % IDEMIP_CACHE_LINE_BYTES) == 0u,
                         WHAT " runs past what holds it - raise it in idemip_config.h")
 
 // ---------------------------------------------------------------------------
-// The determinism pad's window (clock.h)
+// The window of a determinism pad (time_determinism.h)
 // ---------------------------------------------------------------------------
-// The range a function's pad is tuned inside, in the pad's own unit: microseconds at the FINE and
-// LITERAL grades, milliseconds at COARSE. Every value below was measured, not chosen - see
-// test/bench/results and tools/dev_env/padwindow.py, which regenerates this block from a run.
+// The range of a pad, in microseconds at the FINE and LITERAL grades and in milliseconds at COARSE.
+// time_determinism.c scales each value to clock ticks with EMBED_CLOCK_HZ. A bench run measures
+// the values: test/bench/results holds the runs, and tools/dev_env/padwindow.py writes this block
+// from one.
 //
-// On the host in that archive every entry in this tree finishes inside one microsecond, the widest
-// being idemip_cksum over 1500 octets at 0.10 us and ip4_frag.next at 0.08. So the ceiling is one
-// tick and the floor is one tick and there is nothing to tune, which is the honest answer for that
-// host and is also why COARSE is the wrong grade here: a millisecond pad would be about thirty
-// thousand times the work.
-//
-// A slower target moves all of it. Regenerate rather than scale by hand: the entries do not slow
-// down by the same factor, because the ones that walk a structure lose more to a smaller cache than
-// the ones that fold a fixed-width field.
+// On the host of that archive, each entry in this tree ends inside one microsecond. The widest is
+// idemip_cksum over 1500 octets at 0.10 us. A slower target moves each value. Write the block again
+// from a run on that target. Do not scale it: an entry that walks a structure loses more to a
+// smaller cache than an entry that folds a field of fixed width.
 
-/** @brief The floor a pad never steps below. */
+/** @brief The floor of the window. The default pad is not below it. */
 #ifndef IDEMIP_DETERMINISM_PAD_MIN
 #define IDEMIP_DETERMINISM_PAD_MIN 1u
 #endif
 
 /**
- * @brief The ceiling a pad never steps above.
+ * @brief The ceiling of the window. A pad never walks above it.
  *
- * Eight times the widest entry measured, which is the headroom padwindow.py leaves: a pad that
- * cannot reach the cost it is meant to cover would sit at this bound reporting OVER for ever.
+ * Eight times the widest entry measured, which is the headroom that padwindow.py leaves. A body
+ * that costs more than this overruns its pad on each call, and each such release shows its cost.
  */
 #ifndef IDEMIP_DETERMINISM_PAD_MAX
 #define IDEMIP_DETERMINISM_PAD_MAX 8u
 #endif
 
 /**
- * @brief What a function's pad starts at before it has tuned itself.
+ * @brief The pad of a slot after clear.
  *
- * At the LITERAL grade nothing tunes, so this IS the pad unless an entry overrides it.
+ * At the LITERAL grade the pad stays here. At COARSE and FINE it walks up from here on each
+ * overrun, and never down.
  */
 #ifndef IDEMIP_DETERMINISM_PAD_DEFAULT
 #define IDEMIP_DETERMINISM_PAD_DEFAULT 1u
+#endif
+
+/**
+ * @brief The slots of a padded call site: one for each thread place, modulo this count.
+ *
+ * A power of two. Two, for the two cores of an ESP32. Two threads whose places meet modulo this
+ * count share one slot, and so one held result. Such threads must not use one call site at the same
+ * time.
+ */
+#ifndef IDEMIP_PAD_THREADS
+#define IDEMIP_PAD_THREADS 2u
 #endif
 
 /** @brief lwIP IP_DEFAULT_TTL. */

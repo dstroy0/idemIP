@@ -116,6 +116,9 @@ static const uint8_t g_bcast_mac[IDEMIP_MAC_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF
 static const uint8_t g_ip6_any[IDEMIP_IP6_ADDR_LEN] = {0};
 static const uint8_t g_local_ip6[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
 static const uint8_t g_remote_ip6[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x09};
+// The same remote at link-local scope. RFC 2710 sec 5 makes an MLD Query or Report valid only from
+// a link-local source.
+static const uint8_t g_remote_ll6[IDEMIP_IP6_ADDR_LEN] = {0xFE, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x09};
 static const uint8_t g_other_ip6[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x77};
 static const uint8_t g_lo6[IDEMIP_IP6_ADDR_LEN] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
 #endif
@@ -2977,10 +2980,10 @@ void test_a_router_advertisement_carrying_a_prefix_option_reaches_the_module(voi
 void test_an_mld_query_reaches_the_group_module(void)
 {
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
-    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_MLD_QUERY, g_remote_ip6, g_local_ip6,
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_MLD_QUERY, g_remote_ll6, g_local_ip6,
                                  IDEMIP_ICMP6_MLD_MSG_LEN);
     idemip_wr16(g_frame + msg + IDEMIP_ICMP6_OFF_MLD_MAX_RESP, 10000u);
-    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_MLD_MSG_LEN, g_remote_ip6, g_local_ip6);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_MLD_MSG_LEN, g_remote_ll6, g_local_ip6);
     input(work_a, msg + IDEMIP_ICMP6_MLD_MSG_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
 
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
@@ -2989,6 +2992,38 @@ void test_an_mld_query_reaches_the_group_module(void)
                                   "an MLD message belongs to the group table, as an IGMP one does");
     TEST_ASSERT_EQUAL_UINT16(10000u,
                              idemip_icmp6_mld_max_resp(g_frame + IDEMIP_DISPATCH_IO(work_a)->payload_off));
+}
+
+// RFC 2710 sec 5: a Query or a Report is valid only from a link-local source. RFC 3590 sec 4: a Query
+// from the unspecified address "MUST silently discard the message". A global source and :: are both
+// dropped before the group module, and a Done, which sec 5 gives no such rule, is not.
+void test_an_mld_query_or_report_from_a_source_that_is_not_link_local_is_dropped(void)
+{
+    static const uint8_t unspecified[IDEMIP_IP6_ADDR_LEN] = {0};
+    const uint8_t *const sources[2] = {g_remote_ip6, unspecified};
+    const uint8_t types[2] = {(uint8_t)IDEMIP_ICMP6_MLD_QUERY, (uint8_t)IDEMIP_ICMP6_MLD_REPORT};
+
+    for (size_t s = 0u; s < 2u; s++)
+    {
+        for (size_t t = 0u; t < 2u; t++)
+        {
+            size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+            size_t msg = build_icmp6_msg(g_frame, off, types[t], sources[s], g_local_ip6, IDEMIP_ICMP6_MLD_MSG_LEN);
+            seal_icmp6(g_frame, msg, IDEMIP_ICMP6_MLD_MSG_LEN, sources[s], g_local_ip6);
+            input(work_a, msg + IDEMIP_ICMP6_MLD_MSG_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+            TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_IP_SOURCE, IDEMIP_DISPATCH_IO(work_a)->drop,
+                                          "an MLD message from a source that is not link-local was taken");
+            TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_DELIVER) == 0u);
+        }
+    }
+
+    size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_MLD_DONE, g_remote_ip6, g_local_ip6,
+                                 IDEMIP_ICMP6_MLD_MSG_LEN);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_MLD_MSG_LEN, g_remote_ip6, g_local_ip6);
+    input(work_a, msg + IDEMIP_ICMP6_MLD_MSG_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);
 }
 
 // RFC 2466 sec 4 gives every ICMPv6 type this library carries a counter of its own. Seven of them
@@ -3028,14 +3063,15 @@ void test_every_neighbor_discovery_and_listener_type_takes_its_own_rfc_2466_coun
     for (size_t i = 0u; i < sizeof table / sizeof table[0]; i++)
     {
         const uint8_t *dst = (table[i].type == (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT) ? solicited : g_local_ip6;
+        const uint8_t *src = idemip_icmp6_is_mld(table[i].type) ? g_remote_ll6 : g_remote_ip6;
         size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
-        size_t msg = build_icmp6_msg(g_frame, off, table[i].type, g_remote_ip6, dst, table[i].len);
+        size_t msg = build_icmp6_msg(g_frame, off, table[i].type, src, dst, table[i].len);
         if (table[i].type == (uint8_t)IDEMIP_ICMP6_NEIGHBOR_SOLICIT)
         {
             EMBED_CALL(proxim.read, ProximusCfg, .dst = g_frame + msg + IDEMIP_ICMP6_OFF_NS_TARGET, .at = g_local_ip6,
                        .size = IDEMIP_IP6_ADDR_LEN);
         }
-        seal_icmp6(g_frame, msg, table[i].len, g_remote_ip6, dst);
+        seal_icmp6(g_frame, msg, table[i].len, src, dst);
         input(work_a, msg + table[i].len, 0u, IDEMIP_DISPATCH_DESC_NONE);
 
         TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop,
@@ -3166,8 +3202,8 @@ void test_a_destination_unreachable_at_another_code_is_not_an_admin_prohibition(
                                      "a Code 0 is not an administrative prohibition");
 }
 
-// RFC 4443 sec 2.3: the checksum "MUST be verified" before the message is processed. icmp6_in keeps
-// this for the types it answers, and these do not go through it.
+// RFC 4861 sec 7.1.1 puts "ICMP Checksum is valid." on the list of checks that a received Neighbor
+// Solicitation must pass. icmp6_in keeps this for the types it answers, and these do not go through it.
 void test_a_neighbor_solicitation_with_a_bad_checksum_is_discarded(void)
 {
     uint8_t solicited[IDEMIP_IP6_ADDR_LEN];
@@ -3352,9 +3388,9 @@ void test_the_interface_local_all_nodes_address_identifies_this_host(void)
     static const uint8_t all_nodes[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01};
 
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
-    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_MLD_QUERY, g_remote_ip6, all_nodes,
+    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_MLD_QUERY, g_remote_ll6, all_nodes,
                                  IDEMIP_ICMP6_MLD_MSG_LEN);
-    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_MLD_MSG_LEN, g_remote_ip6, all_nodes);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_MLD_MSG_LEN, g_remote_ll6, all_nodes);
     input(work_a, msg + IDEMIP_ICMP6_MLD_MSG_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
 
     TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_FORWARD) == 0u);
@@ -3420,9 +3456,9 @@ void test_a_multicast_group_this_node_joined_is_local(void)
                                   "RFC 2710 sec 3: a join starts the report delay timer");
 
     size_t off = build_eth(g_frame, g_local_mac, (uint16_t)IDEMIP_ETHERTYPE_IPV6);
-    size_t msg = build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_MLD_QUERY, g_remote_ip6, joined,
-                                 IDEMIP_ICMP6_MLD_MSG_LEN);
-    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_MLD_MSG_LEN, g_remote_ip6, joined);
+    size_t msg =
+        build_icmp6_msg(g_frame, off, (uint8_t)IDEMIP_ICMP6_MLD_QUERY, g_remote_ll6, joined, IDEMIP_ICMP6_MLD_MSG_LEN);
+    seal_icmp6(g_frame, msg, IDEMIP_ICMP6_MLD_MSG_LEN, g_remote_ll6, joined);
     input(work_a, msg + IDEMIP_ICMP6_MLD_MSG_LEN, 0u, IDEMIP_DISPATCH_DESC_NONE);
 
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_NONE, IDEMIP_DISPATCH_IO(work_a)->drop);

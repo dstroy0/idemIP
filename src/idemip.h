@@ -29,8 +29,9 @@
  * pool, which MMGR_ALIGN_BYTES puts on a cache line, and the program passes the pool's storage array
  * to Dma.bind. Dma.bind refuses a base that does not start on a cache line.
  *
- * A program also defines the three host hooks MMgr's turnstiles call: embed_word_wait,
- * embed_word_wake and embed_clock_ns.
+ * A program also defines the host hooks MMgr calls. The turnstiles call embed_word_wait,
+ * embed_word_wake and embed_clock_ns. The temporary tier calls embed_thread_place where the build
+ * sets MMGR_CARCER_REGIONS above 0.
  *
  * THE ORDER
  * ---------
@@ -201,7 +202,7 @@
 #include "src/checksum.h"         // RFC 1071
 #include "src/common.h"           // the sizes and widths each standard fixes
 #include "src/endian.h"           // the wire-integer accessors
-#include "src/time_determinism.h" // determinism_pad(), the reading a build chooses
+#include "src/time_determinism.h" // the padded call, which a build chooses
 
 // --- link ----------------------------------------------------------------------------------------
 #include "src/ethernet/ethernet.h" // RFC 894 framing

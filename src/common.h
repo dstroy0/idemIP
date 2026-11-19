@@ -27,7 +27,7 @@ EMBED_BEGIN_DECLS
 
 // Time is its own header, and is included from here rather than beside endian.h because its epoch
 // is asserted against the word declared just above. clock.h tells the readings apart: now(), stamp()
-// and epoch(); the fourth, determinism_pad(), is time_determinism.h.
+// and epoch(). The padded call is time_determinism.h.
 #include "src/clock.h"
 
 /**

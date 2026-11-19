@@ -17,6 +17,7 @@
 #include "src/common_defines.h"
 #include "src/ethernet/ethernet_defines.h"
 #include "src/ip/ipv6_defines.h"
+#include "src/icmp/icmpv6_defines.h" // the Redirect field map
 
 EMBED_BEGIN_DECLS
 
@@ -950,6 +951,74 @@ void idemip_nd6_dest_set(uint8_t *work)
     io->pmtu = d->pmtu;
     io->neighbor = d->neighbor;
     io->status = IDEMIP_OK;
+}
+
+// RFC 4861 sec 8.1: "A host MUST silently discard any received Redirect message that does not satisfy
+// all of the following validity checks". Dispatch holds the checks on the Hop Limit, the checksum,
+// the Code, the length and the option lengths. This entry holds the four that need the caches.
+//
+// The first-hop router of a destination is the next hop that its Destination Cache entry holds. The
+// caller installs that entry when it routes a packet (sec 5.2), and a router sends a Redirect only
+// for a packet that went through it. So a Redirect for a destination with no entry names no current
+// first-hop router, and it fails the check.
+//
+// On OK the entry sends the destination to the Target, as sec 8.3 says. Target and Destination the
+// same make the Target on-link, and a different Target is a router. The caller applies a Target
+// Link-Layer Address option with neighbor_set, at the IsRouter value reported here.
+void idemip_nd6_redirect(uint8_t *work)
+{
+    if (!work)
+    {
+        return;
+    }
+    Nd6Io *io = ND6_IO(work);
+    Nd6Ctx *ctx = ND6_CTX(work);
+    io->status = IDEMIP_ERR;
+    io->destination = IDEMIP_ND6_NONE;
+    io->next_hop = NULL;
+    io->is_router = EMBED_FALSE;
+    io->on_link = EMBED_FALSE;
+    const Nd6RedirectArgs *a = &io->redirect_args;
+    if (!ctx->ready || a->src == NULL || a->msg == NULL || a->len < (size_t)IDEMIP_ICMP6_RD_HDR_LEN)
+    {
+        return;
+    }
+    ctx->now_ms = io->tick_args.now_ms;
+    const uint8_t *target = a->msg + IDEMIP_ICMP6_OFF_RD_TARGET;
+    const uint8_t *dst = a->msg + IDEMIP_ICMP6_OFF_RD_DEST;
+    const embed_bool to_dst = nd6_addr_eq(target, dst);
+    // "IP Source Address is a link-local address", "The ICMP Destination Address field in the
+    // redirect message does not contain a multicast address", and "The ICMP Target Address is either
+    // a link-local address (when redirected to a router) or the same as the ICMP Destination Address
+    // (when redirected to the on-link destination)".
+    if (!nd6_is_link_local(a->src) || nd6_is_multicast(dst) || (!nd6_is_link_local(target) && !to_dst))
+    {
+        return;
+    }
+    // "The IP source address of the Redirect is the same as the current first-hop router for the
+    // specified ICMP Destination Address."
+    for (uint8_t i = 0u; i < ND6_DESTINATIONS; i++)
+    {
+        Nd6Destination *d = ND6_DESTINATION_AT(work, i);
+        if (!d->used || !nd6_addr_eq(d->dst, dst))
+        {
+            continue;
+        }
+        if (!nd6_addr_eq(d->next_hop, a->src))
+        {
+            return;
+        }
+        EMBED_CALL(proxim.read, ProximusCfg, .dst = d->next_hop, .at = target, .size = IDEMIP_IP6_ADDR_LEN);
+        d->neighbor = IDEMIP_ND6_NONE; // the next hop changed, so the old neighbor is not this one
+        io->destination = i;
+        io->next_hop = d->next_hop;
+        io->pmtu = d->pmtu;
+        io->neighbor = d->neighbor;
+        io->on_link = to_dst;
+        io->is_router = (embed_bool)!to_dst;
+        io->status = IDEMIP_OK;
+        return;
+    }
 }
 
 void idemip_nd6_prefix_set(uint8_t *work)

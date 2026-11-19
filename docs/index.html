@@ -329,8 +329,9 @@ dl.io dd { margin:2px 0 0; color:var(--muted); font-size:.9rem; }
         <div class="track"><div class="fill" style="width:12.5%"></div></div>
         <div class="cap"><span>PAD_MIN 1</span><span>PAD_MAX 8</span></div>
       </div>
-      <p>With <code>IDEMIP_ENABLE_TIME_DETERMINISM</code>, each entry runs to a pad it tunes rather
-      than to whatever its inputs cost. The window was measured, not chosen.</p>
+      <p>With <code>IDEMIP_ENABLE_TIME_DETERMINISM</code>, a padded call gives its result when its
+      pad elapses, and the input does not set when. Lean proves the window. The pad window was
+      measured, not chosen.</p>
     </div>
     <div class="claim">
       <h3>And it is checked</h3>
@@ -344,10 +345,10 @@ dl.io dd { margin:2px 0 0; color:var(--muted); font-size:.9rem; }
 <!-- docsgen:stats -->
 <div class="stat"><b>31,624</b><span>bytes of .bss</span><em>IDEMIP_TOTAL_BORROW, at the counts in idemip_config.h</em></div>
 <div class="stat"><b>0</b><span>heap allocations</span><em>there is no <code>&lt;stdlib.h&gt;</code> anywhere in <code>src/</code></em></div>
-<div class="stat"><b>64</b><span>translation units</span><em>74 headers, 54,776 lines</em></div>
-<div class="stat"><b>71,048</b><span>lines of test</span><em>against 54,776 lines of library</em></div>
-<div class="stat"><b>56</b><span>CTest suites</span><em>3,085 cases</em></div>
-<div class="stat"><b>111</b><span>RFCs vendored</span><em>the text every rule is written against</em></div>
+<div class="stat"><b>62</b><span>translation units</span><em>74 headers, 54,519 lines</em></div>
+<div class="stat"><b>71,226</b><span>lines of test</span><em>against 54,519 lines of library</em></div>
+<div class="stat"><b>56</b><span>CTest suites</span><em>3,088 cases</em></div>
+<div class="stat"><b>112</b><span>RFCs vendored</span><em>the text every rule is written against</em></div>
 <!-- /docsgen:stats -->
   </div>
 </section>
@@ -547,33 +548,44 @@ embed_bool  (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <!-- ===================== time ===================== -->
 <section id="time">
   <p class="eyebrow">Determinism in time</p>
-  <h2>Each entry runs to a pad, not to its inputs</h2>
+  <h2>A padded call gives its result at its pad, not at its cost</h2>
   <p class="lede">Space determinism is the borrow. Time determinism is the other half, and it is a
   build option: <code>IDEMIP_ENABLE_TIME_DETERMINISM</code>, off unless a build asks for it.</p>
 
-  <p><code>src/clock.h</code> exposes four readings, and only the fourth costs anything:</p>
+  <p><code>src/clock.h</code> gives three readings, in every build:</p>
   <dl class="io">
     <dt>now()</dt><dd>A <code>uint32_t</code> the caller reads, which wraps at 49.7 days.</dd>
     <dt>stamp()</dt><dd>The reading the current pass entered on, so every deadline in one tick is compared against the same instant.</dd>
     <dt>epoch()</dt><dd><code>IdemIpMs</code>, 64-bit monotonic milliseconds. This is time.</dd>
-    <dt>determinism_pad()</dt><dd>The tuned pad, present only under the option above.</dd>
   </dl>
+
+  <p><code>src/time_determinism.h</code> gives the padded call. The program pads a call with
+  <code>time_determinism.run</code> and a borrow of <code>IDEMIP_PAD_BORROW</code> octets, one slot
+  for each thread place. The first call runs the entry and holds its result while the pad has not
+  elapsed, and answers <code>IDEMIP_BUSY</code>. The calls after it run no entry. The first one at
+  or past the pad gets the result. The pad counts ticks of the clock that
+  <code>embed_clock.h</code> selects, and the program reads that clock in
+  <code>idemip_clock_ticks</code>.</p>
 
   <div class="wrap">
     <table>
-      <thead><tr><th>grade</th><th>unit</th><th>cost</th><th>tunes</th></tr></thead>
+      <thead><tr><th>grade</th><th>window unit</th><th>pad</th></tr></thead>
       <tbody>
-        <tr><td><code>COARSE</code></td><td>milliseconds</td><td>no reading of its own</td><td>yes</td></tr>
-        <tr><td><code>FINE</code> <span class="cc">default</span></td><td>microseconds</td><td>a second reading beside the epoch</td><td>yes</td></tr>
-        <tr><td><code>LITERAL</code></td><td>microseconds</td><td>a second reading beside the epoch</td><td>no &mdash; pinned to a measured ceiling</td></tr>
+        <tr><td><code>COARSE</code></td><td>milliseconds</td><td>walks up on an overrun, never down</td></tr>
+        <tr><td><code>FINE</code> <span class="cc">default</span></td><td>microseconds</td><td>walks up on an overrun, never down</td></tr>
+        <tr><td><code>LITERAL</code></td><td>microseconds</td><td>stays at the default; an overrun is a fault</td></tr>
       </tbody>
     </table>
   </div>
 
-  <p>FINE is the default because every entry in this tree measures well under a millisecond, so
-  COARSE would pad each one to many times its own cost. On the host in the archive the widest entry
-  is <code>idemip_cksum</code> over 1500 octets at 0.10&nbsp;&micro;s, and <code>ip4_frag.next</code>
-  at 0.08. Every value in the pad window was measured rather than chosen, and
+  <p><code>theory/time_determinism</code> proves it in Lean. A release never comes before the pad,
+  across a wrap of the clock too. With the body inside the pad, the release comes less than one
+  gap of the caller's calls after the pad, whatever the input. A held slot reads neither the body
+  nor its input. The pad never walks down, so the overruns over the life of a slot are at most the
+  ceiling less the first pad. <code>bv_decide</code> checks the masks of the C bit for bit.</p>
+
+  <p>On the host in the archive the widest entry is <code>idemip_cksum</code> over 1500 octets at
+  0.10&nbsp;&micro;s. Every value in the pad window was measured rather than chosen, and
   <code>tools/dev_env/padwindow.py</code> regenerates the block from a bench run &mdash; a slower
   target moves all of it, and the entries do not slow down by the same factor.</p>
 
@@ -793,7 +805,7 @@ embed_bool  (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <article class="card plain"><header><b>ipv6.h</b><span class="hdr">src/ip/ipv6.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc8200.txt">RFC 8200</a></footer></article>
 <article class="card"><header><b>Mld6</b><span class="hdr">src/mld/mld6.h</span></header><div class="entries"><code>clear</code><code>join</code><code>leave</code><code>find</code><code>query_in</code><code>report_in</code><code>tick</code></div><div class="borrow"><code>IDEMIP_MLD6_BORROW</code><span>224 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc2710.txt">RFC 2710</a></footer></article>
 <article class="card"><header><b>Dad</b><span class="hdr">src/nd/dad.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>start</code><code>stop</code><code>find</code><code>ns_in</code><code>na_in</code><code>tick</code></div><div class="borrow"><code>IDEMIP_DAD_BORROW</code><span>400 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc4862.txt">RFC 4862</a></footer></article>
-<article class="card"><header><b>Nd6</b><span class="hdr">src/nd/nd6.h</span></header><div class="entries"><code>clear</code><code>neighbor_find</code><code>neighbor_set</code><code>neighbor_confirm</code><code>neighbor_used</code><code>neighbor_remove</code><code>dest_find</code><code>dest_set</code><code>prefix_set</code><code>prefix_on_link</code><code>router_set</code><code>router_select</code><code>pending_push</code><code>pending_pop</code><code>params_set</code><code>tick</code></div><div class="borrow"><code>IDEMIP_ND6_BORROW</code><span>1,600 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc4861.txt">RFC 4861</a></footer></article>
+<article class="card"><header><b>Nd6</b><span class="hdr">src/nd/nd6.h</span></header><div class="entries"><code>clear</code><code>neighbor_find</code><code>neighbor_set</code><code>neighbor_confirm</code><code>neighbor_used</code><code>neighbor_remove</code><code>dest_find</code><code>dest_set</code><code>redirect</code><code>prefix_set</code><code>prefix_on_link</code><code>router_set</code><code>router_select</code><code>pending_push</code><code>pending_pop</code><code>params_set</code><code>tick</code></div><div class="borrow"><code>IDEMIP_ND6_BORROW</code><span>1,600 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc4861.txt">RFC 4861</a></footer></article>
 <article class="card"><header><b>Rdnss</b><span class="hdr">src/nd/rdnss.h</span></header><div class="entries"><code>clear</code><code>option_in</code><code>get</code><code>find</code><code>remove</code><code>tick</code></div><div class="borrow"><code>IDEMIP_RDNSS_BORROW</code><span>208 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc8106.txt">RFC 8106</a></footer></article>
 <article class="card"><header><b>Slaac</b><span class="hdr">src/nd/slaac.h</span></header><div class="entries"><code>clear</code><code>link_local</code><code>prefix_in</code><code>find</code><code>get</code><code>remove</code><code>tick</code></div><div class="borrow"><code>IDEMIP_SLAAC_BORROW</code><span>400 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc4862.txt">RFC 4862</a></footer></article>
 <article class="card"><header><b>Pmtu6</b><span class="hdr">src/pmtu/pmtu6.h</span></header><div class="entries"><code>clear</code><code>too_big</code><code>tick</code><code>forget</code></div><div class="borrow"><code>IDEMIP_PMTU6_BORROW</code><span>416 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc8201.txt">RFC 8201</a></footer></article>
@@ -886,6 +898,7 @@ embed_bool  (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <a class="lex" href="learn/RFC/rfc3390.txt" title="Increasing TCP&#x27;s Initial Window"><b>3390</b><span>Increasing TCP&#x27;s Initial Window</span></a>
 <a class="lex" href="learn/RFC/rfc3465.txt" title="TCP Congestion Control with Appropriate Byte Counting (ABC)"><b>3465</b><span>TCP Congestion Control with Appropriate Byte Counting (ABC)</span></a>
 <a class="lex hot" href="learn/RFC/rfc3542.txt" title="Advanced Sockets Application Program Interface (API) for IPv6"><b>3542</b><span>Advanced Sockets Application Program Interface (API) for IPv6</span></a>
+<a class="lex" href="learn/RFC/rfc3590.txt" title="Source Address Selection for the Multicast Listener Discovery (MLD) Protocol"><b>3590</b><span>Source Address Selection for the Multicast Listener Discovery (MLD) Protocol</span></a>
 <a class="lex" href="learn/RFC/rfc3596.txt" title="DNS Extensions to Support IP Version 6"><b>3596</b><span>DNS Extensions to Support IP Version 6</span></a>
 <a class="lex" href="learn/RFC/rfc3646.txt" title="DNS Configuration options for Dynamic Host Configuration Protocol for IPv6 (DHCPv6)"><b>3646</b><span>DNS Configuration options for Dynamic Host Configuration Protocol for IPv6 (DHCPv6)</span></a>
 <a class="lex" href="learn/RFC/rfc3692.txt" title="Assigning Experimental and Testing Numbers Considered Useful"><b>3692</b><span>Assigning Experimental and Testing Numbers Considered Useful</span></a>
@@ -1003,9 +1016,9 @@ embed_bool  (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <tr><td><code>test/unit/arp/test_arp_table</code></td><td class="n">54</td><td><span class="cc">IPV4</span></td></tr>
 <tr><td><code>test/unit/autoip/test_autoip</code></td><td class="n">52</td><td><span class="cc">IPV4</span></td></tr>
 <tr><td><code>test/unit/base/test_checksum</code></td><td class="n">9</td><td><span class="cc any">any build</span></td></tr>
-<tr><td><code>test/unit/base/test_clock</code></td><td class="n">27</td><td><span class="cc any">any build</span></td></tr>
+<tr><td><code>test/unit/base/test_clock</code></td><td class="n">25</td><td><span class="cc any">any build</span></td></tr>
 <tr><td><code>test/unit/base/test_span</code></td><td class="n">5</td><td><span class="cc any">any build</span></td></tr>
-<tr><td><code>test/unit/core/test_dispatch</code></td><td class="n">179</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span><span class="cc">TCP</span><span class="cc">UDP</span></td></tr>
+<tr><td><code>test/unit/core/test_dispatch</code></td><td class="n">180</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span><span class="cc">TCP</span><span class="cc">UDP</span></td></tr>
 <tr><td><code>test/unit/core/test_stats</code></td><td class="n">52</td><td><span class="cc">ETHERNET</span></td></tr>
 <tr><td><code>test/unit/core/test_tick</code></td><td class="n">41</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/core/test_timeouts</code></td><td class="n">52</td><td><span class="cc">ETHERNET</span></td></tr>
@@ -1036,7 +1049,7 @@ embed_bool  (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <tr><td><code>test/unit/ip/test_ipv6</code></td><td class="n">47</td><td><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/mld/test_mld6</code></td><td class="n">67</td><td><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/nd/test_dad</code></td><td class="n">58</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/nd/test_nd6</code></td><td class="n">109</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/nd/test_nd6</code></td><td class="n">113</td><td><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/nd/test_rdnss</code></td><td class="n">45</td><td><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/nd/test_slaac</code></td><td class="n">63</td><td><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/netif/test_dma</code></td><td class="n">54</td><td><span class="cc">ETHERNET</span></td></tr>
@@ -1053,7 +1066,7 @@ embed_bool  (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <tr><td><code>test/unit/udp/test_udp</code></td><td class="n">43</td><td><span class="cc">UDP</span></td></tr>
 <tr><td><code>test/unit/udp/test_udp_pcb</code></td><td class="n">62</td><td><span class="cc">UDP</span></td></tr>
 <tr><td><code>test/unit/udp/test_udplite</code></td><td class="n">36</td><td><span class="cc">UDP</span><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
-<tr class="total"><td>56 suites</td><td class="n">3,085</td><td></td></tr>
+<tr class="total"><td>56 suites</td><td class="n">3,088</td><td></td></tr>
 </tbody></table>
 <!-- /docsgen:suites -->
 </section>

@@ -3,16 +3,15 @@
 
 /**
  * @file time_determinism_defines.h
- * @brief How a pad word is laid out: the pad itself, and the state the last pass ended in.
+ * @brief The layout of a pad word: the pad in ticks, and the state of the last release.
  *
  * Constants only. No entry, no table, no storage.
  *
- * A pad is milliseconds and never needs thirty-two bits of them, so the top two carry the state the
- * last pass ended in. That is the whole of a function's timing memory: one word, and the hysteresis
- * reads its own previous answer out of the same load that fetched the pad.
+ * The pad uses the low thirty bits, and the top two hold the state of the last release. One load
+ * of the word gives both. theory/time_determinism/TimeDeterminism/Word.lean proves that the two
+ * fields fill the word, share no bit, and unpack to what was packed.
  *
- * Separate from time_determinism.h so that including the module does not drag the layout in with
- * it. Included by the grade translation units, and by anything that composes a pad word itself.
+ * Included by time_determinism.c, and by a suite that composes a pad word itself.
  */
 
 #ifndef IDEMIP_TIME_DETERMINISM_DEFINES_H
@@ -20,16 +19,16 @@
 
 #include "src/idemip_config.h"
 
-/** @brief Bits the pad itself occupies, low. */
+/** @brief Bits of the pad, low. */
 #define IDEMIP_CLOCK_PAD_MASK 0x3FFFFFFFu
 
-/** @brief Where the state the last pass ended in sits, high. */
+/** @brief The shift of the state of the last release, high. */
 #define IDEMIP_CLOCK_PAD_SHIFT 30u
 
-/** @brief The two bits that state occupies once shifted down. */
+/** @brief The two bits of that state, after the shift. */
 #define IDEMIP_CLOCK_PAD_STATE_MASK 0x3u
 
-// The pad and the state fill the word and do not overlap.
+// The pad and the state fill the word and share no bit.
 EMBED_STATIC_ASSERT((IDEMIP_CLOCK_PAD_MASK & (IDEMIP_CLOCK_PAD_STATE_MASK << IDEMIP_CLOCK_PAD_SHIFT)) == 0u &&
                         (IDEMIP_CLOCK_PAD_MASK | (IDEMIP_CLOCK_PAD_STATE_MASK << IDEMIP_CLOCK_PAD_SHIFT)) ==
                             0xFFFFFFFFu,

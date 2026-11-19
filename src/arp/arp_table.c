@@ -489,18 +489,23 @@ void idemip_arp_add(uint8_t *work)
         return;
     }
     // RFC 826 "?Do I speak the protocol in ar$pro?": this end speaks IPv4, and a row keyed on
-    // {0,0} names no host (RFC 1122 sec 3.2.1.3 (a)).
-    if (io->add_args.sha == NULL || io->add_args.pro != (uint16_t)IDEMIP_ARP_PRO_IPV4 || io->add_args.spa == 0u)
+    // {0,0} names no host (RFC 1122 sec 3.2.1.3 (a)). arp_learn refuses a group ar$sha (RFC 1812
+    // sec 3.3.2), and no retry changes the address, so that refusal is ERR here and not BUSY.
+    if (io->add_args.sha == NULL || io->add_args.pro != (uint16_t)IDEMIP_ARP_PRO_IPV4 || io->add_args.spa == 0u ||
+        (io->add_args.sha[0] & 0x01u) != 0u)
     {
         return;
     }
     embed_bool merged = EMBED_FALSE;
     uint8_t i = arp_learn(work, io->add_args.pro, io->add_args.spa, io->add_args.sha, io->add_args.netif, io->now_ms,
                           EMBED_TRUE, &merged);
-    if (i == ARP_NONE)
+    // Not measured: the test above refuses a group ar$sha, and arp_row_take finds a row for the rest,
+    // for the reason written there. The arm stays because arp_learn reports ARP_NONE, and a full
+    // table of held rows is a state that a retry can leave.
+    if (i == ARP_NONE) // GCOVR_EXCL_BR_LINE
     {
-        io->status = IDEMIP_BUSY;
-        return;
+        io->status = IDEMIP_BUSY; // GCOVR_EXCL_LINE
+        return;                   // GCOVR_EXCL_LINE
     }
     io->index = i;
     io->state = IDEMIP_ARP_STATE_STABLE;

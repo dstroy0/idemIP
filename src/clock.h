@@ -21,12 +21,12 @@
  *             monotonic. THIS is time. Every deadline is one of these and every question about
  *             time is one comparison of two. Read-only.
  *
- * The fourth reading, determinism_pad(), is time_determinism.h. It is a feature: CMake decides
- * whether it is built at all, and which grade's translation unit implements it.
+ * The padded call is time_determinism.h. It is a feature, and CMake decides whether the build has
+ * it. Its pad counts ticks of its own clock, and it reads no field of this one.
  *
  * Two calls write - @ref idemip_clock_refresh, which carries a reading onto the epoch, and
- * @ref idemip_clock_open, which takes the stamp. Refreshing happens every pass; taking a stamp is a
- * decision a function makes when it starts work it means to pad.
+ * @ref idemip_clock_open, which takes the stamp. A refresh comes on every pass. A function takes a
+ * stamp when it starts work that it measures.
  *
  * The failure this file exists to stop: a deadline stamped on the epoch and then swept against
  * now(). Both are unsigned and the compiler widens the reading silently, so it builds, and it is
@@ -42,49 +42,6 @@
 #include "src/endian.h" // the fixed widths, embed_word, and EMBED_INLINE
 #include "src/ms.h"     // IdemIpMs, the epoch every reading here is carried onto
 
-/** @brief Microseconds in a millisecond, the scale between the two grades below. */
-#define IDEMIP_US_PER_MS 1000u
-
-// ---------------------------------------------------------------------------
-// What a pad is measured in
-// ---------------------------------------------------------------------------
-// CMake owns both values. They are here because IdemIpClock's own fields are gated on them and the
-// struct is a type this header has to declare; what reads them otherwise is time_determinism.h.
-
-#ifndef IDEMIP_ENABLE_TIME_DETERMINISM
-#define IDEMIP_ENABLE_TIME_DETERMINISM 0
-#endif
-
-/** @brief Milliseconds. The epoch's own unit, so a pad costs no reading of its own. */
-#define IDEMIP_DETERMINISM_COARSE 1
-
-/** @brief Microseconds, taken as a second reading beside the epoch. */
-#define IDEMIP_DETERMINISM_FINE 2
-
-/**
- * @brief Microseconds, and the pad is not tuned: it is pinned to the measured worst case.
- *
- * FINE walks its pad towards the cost the function turns out to have on the host it is running on.
- * LITERAL does not walk: the ceiling is a compile-time constant per entry, measured beforehand, and
- * every call runs to it. A pass that outruns it reports OVER, which is a fault to be read and not a
- * step to be taken - the constant was wrong, or the host is not the one it was measured on.
- */
-#define IDEMIP_DETERMINISM_LITERAL 3
-
-/**
- * @brief Which of the three a build takes. CMake owns the value.
- *
- * COARSE is the cheap one and it is almost certainly the wrong one here: every entry this tree has
- * been measured at costs well under a microsecond, so padding to a millisecond pads to about thirty
- * thousand times the work. See test/bench/results.
- */
-#ifndef IDEMIP_TIME_DETERMINISM_GRADE
-#define IDEMIP_TIME_DETERMINISM_GRADE IDEMIP_DETERMINISM_FINE
-#endif
-
-/** @brief True when the pad is measured against a reading of its own rather than the epoch's. */
-#define IDEMIP_DETERMINISM_HAS_TICK (IDEMIP_TIME_DETERMINISM_GRADE >= IDEMIP_DETERMINISM_FINE)
-
 EMBED_BEGIN_DECLS
 
 /**
@@ -93,27 +50,8 @@ EMBED_BEGIN_DECLS
  * It lives in the caller's borrow like everything else here, so two modules keeping time are two
  * borrows and share not one byte, and this file owns no storage of its own.
  *
- * One of these per unit, in that unit's own context, with the pads behind it - one word per entry
- * that pads, indexed by the entry:
- *
- *   typedef struct
- *   {
- *       uint32_t ready;
- *       IdemIpClock clock;
- *       uint32_t pad[IDEMIP_X_PADDED];
- *       ...
- *   } XCtx;
- *
- * The clock is per unit because a pass is per unit; the pad is per entry because it is the entry
- * that has a cost. How those bytes are carved stays the unit's, as every other region here is: this
- * file names no offset and reserves no storage.
- *
- * The pad array is words, so a unit with an odd number of padded entries owes the same rounding
- * this struct takes: what follows the array has to start on the system's word, or every access to it
- * is a split load. IDEMIP_ROUND_UP over the count is what the rest of the tree already uses.
- *
- * The tick fields are the clock's storage for the pad's own reading. time_determinism.h is what
- * reads and writes them; they are here because they are storage, and storage is what this type is.
+ * One of these for each unit that keeps time, in the context of that unit. The unit sets its
+ * offset, as it does for every other region. This file names no offset and reserves no storage.
  *
  * @var IdemIpClock::reading what now() answers: the last reading handed in
  * @var IdemIpClock::hi      how many times that reading has wrapped, which is what makes the epoch
@@ -129,10 +67,6 @@ typedef struct
     uint32_t reading;
     uint32_t hi;
     uint32_t stamp;
-#if IDEMIP_ENABLE_TIME_DETERMINISM && IDEMIP_DETERMINISM_HAS_TICK
-    uint32_t tick;       ///< the caller's reading in the pad's own unit, microseconds
-    uint32_t tick_stamp; ///< it, at the instant the pass opened
-#endif
     uint32_t pad_to_word;
 } IdemIpClock;
 

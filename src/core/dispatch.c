@@ -1708,6 +1708,19 @@ static void d_icmp6_nd(uint8_t *work, const uint8_t *ip6, const uint8_t *msg, si
         }
     }
 
+    // RFC 2710 sec 5 states for a Query and for a Report: "To be valid, the Query message MUST come
+    // from a link-local IPv6 Source Address". RFC 3590 sec 4 adds that a node that receives a Query
+    // from the unspecified address "MUST silently discard the message". Only the source field holds
+    // this fact, and mld6 gets no source, so the test is here.
+    if ((type == (uint8_t)IDEMIP_ICMP6_MLD_QUERY || type == (uint8_t)IDEMIP_ICMP6_MLD_REPORT) &&
+        idemip_ip6_addr_type(idemip_ip6_src(ip6)) != IDEMIP_IP6_TYPE_LINK_LOCAL)
+    {
+        d_drop(work, IDEMIP_DISPATCH_DROP_IP_SOURCE, IDEMIP_STAT_IF_IN_ERRORS);
+        d_bump(work, IDEMIP_STAT_ICMP6_IN_ERRORS);
+        d_bump(work, IDEMIP_STAT_IP6_IN_DISCARDS);
+        return;
+    }
+
     // RFC 4443 sec 2.3 takes the checksum over "the entire ICMPv6 message, starting with the ICMPv6
     // message type field, and prepended with a 'pseudo-header' of IPv6 header fields", so recomputing
     // it over the same span is what says the message arrived intact. icmp6_in keeps this for the types

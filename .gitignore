@@ -33,6 +33,9 @@ include/MMgr/
 deps/*
 !deps/CMakeLists.txt
 
+# The build tree of each Lean project under theory/, which lake writes beside the project.
+theory/*/.lake/
+
 # The RFC text cache. docs/learn/RFC is the vendored law and is tracked; this is only what
 # tools/dev_env/rfc.py had to fetch because no path carried it, and the RFC Editor is where it
 # came from.

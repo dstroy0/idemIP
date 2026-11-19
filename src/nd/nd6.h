@@ -103,6 +103,21 @@ typedef struct
 } Nd6DestArgs;
 
 /**
+ * @brief What a Redirect call takes (RFC 4861 sec 4.5, sec 8.1).
+ *
+ * @var Nd6RedirectArgs::src the IP Source Address of the Redirect, IDEMIP_IP6_ADDR_LEN octets
+ * @var Nd6RedirectArgs::msg the Redirect from its Type field, IDEMIP_ICMP6_RD_HDR_LEN octets at
+ *                           least
+ * @var Nd6RedirectArgs::len octets of the Redirect
+ */
+typedef struct
+{
+    const uint8_t *src;
+    const uint8_t *msg;
+    size_t len;
+} Nd6RedirectArgs;
+
+/**
  * @brief What a Prefix List call takes (RFC 4861 sec 4.6.2, sec 5.1, sec 6.3.4).
  *
  * @var Nd6PrefixArgs::prefix     the prefix, IDEMIP_IP6_ADDR_LEN octets, its bits past @p prefix_len
@@ -215,6 +230,7 @@ typedef struct
  *
  * @var Nd6Io::neighbor_args  the Neighbor Cache operands
  * @var Nd6Io::dest_args      the Destination Cache operands
+ * @var Nd6Io::redirect_args  the Redirect operands
  * @var Nd6Io::prefix_args    the Prefix List operands
  * @var Nd6Io::router_args    the Default Router List operands
  * @var Nd6Io::pending_args   the queued frame operands
@@ -253,6 +269,7 @@ typedef struct
 {
     Nd6NeighborArgs neighbor_args;
     Nd6DestArgs dest_args;
+    Nd6RedirectArgs redirect_args;
     Nd6PrefixArgs prefix_args;
     Nd6RouterArgs router_args;
     Nd6PendingArgs pending_args;
@@ -350,7 +367,12 @@ typedef struct
  *                              descriptor back so sec 7.2.2's ICMP Destination Unreachable code 3
  *                              is answered, and IDEMIP_OK on the call that frees the entry.
  * @var Nd6Ns::dest_find        the next hop a destination resolves to (sec 5.2)
- * @var Nd6Ns::dest_set         install or revise one, as a Redirect (sec 8.3) or a PMTU does
+ * @var Nd6Ns::dest_set         install or revise one, as a PMTU does
+ * @var Nd6Ns::redirect         the sec 8.1 checks on a Redirect that need the caches, then the sec
+ *                              8.3 update of the Destination Cache. A Redirect that fails a check is
+ *                              ERR, and the caller discards it. On OK, @ref Nd6Io::is_router is
+ *                              the IsRouter value that sec 8.3 sets for the target, and the caller
+ *                              applies a Target Link-Layer Address option with neighbor_set.
  * @var Nd6Ns::prefix_set       install a Prefix Information option's prefix (sec 6.3.4)
  * @var Nd6Ns::prefix_on_link   longest prefix match over the Prefix List (sec 5.2), which answers
  *                              IDEMIP_OK either way and puts the answer in @ref Nd6Io::on_link
@@ -375,6 +397,7 @@ typedef struct
     void (*const neighbor_remove)(uint8_t *work);
     void (*const dest_find)(uint8_t *work);
     void (*const dest_set)(uint8_t *work);
+    void (*const redirect)(uint8_t *work);
     void (*const prefix_set)(uint8_t *work);
     void (*const prefix_on_link)(uint8_t *work);
     void (*const router_set)(uint8_t *work);
@@ -396,6 +419,7 @@ void idemip_nd6_neighbor_used(uint8_t *work);
 void idemip_nd6_neighbor_remove(uint8_t *work);
 void idemip_nd6_dest_find(uint8_t *work);
 void idemip_nd6_dest_set(uint8_t *work);
+void idemip_nd6_redirect(uint8_t *work);
 void idemip_nd6_prefix_set(uint8_t *work);
 void idemip_nd6_prefix_on_link(uint8_t *work);
 void idemip_nd6_router_set(uint8_t *work);
@@ -423,6 +447,7 @@ EMBED_TABLE_STORAGE Nd6Ns Nd6 EMBED_UNUSED = {.clear = idemip_nd6_clear,
                                               .neighbor_remove = idemip_nd6_neighbor_remove,
                                               .dest_find = idemip_nd6_dest_find,
                                               .dest_set = idemip_nd6_dest_set,
+                                              .redirect = idemip_nd6_redirect,
                                               .prefix_set = idemip_nd6_prefix_set,
                                               .prefix_on_link = idemip_nd6_prefix_on_link,
                                               .router_set = idemip_nd6_router_set,

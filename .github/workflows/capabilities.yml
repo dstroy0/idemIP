@@ -124,6 +124,63 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure --timeout 120
 
+  # The padded call at each grade and each word. The build states the clock that a pad counts, a
+  # clock of one gigahertz that the caller runs, so embed_clock.h takes no default and gives no
+  # warning. -Werror makes each such warning a failure.
+  determinism:
+    name: determinism ${{ matrix.grade }} word ${{ matrix.bits }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        grade: [COARSE, FINE, LITERAL]
+        bits: ["16", "32", "64"]
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: true # include/MMgr, which this tree tracks as a commit and not as files
+
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_C_FLAGS="-Werror -Wno-error=unused-function -Wno-error=unused-variable"
+          -DIDEMIP_ENABLE_TIME_DETERMINISM=ON
+          -DIDEMIP_TIME_DETERMINISM_GRADE=${{ matrix.grade }}
+          -DIDEMIP_WORD_BITS=${{ matrix.bits }}
+          -DIDEMIP_CLOCK_HZ=1000000000
+          -DIDEMIP_CLOCK_SOURCE=CALLER
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --timeout 120
+
+  # theory/time_determinism proves the padded call: the release window, the held result, the
+  # ratchet, and the masks of the C. A proof that no longer checks fails the run.
+  theory:
+    name: theory
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Check the proofs
+        working-directory: theory/time_determinism
+        run: |
+          lake build
+          ! grep -rnE '\b(sorry|admit|native_decide)\b|^axiom ' TimeDeterminism TimeDeterminism.lean
+
   guards:
     name: source guards
     runs-on: ubuntu-latest

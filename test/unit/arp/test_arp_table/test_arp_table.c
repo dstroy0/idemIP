@@ -488,9 +488,12 @@ void test_a_group_sender_hardware_address_is_not_believed(void)
     (void)input_at(work_a, 1000u, pkt, IPA_Y, 0u);
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, find_ip(work_a, IPA_X), "a multicast ar$sha was installed as a next hop");
 
-    // Through ArpTable.add, which is the same learn.
+    // Through ArpTable.add, which is the same learn. A retry cannot change the address, so the
+    // answer is ERR and not BUSY.
     ready_at(work_a, 1000u);
-    TEST_ASSERT_NOT_EQUAL_INT(IDEMIP_OK, add_at(work_a, 1000u, IPA_X, EA_BCAST, 0u));
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_ERR, add_at(work_a, 1000u, IPA_X, EA_BCAST, 0u),
+                                  "a group ar$sha was answered as a retry");
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, add_at(work_a, 1000u, IPA_X, EA_MCAST, 0u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, find_ip(work_a, IPA_X));
 
     // The positive control: the same call with a unicast address is believed.

@@ -142,31 +142,28 @@ foreach(suite_src ${IDEMIP_SUITE_SOURCES})
     )
     target_link_libraries(${suite_name} PRIVATE idemip idemip_warnings idemip_test_program idemip_host_hooks)
 
-    # test_clock measures determinism_pad(), which the header gates out unless the capability is on,
-    # so this one suite is compiled with it on however the build was configured. The value reaches
-    # every target as a PUBLIC definition of idemip, so it is unset and re-set as compile OPTIONS,
-    # not as a second definition: CMake writes definitions before flags, so -U then -D lands after
-    # the inherited -D and the command line carries no redefinition for the compiler to warn about.
+    # test_clock tests the padded call, which the header gates out unless the build has it. So this
+    # one suite turns it on for itself. The value reaches every target as a PUBLIC definition of
+    # idemip, so the suite unsets it and sets it again as compile options. CMake writes definitions
+    # before flags, so the -U and the -D come after the inherited -D, with no redefinition.
+    #
+    # The suite states its clock too: the tick reading that it defines counts nanoseconds of a fake
+    # clock, which the suite reads as a clock of one gigahertz that the caller runs. Where the build
+    # states a clock, the suite keeps that one.
     if(suite_name STREQUAL "test_clock")
         target_compile_options(${suite_name} PRIVATE
             $<$<C_COMPILER_ID:GNU,Clang>:-UIDEMIP_ENABLE_TIME_DETERMINISM;-DIDEMIP_ENABLE_TIME_DETERMINISM=1>)
+        if(IDEMIP_CLOCK_HZ STREQUAL "")
+            target_compile_definitions(${suite_name} PRIVATE EMBED_CLOCK_HZ=1000000000u)
+        endif()
+        if(IDEMIP_CLOCK_SOURCE STREQUAL "")
+            target_compile_definitions(${suite_name} PRIVATE EMBED_CLOCK_SOURCE=EMBED_CLOCK_CALLER)
+        endif()
 
-        # determinism_pad() and the rest are a translation unit the grade names, and the library
-        # only compiles one when the capability is on. This suite turns the capability on for
-        # itself, so where the library left it off there is no such unit to link against and the
-        # suite compiles it. Where the library did compile one, this must not: both would define
-        # the same entries.
-        #
-        # clock.c comes with it, because IdemIpClock's tick fields are gated on the same capability:
-        # the library's clock_open, built with it off, has no tick_stamp to write, and every pad
-        # measured against a tick would read the epoch instead. Compiled here it is built at this
-        # suite's layout. libidemip's own clock.o is then never pulled - the linker extracts an
-        # archive member only to resolve a symbol that is still undefined.
+        # Where the library has no padded call, the suite compiles the one translation unit itself.
+        # Where the library has it, the suite must not: both would define the same entries.
         if(NOT IDEMIP_ENABLE_TIME_DETERMINISM)
-            string(TOLOWER "${IDEMIP_TIME_DETERMINISM_GRADE}" IDEMIP_CLOCK_GRADE_TU)
-            target_sources(${suite_name} PRIVATE
-                "${CMAKE_SOURCE_DIR}/src/clock.c"
-                "${CMAKE_SOURCE_DIR}/src/time_determinism_${IDEMIP_CLOCK_GRADE_TU}.c")
+            target_sources(${suite_name} PRIVATE "${CMAKE_SOURCE_DIR}/src/time_determinism.c")
         endif()
     endif()
 

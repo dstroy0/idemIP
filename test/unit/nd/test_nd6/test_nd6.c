@@ -19,6 +19,8 @@
 
 #include "src/common_defines.h"
 #include "src/ethernet/ethernet_defines.h"
+#include "src/icmp/icmpv6.h"         // the Redirect type
+#include "src/icmp/icmpv6_defines.h" // the Redirect field map
 #include "src/ip/ipv6_defines.h"
 #include "support/borrows.h"
 #include <unity.h>
@@ -80,6 +82,7 @@ static void call_every_entry(uint8_t *w)
     Nd6.neighbor_remove(w);
     Nd6.dest_find(w);
     Nd6.dest_set(w);
+    Nd6.redirect(w);
     Nd6.prefix_set(w);
     Nd6.prefix_on_link(w);
     Nd6.router_set(w);
@@ -2013,6 +2016,104 @@ void test_a_redirect_revises_the_next_hop_and_keeps_the_path_mtu(void)
     TEST_ASSERT_EQUAL_UINT8_MESSAGE(first, IDEMIP_ND6_IO(work_a)->destination, "the same destination reuses its entry");
     TEST_ASSERT_EQUAL_HEX8_ARRAY(g_addr_b, IDEMIP_ND6_IO(work_a)->next_hop, IDEMIP_IP6_ADDR_LEN);
     TEST_ASSERT_EQUAL_UINT16_MESSAGE(1400u, IDEMIP_ND6_IO(work_a)->pmtu, "a zero PMTU leaves the held one alone");
+}
+
+// --- the Redirect, sec 8.1 and sec 8.3 ----------------------------------------
+
+// A Redirect from @p src that sends @p dst to @p target, in g_redirect.
+static uint8_t g_redirect[IDEMIP_ICMP6_RD_HDR_LEN];
+
+static IdemIpStatus redirect(uint8_t *w, const uint8_t *src, const uint8_t *target, const uint8_t *dst)
+{
+    mmgr_zero_buf(g_redirect, sizeof g_redirect);
+    g_redirect[0] = (uint8_t)IDEMIP_ICMP6_REDIRECT;
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_redirect + IDEMIP_ICMP6_OFF_RD_TARGET, .at = target,
+               .size = IDEMIP_IP6_ADDR_LEN);
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = g_redirect + IDEMIP_ICMP6_OFF_RD_DEST, .at = dst,
+               .size = IDEMIP_IP6_ADDR_LEN);
+    IDEMIP_ND6_IO(w)->redirect_args.src = src;
+    IDEMIP_ND6_IO(w)->redirect_args.msg = g_redirect;
+    IDEMIP_ND6_IO(w)->redirect_args.len = sizeof g_redirect;
+    Nd6.redirect(w);
+    return IDEMIP_ND6_IO(w)->status;
+}
+
+// g_off goes through the router at g_addr_a, with a PMTU of 1400.
+static void route_off_link_through_a(uint8_t *w)
+{
+    Nd6.clear(w);
+    at(w, 0u);
+    IDEMIP_ND6_IO(w)->dest_args.dst = g_off;
+    IDEMIP_ND6_IO(w)->dest_args.next_hop = g_addr_a;
+    IDEMIP_ND6_IO(w)->dest_args.pmtu = 1400u;
+    IDEMIP_ND6_IO(w)->dest_args.neighbor = IDEMIP_ND6_NONE;
+    Nd6.dest_set(w);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_ND6_IO(w)->status);
+}
+
+// sec 8.3: a valid Redirect to a router sends the destination to that router, and sets IsRouter for
+// it. The PMTU stays.
+void test_a_valid_redirect_to_a_router_revises_the_next_hop(void)
+{
+    route_off_link_through_a(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, redirect(work_a, g_addr_a, g_addr_b, g_off));
+    TEST_ASSERT_TRUE(IDEMIP_ND6_IO(work_a)->is_router);
+    TEST_ASSERT_FALSE(IDEMIP_ND6_IO(work_a)->on_link);
+
+    IDEMIP_ND6_IO(work_a)->dest_args.dst = g_off;
+    Nd6.dest_find(work_a);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(g_addr_b, IDEMIP_ND6_IO(work_a)->next_hop, IDEMIP_IP6_ADDR_LEN);
+    TEST_ASSERT_EQUAL_UINT16(1400u, IDEMIP_ND6_IO(work_a)->pmtu);
+}
+
+// sec 8.3: "If the Target and Destination Addresses are the same, the host MUST treat the Target as
+// on-link." The Target is then no router that the Redirect can name.
+void test_a_redirect_to_the_destination_itself_makes_it_on_link(void)
+{
+    route_off_link_through_a(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, redirect(work_a, g_addr_a, g_off, g_off));
+    TEST_ASSERT_TRUE(IDEMIP_ND6_IO(work_a)->on_link);
+    TEST_ASSERT_FALSE(IDEMIP_ND6_IO(work_a)->is_router);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(g_off, IDEMIP_ND6_IO(work_a)->next_hop, IDEMIP_IP6_ADDR_LEN);
+}
+
+// sec 8.1: "A host MUST silently discard any received Redirect message that does not satisfy all of
+// the following validity checks". Each case below fails one check, and the cache keeps its next hop.
+void test_a_redirect_that_fails_a_validity_check_changes_nothing(void)
+{
+    static const uint8_t global_router[IDEMIP_IP6_ADDR_LEN] = {0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0,
+                                                               0,    0,    0,    0,    0, 0, 0, 0x01};
+    static const uint8_t group[IDEMIP_IP6_ADDR_LEN] = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x09};
+
+    // "IP Source Address is a link-local address."
+    route_off_link_through_a(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, redirect(work_a, global_router, g_addr_b, g_off));
+    // "The IP source address of the Redirect is the same as the current first-hop router".
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, redirect(work_a, g_addr_b, g_addr_b, g_off));
+    // "The ICMP Destination Address field in the redirect message does not contain a multicast address."
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, redirect(work_a, g_addr_a, g_addr_b, group));
+    // "The ICMP Target Address is either a link-local address ... or the same as the ICMP Destination
+    // Address".
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, redirect(work_a, g_addr_a, global_router, g_off));
+
+    IDEMIP_ND6_IO(work_a)->dest_args.dst = g_off;
+    Nd6.dest_find(work_a);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(g_addr_a, IDEMIP_ND6_IO(work_a)->next_hop, IDEMIP_IP6_ADDR_LEN,
+                                         "an invalid Redirect moved the next hop");
+}
+
+// A destination with no Destination Cache entry has no current first-hop router, so a Redirect for
+// it fails the first-hop check. A short Redirect fails before any field is read.
+void test_a_redirect_for_an_unrouted_destination_or_a_short_one_is_refused(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, redirect(work_a, g_addr_a, g_addr_b, g_off));
+
+    route_off_link_through_a(work_a);
+    IDEMIP_ND6_IO(work_a)->redirect_args.len = (size_t)IDEMIP_ICMP6_RD_HDR_LEN - 1u;
+    Nd6.redirect(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status);
 }
 
 // RFC 4861 sec 5.2: "When the sending node has a packet to send, it first examines the Destination

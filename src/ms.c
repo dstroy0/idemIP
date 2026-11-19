@@ -77,8 +77,8 @@ EMBED_INLINE IdemIpMs ms_join(const MsCtx *m)
  * @param m The reading.
  * @return The epoch, the high word having been raised if the reading wrapped.
  *
- * Same wrap rule and the same epoch. It opens no pass, so a function using this has no stamp() and
- * cannot be padded; a module that wants a pad holds an IdemIpClock instead.
+ * The same wrap rule and the same epoch. It opens no pass, so a function that calls this has no
+ * stamp(). A module that measures a pass holds an IdemIpClock.
  */
 EMBED_INLINE IdemIpMs ms_extend(const MsCtx *m)
 {

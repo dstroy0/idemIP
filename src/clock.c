@@ -35,8 +35,8 @@ typedef struct
  * the module already holds, widened, and no second clock.
  *
  * Call this once at the top of an entry that reads or writes a deadline, before it does either. It
- * does not touch the stamp: refreshing is every pass, and taking a stamp is a separate decision the
- * function makes when it starts work it means to pad.
+ * does not change the stamp. A refresh comes on every pass, and a function takes a stamp when it
+ * starts work that it measures.
  */
 EMBED_INLINE IdemIpMs clock_refresh(const ClockCtx *c)
 {
@@ -49,15 +49,12 @@ EMBED_INLINE IdemIpMs clock_refresh(const ClockCtx *c)
 }
 
 /**
- * @brief Open a pass: the stamp every pad is then measured from is the reading standing now.
+ * @brief Open a pass: the stamp is the reading now.
  * @param c The pass.
  */
 EMBED_INLINE void clock_open(const ClockCtx *c)
 {
     c->clk->stamp = c->clk->reading;
-#if IDEMIP_ENABLE_TIME_DETERMINISM && IDEMIP_DETERMINISM_HAS_TICK
-    c->clk->tick_stamp = c->clk->tick;
-#endif
 }
 
 /** @brief now(): the caller's latest millisecond reading, verbatim. Wraps; not the epoch. */
@@ -66,7 +63,7 @@ EMBED_INLINE uint32_t clock_now(const ClockCtx *c)
     return c->ro->reading;
 }
 
-/** @brief stamp(): the reading this pass entered on, which every pad is measured from. */
+/** @brief stamp(): the reading that this pass opened on. */
 EMBED_INLINE uint32_t clock_stamp(const ClockCtx *c)
 {
     return c->ro->stamp;
@@ -77,9 +74,8 @@ EMBED_INLINE uint32_t clock_stamp(const ClockCtx *c)
  * @param c The reading.
  * @return The difference, in the reading's own unit.
  *
- * Both are the caller's own readings and the difference is taken unsigned, so a wrap between them
- * subtracts out. It is here rather than in time_determinism.h because it answers a question about
- * the stamp, which every build has; it is also what a pad is tuned against.
+ * Both are readings of the caller, and the difference is unsigned, so a wrap between them
+ * subtracts out.
  */
 EMBED_INLINE uint32_t clock_elapsed(const ClockCtx *c)
 {

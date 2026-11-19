@@ -1,0 +1,5 @@
+name = "TimeDeterminism"
+defaultTargets = ["TimeDeterminism"]
+
+[[lean_lib]]
+name = "TimeDeterminism"
