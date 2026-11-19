@@ -57,9 +57,13 @@ uint32_t idemip_clock_ticks(void)
     return g_ticks;
 }
 
+// The work that run passes to the entry. The entry counts its runs in the first octet, so a case can
+// see that the work reached it.
+static uint8_t g_work[1];
+
 static void entry(uint8_t *work)
 {
-    (void)work;
+    work[0] = (uint8_t)(work[0] + 1u);
     g_runs++;
     g_ticks += g_cost;
     g_status = g_gives;
@@ -67,7 +71,7 @@ static void entry(uint8_t *work)
 
 static void run(void)
 {
-    time_determinism.run(g_pads, entry, NULL, &g_status);
+    time_determinism.run(g_pads, entry, g_work, &g_status);
 }
 
 // The slot of this thread, as time_determinism.c selects it.
@@ -83,6 +87,7 @@ void setUp(void)
     g_ticks = 1000u;
     g_cost = 0u;
     g_runs = 0u;
+    g_work[0] = 0u;
     g_gives = IDEMIP_OK;
     g_status = IDEMIP_ERR;
     mmgr_zero_buf(g_pads, sizeof g_pads);
@@ -254,6 +259,7 @@ void test_the_entry_runs_once_for_each_held_result(void)
 {
     run();
     TEST_ASSERT_EQUAL_UINT(1u, g_runs);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, g_work[0], "run did not pass the work to the entry");
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, g_status, "a call inside the pad gave its result");
 
     g_ticks += PAD0 - 1u;
@@ -273,7 +279,7 @@ void test_the_release_never_comes_before_the_pad(void)
 {
     const uint32_t stamp = g_ticks;
     run();
-    while ((uint32_t)(g_ticks - stamp) < PAD0)
+    while (g_ticks - stamp < PAD0)
     {
         TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_BUSY, g_status, "a release came before the pad");
         g_ticks += 1u;
@@ -326,7 +332,12 @@ void test_an_overrun_raises_the_pad_to_the_cost_of_the_body(void)
     TEST_ASSERT_EQUAL_UINT(1u, g_runs);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, g_status);
     TEST_ASSERT_EQUAL_INT(IDEMIP_CLOCK_PAD_OVER, time_determinism.state(g_pads));
-    const uint32_t want = WALKS ? ((PAD0 + 3u < HI) ? PAD0 + 3u : HI) : PAD0;
+    // The cost of the body, up to the ceiling, where the grade walks. The default pad at LITERAL.
+    uint32_t want = PAD0;
+    if (WALKS)
+    {
+        want = (PAD0 + 3u < HI) ? PAD0 + 3u : HI;
+    }
     TEST_ASSERT_EQUAL_UINT32(want, time_determinism.pad_ticks(g_pads));
 }
 

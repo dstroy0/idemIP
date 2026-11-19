@@ -97,31 +97,31 @@ static void run_test(UnityTestFunction func, const char* name, UNITY_LINE_TYPE l
 int main(void)
 {
   UnityBegin("test/unit/base/test_clock/test_clock.c");
-  run_test(test_a_refresh_reports_the_reading_it_was_handed, "test_a_refresh_reports_the_reading_it_was_handed", 99);
-  run_test(test_the_epoch_climbs_through_a_reading_that_wraps, "test_the_epoch_climbs_through_a_reading_that_wraps", 107);
-  run_test(test_now_and_the_epoch_disagree_once_the_reading_has_wrapped, "test_now_and_the_epoch_disagree_once_the_reading_has_wrapped", 122);
-  run_test(test_many_wraps_each_raise_the_epoch_by_one_period, "test_many_wraps_each_raise_the_epoch_by_one_period", 130);
-  run_test(test_a_refresh_leaves_the_stamp_where_it_was, "test_a_refresh_leaves_the_stamp_where_it_was", 147);
-  run_test(test_opening_a_pass_takes_the_reading_standing_now, "test_opening_a_pass_takes_the_reading_standing_now", 158);
-  run_test(test_elapsed_survives_a_wrap_between_the_stamp_and_the_reading, "test_elapsed_survives_a_wrap_between_the_stamp_and_the_reading", 170);
-  run_test(test_a_lifetime_in_seconds_scales_exactly, "test_a_lifetime_in_seconds_scales_exactly", 180);
-  run_test(test_the_widest_lifetime_still_lands_ahead_of_a_stamp, "test_the_widest_lifetime_still_lands_ahead_of_a_stamp", 191);
-  run_test(test_a_split_epoch_rejoins_to_itself, "test_a_split_epoch_rejoins_to_itself", 201);
-  run_test(test_the_loose_word_extension_matches_a_refresh, "test_the_loose_word_extension_matches_a_refresh", 215);
-  run_test(test_the_configured_window_is_a_window, "test_the_configured_window_is_a_window", 231);
-  run_test(test_a_cleared_slot_holds_the_default_pad_and_no_result, "test_a_cleared_slot_holds_the_default_pad_and_no_result", 240);
-  run_test(test_the_entry_runs_once_for_each_held_result, "test_the_entry_runs_once_for_each_held_result", 253);
-  run_test(test_the_release_never_comes_before_the_pad, "test_the_release_never_comes_before_the_pad", 272);
-  run_test(test_two_costs_inside_the_pad_release_at_the_same_reading, "test_two_costs_inside_the_pad_release_at_the_same_reading", 288);
-  run_test(test_a_late_call_reports_over_and_keeps_the_pad, "test_a_late_call_reports_over_and_keeps_the_pad", 310);
-  run_test(test_an_overrun_raises_the_pad_to_the_cost_of_the_body, "test_an_overrun_raises_the_pad_to_the_cost_of_the_body", 322);
-  run_test(test_the_pad_never_walks_down, "test_the_pad_never_walks_down", 334);
-  run_test(test_the_pad_never_passes_the_ceiling, "test_the_pad_never_passes_the_ceiling", 352);
-  run_test(test_a_held_result_waits_out_the_pad_across_a_wrap, "test_a_held_result_waits_out_the_pad_across_a_wrap", 362);
-  run_test(test_a_busy_body_runs_again_after_its_release, "test_a_busy_body_runs_again_after_its_release", 378);
-  run_test(test_a_call_writes_the_slot_of_its_own_thread, "test_a_call_writes_the_slot_of_its_own_thread", 394);
-  run_test(test_a_slot_with_no_pad_gives_its_result_at_once, "test_a_slot_with_no_pad_gives_its_result_at_once", 414);
-  run_test(test_the_state_and_the_pad_share_no_bit, "test_the_state_and_the_pad_share_no_bit", 428);
+  run_test(test_a_refresh_reports_the_reading_it_was_handed, "test_a_refresh_reports_the_reading_it_was_handed", 104);
+  run_test(test_the_epoch_climbs_through_a_reading_that_wraps, "test_the_epoch_climbs_through_a_reading_that_wraps", 112);
+  run_test(test_now_and_the_epoch_disagree_once_the_reading_has_wrapped, "test_now_and_the_epoch_disagree_once_the_reading_has_wrapped", 127);
+  run_test(test_many_wraps_each_raise_the_epoch_by_one_period, "test_many_wraps_each_raise_the_epoch_by_one_period", 135);
+  run_test(test_a_refresh_leaves_the_stamp_where_it_was, "test_a_refresh_leaves_the_stamp_where_it_was", 152);
+  run_test(test_opening_a_pass_takes_the_reading_standing_now, "test_opening_a_pass_takes_the_reading_standing_now", 163);
+  run_test(test_elapsed_survives_a_wrap_between_the_stamp_and_the_reading, "test_elapsed_survives_a_wrap_between_the_stamp_and_the_reading", 175);
+  run_test(test_a_lifetime_in_seconds_scales_exactly, "test_a_lifetime_in_seconds_scales_exactly", 185);
+  run_test(test_the_widest_lifetime_still_lands_ahead_of_a_stamp, "test_the_widest_lifetime_still_lands_ahead_of_a_stamp", 196);
+  run_test(test_a_split_epoch_rejoins_to_itself, "test_a_split_epoch_rejoins_to_itself", 206);
+  run_test(test_the_loose_word_extension_matches_a_refresh, "test_the_loose_word_extension_matches_a_refresh", 220);
+  run_test(test_the_configured_window_is_a_window, "test_the_configured_window_is_a_window", 236);
+  run_test(test_a_cleared_slot_holds_the_default_pad_and_no_result, "test_a_cleared_slot_holds_the_default_pad_and_no_result", 245);
+  run_test(test_the_entry_runs_once_for_each_held_result, "test_the_entry_runs_once_for_each_held_result", 258);
+  run_test(test_the_release_never_comes_before_the_pad, "test_the_release_never_comes_before_the_pad", 278);
+  run_test(test_two_costs_inside_the_pad_release_at_the_same_reading, "test_two_costs_inside_the_pad_release_at_the_same_reading", 294);
+  run_test(test_a_late_call_reports_over_and_keeps_the_pad, "test_a_late_call_reports_over_and_keeps_the_pad", 316);
+  run_test(test_an_overrun_raises_the_pad_to_the_cost_of_the_body, "test_an_overrun_raises_the_pad_to_the_cost_of_the_body", 328);
+  run_test(test_the_pad_never_walks_down, "test_the_pad_never_walks_down", 345);
+  run_test(test_the_pad_never_passes_the_ceiling, "test_the_pad_never_passes_the_ceiling", 363);
+  run_test(test_a_held_result_waits_out_the_pad_across_a_wrap, "test_a_held_result_waits_out_the_pad_across_a_wrap", 373);
+  run_test(test_a_busy_body_runs_again_after_its_release, "test_a_busy_body_runs_again_after_its_release", 389);
+  run_test(test_a_call_writes_the_slot_of_its_own_thread, "test_a_call_writes_the_slot_of_its_own_thread", 405);
+  run_test(test_a_slot_with_no_pad_gives_its_result_at_once, "test_a_slot_with_no_pad_gives_its_result_at_once", 425);
+  run_test(test_the_state_and_the_pad_share_no_bit, "test_the_state_and_the_pad_share_no_bit", 439);
 
   return UNITY_END();
 }
