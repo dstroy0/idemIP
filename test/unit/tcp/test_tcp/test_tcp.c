@@ -1,4 +1,4 @@
-// idemIP v0.1.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
+// idemIP v0.2.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The TCP header, RFC 9293 sec 3.1 Figure 1 and sec 3.2, with the options RFC 7323 sec 2.2 and

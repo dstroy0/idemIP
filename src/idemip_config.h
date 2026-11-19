@@ -1,4 +1,4 @@
-// idemIP v0.1.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
+// idemIP v0.2.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
@@ -70,9 +70,9 @@
  * tree is the fifth place, and `tools/dev_env/version.py` carries the version out to those.
  */
 #define IDEMIP_VERSION_MAJOR 0
-#define IDEMIP_VERSION_MINOR 1
+#define IDEMIP_VERSION_MINOR 2
 #define IDEMIP_VERSION_PATCH 0
-#define IDEMIP_VERSION_STRING "0.1.0"
+#define IDEMIP_VERSION_STRING "0.2.0"
 
 // ---------------------------------------------------------------------------
 // Vocabulary

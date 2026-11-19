@@ -1,4 +1,4 @@
-// idemIP v0.1.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
+// idemIP v0.2.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // RFC 792, internet control messages, plus the additions RFC 1122 sec 3.2.2 makes to it.

@@ -1,4 +1,4 @@
-// idemIP v0.1.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
+// idemIP v0.2.0 - Copyright (C) 2026 Douglas Quigg (dstroy0) <dquigg123@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // RFC 8201 Path MTU Discovery for IPv6, checked the way test_phy checks a golden module:

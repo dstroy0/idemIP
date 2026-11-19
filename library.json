@@ -1,6 +1,6 @@
 {
   "name": "idemIP",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Zero-heap, asynchronous TCP/IP stack with a fully deterministic memory footprint. Thread safe design. Designed for embedded targets (bare metal or with OS). Provides an intuitive API. Ideal for resource-constrained environments where memory management is critical.",
   "keywords": [
     "async",
