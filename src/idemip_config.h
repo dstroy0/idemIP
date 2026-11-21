@@ -124,13 +124,18 @@ EMBED_STATIC_ASSERT((MMGR_ALIGN_BYTES % IDEMIP_CACHE_LINE_BYTES) == 0u,
                     "MMGR_ALIGN_BYTES must be a whole number of IDEMIP_CACHE_LINE_BYTES: a DMA pool starts on a line");
 
 /**
- * @brief The alignment of each borrow that holds no DMA buffer: 4 bytes.
+ * @brief The alignment of each borrow that holds no DMA buffer: 4 bytes, and 8 bytes on a word of 64 bits.
  *
- * @note A cell of MMgr starts on its grain, which is 4 bytes on a word of 32 bits. So each borrow starts
+ * @note A cell of MMgr starts on its grain, which is 4 bytes on a word of 32 bits. Each borrow thus starts
  *       on 4 bytes, and every offset inside a borrow is a multiple of 4.
+ * @note A borrow holds words, so the alignment covers embed_word. On a word of 64 bits it is 8 bytes.
  */
 #ifndef IDEMIP_ALIGN
+#if EMBED_WORD_BITS == 64
+#define IDEMIP_ALIGN 8u
+#else
 #define IDEMIP_ALIGN 4u
+#endif
 #endif
 
 /** @brief Round @p n up to the next multiple of @p a, which must be a power of two. */
