@@ -128,7 +128,7 @@ EMBED_STATIC_ASSERT((MMGR_ALIGN_BYTES % IDEMIP_CACHE_LINE_BYTES) == 0u,
  *
  * @note A cell of MMgr starts on its grain, which is 4 bytes on a word of 32 bits. Each borrow thus starts
  *       on 4 bytes, and every offset inside a borrow is a multiple of 4.
- * @note A borrow holds words, so the alignment covers embed_word. On a word of 64 bits it is 8 bytes.
+ * @note A borrow holds words. The alignment thus covers embed_word, and on a word of 64 bits it is 8 bytes.
  */
 #ifndef IDEMIP_ALIGN
 #if EMBED_WORD_BITS == 64
