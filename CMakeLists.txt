@@ -117,8 +117,12 @@ endif()
 # because the mem entries are code that the sanitizers and the coverage counters must see.
 add_subdirectory(deps)
 
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/include/MMgr/CMakeLists.txt")
-    message(FATAL_ERROR "idemIP needs the include/MMgr submodule: git submodule update --init")
+# The MMgr checkout. The default is the include/MMgr submodule. A project that carries idemIP beside its
+# own MMgr gives that checkout here, and FETCHCONTENT_SOURCE_DIR_EMBEDDED_TYPES gives its embedded_types.
+# The suites then run against the code that the project builds.
+set(IDEMIP_MMGR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/MMgr" CACHE PATH "The MMgr checkout that idemIP builds against")
+if(NOT EXISTS "${IDEMIP_MMGR_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR "idemIP needs MMgr at IDEMIP_MMGR_DIR (${IDEMIP_MMGR_DIR}): git submodule update --init")
 endif()
 # The suites and benches of MMgr are for that repository. CMP0077 lets a normal variable here take
 # precedence over the option() in MMgr. MMgr takes link-time optimization only where idemIP does,
@@ -131,7 +135,7 @@ set(MMGR_LTO ${IDEMIP_LTO})
 # directory keeps them as they came.
 set(IDEMIP_C_FLAGS "${CMAKE_C_FLAGS}")
 string(REGEX REPLACE "(^| )-Werror( |$)" " " CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
-add_subdirectory(include/MMgr EXCLUDE_FROM_ALL SYSTEM)
+add_subdirectory("${IDEMIP_MMGR_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/include/MMgr" EXCLUDE_FROM_ALL SYSTEM)
 set(CMAKE_C_FLAGS "${IDEMIP_C_FLAGS}")
 
 # --- the translation units each capability is ---------------------------------
@@ -330,12 +334,12 @@ endif()
 # defines the three hooks locus_carcerum's turnstiles wait, wake and read the clock through:
 # embed_word_wait, embed_word_wake and embed_clock_ns. It defines embed_thread_place too where the
 # build sets MMGR_CARCER_REGIONS above 0. idemip_host_hooks holds the host definitions
-# MMgr's own suites link, from include/MMgr/test/support/host_wait.c, compiled at idemIP's word. That
+# MMgr's own suites link, from test/support/host_wait.c of IDEMIP_MMGR_DIR, compiled at idemIP's word. That
 # file sets the GNU feature set itself, ahead of its first include.
 #
 # A suite, a bench and the fuzz harness also take their borrows as cells. idemip_test_program holds
 # their memory: support/borrows.c, with the pool, the LocusCarcerum site over it and the owner table.
-add_library(idemip_host_hooks OBJECT "${CMAKE_CURRENT_SOURCE_DIR}/include/MMgr/test/support/host_wait.c")
+add_library(idemip_host_hooks OBJECT "${IDEMIP_MMGR_DIR}/test/support/host_wait.c")
 target_link_libraries(idemip_host_hooks PUBLIC idemip)
 if(WIN32)
     # WaitOnAddress and WakeByAddressAll are in the synchronization library.
