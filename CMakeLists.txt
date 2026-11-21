@@ -24,6 +24,10 @@ if(IDEMIP_COVERAGE)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)
     add_compile_options(--coverage -O0)
     add_link_options(--coverage)
+    # A plain static inline function. At -O0 GCC keeps one body of it for each unit, and gcov counts
+    # the decisions of that body. With always_inline, gcov counts a copy at each call, and an arm of
+    # a copy is unreachable where its caller tested the same input first.
+    add_compile_definitions("EMBED_INLINE=static inline")
 endif()
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)

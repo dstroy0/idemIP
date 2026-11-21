@@ -1306,6 +1306,21 @@ void test_listen_takes_the_default_send_mss_of_each_version(void)
     TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_MSS_DEFAULT_IP6, IO(work_a)->ctl.mss);
 }
 
+// An MSS Option of zero names no segment size, so the SYN gives the default of its IP version.
+void test_listen_takes_the_default_send_mss_for_an_option_of_zero(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_LISTEN, 0u, 0u, 0u, 4096u);
+    IO(work_a)->vars.iss = 300u;
+    IO(work_a)->parse_args.ip_version = 4u;
+    IO(work_a)->opts = (TcpInOpts){0};
+    IO(work_a)->opts.present = (uint8_t)IDEMIP_TCP_IN_OPT_MSS;
+    IO(work_a)->opts.mss = 0u;
+    seg(work_a, 100u, 0u, 1u, 0u, (uint8_t)IDEMIP_TCP_SYN);
+    TcpIn.listen(work_a);
+    TEST_ASSERT_EQUAL_INT((int)IDEMIP_TCP_STATE_SYN_RECEIVED, (int)IO(work_a)->state);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_MSS_DEFAULT_IP4, IO(work_a)->ctl.mss);
+}
+
 // --- RFC 9293 sec 3.10.7.3, the SYN-SENT state --------------------------------
 
 // RFC 9293 sec 3.7.1: the MSS Option of the SYN,ACK gives the send MSS of an active OPEN.

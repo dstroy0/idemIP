@@ -215,11 +215,6 @@ EMBED_INLINE IdemIpIp4AddrType idemip_ip4_addr_type(uint32_t addr)
     return IDEMIP_IP4_TYPE_UNICAST;
 }
 
-// idemip_ip4_addr_mask_ones and idemip_ip4_addr_mask_contiguous were here. They are arithmetic over
-// a mask rather than anything about classifying an address, and ip4_route needs both - it has no
-// reason to include a header about address types, so it carried its own copy of each. They are in
-// ipv4.h now, which both units already take, and which this header includes.
-
 /**
  * @brief Write the RFC 1112 sec 6.4 Ethernet address of a class D group into @p out.
  *

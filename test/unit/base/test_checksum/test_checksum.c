@@ -67,6 +67,16 @@ void test_checksum_over_itself_is_zero(void)
     TEST_ASSERT_TRUE(idemip_cksum_valid(buf, sizeof buf));
 }
 
+// A span whose checksum does not match its octets does not sum to all ones, so it does not verify.
+void test_checksum_over_a_changed_span_is_not_valid(void)
+{
+    uint8_t buf[10];
+    EMBED_CALL(proxim.read, ProximusCfg, .dst = buf, .at = rfc1071_example, .size = sizeof rfc1071_example);
+    idemip_wr16(buf + 8, idemip_cksum(rfc1071_example, sizeof rfc1071_example));
+    buf[0] = (uint8_t)(buf[0] ^ 0x01u);
+    TEST_ASSERT_FALSE(idemip_cksum_valid(buf, sizeof buf));
+}
+
 // RFC 1071 sec 1: an odd count takes the final byte as [Z,0]. The pad completes the word and is
 // never sent, so a trailing zero byte cannot change the result.
 void test_odd_length_pads_high_half(void)

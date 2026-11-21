@@ -268,6 +268,8 @@ void test_an_uncleared_borrow_is_refused(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status);
     Nd6.dest_set(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status);
+    Nd6.redirect(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status);
     Nd6.prefix_set(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status);
     Nd6.prefix_on_link(work_a);
@@ -2114,6 +2116,48 @@ void test_a_redirect_for_an_unrouted_destination_or_a_short_one_is_refused(void)
     IDEMIP_ND6_IO(work_a)->redirect_args.len = (size_t)IDEMIP_ICMP6_RD_HDR_LEN - 1u;
     Nd6.redirect(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status);
+}
+
+// A Redirect with no source address or no message gives the entry nothing to check, so it is
+// refused.
+void test_a_redirect_with_no_source_or_no_message_is_refused(void)
+{
+    route_off_link_through_a(work_a);
+    IDEMIP_ND6_IO(work_a)->redirect_args.src = NULL;
+    IDEMIP_ND6_IO(work_a)->redirect_args.msg = g_redirect;
+    IDEMIP_ND6_IO(work_a)->redirect_args.len = sizeof g_redirect;
+    Nd6.redirect(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status);
+
+    IDEMIP_ND6_IO(work_a)->redirect_args.src = g_addr_a;
+    IDEMIP_ND6_IO(work_a)->redirect_args.msg = NULL;
+    Nd6.redirect(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IDEMIP_ND6_IO(work_a)->status);
+}
+
+// A Redirect for one destination changes the Destination Cache entry of that destination, and no
+// entry for another destination ahead of it in the cache.
+void test_a_redirect_passes_over_the_entry_of_another_destination(void)
+{
+    Nd6.clear(work_a);
+    at(work_a, 0u);
+    const uint8_t *other = nth(0u);
+    IDEMIP_ND6_IO(work_a)->dest_args.dst = other;
+    IDEMIP_ND6_IO(work_a)->dest_args.next_hop = g_addr_a;
+    IDEMIP_ND6_IO(work_a)->dest_args.pmtu = 1280u;
+    IDEMIP_ND6_IO(work_a)->dest_args.neighbor = IDEMIP_ND6_NONE;
+    Nd6.dest_set(work_a);
+    IDEMIP_ND6_IO(work_a)->dest_args.dst = g_off;
+    IDEMIP_ND6_IO(work_a)->dest_args.next_hop = g_addr_a;
+    IDEMIP_ND6_IO(work_a)->dest_args.pmtu = 1400u;
+    Nd6.dest_set(work_a);
+
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, redirect(work_a, g_addr_a, g_addr_b, g_off));
+    TEST_ASSERT_EQUAL_UINT16(1400u, IDEMIP_ND6_IO(work_a)->pmtu);
+    IDEMIP_ND6_IO(work_a)->dest_args.dst = other;
+    Nd6.dest_find(work_a);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(g_addr_a, IDEMIP_ND6_IO(work_a)->next_hop, IDEMIP_IP6_ADDR_LEN,
+                                         "a Redirect for one destination moved the next hop of another");
 }
 
 // RFC 4861 sec 5.2: "When the sending node has a packet to send, it first examines the Destination

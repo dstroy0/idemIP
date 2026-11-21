@@ -667,6 +667,17 @@ void test_a_short_frame_is_an_error_not_a_discard(void)
     TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_DISCARDS));
 }
 
+// A frame that holds the Ethernet II header and the C-Tag TPID, but stops before the end of the tag,
+// is shorter than the header it claims. It is also ifInErrors.
+void test_a_frame_cut_inside_its_vlan_tag_is_short(void)
+{
+    idemip_eth_build(g_frame, g_local_mac, g_remote_mac, (uint16_t)IDEMIP_VLAN_TPID);
+    input(work_a, IDEMIP_VLAN_HDR_LEN - 1u, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_SHORT, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_EQUAL_UINT32(1u, if_ctr(0u, IDEMIP_STAT_IF_IN_ERRORS));
+    TEST_ASSERT_EQUAL_UINT32(0u, if_ctr(0u, IDEMIP_STAT_IF_IN_UNKNOWN_PROTOS));
+}
+
 // A type code nothing here handles: ifInUnknownProtos, "discarded because of an unknown or
 // unsupported protocol". The frame is intact, so it is neither an error nor a discard.
 void test_an_unhandled_ethertype_counts_unknown_protos(void)
@@ -3999,6 +4010,20 @@ void test_a_passive_open_without_an_iss_generator_is_dropped(void)
     IDEMIP_DISPATCH_IO(work_a)->bind_args.tcp_isn = NULL;
     Dispatch.bind(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DISPATCH_IO(work_a)->status);
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_NONE, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_UNBOUND, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_TCP) == 0u);
+    TEST_ASSERT_EQUAL_UINT32(0u, ctr(IDEMIP_STAT_TCP_PASSIVE_OPENS));
+}
+
+// A generator with no key draws no ISS, so a SYN to a listener opens no connection and gets no
+// SYN,ACK.
+void test_a_passive_open_with_an_unseeded_iss_generator_is_dropped(void)
+{
+    (void)listen_on(5001u);
+    TcpIsn.reset(tcp_isn_mem);
     size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, IDEMIP_TCP_SYN, 0u);
     input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_NONE, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
