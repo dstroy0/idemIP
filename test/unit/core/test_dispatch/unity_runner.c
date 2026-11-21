@@ -182,6 +182,7 @@ extern void test_tcp_in_segs_counts_a_segment_shorter_than_the_header(void);
 extern void test_a_segment_with_no_tcb_reaches_the_closed_state(void);
 extern void test_a_syn_to_a_listener_creates_the_connection(void);
 extern void test_a_passive_open_takes_the_window_of_its_listener(void);
+extern void test_a_passive_open_keeps_the_r2_thresholds_of_its_tcb(void);
 extern void test_each_passive_open_draws_its_own_iss(void);
 extern void test_a_passive_open_without_an_iss_generator_is_dropped(void);
 extern void test_the_second_segment_finds_the_connection(void);
@@ -475,81 +476,82 @@ int main(void)
   run_test(test_a_segment_with_no_tcb_reaches_the_closed_state, "test_a_segment_with_no_tcb_reaches_the_closed_state", 3894);
   run_test(test_a_syn_to_a_listener_creates_the_connection, "test_a_syn_to_a_listener_creates_the_connection", 3921);
   run_test(test_a_passive_open_takes_the_window_of_its_listener, "test_a_passive_open_takes_the_window_of_its_listener", 3941);
-  run_test(test_each_passive_open_draws_its_own_iss, "test_each_passive_open_draws_its_own_iss", 3956);
-  run_test(test_a_passive_open_without_an_iss_generator_is_dropped, "test_a_passive_open_without_an_iss_generator_is_dropped", 3980);
-  run_test(test_the_second_segment_finds_the_connection, "test_the_second_segment_finds_the_connection", 3995);
-  run_test(test_a_segment_for_a_pcb_in_syn_sent_takes_the_syn_sent_entry, "test_a_segment_for_a_pcb_in_syn_sent_takes_the_syn_sent_entry", 4092);
-  run_test(test_a_segment_for_a_pcb_in_closed_answers_with_a_reset, "test_a_segment_for_a_pcb_in_closed_answers_with_a_reset", 4112);
-  run_test(test_an_ordinary_acknowledgment_is_aggregated_and_not_reported, "test_an_ordinary_acknowledgment_is_aggregated_and_not_reported", 4126);
-  run_test(test_two_segments_earn_one_acknowledgment, "test_two_segments_earn_one_acknowledgment", 4145);
-  run_test(test_an_acknowledgment_owed_by_a_connection_that_closed_is_not_sent, "test_an_acknowledgment_owed_by_a_connection_that_closed_is_not_sent", 4180);
-  run_test(test_a_delivery_asked_for_against_a_closed_connection_is_refused, "test_a_delivery_asked_for_against_a_closed_connection_is_refused", 4213);
-  run_test(test_an_ack_flush_with_nothing_owed_is_busy, "test_an_ack_flush_with_nothing_owed_is_busy", 4229);
-  run_test(test_a_segment_ahead_of_the_window_is_held, "test_a_segment_ahead_of_the_window_is_held", 4238);
-  run_test(test_a_segment_ahead_of_the_window_with_no_descriptor_is_not_held, "test_a_segment_ahead_of_the_window_with_no_descriptor_is_not_held", 4269);
-  run_test(test_a_segment_ahead_of_a_full_out_of_order_queue_is_dropped, "test_a_segment_ahead_of_a_full_out_of_order_queue_is_dropped", 4294);
-  run_test(test_a_held_segment_waits_until_rcv_nxt_reaches_it, "test_a_held_segment_waits_until_rcv_nxt_reaches_it", 4319);
-  run_test(test_a_held_segment_is_redelivered_once_the_gap_is_filled, "test_a_held_segment_is_redelivered_once_the_gap_is_filled", 4337);
-  run_test(test_a_redelivery_owes_the_aggregate_acknowledgment, "test_a_redelivery_owes_the_aggregate_acknowledgment", 4377);
-  run_test(test_the_text_of_a_delivery_is_named_from_the_frame, "test_the_text_of_a_delivery_is_named_from_the_frame", 4410);
-  run_test(test_a_redelivery_names_its_text_from_the_frame_and_spends_the_window, "test_a_redelivery_names_its_text_from_the_frame_and_spends_the_window", 4436);
-  run_test(test_a_redelivery_takes_no_more_than_the_window, "test_a_redelivery_takes_no_more_than_the_window", 4466);
-  run_test(test_tcp_deliver_refuses_a_pcb_past_the_table, "test_tcp_deliver_refuses_a_pcb_past_the_table", 4498);
-  run_test(test_a_short_tcp_segment_is_an_error, "test_a_short_tcp_segment_is_an_error", 4506);
-  run_test(test_a_challenge_acknowledgment_is_not_aggregated, "test_a_challenge_acknowledgment_is_not_aggregated", 4518);
+  run_test(test_a_passive_open_keeps_the_r2_thresholds_of_its_tcb, "test_a_passive_open_keeps_the_r2_thresholds_of_its_tcb", 3956);
+  run_test(test_each_passive_open_draws_its_own_iss, "test_each_passive_open_draws_its_own_iss", 3972);
+  run_test(test_a_passive_open_without_an_iss_generator_is_dropped, "test_a_passive_open_without_an_iss_generator_is_dropped", 3996);
+  run_test(test_the_second_segment_finds_the_connection, "test_the_second_segment_finds_the_connection", 4011);
+  run_test(test_a_segment_for_a_pcb_in_syn_sent_takes_the_syn_sent_entry, "test_a_segment_for_a_pcb_in_syn_sent_takes_the_syn_sent_entry", 4108);
+  run_test(test_a_segment_for_a_pcb_in_closed_answers_with_a_reset, "test_a_segment_for_a_pcb_in_closed_answers_with_a_reset", 4128);
+  run_test(test_an_ordinary_acknowledgment_is_aggregated_and_not_reported, "test_an_ordinary_acknowledgment_is_aggregated_and_not_reported", 4142);
+  run_test(test_two_segments_earn_one_acknowledgment, "test_two_segments_earn_one_acknowledgment", 4161);
+  run_test(test_an_acknowledgment_owed_by_a_connection_that_closed_is_not_sent, "test_an_acknowledgment_owed_by_a_connection_that_closed_is_not_sent", 4196);
+  run_test(test_a_delivery_asked_for_against_a_closed_connection_is_refused, "test_a_delivery_asked_for_against_a_closed_connection_is_refused", 4229);
+  run_test(test_an_ack_flush_with_nothing_owed_is_busy, "test_an_ack_flush_with_nothing_owed_is_busy", 4245);
+  run_test(test_a_segment_ahead_of_the_window_is_held, "test_a_segment_ahead_of_the_window_is_held", 4254);
+  run_test(test_a_segment_ahead_of_the_window_with_no_descriptor_is_not_held, "test_a_segment_ahead_of_the_window_with_no_descriptor_is_not_held", 4285);
+  run_test(test_a_segment_ahead_of_a_full_out_of_order_queue_is_dropped, "test_a_segment_ahead_of_a_full_out_of_order_queue_is_dropped", 4310);
+  run_test(test_a_held_segment_waits_until_rcv_nxt_reaches_it, "test_a_held_segment_waits_until_rcv_nxt_reaches_it", 4335);
+  run_test(test_a_held_segment_is_redelivered_once_the_gap_is_filled, "test_a_held_segment_is_redelivered_once_the_gap_is_filled", 4353);
+  run_test(test_a_redelivery_owes_the_aggregate_acknowledgment, "test_a_redelivery_owes_the_aggregate_acknowledgment", 4393);
+  run_test(test_the_text_of_a_delivery_is_named_from_the_frame, "test_the_text_of_a_delivery_is_named_from_the_frame", 4426);
+  run_test(test_a_redelivery_names_its_text_from_the_frame_and_spends_the_window, "test_a_redelivery_names_its_text_from_the_frame_and_spends_the_window", 4452);
+  run_test(test_a_redelivery_takes_no_more_than_the_window, "test_a_redelivery_takes_no_more_than_the_window", 4482);
+  run_test(test_tcp_deliver_refuses_a_pcb_past_the_table, "test_tcp_deliver_refuses_a_pcb_past_the_table", 4514);
+  run_test(test_a_short_tcp_segment_is_an_error, "test_a_short_tcp_segment_is_an_error", 4522);
+  run_test(test_a_challenge_acknowledgment_is_not_aggregated, "test_a_challenge_acknowledgment_is_not_aggregated", 4534);
 #endif
 #if (IDEMIP_ENABLE_TCP) && (IDEMIP_ENABLE_IPV6)
-  run_test(test_a_syn_at_an_ipv6_listener_takes_a_connection, "test_a_syn_at_an_ipv6_listener_takes_a_connection", 4584);
-  run_test(test_a_tcp_segment_over_ipv6_with_a_bad_checksum_reaches_no_connection, "test_a_tcp_segment_over_ipv6_with_a_bad_checksum_reaches_no_connection", 4609);
+  run_test(test_a_syn_at_an_ipv6_listener_takes_a_connection, "test_a_syn_at_an_ipv6_listener_takes_a_connection", 4600);
+  run_test(test_a_tcp_segment_over_ipv6_with_a_bad_checksum_reaches_no_connection, "test_a_tcp_segment_over_ipv6_with_a_bad_checksum_reaches_no_connection", 4625);
 #endif
 #if (IDEMIP_ENABLE_UDP)
-  run_test(test_a_udp_lite_datagram_reaches_a_lite_binding, "test_a_udp_lite_datagram_reaches_a_lite_binding", 4631);
-  run_test(test_a_udp_length_below_its_own_header_is_refused, "test_a_udp_length_below_its_own_header_is_refused", 4684);
-  run_test(test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded, "test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded", 4701);
-  run_test(test_a_udp_lite_coverage_of_zero_is_the_whole_packet, "test_a_udp_lite_coverage_of_zero_is_the_whole_packet", 4718);
-  run_test(test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault, "test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault", 4763);
+  run_test(test_a_udp_lite_datagram_reaches_a_lite_binding, "test_a_udp_lite_datagram_reaches_a_lite_binding", 4647);
+  run_test(test_a_udp_length_below_its_own_header_is_refused, "test_a_udp_length_below_its_own_header_is_refused", 4700);
+  run_test(test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded, "test_a_udp_lite_datagram_with_an_illegal_coverage_is_discarded", 4717);
+  run_test(test_a_udp_lite_coverage_of_zero_is_the_whole_packet, "test_a_udp_lite_coverage_of_zero_is_the_whole_packet", 4734);
+  run_test(test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault, "test_a_udp_lite_datagram_with_a_bad_checksum_is_refused_as_a_checksum_fault", 4779);
 #endif
 #if (IDEMIP_ENABLE_UDP) && (IDEMIP_ENABLE_IPV6)
-  run_test(test_a_udp_lite_datagram_over_ipv6_reaches_a_lite_binding, "test_a_udp_lite_datagram_over_ipv6_reaches_a_lite_binding", 4799);
+  run_test(test_a_udp_lite_datagram_over_ipv6_reaches_a_lite_binding, "test_a_udp_lite_datagram_over_ipv6_reaches_a_lite_binding", 4815);
 #endif
-  run_test(test_a_frame_with_no_stats_borrow_is_still_delivered, "test_a_frame_with_no_stats_borrow_is_still_delivered", 4878);
-  run_test(test_a_unicast_destination_with_no_netif_borrow_is_an_address_error, "test_a_unicast_destination_with_no_netif_borrow_is_an_address_error", 4901);
-  run_test(test_a_multicast_destination_with_no_igmp_borrow_is_not_ours, "test_a_multicast_destination_with_no_igmp_borrow_is_not_ours", 4920);
-  run_test(test_an_arp_packet_with_no_netif_borrow_is_refused, "test_an_arp_packet_with_no_netif_borrow_is_refused", 4941);
+  run_test(test_a_frame_with_no_stats_borrow_is_still_delivered, "test_a_frame_with_no_stats_borrow_is_still_delivered", 4894);
+  run_test(test_a_unicast_destination_with_no_netif_borrow_is_an_address_error, "test_a_unicast_destination_with_no_netif_borrow_is_an_address_error", 4917);
+  run_test(test_a_multicast_destination_with_no_igmp_borrow_is_not_ours, "test_a_multicast_destination_with_no_igmp_borrow_is_not_ours", 4936);
+  run_test(test_an_arp_packet_with_no_netif_borrow_is_refused, "test_an_arp_packet_with_no_netif_borrow_is_refused", 4957);
 #if (IDEMIP_ENABLE_IPV6)
-  run_test(test_a_loopback_destination_off_a_wire_is_dropped, "test_a_loopback_destination_off_a_wire_is_dropped", 4959);
-  run_test(test_a_multicast_destination_with_no_ip6_addr_borrow_is_not_ours, "test_a_multicast_destination_with_no_ip6_addr_borrow_is_not_ours", 4980);
+  run_test(test_a_loopback_destination_off_a_wire_is_dropped, "test_a_loopback_destination_off_a_wire_is_dropped", 4975);
+  run_test(test_a_multicast_destination_with_no_ip6_addr_borrow_is_not_ours, "test_a_multicast_destination_with_no_ip6_addr_borrow_is_not_ours", 4996);
 #endif
-  run_test(test_a_source_that_would_be_a_directed_broadcast_needs_a_mask_to_be_one, "test_a_source_that_would_be_a_directed_broadcast_needs_a_mask_to_be_one", 5007);
-  run_test(test_an_echo_request_at_a_build_with_no_netif_borrow_is_still_answered, "test_an_echo_request_at_a_build_with_no_netif_borrow_is_still_answered", 5043);
+  run_test(test_a_source_that_would_be_a_directed_broadcast_needs_a_mask_to_be_one, "test_a_source_that_would_be_a_directed_broadcast_needs_a_mask_to_be_one", 5023);
+  run_test(test_an_echo_request_at_a_build_with_no_netif_borrow_is_still_answered, "test_an_echo_request_at_a_build_with_no_netif_borrow_is_still_answered", 5059);
 #if (IDEMIP_ENABLE_IPV6)
-  run_test(test_an_ipv6_unicast_destination_with_no_netif_borrow_is_left_to_the_forwarder, "test_an_ipv6_unicast_destination_with_no_netif_borrow_is_left_to_the_forwarder", 5062);
-  run_test(test_an_ipv6_multicast_destination_with_no_mld6_borrow_is_not_ours, "test_an_ipv6_multicast_destination_with_no_mld6_borrow_is_not_ours", 5082);
-  run_test(test_an_icmpv6_echo_request_at_a_build_with_no_netif_borrow_is_still_answered, "test_an_icmpv6_echo_request_at_a_build_with_no_netif_borrow_is_still_answered", 5103);
+  run_test(test_an_ipv6_unicast_destination_with_no_netif_borrow_is_left_to_the_forwarder, "test_an_ipv6_unicast_destination_with_no_netif_borrow_is_left_to_the_forwarder", 5078);
+  run_test(test_an_ipv6_multicast_destination_with_no_mld6_borrow_is_not_ours, "test_an_ipv6_multicast_destination_with_no_mld6_borrow_is_not_ours", 5098);
+  run_test(test_an_icmpv6_echo_request_at_a_build_with_no_netif_borrow_is_still_answered, "test_an_icmpv6_echo_request_at_a_build_with_no_netif_borrow_is_still_answered", 5119);
 #endif
 #if (IDEMIP_ENABLE_TCP)
-  run_test(test_a_delivery_at_a_build_with_no_tcp_pcb_borrow_is_refused, "test_a_delivery_at_a_build_with_no_tcp_pcb_borrow_is_refused", 5132);
+  run_test(test_a_delivery_at_a_build_with_no_tcp_pcb_borrow_is_refused, "test_a_delivery_at_a_build_with_no_tcp_pcb_borrow_is_refused", 5148);
 #endif
-  run_test(test_a_reply_with_no_transmit_buffer_at_all_is_busy, "test_a_reply_with_no_transmit_buffer_at_all_is_busy", 5151);
+  run_test(test_a_reply_with_no_transmit_buffer_at_all_is_busy, "test_a_reply_with_no_transmit_buffer_at_all_is_busy", 5167);
 #if (IDEMIP_ENABLE_IPV6)
-  run_test(test_an_echo_request_is_answered_with_no_preferred_address_to_take, "test_an_echo_request_is_answered_with_no_preferred_address_to_take", 5195);
+  run_test(test_an_echo_request_is_answered_with_no_preferred_address_to_take, "test_an_echo_request_is_answered_with_no_preferred_address_to_take", 5211);
 #endif
-  run_test(test_an_802_3_length_field_with_no_snap_header_counts_unknown_protos, "test_an_802_3_length_field_with_no_snap_header_counts_unknown_protos", 5236);
+  run_test(test_an_802_3_length_field_with_no_snap_header_counts_unknown_protos, "test_an_802_3_length_field_with_no_snap_header_counts_unknown_protos", 5252);
 #if (IDEMIP_ENABLE_TCP)
-  run_test(test_a_held_segment_rcv_nxt_has_passed_entirely_is_freed_without_a_delivery, "test_a_held_segment_rcv_nxt_has_passed_entirely_is_freed_without_a_delivery", 5256);
+  run_test(test_a_held_segment_rcv_nxt_has_passed_entirely_is_freed_without_a_delivery, "test_a_held_segment_rcv_nxt_has_passed_entirely_is_freed_without_a_delivery", 5272);
 #endif
-  run_test(test_a_frame_with_no_vlan_borrow_is_refused, "test_a_frame_with_no_vlan_borrow_is_refused", 5294);
+  run_test(test_a_frame_with_no_vlan_borrow_is_refused, "test_a_frame_with_no_vlan_borrow_is_refused", 5310);
 #if (IDEMIP_ENABLE_IPV4)
-  run_test(test_an_ipv4_frame_with_an_unbound_unit_is_refused, "test_an_ipv4_frame_with_an_unbound_unit_is_refused", 5305);
+  run_test(test_an_ipv4_frame_with_an_unbound_unit_is_refused, "test_an_ipv4_frame_with_an_unbound_unit_is_refused", 5321);
 #endif
 #if (IDEMIP_ENABLE_IPV6)
-  run_test(test_an_ipv6_frame_with_an_unbound_unit_is_refused, "test_an_ipv6_frame_with_an_unbound_unit_is_refused", 5349);
+  run_test(test_an_ipv6_frame_with_an_unbound_unit_is_refused, "test_an_ipv6_frame_with_an_unbound_unit_is_refused", 5365);
 #endif
 #if (IDEMIP_ENABLE_UDP)
-  run_test(test_a_udp_datagram_with_an_unbound_unit_is_refused, "test_a_udp_datagram_with_an_unbound_unit_is_refused", 5375);
+  run_test(test_a_udp_datagram_with_an_unbound_unit_is_refused, "test_a_udp_datagram_with_an_unbound_unit_is_refused", 5391);
 #endif
 #if (IDEMIP_ENABLE_TCP)
-  run_test(test_a_tcp_segment_with_an_unbound_unit_is_refused, "test_a_tcp_segment_with_an_unbound_unit_is_refused", 5406);
+  run_test(test_a_tcp_segment_with_an_unbound_unit_is_refused, "test_a_tcp_segment_with_an_unbound_unit_is_refused", 5422);
 #endif
 
   return UNITY_END();

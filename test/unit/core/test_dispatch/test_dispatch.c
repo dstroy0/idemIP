@@ -3951,6 +3951,22 @@ void test_a_passive_open_takes_the_window_of_its_listener(void)
     TEST_ASSERT_EQUAL_UINT32(IDEMIP_TCP_WND, tp->vars.rcv_wnd);
 }
 
+// RFC 9293 sec 3.8.3: TcpPcb.open gives each TCB its R2 thresholds. The TCB of a passive OPEN keeps them,
+// and a peer that stops all answers thus ends the connection.
+void test_a_passive_open_keeps_the_r2_thresholds_of_its_tcb(void)
+{
+    (void)listen_on(5001u);
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_TCP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = IDEMIP_DISPATCH_IO(work_a)->pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_TCP_MAXRTX, tp->ctl.r2);
+    TEST_ASSERT_EQUAL_UINT8(IDEMIP_TCP_SYNMAXRTX, tp->ctl.r2_syn);
+}
+
 // RFC 6528 sec 3: the ISS of a connection comes from its four-tuple and the secret. Two SYNs from two
 // source ports thus get two ISSs, and the SYN,ACK of each one carries its own.
 void test_each_passive_open_draws_its_own_iss(void)

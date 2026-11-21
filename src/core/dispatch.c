@@ -949,6 +949,12 @@ static void d_tcp(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_
             d_drop(work, IDEMIP_DISPATCH_DROP_NO_PCB, IDEMIP_STAT_IF_IN_DISCARDS);
             return;
         }
+        // TcpPcb.open gave the TCB its RFC 9293 sec 3.8.3 R2 thresholds. The scratch image starts with
+        // zero, and clause (d) reads zero as infinity. The store thus carries the thresholds of the TCB.
+        tp->pcb_args.index = pcb;
+        TcpPcb.load(ctx->tcp_pcb);
+        ti->ctl.r2 = tp->ctl.r2;
+        ti->ctl.r2_syn = tp->ctl.r2_syn;
         ti->vars = vars;
         ti->reply = reply;
         ti->res.act = act;
