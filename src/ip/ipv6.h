@@ -254,7 +254,8 @@ EMBED_TABLE_STORAGE Ip6FragHdrNs ip6_frag_hdr EMBED_UNUSED = {
     .build = idemip_ip6_frag_build,
 };
 
-EMBED_TABLE_STORAGE Ip6RouteNs ip6_route EMBED_UNUSED = {
+// Not ip6_route: lwIP declares a function of that name in lwip/ip6.h, and a unit can see both headers.
+EMBED_TABLE_STORAGE Ip6RouteNs ip6_routing_hdr EMBED_UNUSED = {
     .segs_left = idemip_ip6_rt_segs_left,
     .type = idemip_ip6_rt_type,
 };
