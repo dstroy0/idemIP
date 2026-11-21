@@ -123,9 +123,14 @@ EMBED_ENUM_BYTE(IdemIpStatus,
 EMBED_STATIC_ASSERT((MMGR_ALIGN_BYTES % IDEMIP_CACHE_LINE_BYTES) == 0u,
                     "MMGR_ALIGN_BYTES must be a whole number of IDEMIP_CACHE_LINE_BYTES: a DMA pool starts on a line");
 
-/** @brief Alignment every borrow that holds no DMA buffer is taken at. */
+/**
+ * @brief The alignment of each borrow that holds no DMA buffer: 4 bytes.
+ *
+ * @note A cell of MMgr starts on its grain, which is 4 bytes on a word of 32 bits. So each borrow starts
+ *       on 4 bytes, and every offset inside a borrow is a multiple of 4.
+ */
 #ifndef IDEMIP_ALIGN
-#define IDEMIP_ALIGN 8u
+#define IDEMIP_ALIGN 4u
 #endif
 
 /** @brief Round @p n up to the next multiple of @p a, which must be a power of two. */

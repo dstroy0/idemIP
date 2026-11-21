@@ -135,7 +135,7 @@ typedef struct
     RdnssAddrArgs addr_args;
     RdnssTickArgs tick_args;
 
-    IdemIpMs expire_at;
+    embed_stored_u64 expire_at;
     uint32_t lifetime_s;
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     IdemIpStatus status;

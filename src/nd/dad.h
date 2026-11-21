@@ -198,7 +198,7 @@ typedef struct
     DadTickArgs tick_args;
 
     const uint8_t *target;
-    IdemIpMs deadline;
+    embed_stored_u64 deadline;
     uint8_t solicited[IDEMIP_IP6_ADDR_LEN];
     IdemIpStatus status;
     uint8_t entry;

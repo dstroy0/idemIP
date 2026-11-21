@@ -195,11 +195,11 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
     Slaac.clear(work_b);
     feed_prefix(work_a, g_prefix, 64u, HOUR_S, HOUR_S, 0u, EMBED_TRUE, EMBED_FALSE);
     find_addr(work_a, g_formed);
-    IdemIpMs first = IO(work_a)->valid_at;
+    IdemIpMs first = embed_stored_u64_get(&IO(work_a)->valid_at);
 
     feed_prefix(work_b, g_prefix, 64u, 10u, 10u, 500u, EMBED_TRUE, EMBED_FALSE);
     find_addr(work_a, g_formed);
-    TEST_ASSERT_EQUAL_UINT64(first, IO(work_a)->valid_at);
+    TEST_ASSERT_EQUAL_UINT64(first, embed_stored_u64_get(&IO(work_a)->valid_at));
 }
 
 // --- the published map -------------------------------------------------------
@@ -416,8 +416,8 @@ void test_the_lifetimes_are_initialized_from_the_option(void)
 {
     Slaac.clear(work_a);
     feed_prefix(work_a, g_prefix, 64u, TWO_HOURS_S, HOUR_S, 1000u, EMBED_TRUE, EMBED_FALSE);
-    TEST_ASSERT_EQUAL_UINT32(1000u + (TWO_HOURS_S * 1000u), IO(work_a)->valid_at);
-    TEST_ASSERT_EQUAL_UINT32(1000u + (HOUR_S * 1000u), IO(work_a)->preferred_at);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (TWO_HOURS_S * 1000u), embed_stored_u64_get(&IO(work_a)->valid_at));
+    TEST_ASSERT_EQUAL_UINT32(1000u + (HOUR_S * 1000u), embed_stored_u64_get(&IO(work_a)->preferred_at));
     TEST_ASSERT_EQUAL_INT(IDEMIP_SLAAC_ADDR_PREFERRED, IO(work_a)->state);
 }
 
@@ -526,9 +526,9 @@ void test_a_lifetime_past_a_32_bit_millisecond_deadline_is_kept_whole(void)
     feed_prefix(work_a, g_prefix, 64u, valid_s, preferred_s, 0u, EMBED_TRUE, EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
     TEST_ASSERT_TRUE(IO(work_a)->created);
-    TEST_ASSERT_EQUAL_UINT64_MESSAGE((IdemIpMs)valid_s * 1000u, IO(work_a)->valid_at,
+    TEST_ASSERT_EQUAL_UINT64_MESSAGE((IdemIpMs)valid_s * 1000u, embed_stored_u64_get(&IO(work_a)->valid_at),
                                      "the advertised Valid Lifetime was truncated");
-    TEST_ASSERT_EQUAL_UINT64_MESSAGE((IdemIpMs)preferred_s * 1000u, IO(work_a)->preferred_at,
+    TEST_ASSERT_EQUAL_UINT64_MESSAGE((IdemIpMs)preferred_s * 1000u, embed_stored_u64_get(&IO(work_a)->preferred_at),
                                      "the advertised Preferred Lifetime was truncated");
 
     // 28.9 days in, past the 24.86-day bound a 32-bit deadline forced, the address is still held.
@@ -548,12 +548,13 @@ void test_the_preferred_lifetime_is_always_reset(void)
     Slaac.clear(work_a);
     // Ten minutes valid, so the valid lifetime below takes rule 2 and is ignored.
     feed_prefix(work_a, g_prefix, 64u, 600u, 600u, 0u, EMBED_TRUE, EMBED_FALSE);
-    IdemIpMs held_valid = IO(work_a)->valid_at;
+    IdemIpMs held_valid = embed_stored_u64_get(&IO(work_a)->valid_at);
 
     feed_prefix(work_a, g_prefix, 64u, 300u, 120u, 1000u, EMBED_TRUE, EMBED_FALSE);
     TEST_ASSERT_TRUE(IO(work_a)->two_hour);
-    TEST_ASSERT_EQUAL_UINT64_MESSAGE(held_valid, IO(work_a)->valid_at, "rule 2 must leave the valid lifetime alone");
-    TEST_ASSERT_EQUAL_UINT64_MESSAGE(1000u + (120u * 1000u), IO(work_a)->preferred_at,
+    TEST_ASSERT_EQUAL_UINT64_MESSAGE(held_valid, embed_stored_u64_get(&IO(work_a)->valid_at),
+                                     "rule 2 must leave the valid lifetime alone");
+    TEST_ASSERT_EQUAL_UINT64_MESSAGE(1000u + (120u * 1000u), embed_stored_u64_get(&IO(work_a)->preferred_at),
                                      "the preferred lifetime is reset whatever the valid lifetime does");
 }
 
@@ -564,7 +565,7 @@ void test_rule_1_a_valid_lifetime_above_two_hours_is_taken(void)
     Slaac.clear(work_a);
     feed_prefix(work_a, g_prefix, 64u, 600u, 600u, 0u, EMBED_TRUE, EMBED_FALSE);
     feed_prefix(work_a, g_prefix, 64u, TWO_HOURS_S + 1u, 600u, 1000u, EMBED_TRUE, EMBED_FALSE);
-    TEST_ASSERT_EQUAL_UINT32(1000u + ((TWO_HOURS_S + 1u) * 1000u), IO(work_a)->valid_at);
+    TEST_ASSERT_EQUAL_UINT32(1000u + ((TWO_HOURS_S + 1u) * 1000u), embed_stored_u64_get(&IO(work_a)->valid_at));
     TEST_ASSERT_FALSE(IO(work_a)->two_hour);
 }
 
@@ -575,7 +576,7 @@ void test_rule_1_a_valid_lifetime_above_the_remaining_lifetime_is_taken(void)
     Slaac.clear(work_a);
     feed_prefix(work_a, g_prefix, 64u, 600u, 600u, 0u, EMBED_TRUE, EMBED_FALSE);
     feed_prefix(work_a, g_prefix, 64u, HOUR_S, 600u, 1000u, EMBED_TRUE, EMBED_FALSE);
-    TEST_ASSERT_EQUAL_UINT32(1000u + (HOUR_S * 1000u), IO(work_a)->valid_at);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (HOUR_S * 1000u), embed_stored_u64_get(&IO(work_a)->valid_at));
     TEST_ASSERT_FALSE(IO(work_a)->two_hour);
 }
 
@@ -586,9 +587,10 @@ void test_rule_2_a_shorter_lifetime_is_ignored_when_under_two_hours_remain(void)
 {
     Slaac.clear(work_a);
     feed_prefix(work_a, g_prefix, 64u, 600u, 600u, 0u, EMBED_TRUE, EMBED_FALSE);
-    IdemIpMs held = IO(work_a)->valid_at;
+    IdemIpMs held = embed_stored_u64_get(&IO(work_a)->valid_at);
     feed_prefix(work_a, g_prefix, 64u, 300u, 300u, 1000u, EMBED_TRUE, EMBED_FALSE);
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(held, IO(work_a)->valid_at, "a short lifetime cut an address that was expiring");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(held, embed_stored_u64_get(&IO(work_a)->valid_at),
+                                     "a short lifetime cut an address that was expiring");
     TEST_ASSERT_TRUE(IO(work_a)->two_hour);
 }
 
@@ -600,7 +602,7 @@ void test_rule_2_an_authenticated_advertisement_sets_the_shorter_lifetime(void)
     Slaac.clear(work_a);
     feed_prefix(work_a, g_prefix, 64u, 600u, 600u, 0u, EMBED_TRUE, EMBED_FALSE);
     feed_prefix(work_a, g_prefix, 64u, 300u, 300u, 1000u, EMBED_TRUE, EMBED_TRUE);
-    TEST_ASSERT_EQUAL_UINT32(1000u + (300u * 1000u), IO(work_a)->valid_at);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (300u * 1000u), embed_stored_u64_get(&IO(work_a)->valid_at));
     TEST_ASSERT_FALSE(IO(work_a)->two_hour);
 }
 
@@ -611,7 +613,7 @@ void test_rule_3_a_short_lifetime_against_a_long_one_resets_to_two_hours(void)
     Slaac.clear(work_a);
     feed_prefix(work_a, g_prefix, 64u, 10u * HOUR_S, 10u * HOUR_S, 0u, EMBED_TRUE, EMBED_FALSE);
     feed_prefix(work_a, g_prefix, 64u, 300u, 300u, 1000u, EMBED_TRUE, EMBED_FALSE);
-    TEST_ASSERT_EQUAL_UINT32(1000u + (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, IO(work_a)->valid_at);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, embed_stored_u64_get(&IO(work_a)->valid_at));
     TEST_ASSERT_TRUE(IO(work_a)->two_hour);
 }
 
@@ -622,7 +624,7 @@ void test_rule_3_holds_at_exactly_two_hours(void)
     Slaac.clear(work_a);
     feed_prefix(work_a, g_prefix, 64u, 10u * HOUR_S, 10u * HOUR_S, 0u, EMBED_TRUE, EMBED_FALSE);
     feed_prefix(work_a, g_prefix, 64u, TWO_HOURS_S, TWO_HOURS_S, 1000u, EMBED_TRUE, EMBED_FALSE);
-    TEST_ASSERT_EQUAL_UINT32(1000u + (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, IO(work_a)->valid_at);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, embed_stored_u64_get(&IO(work_a)->valid_at));
     TEST_ASSERT_TRUE(IO(work_a)->two_hour);
 }
 
@@ -644,7 +646,7 @@ void test_the_two_hour_rule_stops_an_advertisement_expiring_an_address_early(voi
     TEST_ASSERT_FALSE_MESSAGE(IO(work_a)->invalidated, "one bogus advertisement invalidated the address");
     find_addr(work_a, g_formed);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-    TEST_ASSERT_EQUAL_UINT32((uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, IO(work_a)->valid_at);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, embed_stored_u64_get(&IO(work_a)->valid_at));
 }
 
 // RFC 4861 sec 4.6.2: a Valid Lifetime "of all one bits (0xffffffff) represents infinity", which is
@@ -668,7 +670,7 @@ void test_a_short_lifetime_against_an_infinite_one_resets_to_two_hours(void)
     TEST_ASSERT_TRUE(IO(work_a)->valid_infinite);
     feed_prefix(work_a, g_prefix, 64u, 300u, 300u, 1000u, EMBED_TRUE, EMBED_FALSE);
     TEST_ASSERT_FALSE(IO(work_a)->valid_infinite);
-    TEST_ASSERT_EQUAL_UINT32(1000u + (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, IO(work_a)->valid_at);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, embed_stored_u64_get(&IO(work_a)->valid_at));
     TEST_ASSERT_TRUE(IO(work_a)->two_hour);
 }
 
@@ -680,7 +682,7 @@ void test_a_zero_valid_lifetime_on_a_held_prefix_takes_the_two_hour_rule(void)
     feed_prefix(work_a, g_prefix, 64u, 10u * HOUR_S, 10u * HOUR_S, 0u, EMBED_TRUE, EMBED_FALSE);
     feed_prefix(work_a, g_prefix, 64u, 0u, 0u, 1000u, EMBED_TRUE, EMBED_FALSE);
     TEST_ASSERT_TRUE(IO(work_a)->updated);
-    TEST_ASSERT_EQUAL_UINT32(1000u + (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, IO(work_a)->valid_at);
+    TEST_ASSERT_EQUAL_UINT32(1000u + (uint32_t)IDEMIP_SLAAC_TWO_HOURS_MS, embed_stored_u64_get(&IO(work_a)->valid_at));
     TEST_ASSERT_EQUAL_INT_MESSAGE(IDEMIP_SLAAC_ADDR_DEPRECATED, IO(work_a)->state,
                                   "a zero preferred lifetime deprecates the address at once");
 }
@@ -1082,14 +1084,14 @@ void test_an_advertisement_meeting_an_address_with_nothing_left_takes_the_two_ho
     feed_prefix(.w = work_a, .prefix = g_prefix, .prefix_len = 64u, .valid_s = 100u, .preferred_s = 100u,
                 .now_ms = 1000u, .autonomous = EMBED_TRUE, .authenticated = EMBED_TRUE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-    const IdemIpMs first_at = IO(work_a)->valid_at;
+    const IdemIpMs first_at = embed_stored_u64_get(&IO(work_a)->valid_at);
 
     // The same prefix again, past the lifetime the first one set, carrying a lifetime under two
     // hours and no authentication: rule 3 puts the address at two hours rather than at that value.
     feed_prefix(.w = work_a, .prefix = g_prefix, .prefix_len = 64u, .valid_s = 100u, .preferred_s = 100u,
                 .now_ms = 1000u + (200u * 1000u), .autonomous = EMBED_TRUE, .authenticated = EMBED_FALSE);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-    TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->valid_at > first_at,
+    TEST_ASSERT_TRUE_MESSAGE(embed_stored_u64_get(&IO(work_a)->valid_at) > first_at,
                              "an advertisement meeting an address with nothing left did not move its lifetime");
     TEST_ASSERT_EQUAL_UINT8_MESSAGE(1u, IO(work_a)->addresses, "the address was formed a second time");
 }

@@ -32,7 +32,7 @@ EMBED_BEGIN_DECLS
 // sec 5.4.5's "interface identifier based on the hardware address".
 typedef struct
 {
-    IdemIpMs deadline;
+    embed_stored_u64 deadline;
     uint32_t retrans_ms;
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     IdemIpDadState state;
@@ -184,7 +184,7 @@ static uint8_t dad_free_slot(uint8_t *work)
 static void dad_clear_results(DadIo *io)
 {
     io->target = NULL;
-    io->deadline = 0;
+    embed_stored_u64_set(&io->deadline, 0u);
     mmgr_zero_buf(io->solicited, sizeof io->solicited);
     io->entry = (uint8_t)IDEMIP_DAD_NONE;
     io->state = IDEMIP_DAD_STATE_FREE;
@@ -206,7 +206,7 @@ static void dad_publish(uint8_t *work, uint8_t index)
     const DadEntry *e = DAD_AT(work, index);
     io->entry = index;
     io->target = e->addr;
-    io->deadline = e->deadline;
+    embed_stored_u64_set(&io->deadline, embed_stored_u64_get(&e->deadline));
     io->state = e->state;
     io->sent = e->sent;
     io->received = e->received;
@@ -224,7 +224,7 @@ static void dad_fail(uint8_t *work, uint8_t index)
     DadIo *io = DAD_IO(work);
     DadEntry *e = DAD_AT(work, index);
     e->state = IDEMIP_DAD_STATE_DUPLICATE;
-    e->deadline = 0;
+    embed_stored_u64_set(&e->deadline, 0u);
     io->duplicate = EMBED_TRUE;
     io->disable_ip = (embed_bool)(e->hw_derived && dad_is_link_local(e->addr));
 }
@@ -236,7 +236,7 @@ static void dad_pass(uint8_t *work, uint8_t index)
 {
     DadEntry *e = DAD_AT(work, index);
     e->state = IDEMIP_DAD_STATE_UNIQUE;
-    e->deadline = 0;
+    embed_stored_u64_set(&e->deadline, 0u);
     DAD_IO(work)->unique = EMBED_TRUE;
 }
 
@@ -251,7 +251,7 @@ static void dad_send(uint8_t *work, uint8_t index, IdemIpMs now)
     const DadCtx *ctx = DAD_CTX(work);
     io->send_ns = EMBED_TRUE;
     e->sent++;
-    e->deadline = now + (IdemIpMs)e->retrans_ms;
+    embed_stored_u64_set(&e->deadline, now + (IdemIpMs)e->retrans_ms);
     e->state = (e->sent >= ctx->cfg->transmits) ? IDEMIP_DAD_STATE_WAIT : IDEMIP_DAD_STATE_PROBING;
 }
 
@@ -276,7 +276,7 @@ static void dad_fire(uint8_t *work)
         if (!e->used ||                            // GCOVR_EXCL_BR_LINE
             e->state == IDEMIP_DAD_STATE_FREE ||   // GCOVR_EXCL_BR_LINE
             e->state == IDEMIP_DAD_STATE_UNIQUE || // GCOVR_EXCL_BR_LINE
-            e->state == IDEMIP_DAD_STATE_DUPLICATE || !dad_due(now, e->deadline))
+            e->state == IDEMIP_DAD_STATE_DUPLICATE || !dad_due(now, embed_stored_u64_get(&e->deadline)))
         {
             continue;
         }
@@ -429,10 +429,11 @@ void idemip_dad_start(uint8_t *work)
         // first solicitation is due on the next tick.
         const IdemIpMs start =
             idemip_ms_extend(&DAD_CTX(work)->tick_ms, &DAD_CTX(work)->tick_hi, io->start_args.now_ms);
-        e->deadline =
+        embed_stored_u64_set(
+            &e->deadline,
             io->start_args.delay
                 ? start + (IdemIpMs)dad_draw(io->start_args.rand, (uint32_t)IDEMIP_ND6_MAX_RTR_SOLICITATION_DELAY_MS)
-                : start;
+                : start);
     }
     dad_publish(work, index);
     io->status = IDEMIP_OK;

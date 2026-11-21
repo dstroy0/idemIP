@@ -173,8 +173,8 @@ typedef struct
     SlaacAddrArgs addr_args;
     SlaacTickArgs tick_args;
 
-    IdemIpMs valid_at;
-    IdemIpMs preferred_at;
+    embed_stored_u64 valid_at;
+    embed_stored_u64 preferred_at;
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     IdemIpStatus status;
     uint8_t entry;

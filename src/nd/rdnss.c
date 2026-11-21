@@ -27,7 +27,7 @@ EMBED_BEGIN_DECLS
 // One entry of the sec 6.1 DNS Server List: "a pair of an RDNSS address ... and Expiration-time".
 typedef struct
 {
-    IdemIpMs expire_at;
+    embed_stored_u64 expire_at;
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     embed_bool infinite;
     embed_bool used;
@@ -179,7 +179,8 @@ static uint8_t rdnss_soonest(uint8_t *work, IdemIpMs now)
     for (uint8_t i = 0; i < count; i++)
     {
         const RdnssEntry *e = RDNSS_AT(work, i);
-        IdemIpMs left = rdnss_due(now, e->expire_at) ? 0u : (e->expire_at - now);
+        const IdemIpMs expire_at = embed_stored_u64_get(&e->expire_at);
+        IdemIpMs left = rdnss_due(now, expire_at) ? 0u : (expire_at - now);
         embed_bool take;
         if (best == (uint8_t)IDEMIP_RDNSS_NONE)
         {
@@ -216,7 +217,7 @@ static void rdnss_insert_at(uint8_t *work, uint8_t index, const uint8_t *addr, u
     RdnssEntry *e = RDNSS_AT(work, index);
     EMBED_CALL(proxim.read, ProximusCfg, .dst = e->addr, .at = addr, .size = IDEMIP_IP6_ADDR_LEN);
     e->infinite = (embed_bool)(lifetime_s == IDEMIP_RDNSS_LIFETIME_INFINITE);
-    e->expire_at = e->infinite ? 0u : rdnss_expiration(now, lifetime_s);
+    embed_stored_u64_set(&e->expire_at, e->infinite ? 0u : rdnss_expiration(now, lifetime_s));
     e->used = EMBED_TRUE;
 }
 
@@ -225,7 +226,7 @@ static void rdnss_insert_at(uint8_t *work, uint8_t index, const uint8_t *addr, u
 static void rdnss_clear_results(RdnssIo *io)
 {
     mmgr_zero_buf(io->addr, sizeof io->addr);
-    io->expire_at = 0u;
+    embed_stored_u64_set(&io->expire_at, 0u);
     io->lifetime_s = 0u;
     io->entry = (uint8_t)IDEMIP_RDNSS_NONE;
     io->servers = 0u;
@@ -246,7 +247,7 @@ static void rdnss_publish(uint8_t *work, uint8_t index)
     const RdnssEntry *e = RDNSS_AT(work, index);
     io->entry = index;
     EMBED_CALL(proxim.read, ProximusCfg, .dst = io->addr, .at = e->addr, .size = IDEMIP_IP6_ADDR_LEN);
-    io->expire_at = e->expire_at;
+    embed_stored_u64_set(&io->expire_at, embed_stored_u64_get(&e->expire_at));
     io->infinite = e->infinite;
 }
 
@@ -292,7 +293,7 @@ static void rdnss_apply(uint8_t *work, const uint8_t *addr, uint32_t lifetime_s,
         }
         RdnssEntry *e = RDNSS_AT(work, index);
         e->infinite = (embed_bool)(lifetime_s == IDEMIP_RDNSS_LIFETIME_INFINITE);
-        e->expire_at = e->infinite ? 0u : rdnss_expiration(now, lifetime_s);
+        embed_stored_u64_set(&e->expire_at, e->infinite ? 0u : rdnss_expiration(now, lifetime_s));
         io->updated++;
         return;
     }
@@ -499,7 +500,7 @@ void idemip_rdnss_tick(uint8_t *work)
     for (uint8_t i = 0; i < count; i++)
     {
         const RdnssEntry *e = RDNSS_AT(work, i);
-        if (!e->infinite && rdnss_due(now, e->expire_at))
+        if (!e->infinite && rdnss_due(now, embed_stored_u64_get(&e->expire_at)))
         {
             rdnss_publish(work, i);
             rdnss_delete_at(work, i);

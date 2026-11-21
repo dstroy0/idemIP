@@ -29,14 +29,14 @@ typedef struct
     uint8_t sent; ///< the option 53 value of the request awaiting a reply, 0 when none
     uint8_t retries;
     uint32_t xid;
-    IdemIpMs now_ms;
-    IdemIpMs retry_ms;  ///< when the message goes out again (sec 4.1)
-    uint32_t tick_ms;   ///< the last reading of the caller's 32-bit millisecond clock
-    uint32_t tick_hi;   ///< its high word, raised each time that reading wraps
-    IdemIpMs sent_ms;   ///< when it went out, which the expiry is measured from (sec 4.4.5)
-    IdemIpMs t1_ms;     ///< the deadline RENEWING starts at
-    IdemIpMs t2_ms;     ///< the deadline REBINDING starts at
-    IdemIpMs expire_ms; ///< the deadline the lease ends at
+    embed_stored_u64 now_ms;
+    embed_stored_u64 retry_ms;  ///< when the message goes out again (sec 4.1)
+    uint32_t tick_ms;           ///< the last reading of the caller's 32-bit millisecond clock
+    uint32_t tick_hi;           ///< its high word, raised each time that reading wraps
+    embed_stored_u64 sent_ms;   ///< when it went out, the start of the expiry (sec 4.4.5)
+    embed_stored_u64 t1_ms;     ///< the deadline RENEWING starts at
+    embed_stored_u64 t2_ms;     ///< the deadline REBINDING starts at
+    embed_stored_u64 expire_ms; ///< the deadline the lease ends at
     uint32_t server_id; ///< option 54, the server a unicast request goes to
     uint32_t offered_ip;
     uint32_t subnet_mask;
@@ -126,6 +126,12 @@ static embed_bool dhcp4_due(IdemIpMs now, IdemIpMs deadline)
     return (now >= deadline) ? EMBED_TRUE : EMBED_FALSE;
 }
 
+// Whether the clock of @p ctx is at or past the stored @p deadline.
+static embed_bool dhcp4_reached(const Dhcp4Ctx *ctx, const embed_stored_u64 *deadline)
+{
+    return dhcp4_due(embed_stored_u64_get(&ctx->now_ms), embed_stored_u64_get(deadline));
+}
+
 // A draw over [0, span] from one word: PLAN sec 3.4 masks to the power of two above the span and
 // rejects an out-of-range draw. A second field of the same word is taken before falling back to the
 // midpoint, so the draw is bounded and no divide appears. @p mask is 16 bits or fewer.
@@ -187,11 +193,13 @@ static uint32_t dhcp4_backoff(const Dhcp4Ctx *ctx, uint32_t rand)
     uint32_t base;
     if (ctx->state == IDEMIP_DHCP4_RENEWING)
     {
-        base = dhcp4_half_left(ctx->now_ms, ctx->t2_ms, dhcp4_timed(ctx->t2_s));
+        base = dhcp4_half_left(embed_stored_u64_get(&ctx->now_ms), embed_stored_u64_get(&ctx->t2_ms),
+                               dhcp4_timed(ctx->t2_s));
     }
     else if (ctx->state == IDEMIP_DHCP4_REBINDING)
     {
-        base = dhcp4_half_left(ctx->now_ms, ctx->expire_ms, dhcp4_timed(ctx->lease_s));
+        base = dhcp4_half_left(embed_stored_u64_get(&ctx->now_ms), embed_stored_u64_get(&ctx->expire_ms),
+                               dhcp4_timed(ctx->lease_s));
     }
     else
     {
@@ -240,10 +248,10 @@ static void dhcp4_halt(uint8_t *work)
     ctx->sent = 0u;
     ctx->retries = 0u;
     ctx->secs = 0u;
-    ctx->sent_ms = 0;
-    ctx->t1_ms = 0;
-    ctx->t2_ms = 0;
-    ctx->expire_ms = 0;
+    embed_stored_u64_set(&ctx->sent_ms, 0u);
+    embed_stored_u64_set(&ctx->t1_ms, 0u);
+    embed_stored_u64_set(&ctx->t2_ms, 0u);
+    embed_stored_u64_set(&ctx->expire_ms, 0u);
     ctx->server_id = 0u;
     ctx->offered_ip = 0u;
     ctx->subnet_mask = 0u;
@@ -497,14 +505,15 @@ static void dhcp4_lease(uint8_t *work, const Dhcp4Opts *o, const uint8_t *msg)
     // which the client's lease will expire." The deadlines sit on the 64-bit millisecond clock, so
     // the full 32-bit second range sec 3.3 gives option 51 is representable and the three never
     // collapse onto one instant.
-    ctx->t1_ms = ctx->sent_ms + idemip_ms_from_s(t1);
-    ctx->t2_ms = ctx->sent_ms + idemip_ms_from_s(t2);
-    ctx->expire_ms = ctx->sent_ms + idemip_ms_from_s(lease);
+    const IdemIpMs sent_ms = embed_stored_u64_get(&ctx->sent_ms);
+    embed_stored_u64_set(&ctx->t1_ms, sent_ms + idemip_ms_from_s(t1));
+    embed_stored_u64_set(&ctx->t2_ms, sent_ms + idemip_ms_from_s(t2));
+    embed_stored_u64_set(&ctx->expire_ms, sent_ms + idemip_ms_from_s(lease));
     ctx->state = IDEMIP_DHCP4_BOUND;
     ctx->owed = 0u;
     ctx->sent = 0u;
     ctx->retries = 0u;
-    ctx->retry_ms = ctx->now_ms;
+    embed_stored_u64_set(&ctx->retry_ms, embed_stored_u64_get(&ctx->now_ms));
 }
 
 // sec 4.4.1: an offer is collected in SELECTING, and the selected one supplies the 'server identifier'
@@ -825,8 +834,9 @@ static void dhcp4_write(uint8_t *work)
 
     // sec 4.4.1 and sec 4.4.5: the client records the local time the message went out, which the
     // lease expiration is measured from. The clock is the one the last tick or start supplied.
-    IdemIpMs next_ms = ctx->now_ms + (IdemIpMs)dhcp4_backoff(ctx, io->tick_args.rand);
-    ctx->sent_ms = ctx->now_ms;
+    const IdemIpMs now_ms = embed_stored_u64_get(&ctx->now_ms);
+    IdemIpMs next_ms = now_ms + (IdemIpMs)dhcp4_backoff(ctx, io->tick_args.rand);
+    embed_stored_u64_set(&ctx->sent_ms, now_ms);
     ctx->sent = type;
     ctx->owed = 0u;
     // The counter is what sec 4.1's backoff shifts by and what the give-up counts, and it is held
@@ -842,16 +852,16 @@ static void dhcp4_write(uint8_t *work)
         // sec 4.4.6: the address is given up, and "the correct operation of DHCP does not depend on
         // the transmission of DHCPRELEASE messages", so nothing is retransmitted.
         dhcp4_halt(work);
-        next_ms = ctx->now_ms;
+        next_ms = now_ms;
     }
     else if (type == (uint8_t)IDEMIP_DHCP4_DECLINE)
     {
         // sec 3.1: the client "restarts the configuration process" and "SHOULD wait a minimum of ten
         // seconds before restarting", which start reports BUSY until.
         dhcp4_halt(work);
-        next_ms = ctx->now_ms + (IdemIpMs)IDEMIP_DHCP4_DECLINE_WAIT_MS;
+        next_ms = now_ms + (IdemIpMs)IDEMIP_DHCP4_DECLINE_WAIT_MS;
     }
-    ctx->retry_ms = next_ms;
+    embed_stored_u64_set(&ctx->retry_ms, next_ms);
 }
 
 // --- what a deadline does --------------------------------------------------
@@ -884,7 +894,7 @@ static embed_bool dhcp4_run(uint8_t *work)
     case IDEMIP_DHCP4_SELECTING:
         // sec 4.4.1: the DHCPDISCOVER goes out once the one-to-ten-second delay has passed, and again
         // on every sec 4.1 deadline after it. The client keeps trying, the delay capping at 64 seconds.
-        if (!dhcp4_due(ctx->now_ms, ctx->retry_ms))
+        if (!dhcp4_reached(ctx, &ctx->retry_ms))
         {
             return EMBED_FALSE;
         }
@@ -896,7 +906,7 @@ static embed_bool dhcp4_run(uint8_t *work)
         // SHOULD wait a random time between one and ten seconds to desynchronize the use of DHCP at
         // startup" is written of the DHCPDISCOVER alone, so a machine entering
         // INIT-REBOOT is due at the instant it is entered and the first tick after that sends.
-        if (!dhcp4_due(ctx->now_ms, ctx->retry_ms)) // GCOVR_EXCL_BR_LINE
+        if (!dhcp4_reached(ctx, &ctx->retry_ms)) // GCOVR_EXCL_BR_LINE
         {
             return EMBED_FALSE; // GCOVR_EXCL_LINE
         }
@@ -907,7 +917,7 @@ static embed_bool dhcp4_run(uint8_t *work)
         return EMBED_TRUE;
     case IDEMIP_DHCP4_REQUESTING:
     case IDEMIP_DHCP4_REBOOTING:
-        if (!dhcp4_due(ctx->now_ms, ctx->retry_ms))
+        if (!dhcp4_reached(ctx, &ctx->retry_ms))
         {
             return EMBED_FALSE;
         }
@@ -917,7 +927,7 @@ static embed_bool dhcp4_run(uint8_t *work)
     case IDEMIP_DHCP4_REBINDING:
         // sec 4.4.5: "If the lease expires before the client receives a DHCPACK, the client moves to
         // INIT state, MUST immediately stop any other network processing."
-        if (dhcp4_timed(ctx->lease_s) && dhcp4_due(ctx->now_ms, ctx->expire_ms))
+        if (dhcp4_timed(ctx->lease_s) && dhcp4_reached(ctx, &ctx->expire_ms))
         {
             dhcp4_halt(work);
             return EMBED_TRUE;
@@ -928,7 +938,7 @@ static embed_bool dhcp4_run(uint8_t *work)
         // itself, and the expiry above answers such a machine before this test is reached. The state
         // test and the deadline both have cases.
         if ((ctx->state != IDEMIP_DHCP4_REBINDING) && dhcp4_timed(ctx->t2_s) && // GCOVR_EXCL_BR_LINE
-            dhcp4_due(ctx->now_ms, ctx->t2_ms))
+            dhcp4_reached(ctx, &ctx->t2_ms))
         {
             ctx->state = IDEMIP_DHCP4_REBINDING;
             ctx->sent = (uint8_t)IDEMIP_DHCP4_REQUEST;
@@ -938,7 +948,7 @@ static embed_bool dhcp4_run(uint8_t *work)
         }
         // "At time T1 the client moves to RENEWING state and sends (via unicast) a DHCPREQUEST message
         // to the server to extend its lease."
-        if ((ctx->state == IDEMIP_DHCP4_BOUND) && dhcp4_timed(ctx->t1_s) && dhcp4_due(ctx->now_ms, ctx->t1_ms))
+        if ((ctx->state == IDEMIP_DHCP4_BOUND) && dhcp4_timed(ctx->t1_s) && dhcp4_reached(ctx, &ctx->t1_ms))
         {
             ctx->state = IDEMIP_DHCP4_RENEWING;
             ctx->sent = (uint8_t)IDEMIP_DHCP4_REQUEST;
@@ -950,7 +960,7 @@ static embed_bool dhcp4_run(uint8_t *work)
         {
             return EMBED_FALSE; // Figure 5 leaves BOUND on T1, T2 or the expiry and on nothing else
         }
-        if (!dhcp4_due(ctx->now_ms, ctx->retry_ms))
+        if (!dhcp4_reached(ctx, &ctx->retry_ms))
         {
             return EMBED_FALSE;
         }
@@ -961,7 +971,7 @@ static embed_bool dhcp4_run(uint8_t *work)
         // Not measured on the deadline: a machine in INIT with a DHCPINFORM outstanding is the only
         // one that reaches the second test, and its deadline is armed where the message went out, so
         // the tick that finds one sent finds one due. The first test is what INIT is answered by.
-        if ((ctx->sent != (uint8_t)IDEMIP_DHCP4_INFORM) || !dhcp4_due(ctx->now_ms, ctx->retry_ms)) // GCOVR_EXCL_BR_LINE
+        if ((ctx->sent != (uint8_t)IDEMIP_DHCP4_INFORM) || !dhcp4_reached(ctx, &ctx->retry_ms)) // GCOVR_EXCL_BR_LINE
         {
             return EMBED_FALSE;
         }
@@ -1033,10 +1043,11 @@ void idemip_dhcp4_start(uint8_t *work)
         io->status = IDEMIP_ERR;
         return;
     }
-    ctx->now_ms = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->start_args.now_ms);
+    const IdemIpMs now_ms = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->start_args.now_ms);
+    embed_stored_u64_set(&ctx->now_ms, now_ms);
     // sec 3.1: the ten seconds a DHCPDECLINE asks for before the configuration process restarts. A
     // later call makes progress, so this is BUSY.
-    if (!dhcp4_due(ctx->now_ms, ctx->retry_ms))
+    if (!dhcp4_reached(ctx, &ctx->retry_ms))
     {
         io->status = IDEMIP_BUSY;
         return;
@@ -1047,23 +1058,24 @@ void idemip_dhcp4_start(uint8_t *work)
     ctx->owed = 0u;
     ctx->sent = 0u;
     ctx->secs = 0u; // Table 5: 'secs' is "0 or seconds since DHCP process started"
-    ctx->sent_ms = ctx->now_ms;
+    embed_stored_u64_set(&ctx->sent_ms, now_ms);
     if (io->offered_ip != 0u)
     {
         // sec 4.4.2: "The client begins in INIT-REBOOT state and sends a DHCPREQUEST message. The
         // client MUST insert its known network address as a 'requested IP address' option."
         ctx->offered_ip = io->offered_ip;
         ctx->state = IDEMIP_DHCP4_INIT_REBOOT;
-        ctx->retry_ms = ctx->now_ms;
+        embed_stored_u64_set(&ctx->retry_ms, now_ms);
     }
     else
     {
         // sec 4.4.1: "The client SHOULD wait a random time between one and ten seconds to
         // desynchronize the use of DHCP at startup", and the DHCPDISCOVER goes out after it.
         ctx->state = IDEMIP_DHCP4_SELECTING;
-        ctx->retry_ms = ctx->now_ms + IDEMIP_DHCP4_START_DELAY_MIN_MS +
-                        dhcp4_draw(io->start_args.rand,
-                                   IDEMIP_DHCP4_START_DELAY_MAX_MS - IDEMIP_DHCP4_START_DELAY_MIN_MS, 0x3FFFu);
+        embed_stored_u64_set(&ctx->retry_ms,
+                             now_ms + IDEMIP_DHCP4_START_DELAY_MIN_MS +
+                                 dhcp4_draw(io->start_args.rand,
+                                            IDEMIP_DHCP4_START_DELAY_MAX_MS - IDEMIP_DHCP4_START_DELAY_MIN_MS, 0x3FFFu));
     }
     dhcp4_publish(work);
     io->status = IDEMIP_OK;
@@ -1085,7 +1097,7 @@ void idemip_dhcp4_stop(uint8_t *work)
     // sec 4.4.5's "Halt network": the machine holds no address and runs no exchange. A machine
     // already in INIT is left there, so the same call twice does the same thing.
     dhcp4_halt(work);
-    ctx->retry_ms = ctx->now_ms;
+    embed_stored_u64_set(&ctx->retry_ms, embed_stored_u64_get(&ctx->now_ms));
     io->status = IDEMIP_OK;
 }
 
@@ -1176,7 +1188,7 @@ void idemip_dhcp4_tick(uint8_t *work)
         io->status = IDEMIP_ERR;
         return;
     }
-    ctx->now_ms = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->tick_args.now_ms);
+    embed_stored_u64_set(&ctx->now_ms, idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->tick_args.now_ms));
     // No deadline has passed, so nothing moved and a later tick may: BUSY.
     embed_bool moved = dhcp4_run(work);
     dhcp4_publish(work);
@@ -1270,7 +1282,7 @@ void idemip_dhcp4_inform(uint8_t *work)
     // "The client generates and records a random transaction identifier and inserts that identifier
     // into the 'xid' field. The client places its own network address in the 'ciaddr' field."
     ctx->xid = io->start_args.xid;
-    ctx->now_ms = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->start_args.now_ms);
+    embed_stored_u64_set(&ctx->now_ms, idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->start_args.now_ms));
     ctx->offered_ip = io->offered_ip;
     ctx->secs = 0u;
     ctx->retries = 0u;

@@ -70,8 +70,8 @@ typedef struct
     uint8_t addr[IDEMIP_IP6_ADDR_LEN];
     uint32_t preferred_s;
     uint32_t valid_s;
-    IdemIpMs valid_at;
-    IdemIpMs preferred_at;
+    embed_stored_u64 valid_at;
+    embed_stored_u64 preferred_at;
     uint8_t state;
     uint8_t pad[(1u << IDEMIP_NETIF_ADDR6_ENTRY_SHIFT) -
                 (IDEMIP_IP6_ADDR_LEN + (2u * 4u) + (2u * sizeof(IdemIpMs)) + 1u)];
@@ -375,13 +375,14 @@ static uint8_t netif_age_addr6(uint8_t *work, uint32_t now_ms)
             {
                 continue;
             }
-            if (now >= addr6->valid_at)
+            if (now >= embed_stored_u64_get(&addr6->valid_at))
             {
                 *addr6 = (NetifAddr6Entry){0};
                 moved = (uint8_t)(moved + 1u);
                 continue;
             }
-            if (addr6->state == (uint8_t)IDEMIP_NETIF_ADDR6_PREFERRED && now >= addr6->preferred_at)
+            if (addr6->state == (uint8_t)IDEMIP_NETIF_ADDR6_PREFERRED &&
+                now >= embed_stored_u64_get(&addr6->preferred_at))
             {
                 addr6->state = (uint8_t)IDEMIP_NETIF_ADDR6_DEPRECATED;
                 moved = (uint8_t)(moved + 1u);
@@ -714,8 +715,8 @@ void idemip_netif_add_addr6(uint8_t *work)
     // into boot. Extending here as the sweep does keeps the two entries on one clock.
     NetifCtx *ctx = NETIF_CTX(work);
     const IdemIpMs now = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->now_ms);
-    addr6->valid_at = netif_deadline(now, io->addr6_args.valid_s);
-    addr6->preferred_at = netif_deadline(now, io->addr6_args.preferred_s);
+    embed_stored_u64_set(&addr6->valid_at, netif_deadline(now, io->addr6_args.valid_s));
+    embed_stored_u64_set(&addr6->preferred_at, netif_deadline(now, io->addr6_args.preferred_s));
     addr6->state = (uint8_t)io->addr6_args.state;
     netif_report_addr6(work, io->addr6_args.index, slot);
     io->status = IDEMIP_OK;
