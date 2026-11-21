@@ -20,6 +20,22 @@
 #include <stdint.h> // the fixed widths every wire field is read into
 
 /**
+ * @brief The capabilities of a build that gives no command line flag.
+ *
+ * A build gives each IDEMIP_ENABLE_* value on its command line, or in the header idemip_capabilities.h
+ * on its include path. This tree holds no such header. Where the compiler finds one, this file reads it
+ * before the first capability.
+ *
+ * @note The Arduino IDE gives a library no command line flag. The header is thus the only way to give
+ *       the values there.
+ */
+#if defined(__has_include)
+#if __has_include("idemip_capabilities.h")
+#include "idemip_capabilities.h"
+#endif
+#endif
+
+/**
  * @brief Bytes in a data cache line.
  *
  * A DMA buffer starts on a line boundary and occupies whole lines, because an invalidate of a partial

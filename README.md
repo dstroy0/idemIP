@@ -135,6 +135,10 @@ build that turns a parent off is refused with the reason:
 Each value reaches the library and every consumer as a compile definition, because
 `idemip_config.h` sizes tables with them: `IDEMIP_TIMEOUTS` is arithmetic over the five.
 
+A build with no compile definitions gives the values in a header, `idemip_capabilities.h`, on its
+include path. The Arduino IDE builds a library that way. `idemip_config.h` reads the header before
+the first capability, and this repository holds no such header.
+
 Where one unit serves both IP versions, the version arm is its own translation unit and the build
 swaps in a stub for a version it left out. `src/ip/pseudo.c` holds the transport pseudo-header
 branch once; `pseudo_v4.c` and `pseudo_v6.c` are the two forms, `pseudo_v4_off.c` and

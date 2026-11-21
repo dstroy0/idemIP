@@ -208,6 +208,18 @@ add_test(NAME fuzz_corpus COMMAND ${CMAKE_COMMAND}
          -P "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/replay.cmake")
 list(APPEND IDEMIP_BUILT "fuzz_corpus")
 
+# The capability check: one translation unit with no IDEMIP_ENABLE_* definition, and the header of
+# support/capabilities on its include path. The build stops where idemip_config.h does not read that
+# header. The check takes the include paths and the word of the library, and none of its capabilities.
+get_target_property(IDEMIP_CHECK_LINKS idemip LINK_LIBRARIES)
+get_target_property(IDEMIP_CHECK_DEFINES idemip INTERFACE_COMPILE_DEFINITIONS)
+list(FILTER IDEMIP_CHECK_DEFINES EXCLUDE REGEX "^IDEMIP_")
+add_library(idemip_capabilities_header OBJECT "${CMAKE_CURRENT_SOURCE_DIR}/support/capabilities/capabilities_header.c")
+target_include_directories(idemip_capabilities_header PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/.." "${CMAKE_CURRENT_SOURCE_DIR}/support/capabilities")
+target_compile_definitions(idemip_capabilities_header PRIVATE ${IDEMIP_CHECK_DEFINES})
+target_link_libraries(idemip_capabilities_header PRIVATE ${IDEMIP_CHECK_LINKS})
+
 list(LENGTH IDEMIP_BUILT IDEMIP_BUILT_COUNT)
 message(STATUS "idemIP: ${IDEMIP_BUILT_COUNT} test suites")
 if(IDEMIP_SKIPPED)
