@@ -107,6 +107,7 @@ typedef struct
 
     uint32_t rx_claims;
     uint32_t rx_releases;
+    const uint8_t *last_release; // the buffer that the last rx_release gave back
     uint32_t tx_claims;
     uint32_t tx_commits;
     uint32_t invalidates;
@@ -259,9 +260,9 @@ static inline void idemip_fake_phy_poll(IdemIpFakePhy *f)
 // --- the ten entries, one port each -------------------------------------------------------------
 // rx_claim advances the read cursor, because a ring engine hands out the next descriptor it filled
 // rather than the same one until it is given back. rx_release returns one buffer to the refill
-// pool. IdemIpPhyDriver::rx_release names no descriptor, so this rig cannot know WHICH buffer came
-// back; the two cursors therefore only count, and a case asserts fill - free stays below
-// IDEMIP_RX_DESCRIPTORS so no refill lands on a buffer a unit still pins.
+// pool and records the buffer in last_release. The refill of this rig takes the buffers in order and
+// does not read which buffer came back. The two cursors thus only count, and a case asserts that
+// fill - free stays below IDEMIP_RX_DESCRIPTORS. No refill then lands on a buffer that a unit pins.
 
 #define IDEMIP_FAKE_PHY_DRIVER(port)                                                                                   \
     static IdemIpPhyLink idemip_fake_phy_link_##port(void)                                                             \
@@ -286,11 +287,12 @@ static inline void idemip_fake_phy_poll(IdemIpFakePhy *f)
         f->rx_claims++;                                                                                                \
         return (size_t)f->rx_len[slot];                                                                                \
     }                                                                                                                  \
-    static void idemip_fake_phy_rx_release_##port(void)                                                                \
+    static void idemip_fake_phy_rx_release_##port(const uint8_t *frame)                                                \
     {                                                                                                                  \
         IdemIpFakePhy *f = &g_idemip_fake_phy[port];                                                                   \
         idemip_fake_phy_ev(f, IDEMIP_FAKE_PHY_EV_RX_RELEASE);                                                          \
         f->rx_releases++;                                                                                              \
+        f->last_release = frame;                                                                                       \
         if (f->rx_free < f->rx_read)                                                                                   \
         {                                                                                                              \
             f->rx_free++;                                                                                              \

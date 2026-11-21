@@ -61,6 +61,7 @@ static unsigned g_eng_tail;
 static const uint8_t *g_eng_addr; // when set, the address rx_claim reports instead of the buffer's
 static int g_eng_no_addr;         // when set, rx_claim reports a length and no address at all
 static int g_released;
+static const uint8_t *g_released_frame;
 
 static uint8_t *rx_buf_at(unsigned i)
 {
@@ -136,10 +137,11 @@ static size_t fake_rx_claim(const uint8_t **frame)
     }
     return g_eng_len[k];
 }
-static void fake_rx_release(void)
+static void fake_rx_release(const uint8_t *frame)
 {
     ev(EV_RX_RELEASE);
     g_released++;
+    g_released_frame = frame;
 }
 static uint8_t *fake_tx_claim(size_t len)
 {
@@ -244,6 +246,7 @@ void setUp(void)
     g_eng_tail = 0;
     g_eng_addr = NULL;
     g_released = 0;
+    g_released_frame = NULL;
     engine_tx_done();
     g_tx_cursor = 0;
     g_tx_full = 0;
@@ -825,6 +828,31 @@ void test_a_pin_holds_the_descriptor_past_the_post(void)
     Dma.rx_take(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
     TEST_ASSERT_EQUAL_UINT8(6u, IDEMIP_DMA_IO(work_a)->index);
+}
+
+// Each release names the buffer that it gives back. A pinned frame goes back after a later frame. The
+// order of the releases is thus not the order of the claims. A software ring refills only the buffer
+// that a release names.
+void test_each_release_names_its_buffer_out_of_order(void)
+{
+    bind_ok(work_a);
+    engine_fill(2u, 64u, 0x11u);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_UINT8(2u, IDEMIP_DMA_IO(work_a)->index);
+    pin_rx(work_a, 2u);
+    post_rx(work_a, 2u);
+    TEST_ASSERT_EQUAL_INT(0, g_released);
+
+    engine_fill(3u, 64u, 0x22u);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_UINT8(3u, IDEMIP_DMA_IO(work_a)->index);
+    post_rx(work_a, 3u);
+    TEST_ASSERT_EQUAL_INT(1, g_released);
+    TEST_ASSERT_EQUAL_PTR_MESSAGE(rx_buf_at(3u), g_released_frame, "the post did not name the buffer it gave back");
+
+    unpin_rx(work_a, 2u);
+    TEST_ASSERT_EQUAL_INT(2, g_released);
+    TEST_ASSERT_EQUAL_PTR_MESSAGE(rx_buf_at(2u), g_released_frame, "the last unpin did not name the pinned buffer");
 }
 
 // Two units retaining one frame are two pins, and the descriptor returns once, on the last one.

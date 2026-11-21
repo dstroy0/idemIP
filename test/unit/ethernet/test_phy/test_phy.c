@@ -28,6 +28,7 @@ static size_t g_frame_len;
 // from the accepting side and not only from the rejecting one.
 static uint8_t g_txbuf[IDEMIP_ETH_FRAME_MAX];
 static int g_released;
+static const uint8_t *g_released_frame;
 static int g_committed;
 static size_t g_commit_len;
 
@@ -76,10 +77,11 @@ static size_t fake_rx_claim(const uint8_t **frame)
     *frame = g_claim_no_addr ? NULL : g_frame;
     return g_frame_len;
 }
-static void fake_rx_release(void)
+static void fake_rx_release(const uint8_t *frame)
 {
     ev(EV_RX_RELEASE);
     g_released++;
+    g_released_frame = frame;
     g_frame_len = 0;
 }
 static uint8_t *fake_tx_claim(size_t len)
@@ -171,6 +173,7 @@ void setUp(void)
     fill_bytes(g_frame, 0xA5, sizeof g_frame);
     g_frame_len = 0;
     g_released = 0;
+    g_released_frame = NULL;
     g_committed = 0;
     g_commit_len = 0;
     g_ev_n = 0;
@@ -349,6 +352,7 @@ void test_claim_and_release_round_trip(void)
     Phy.rx_release(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_PHY_IO(work_a)->status);
     TEST_ASSERT_EQUAL_INT(1, g_released);
+    TEST_ASSERT_EQUAL_PTR_MESSAGE(g_frame, g_released_frame, "the release did not name the buffer of the claim");
     TEST_ASSERT_NULL(IDEMIP_PHY_IO(work_a)->frame);
     TEST_ASSERT_EQUAL_size_t(0u, IDEMIP_PHY_IO(work_a)->len);
 }

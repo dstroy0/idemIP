@@ -48,7 +48,9 @@ typedef struct
  * @var IdemIpPhyDriver::rx_claim   the next frame the engine filled, in place. Writes the buffer
  *                                  to @p frame and returns its length, or 0 when the ring is
  *                                  empty. The buffer stays valid until rx_release.
- * @var IdemIpPhyDriver::rx_release give the descriptor back to the engine.
+ * @var IdemIpPhyDriver::rx_release give the buffer at @p frame back to the engine. @p frame is a buffer
+ *                                  that rx_claim gave. The buffers come back in any order: a unit
+ *                                  that pins a frame keeps its buffer past later releases.
  * @var IdemIpPhyDriver::tx_claim   a buffer of at least @p len bytes the engine reads from, or
  *                                  null when the ring is full
  * @var IdemIpPhyDriver::tx_commit  hand the claimed buffer to the MAC, @p len bytes of it
@@ -63,7 +65,7 @@ typedef struct
     const uint8_t *(*mac)(void);
 
     size_t (*rx_claim)(const uint8_t **frame);
-    void (*rx_release)(void);
+    void (*rx_release)(const uint8_t *frame);
     uint8_t *(*tx_claim)(size_t len);
     embed_bool (*tx_commit)(size_t len);
 

@@ -135,8 +135,9 @@ static size_t fake_rx_claim(const uint8_t **frame)
     *frame = rx_buf_at(g_eng_idx[k]);
     return g_eng_len[k];
 }
-static void fake_rx_release(void)
+static void fake_rx_release(const uint8_t *frame)
 {
+    (void)frame;
     g_released++;
 }
 static uint8_t *fake_tx_claim(size_t len)

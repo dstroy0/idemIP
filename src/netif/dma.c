@@ -115,7 +115,7 @@ static uint32_t dma_slot_of(uint8_t *work, size_t off, uint32_t count, uint32_t 
 static void dma_rx_give_back(uint8_t *work, DmaDesc *d)
 {
     const DmaCtx *ctx = DMA_CTX(work);
-    ctx->drv->rx_release();
+    ctx->drv->rx_release(d->buf);
     d->len = 0u;
     d->flags = (uint16_t)IDEMIP_DMA_FLAG_OWN;
 }
@@ -227,7 +227,7 @@ void idemip_dma_rx_take(uint8_t *work)
     }
     if (len > IDEMIP_DMA_FRAME_MAX)
     {
-        ctx->drv->rx_release();
+        ctx->drv->rx_release(frame);
         io->flags = (uint16_t)IDEMIP_DMA_FLAG_ERR;
         return;
     }

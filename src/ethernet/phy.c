@@ -24,6 +24,7 @@ EMBED_BEGIN_DECLS
 typedef struct
 {
     const IdemIpPhyDriver *drv;
+    const uint8_t *frame; ///< the buffer of the claim, which rx_release gives back to the driver
     uint8_t addr;
     embed_bool claimed;
 } PhyCtx;
@@ -115,6 +116,7 @@ void idemip_phy_rx_claim(uint8_t *work)
     }
     ctx->drv->cache_invalidate(frame, len);
     ctx->claimed = EMBED_TRUE;
+    ctx->frame = frame;
     io->frame = frame;
     io->len = len;
     io->status = IDEMIP_OK;
@@ -133,8 +135,9 @@ void idemip_phy_rx_release(uint8_t *work)
     {
         return;
     }
-    ctx->drv->rx_release();
+    ctx->drv->rx_release(ctx->frame);
     ctx->claimed = EMBED_FALSE;
+    ctx->frame = NULL;
     io->frame = NULL;
     io->len = 0;
     io->status = IDEMIP_OK;
