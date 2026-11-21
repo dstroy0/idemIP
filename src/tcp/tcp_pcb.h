@@ -361,6 +361,10 @@ typedef struct
  *                                   and is refused here, since a listener that can accept nothing
  *                                   is not one.
  * @var TcpPcbListenArgs::ip_version 4 or 6
+ * @var TcpPcbListenArgs::rcv_wnd    the receive window of each connection that the listener accepts. RFC
+ *                                   9293 sec 3.3.1 takes RCV.WND from the receive buffer that the OPEN
+ *                                   supplies. This call refuses zero, because a connection with no window
+ *                                   can accept no octet.
  */
 typedef struct
 {
@@ -370,6 +374,7 @@ typedef struct
     uint8_t netif;
     uint8_t backlog;
     uint8_t ip_version;
+    uint32_t rcv_wnd;
 } TcpPcbListenArgs;
 
 /**
@@ -559,6 +564,7 @@ typedef struct
  *                              find_listener settled on, IDEMIP_TCP_PCB_NONE for none
  * @var TcpPcbIo::port          the local port a bind settled on, which is the one it was given unless
  *                              that was IDEMIP_TCP_PCB_PORT_ANY
+ * @var TcpPcbIo::listen_wnd    the receive window of the listener that a find_listener matched
  * @var TcpPcbIo::info          the four-tuple a load read
  * @var TcpPcbIo::seg           what a seg_load read
  * @var TcpPcbIo::oos           what an oos_load read
@@ -583,6 +589,7 @@ typedef struct
     IdemIpStatus status;
     uint16_t index;
     uint16_t port;
+    uint32_t listen_wnd;
     TcpPcbInfo info;
     TcpPcbSegInfo seg;
     TcpPcbOosInfo oos;

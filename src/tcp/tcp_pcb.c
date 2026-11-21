@@ -57,6 +57,7 @@ typedef struct
     uint8_t ip_version;
     IdemIpTcpState state;
     embed_bool in_use;
+    uint32_t rcv_wnd;
 } TcpPcbListenFields;
 
 // One send-queue segment: the caller's data octets, their RFC 9293 sec 3.1 Sequence Number, the
@@ -1003,7 +1004,9 @@ void idemip_tcp_pcb_listen(uint8_t *work)
     // A backlog of zero holds no connection in SYN-RECEIVED, so it is a passive OPEN that can never
     // accept one. Refused here rather than taken and left useless, the way a port of
     // IDEMIP_TCP_PCB_PORT_ANY is: both name a listener that cannot do the one thing a listener does.
-    if (n == 0u || io->listen_args.port == IDEMIP_TCP_PCB_PORT_ANY || io->listen_args.backlog == 0u)
+    // A receive window of zero is the same: each connection that the listener accepts takes no octet.
+    if (n == 0u || io->listen_args.port == IDEMIP_TCP_PCB_PORT_ANY || io->listen_args.backlog == 0u ||
+        io->listen_args.rcv_wnd == 0u)
     {
         return;
     }
@@ -1032,6 +1035,7 @@ void idemip_tcp_pcb_listen(uint8_t *work)
         l->netif = io->listen_args.netif;
         l->backlog = io->listen_args.backlog;
         l->ip_version = io->listen_args.ip_version;
+        l->rcv_wnd = io->listen_args.rcv_wnd;
         l->state = IDEMIP_TCP_STATE_LISTEN;
         l->in_use = EMBED_TRUE;
         io->index = i;
@@ -1108,6 +1112,7 @@ void idemip_tcp_pcb_find_listener(uint8_t *work)
     TcpPcbIo *io = TCP_PCB_IO(work);
     io->status = IDEMIP_ERR;
     io->index = IDEMIP_TCP_PCB_NONE;
+    io->listen_wnd = 0u;
     if (TCP_PCB_CTX(work)->ready != TCP_PCB_READY || io->find_args.local_ip == NULL)
     {
         return;
@@ -1122,9 +1127,11 @@ void idemip_tcp_pcb_find_listener(uint8_t *work)
         embed_bool wildcard = (pass == 1u) ? EMBED_TRUE : EMBED_FALSE;
         for (uint16_t i = 0u; i < (uint16_t)IDEMIP_TCP_LISTEN_PCBS; i++)
         {
-            if (tcp_pcb_listener_matches(&TCP_PCB_LISTEN_AT(work, i)->f, &io->find_args, n, wildcard))
+            const TcpPcbListenFields *l = &TCP_PCB_LISTEN_AT(work, i)->f;
+            if (tcp_pcb_listener_matches(l, &io->find_args, n, wildcard))
             {
                 io->index = i;
+                io->listen_wnd = l->rcv_wnd;
                 io->status = IDEMIP_OK;
                 return;
             }

@@ -1441,6 +1441,7 @@ static void tcp_listen(Node *n, uint16_t port)
     tp->listen_args.zone = 0u;
     tp->listen_args.netif = 0u;
     tp->listen_args.backlog = 1u;
+    tp->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     tp->listen_args.ip_version = 4u;
     TcpPcb.listen(n->b->tpcb);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);

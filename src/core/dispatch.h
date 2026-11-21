@@ -53,6 +53,7 @@
 
 #if IDEMIP_ENABLE_TCP
 #include "src/tcp/tcp_in.h"
+#include "src/tcp/tcp_isn.h"
 #include "src/tcp/tcp_pcb.h"
 #endif
 
@@ -236,6 +237,9 @@ EMBED_ENUM_BYTE(IdemIpDispatchPcb,
  *                                 Length
  * @var DispatchBindArgs::tcp_pcb  the RFC 9293 sec 3.3.1 Transmission Control Blocks
  * @var DispatchBindArgs::tcp_in   the RFC 9293 sec 3.10.7 SEGMENT ARRIVES machine
+ * @var DispatchBindArgs::tcp_isn  the RFC 6528 sec 3 generator of the ISS. A passive OPEN draws the
+ *                                 ISS of each new connection from it. Without it, a SYN to a listener
+ *                                 gets no SYN,ACK.
  */
 typedef struct
 {
@@ -266,6 +270,7 @@ typedef struct
 #if IDEMIP_ENABLE_TCP
     uint8_t *tcp_pcb;
     uint8_t *tcp_in;
+    uint8_t *tcp_isn;
 #endif
 } DispatchBindArgs;
 

@@ -93,6 +93,10 @@ static uint8_t *udplite_mem;
 static uint8_t *tcp_pcb_mem;
 #define TCP_IN_MEM_BYTES ((size_t)(IDEMIP_TCP_IN_BORROW))
 static uint8_t *tcp_in_mem;
+#define TCP_ISN_MEM_BYTES ((size_t)(IDEMIP_TCP_ISN_BORROW))
+static uint8_t *tcp_isn_mem;
+// The suite seeds the generator of the ISS with this RFC 6528 sec 3 secret. Any value serves.
+static const uint8_t g_isn_key[IDEMIP_TCP_ISN_SECRET_BYTES] = {0x5Au, 0xA5u, 0x3Cu, 0xC3u};
 #endif
 #define PHY_MEM_BYTES ((size_t)(IDEMIP_PHY_BORROW))
 static uint8_t *phy_mem;
@@ -167,6 +171,7 @@ static void bind_all(uint8_t *w)
 #if IDEMIP_ENABLE_TCP
     io->bind_args.tcp_pcb = tcp_pcb_mem;
     io->bind_args.tcp_in = tcp_in_mem;
+    io->bind_args.tcp_isn = tcp_isn_mem;
 #endif
     Dispatch.bind(w);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
@@ -274,6 +279,11 @@ static void wire_units(void)
 #if IDEMIP_ENABLE_TCP
     TcpPcb.clear(tcp_pcb_mem);
     TcpIn.clear(tcp_in_mem);
+    TcpIsn.reset(tcp_isn_mem);
+    IDEMIP_TCP_ISN_IO(tcp_isn_mem)->seed_args.key = g_isn_key;
+    IDEMIP_TCP_ISN_IO(tcp_isn_mem)->seed_args.key_len = sizeof g_isn_key;
+    IDEMIP_TCP_ISN_IO(tcp_isn_mem)->seed_args.base = 0u;
+    TcpIsn.seed(tcp_isn_mem);
 #endif
 
     Loopif.clear(loopif_mem);
@@ -506,6 +516,7 @@ void setUp(void)
 #if IDEMIP_ENABLE_TCP
     idemip_test_borrow(&tcp_pcb_mem, TCP_PCB_MEM_BYTES, idemip_owner_tcp_pcb);
     idemip_test_borrow(&tcp_in_mem, TCP_IN_MEM_BYTES, idemip_owner_tcp_in);
+    idemip_test_borrow(&tcp_isn_mem, TCP_ISN_MEM_BYTES, idemip_owner_tcp_isn);
 #endif
     idemip_test_borrow(&phy_mem, PHY_MEM_BYTES, idemip_owner_phy);
     g_rand = DISPATCH_TEST_RAND;
@@ -3655,6 +3666,7 @@ static uint16_t listen_on(uint16_t port)
     tp->listen_args.zone = 0u;
     tp->listen_args.netif = 0u;
     tp->listen_args.backlog = 2u;
+    tp->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     tp->listen_args.ip_version = 4u;
     TcpPcb.listen(tcp_pcb_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
@@ -3924,6 +3936,61 @@ void test_a_syn_to_a_listener_creates_the_connection(void)
     TEST_ASSERT_EQUAL_UINT16(listener, tp->info.listener);
 }
 
+// RFC 9293 sec 3.3.1 takes RCV.WND from the receive buffer that the OPEN supplied. A passive OPEN
+// supplies it on the listener, and the connection that a SYN creates starts with that window.
+void test_a_passive_open_takes_the_window_of_its_listener(void)
+{
+    (void)listen_on(5001u);
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_TCP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = IDEMIP_DISPATCH_IO(work_a)->pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
+    TEST_ASSERT_EQUAL_UINT32(IDEMIP_TCP_WND, tp->vars.rcv_wnd);
+}
+
+// RFC 6528 sec 3: the ISS of a connection comes from its four-tuple and the secret. Two SYNs from two
+// source ports thus get two ISSs, and the SYN,ACK of each one carries its own.
+void test_each_passive_open_draws_its_own_iss(void)
+{
+    (void)listen_on(5001u);
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_TCP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    const uint32_t first_reply = IDEMIP_DISPATCH_IO(work_a)->reply.seq;
+    tp->pcb_args.index = IDEMIP_DISPATCH_IO(work_a)->pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    const uint32_t first = tp->vars.iss;
+    TEST_ASSERT_EQUAL_UINT32(first, first_reply);
+
+    end = build_tcp4(g_frame, 5002u, 5001u, 700u, 0u, IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_TCP, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    const uint32_t second_reply = IDEMIP_DISPATCH_IO(work_a)->reply.seq;
+    tp->pcb_args.index = IDEMIP_DISPATCH_IO(work_a)->pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_UINT32(tp->vars.iss, second_reply);
+    TEST_ASSERT_NOT_EQUAL_UINT32_MESSAGE(first, tp->vars.iss, "two four-tuples drew one ISS");
+}
+
+// Without a generator of the ISS, a SYN to a listener opens no connection and gets no SYN,ACK.
+void test_a_passive_open_without_an_iss_generator_is_dropped(void)
+{
+    (void)listen_on(5001u);
+    IDEMIP_DISPATCH_IO(work_a)->bind_args.tcp_isn = NULL;
+    Dispatch.bind(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DISPATCH_IO(work_a)->status);
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 100u, 0u, IDEMIP_TCP_SYN, 0u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_PCB_NONE, IDEMIP_DISPATCH_IO(work_a)->pcb_kind);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_DISPATCH_DROP_UNBOUND, IDEMIP_DISPATCH_IO(work_a)->drop);
+    TEST_ASSERT_TRUE((IDEMIP_DISPATCH_IO(work_a)->act & IDEMIP_DISPATCH_ACT_TCP) == 0u);
+    TEST_ASSERT_EQUAL_UINT32(0u, ctr(IDEMIP_STAT_TCP_PASSIVE_OPENS));
+}
+
 // The connection a listener created is the one the next segment of that four-tuple finds.
 void test_the_second_segment_finds_the_connection(void)
 {
@@ -3948,9 +4015,8 @@ void test_the_second_segment_finds_the_connection(void)
 
 // Brings one connection to ESTABLISHED and reports it, so the joins below start from a real TCB.
 //
-// RFC 9293 sec 3.3.1 has RCV.WND come from the receive buffer the user's OPEN supplied, and no entry
-// in this tree invents one, so the suite sets it the way an application would. Left at zero, sec
-// 3.10.7.4 Table 6 makes every segment carrying data unacceptable.
+// RFC 9293 sec 3.3.1 has RCV.WND come from the receive buffer the user's OPEN supplied. The listener
+// of listen_on supplies IDEMIP_TCP_WND, and the connection starts with it.
 static uint16_t establish(void)
 {
     (void)listen_on(5001u);
@@ -3960,9 +4026,6 @@ static uint16_t establish(void)
     TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
     tp->pcb_args.index = pcb;
     TcpPcb.load(tcp_pcb_mem);
-    tp->vars.rcv_wnd = IDEMIP_TCP_WND;
-    tp->pcb_args.index = pcb;
-    TcpPcb.store(tcp_pcb_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);
     uint32_t iss = tp->vars.iss;
     end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, IDEMIP_TCP_ACK, 0u);
@@ -4392,6 +4455,7 @@ static uint16_t listen_on6(uint16_t port)
     tp->listen_args.zone = 0u;
     tp->listen_args.netif = 0u;
     tp->listen_args.backlog = 2u;
+    tp->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     tp->listen_args.ip_version = 6u;
     TcpPcb.listen(tcp_pcb_mem);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, tp->status);

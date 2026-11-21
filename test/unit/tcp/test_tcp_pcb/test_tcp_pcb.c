@@ -842,6 +842,7 @@ void test_the_ephemeral_draw_steps_over_a_port_a_listener_holds(void)
     IO(work_a)->listen_args.zone = 0u;
     IO(work_a)->listen_args.netif = 0u;
     IO(work_a)->listen_args.backlog = 1u;
+    IO(work_a)->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1884,6 +1885,7 @@ void test_listen_creates_a_record_in_the_listen_state(void)
     IO(work_a)->listen_args.zone = 0u;
     IO(work_a)->listen_args.netif = 0u;
     IO(work_a)->listen_args.backlog = 4u;
+    IO(work_a)->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1923,6 +1925,35 @@ void test_a_passive_open_on_port_zero_is_refused(void)
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
 }
 
+// RFC 9293 sec 3.3.1 takes RCV.WND from the receive buffer that the OPEN supplied. A passive OPEN with
+// no window accepts no octet on any connection. It is thus ERR. A listener reports the window it took.
+void test_a_listener_keeps_its_window_and_refuses_none(void)
+{
+    TcpPcb.clear(work_a);
+    IO(work_a)->listen_args.ip = g_local;
+    IO(work_a)->listen_args.port = 80u;
+    IO(work_a)->listen_args.backlog = 1u;
+    IO(work_a)->listen_args.ip_version = G_IP_VERSION;
+    IO(work_a)->listen_args.rcv_wnd = 0u;
+    TcpPcb.listen(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+
+    IO(work_a)->listen_args.rcv_wnd = 1234u;
+    TcpPcb.listen(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    IO(work_a)->find_args.local_ip = g_local;
+    IO(work_a)->find_args.local_port = 80u;
+    IO(work_a)->find_args.ip_version = G_IP_VERSION;
+    TcpPcb.find_listener(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32(1234u, IO(work_a)->listen_wnd);
+
+    IO(work_a)->find_args.local_port = 81u;
+    TcpPcb.find_listener(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
+    TEST_ASSERT_EQUAL_UINT32(0u, IO(work_a)->listen_wnd);
+}
+
 // A second passive OPEN on one local socket is BUSY, since an unlisten frees it, and a table with
 // every listener taken is BUSY for the same reason.
 void test_a_second_passive_open_on_one_socket_is_busy(void)
@@ -1931,6 +1962,7 @@ void test_a_second_passive_open_on_one_socket_is_busy(void)
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = 80u;
     IO(work_a)->listen_args.backlog = 1u;
+    IO(work_a)->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1944,6 +1976,7 @@ void test_a_second_passive_open_on_one_socket_is_busy(void)
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = 80u;
     IO(work_a)->listen_args.backlog = 1u;
+    IO(work_a)->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1958,6 +1991,7 @@ void test_a_full_listener_table_is_busy(void)
         IO(work_a)->listen_args.ip = g_local;
         IO(work_a)->listen_args.port = (uint16_t)(1000u + i);
         IO(work_a)->listen_args.backlog = 1u;
+        IO(work_a)->listen_args.rcv_wnd = IDEMIP_TCP_WND;
         IO(work_a)->listen_args.ip_version = G_IP_VERSION;
         TcpPcb.listen(work_a);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -1979,6 +2013,7 @@ void test_a_bound_listener_is_matched_before_an_unspecified_one(void)
     IO(work_a)->listen_args.ip = any;
     IO(work_a)->listen_args.port = 80u;
     IO(work_a)->listen_args.backlog = 1u;
+    IO(work_a)->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -2639,6 +2674,7 @@ void test_a_listener_is_matched_on_its_version_its_port_its_interface_and_its_zo
     IO(work_a)->listen_args.zone = 2u;
     IO(work_a)->listen_args.netif = 1u;
     IO(work_a)->listen_args.backlog = 1u;
+    IO(work_a)->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     IO(work_a)->listen_args.ip_version = 6u;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -2720,6 +2756,7 @@ void test_accept_records_the_listener_a_connection_came_through(void)
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = 80u;
     IO(work_a)->listen_args.backlog = 1u;
+    IO(work_a)->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -2770,6 +2807,7 @@ void test_a_listener_at_its_backlog_refuses_a_further_connection(void)
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = 80u;
     IO(work_a)->listen_args.backlog = 2u;
+    IO(work_a)->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -2812,6 +2850,7 @@ void test_accepting_one_connection_twice_is_the_same_as_once(void)
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = 80u;
     IO(work_a)->listen_args.backlog = 1u;
+    IO(work_a)->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -2839,6 +2878,7 @@ void test_listen_refuses_a_backlog_of_zero(void)
     IO(work_a)->listen_args.ip = g_local;
     IO(work_a)->listen_args.port = 80u;
     IO(work_a)->listen_args.backlog = 0u;
+    IO(work_a)->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     IO(work_a)->listen_args.ip_version = G_IP_VERSION;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_ERR, IO(work_a)->status);
@@ -3152,6 +3192,7 @@ void test_a_backlog_counts_only_the_connections_that_came_through_that_listener(
         IO(work_a)->listen_args.zone = 0u;
         IO(work_a)->listen_args.netif = 0u;
         IO(work_a)->listen_args.backlog = 1u;
+        IO(work_a)->listen_args.rcv_wnd = IDEMIP_TCP_WND;
         IO(work_a)->listen_args.ip_version = G_IP_VERSION;
         TcpPcb.listen(work_a);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
@@ -3247,6 +3288,7 @@ void test_the_ip_version_is_part_of_the_name_a_socket_is_held_under(void)
     IO(work_a)->listen_args.zone = 0u;
     IO(work_a)->listen_args.netif = 0u;
     IO(work_a)->listen_args.backlog = 2u;
+    IO(work_a)->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     IO(work_a)->listen_args.ip_version = 4u;
     TcpPcb.listen(work_a);
     TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);

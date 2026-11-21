@@ -118,6 +118,10 @@ static uint8_t *udplite_mem;
 static uint8_t *tcp_pcb_mem;
 #define TCP_IN_MEM_BYTES ((size_t)(IDEMIP_TCP_IN_BORROW))
 static uint8_t *tcp_in_mem;
+#define TCP_ISN_MEM_BYTES ((size_t)(IDEMIP_TCP_ISN_BORROW))
+static uint8_t *tcp_isn_mem;
+// The harness seeds the generator of the ISS with this RFC 6528 sec 3 secret. Any value serves.
+static const uint8_t g_isn_key[IDEMIP_TCP_ISN_SECRET_BYTES] = {0x5Au, 0xA5u, 0x3Cu, 0xC3u};
 #endif
 
 // The frame is copied out of the fuzzer's buffer so the walk reads a span this harness owns: the
@@ -176,6 +180,7 @@ static void fuzz_wire(void)
 #if IDEMIP_ENABLE_TCP
     idemip_test_borrow(&tcp_pcb_mem, TCP_PCB_MEM_BYTES, idemip_owner_tcp_pcb);
     idemip_test_borrow(&tcp_in_mem, TCP_IN_MEM_BYTES, idemip_owner_tcp_in);
+    idemip_test_borrow(&tcp_isn_mem, TCP_ISN_MEM_BYTES, idemip_owner_tcp_isn);
 #endif
     EMBED_CALL(memor.set, MemoriaCfg, .dst = work, .val = 0, .bytes = IDEMIP_DISPATCH_BORROW);
     EMBED_CALL(memor.set, MemoriaCfg, .dst = work + IDEMIP_DISPATCH_BORROW, .val = FUZZ_CANARY,
@@ -208,6 +213,11 @@ static void fuzz_wire(void)
 #if IDEMIP_ENABLE_TCP
     TcpPcb.clear(tcp_pcb_mem);
     TcpIn.clear(tcp_in_mem);
+    TcpIsn.reset(tcp_isn_mem);
+    IDEMIP_TCP_ISN_IO(tcp_isn_mem)->seed_args.key = g_isn_key;
+    IDEMIP_TCP_ISN_IO(tcp_isn_mem)->seed_args.key_len = sizeof g_isn_key;
+    IDEMIP_TCP_ISN_IO(tcp_isn_mem)->seed_args.base = 0u;
+    TcpIsn.seed(tcp_isn_mem);
 #endif
 
     Loopif.clear(loopif_mem);
@@ -296,6 +306,7 @@ static void fuzz_wire(void)
     tp->listen_args.zone = 0u;
     tp->listen_args.netif = 0u;
     tp->listen_args.backlog = 2u;
+    tp->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     tp->listen_args.ip_version = 4u;
     TcpPcb.listen(tcp_pcb_mem);
     FUZZ_CHECK(tp->status == IDEMIP_OK, "the IPv4 listener would not open");
@@ -306,6 +317,7 @@ static void fuzz_wire(void)
     tp->listen_args.zone = 0u;
     tp->listen_args.netif = 0u;
     tp->listen_args.backlog = 2u;
+    tp->listen_args.rcv_wnd = IDEMIP_TCP_WND;
     tp->listen_args.ip_version = 6u;
     TcpPcb.listen(tcp_pcb_mem);
     FUZZ_CHECK(tp->status == IDEMIP_OK, "the IPv6 listener would not open");
@@ -343,6 +355,7 @@ static void fuzz_wire(void)
 #if IDEMIP_ENABLE_TCP
     io->bind_args.tcp_pcb = tcp_pcb_mem;
     io->bind_args.tcp_in = tcp_in_mem;
+    io->bind_args.tcp_isn = tcp_isn_mem;
 #endif
     Dispatch.bind(work);
     FUZZ_CHECK(io->status == IDEMIP_OK, "the dispatch borrow would not bind");

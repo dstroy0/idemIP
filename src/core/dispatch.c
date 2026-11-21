@@ -73,6 +73,7 @@ typedef struct
 #if IDEMIP_ENABLE_TCP
     uint8_t *tcp_pcb;
     uint8_t *tcp_in;
+    uint8_t *tcp_isn;
     uint16_t hold_desc; ///< the descriptor a re-delivery reported, unpinned on the call after
     uint8_t hold_netif;
     uint8_t ack_cursor;
@@ -773,6 +774,7 @@ static void d_tcp(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_
 
     uint16_t pcb = IDEMIP_TCP_PCB_NONE;
     uint16_t listener = IDEMIP_TCP_PCB_NONE;
+    uint32_t listen_wnd = 0u;
     if (tp->status == IDEMIP_OK)
     {
         pcb = tp->index;
@@ -783,6 +785,7 @@ static void d_tcp(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_
         if (tp->status == IDEMIP_OK)
         {
             listener = tp->index;
+            listen_wnd = tp->listen_wnd;
         }
     }
 
@@ -849,7 +852,35 @@ static void d_tcp(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_
         // a TCB is opened only for the segment that reached SYN-RECEIVED; a TCB opened for the other
         // three would stay in_use in LISTEN with the four-tuple, and TcpPcb.find matches on the tuple
         // with no state test, so it would shadow the listener for that peer forever.
-        d_tcp_load_in(work, listener, a->now_ms);
+        //
+        // The scratch image is a fresh connection. Its variables start at zero, and it takes the window
+        // that the passive OPEN supplied. RFC 6528 sec 3 draws its ISS for this four-tuple, and tcp_in.c
+        // gives that draw to the caller of TcpIn.listen, which is this function. Without a generator, or
+        // with one that has no seed, the SYN gets no SYN,ACK.
+        if (ctx->tcp_isn == NULL)
+        {
+            d_drop(work, IDEMIP_DISPATCH_DROP_UNBOUND, IDEMIP_STAT_IF_COUNT);
+            return;
+        }
+        TcpIsnIo *isn = IDEMIP_TCP_ISN_IO(ctx->tcp_isn);
+        isn->gen_args.local_ip = local_ip;
+        isn->gen_args.remote_ip = remote_ip;
+        isn->gen_args.local_port = idemip_tcp_dst_port(seg);
+        isn->gen_args.remote_port = idemip_tcp_src_port(seg);
+        isn->gen_args.ip_version = ip_version;
+        isn->gen_args.now_ms = a->now_ms;
+        TcpIsn.generate(ctx->tcp_isn);
+        if (isn->status != IDEMIP_OK)
+        {
+            d_drop(work, IDEMIP_DISPATCH_DROP_UNBOUND, IDEMIP_STAT_IF_COUNT);
+            return;
+        }
+        ti->vars = (IdemIpTcpVars){0};
+        ti->ctl = (TcpPcbCtl){0};
+        ti->vars.iss = isn->isn;
+        ti->vars.rcv_wnd = listen_wnd;
+        ti->listener = listener;
+        ti->now_ms = a->now_ms;
         ti->state = IDEMIP_TCP_STATE_LISTEN;
         TcpIn.listen(ctx->tcp_in);
         io->tcp_act = ti->res.act;
@@ -2199,6 +2230,7 @@ void idemip_dispatch_bind(uint8_t *work)
 #if IDEMIP_ENABLE_TCP
     ctx->tcp_pcb = b->tcp_pcb;
     ctx->tcp_in = b->tcp_in;
+    ctx->tcp_isn = b->tcp_isn;
 #endif
     io->status = IDEMIP_OK;
 }
