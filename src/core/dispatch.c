@@ -689,7 +689,8 @@ static void d_tcp_hold(uint8_t *work, uint16_t pcb)
     tp->oos_args.pcb = pcb;
     tp->oos_args.seq = ti->res.text_seq;
     tp->oos_args.desc = IDEMIP_DISPATCH_DESC_HANDLE(io->netif, a->desc);
-    tp->oos_args.offset = (uint16_t)(io->payload_off + ti->res.text_off);
+    // Explicit cast narrows the offset, which the frame length holds below IDEMIP_DMA_FRAME_MAX
+    tp->oos_args.offset = (uint16_t)(io->payload_off + ti->opts.hdr_len + ti->res.text_off);
     tp->oos_args.len = ti->res.text_len;
     TcpPcb.oos_alloc(ctx->tcp_pcb);
     if (tp->status != IDEMIP_OK)
@@ -981,7 +982,10 @@ static void d_tcp(uint8_t *work, const uint8_t *local_ip, const uint8_t *remote_
     io->act |= IDEMIP_DISPATCH_ACT_TCP;
     io->acked = ti->res.acked;
     io->text_seq = ti->res.text_seq;
-    io->text_off = ti->res.text_off;
+    // tcp_in counts its offset from the first data octet. This one counts from the frame, past the IP
+    // header, the TCP header and its options.
+    // Explicit cast narrows the offset, which the frame length holds below IDEMIP_DMA_FRAME_MAX
+    io->text_off = (uint16_t)(io->payload_off + ti->opts.hdr_len + ti->res.text_off);
     io->text_len = ti->res.text_len;
 
     if ((ti->res.act & IDEMIP_TCP_IN_ACT_HOLD) != 0u)
@@ -2405,13 +2409,24 @@ void idemip_dispatch_tcp_deliver(uint8_t *work)
     uint32_t skip = d_seq_from(rcv_nxt, held.seq);
     io->desc = held.desc;
     io->text_seq = rcv_nxt;
-    if (skip < (uint32_t)held.len)
+    // RFC 9293 sec 3.10.7.4 processes only the new part of a segment that straddles RCV.NXT. The hold
+    // tested only the first octet against the window. The window that remains can thus end before the
+    // last octet. The delivery takes what the window holds, and the sender sends the rest again.
+    uint32_t take = (skip < (uint32_t)held.len) ? (uint32_t)held.len - skip : 0u;
+    if (take > tp->vars.rcv_wnd)
     {
-        // sec 3.10.7.4: "If a segment's contents straddle the boundary between old and new, only the
-        // new parts are processed."
+        take = tp->vars.rcv_wnd;
+    }
+    if (take != 0u)
+    {
+        // Explicit cast narrows the offset, which the frame length holds below IDEMIP_DMA_FRAME_MAX
         io->text_off = (uint16_t)(held.offset + skip);
-        io->text_len = (uint16_t)((uint32_t)held.len - skip);
-        tp->vars.rcv_nxt = rcv_nxt + (uint32_t)io->text_len;
+        // Explicit cast narrows the length, which the 16 bits of TcpPcbOosInfo::len bound
+        io->text_len = (uint16_t)take;
+        // RFC 9293 sec 3.10.7.4: RCV.NXT moves over the data that the delivery accepts, and RCV.WND
+        // gets smaller by the same count. The sum of the two thus stays the same.
+        tp->vars.rcv_nxt = rcv_nxt + take;
+        tp->vars.rcv_wnd -= take;
         tp->pcb_args.index = pcb;
         TcpPcb.store(ctx->tcp_pcb);
         io->act |= IDEMIP_DISPATCH_ACT_DELIVER | IDEMIP_DISPATCH_ACT_TCP;

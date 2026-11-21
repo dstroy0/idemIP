@@ -4400,6 +4400,101 @@ void test_a_redelivery_owes_the_aggregate_acknowledgment(void)
     TEST_ASSERT_EQUAL_UINT32(109u, IDEMIP_DISPATCH_IO(work_a)->reply.ack);
 }
 
+// build_tcp4 writes three headers in front of the text of a segment: Ethernet, IPv4 with no options,
+// and TCP with no options.
+#define TEXT_AT (IDEMIP_ETH_HDR_LEN + IDEMIP_IP4_HDR_BYTES(IDEMIP_IP4_IHL_MIN) + IDEMIP_TCP_HDR_LEN)
+
+// DispatchIo::text_off counts from the frame. The text of an in-order segment starts behind the three
+// headers. RFC 9293 sec 3.10.7.4 processes only the new part of a straddle. The first octet thus moves
+// on past the octets that RCV.NXT passed.
+void test_the_text_of_a_delivery_is_named_from_the_frame(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    const DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    TEST_ASSERT_TRUE((io->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_UINT16(TEXT_AT, io->text_off);
+    TEST_ASSERT_EQUAL_UINT16(4u, io->text_len);
+
+    // RCV.NXT is 105. The first two octets of a segment at 103 are thus old.
+    end = build_tcp4(g_frame, 5000u, 5001u, 103u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+    TEST_ASSERT_TRUE((io->act & IDEMIP_DISPATCH_ACT_DELIVER) != 0u);
+    TEST_ASSERT_EQUAL_UINT16(TEXT_AT + 2u, io->text_off);
+    TEST_ASSERT_EQUAL_UINT16(2u, io->text_len);
+}
+
+// A redelivery gives the offset of its text from the frame, as an in-order delivery does. It takes its
+// octets out of RCV.WND. RFC 9293 sec 3.10.7.4 does not let the sum of RCV.NXT and RCV.WND go down, and
+// the delivery does not let it go up.
+void test_a_redelivery_names_its_text_from_the_frame_and_spends_the_window(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+    const uint32_t right_edge = tp->vars.rcv_nxt + tp->vars.rcv_wnd;
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 105u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, 3u);
+    end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    IDEMIP_DISPATCH_IO(work_a)->tcp_args.pcb = pcb;
+    Dispatch.tcp_deliver(work_a);
+    const DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_EQUAL_UINT16(TEXT_AT, io->text_off);
+    TEST_ASSERT_EQUAL_UINT16(4u, io->text_len);
+
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_UINT32(109u, tp->vars.rcv_nxt);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(right_edge, tp->vars.rcv_nxt + tp->vars.rcv_wnd,
+                                     "a redelivery moved the right edge of the receive window");
+}
+
+// A segment in the out-of-order queue can reach past the window that remains when RCV.NXT gets to it.
+// The delivery takes only what the window holds, and the sender sends the rest again.
+void test_a_redelivery_takes_no_more_than_the_window(void)
+{
+    uint16_t pcb = establish();
+    TcpPcbIo *tp = IDEMIP_TCP_PCB_IO(tcp_pcb_mem);
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    uint32_t iss = tp->vars.iss;
+
+    size_t end = build_tcp4(g_frame, 5000u, 5001u, 105u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, 3u);
+    // The window keeps six octets: four for the gap and two for the queued segment.
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    tp->vars.rcv_wnd = 6u;
+    tp->pcb_args.index = pcb;
+    TcpPcb.store(tcp_pcb_mem);
+    end = build_tcp4(g_frame, 5000u, 5001u, 101u, iss + 1u, IDEMIP_TCP_ACK, 4u);
+    input(work_a, end, 0u, IDEMIP_DISPATCH_DESC_NONE);
+
+    IDEMIP_DISPATCH_IO(work_a)->tcp_args.pcb = pcb;
+    Dispatch.tcp_deliver(work_a);
+    const DispatchIo *io = IDEMIP_DISPATCH_IO(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, io->status);
+    TEST_ASSERT_EQUAL_UINT16(2u, io->text_len);
+
+    tp->pcb_args.index = pcb;
+    TcpPcb.load(tcp_pcb_mem);
+    TEST_ASSERT_EQUAL_UINT32(107u, tp->vars.rcv_nxt);
+    TEST_ASSERT_EQUAL_UINT32(0u, tp->vars.rcv_wnd);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_PCB_NONE, tp->info.ooseq);
+}
+
 void test_tcp_deliver_refuses_a_pcb_past_the_table(void)
 {
     IDEMIP_DISPATCH_IO(work_a)->tcp_args.pcb = (uint16_t)IDEMIP_TCP_PCBS;
