@@ -192,11 +192,12 @@ void test_a_call_is_a_function_of_its_borrow_alone(void)
 
     IO(work_a)->addr_args.addr = g_global;
     Dad.find(work_a);
-    IdemIpMs first = embed_stored_u64_get(&IO(work_a)->deadline);
+    IdemIpMs first = EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &IO(work_a)->deadline);
     tick_at(work_b, 100u);
     IO(work_a)->addr_args.addr = g_global;
     Dad.find(work_a);
-    TEST_ASSERT_EQUAL_UINT32(first, embed_stored_u64_get(&IO(work_a)->deadline));
+    TEST_ASSERT_EQUAL_UINT32(
+        first, EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &IO(work_a)->deadline));
 }
 
 // --- the published map -------------------------------------------------------
@@ -348,8 +349,10 @@ void test_a_retrans_timer_past_a_32_bit_deadline_is_served_whole(void)
     // The first tick sends the solicitation and arms the wait at the advertised RetransTimer.
     tick_at(work_a, 0u);
     TEST_ASSERT_TRUE(IO(work_a)->send_ns);
-    TEST_ASSERT_EQUAL_UINT64_MESSAGE((IdemIpMs)retrans, embed_stored_u64_get(&IO(work_a)->deadline),
-                                     "the advertised Retrans Timer was held at a bound");
+    TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+        (IdemIpMs)retrans,
+        EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &IO(work_a)->deadline),
+        "the advertised Retrans Timer was held at a bound");
 
     // Half way through it the address is still tentative, where a clamped deadline would have passed.
     tick_at(work_a, 0x7FFFFFFFu);
@@ -506,10 +509,13 @@ void test_the_delay_is_drawn_between_zero_and_max_rtr_solicitation_delay(void)
         Dad.bind(work_a);
         start_at(work_a, g_global, 1000u, EMBED_TRUE, EMBED_FALSE, 1000u, r);
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
-        TEST_ASSERT_TRUE_MESSAGE(embed_stored_u64_get(&IO(work_a)->deadline) >= 1000u, "the delay ran backwards");
-        TEST_ASSERT_TRUE_MESSAGE(embed_stored_u64_get(&IO(work_a)->deadline) <=
-                                     1000u + IDEMIP_ND6_MAX_RTR_SOLICITATION_DELAY_MS,
-                                 "the delay ran past MAX_RTR_SOLICITATION_DELAY");
+        TEST_ASSERT_TRUE_MESSAGE(
+            EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &IO(work_a)->deadline) >= 1000u,
+            "the delay ran backwards");
+        TEST_ASSERT_TRUE_MESSAGE(
+            EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &IO(work_a)->deadline) <=
+                1000u + IDEMIP_ND6_MAX_RTR_SOLICITATION_DELAY_MS,
+            "the delay ran past MAX_RTR_SOLICITATION_DELAY");
     }
 }
 
@@ -521,7 +527,7 @@ void test_the_delay_holds_the_first_solicitation_back(void)
     start_at(work_a, g_global, 0u, EMBED_TRUE, EMBED_FALSE, 1000u, 0xFFFFu);
     // The deadline is a 64-bit stamp; tick takes the 32-bit clock the API is stated in, and this
     // one was computed from a 32-bit now_ms, so the narrowing is exact and is spelled out.
-    IdemIpMs due = embed_stored_u64_get(&IO(work_a)->deadline);
+    IdemIpMs due = EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &IO(work_a)->deadline);
     TEST_ASSERT_TRUE(due > 0u);
     tick_at(work_a, (uint32_t)(due - 1u));
     TEST_ASSERT_EQUAL_INT(IDEMIP_BUSY, IO(work_a)->status);
@@ -536,7 +542,8 @@ void test_no_delay_solicits_on_the_next_tick(void)
 {
     bind_cfg(work_a, &g_cfg_one);
     start_at(work_a, g_global, 500u, EMBED_FALSE, EMBED_FALSE, 1000u, 0xFFFFu);
-    TEST_ASSERT_EQUAL_UINT32(500u, embed_stored_u64_get(&IO(work_a)->deadline));
+    TEST_ASSERT_EQUAL_UINT32(
+        500u, EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &IO(work_a)->deadline));
     tick_at(work_a, 500u);
     TEST_ASSERT_TRUE(IO(work_a)->send_ns);
 }
@@ -562,7 +569,8 @@ void test_solicitations_are_spaced_by_retrans_timer(void)
         TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IO(work_a)->status);
         TEST_ASSERT_TRUE_MESSAGE(IO(work_a)->send_ns, "a solicitation was not due when RetransTimer had passed");
         TEST_ASSERT_EQUAL_UINT8(i, IO(work_a)->sent);
-        TEST_ASSERT_EQUAL_UINT32((uint32_t)i * 700u, embed_stored_u64_get(&IO(work_a)->deadline));
+        TEST_ASSERT_EQUAL_UINT32((uint32_t)i * 700u, EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg,
+                                                                .stored = &IO(work_a)->deadline));
 
         // sec 5.4.2: "Before sending a Neighbor Solicitation, an interface MUST join the all-nodes
         // multicast address and the solicited-node multicast address of the tentative address." The
@@ -669,7 +677,8 @@ void test_a_zero_retrans_timer_takes_the_rfc_4861_default(void)
     bind_cfg(work_a, &g_cfg_one);
     start_at(work_a, g_global, 0u, EMBED_FALSE, EMBED_FALSE, 0u, 0u);
     tick_at(work_a, 0u);
-    TEST_ASSERT_EQUAL_UINT32(IDEMIP_ND6_RETRANS_TIMER_MS, embed_stored_u64_get(&IO(work_a)->deadline));
+    TEST_ASSERT_EQUAL_UINT32(IDEMIP_ND6_RETRANS_TIMER_MS, EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg,
+                                                                     .stored = &IO(work_a)->deadline));
 }
 
 // A tick with no deadline reached is BUSY: nothing is wrong, and a later tick makes progress.

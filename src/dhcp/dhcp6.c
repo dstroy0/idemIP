@@ -484,8 +484,10 @@ static size_t dhcp6_write(uint8_t *work, uint8_t type, uint8_t *out, size_t cap)
     {
         return 0u;
     }
-    idemip_wr16(out + at - IDEMIP_DHCP6_ELAPSED_LEN, dhcp6_elapsed_cs(embed_stored_u64_get(&ctx->now_ms),
-                                                                         embed_stored_u64_get(&ctx->started_ms)));
+    idemip_wr16(
+        out + at - IDEMIP_DHCP6_ELAPSED_LEN,
+        dhcp6_elapsed_cs(EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms),
+                         EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->started_ms)));
 
     // sec 21.4. sec 16.12 has a server discard an Information-request that carries an IA option, so
     // the IA_NA goes in every other exchange. sec 18.2.1 makes an address hint a MAY and leaves the
@@ -573,9 +575,9 @@ static void dhcp6_forget_lease(uint8_t *work)
     ctx->valid_s = 0u;
     ctx->t1_s = 0u;
     ctx->t2_s = 0u;
-    embed_stored_u64_set(&ctx->t1_ms, 0u);
-    embed_stored_u64_set(&ctx->t2_ms, 0u);
-    embed_stored_u64_set(&ctx->valid_ms, 0u);
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->t1_ms, .count = 0u);
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->t2_ms, .count = 0u);
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->valid_ms, .count = 0u);
     ctx->inf = 0u;
     ctx->pref = 0u;
     ctx->have_adv = EMBED_FALSE;
@@ -590,8 +592,10 @@ static void dhcp6_begin(Dhcp6Ctx *ctx, uint8_t state)
     ctx->owed = 0u;
     ctx->retries = 0u;
     ctx->rt_ms = 0u;
-    embed_stored_u64_set(&ctx->retry_ms, embed_stored_u64_get(&ctx->now_ms));
-    embed_stored_u64_set(&ctx->started_ms, embed_stored_u64_get(&ctx->now_ms));
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->retry_ms,
+               .count = EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms));
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->started_ms,
+               .count = EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms));
     ctx->status_code = 0u;
 }
 
@@ -600,34 +604,37 @@ static void dhcp6_begin(Dhcp6Ctx *ctx, uint8_t state)
 // remaining in each lifetime". sec 7.7's 0xffffffff is infinity and gets no deadline.
 static void dhcp6_arm_lease(Dhcp6Ctx *ctx)
 {
-    const IdemIpMs now_ms = embed_stored_u64_get(&ctx->now_ms);
+    const IdemIpMs now_ms = EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms);
     ctx->inf = 0u;
     if (ctx->t1_s == IDEMIP_DHCP6_INFINITY)
     {
         ctx->inf |= DHCP6_INF_T1;
-        embed_stored_u64_set(&ctx->t1_ms, now_ms);
+        EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->t1_ms, .count = now_ms);
     }
     else
     {
-        embed_stored_u64_set(&ctx->t1_ms, dhcp6_deadline(now_ms, ctx->t1_s));
+        EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->t1_ms,
+                   .count = dhcp6_deadline(now_ms, ctx->t1_s));
     }
     if (ctx->t2_s == IDEMIP_DHCP6_INFINITY)
     {
         ctx->inf |= DHCP6_INF_T2;
-        embed_stored_u64_set(&ctx->t2_ms, now_ms);
+        EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->t2_ms, .count = now_ms);
     }
     else
     {
-        embed_stored_u64_set(&ctx->t2_ms, dhcp6_deadline(now_ms, ctx->t2_s));
+        EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->t2_ms,
+                   .count = dhcp6_deadline(now_ms, ctx->t2_s));
     }
     if (ctx->valid_s == IDEMIP_DHCP6_INFINITY)
     {
         ctx->inf |= DHCP6_INF_VALID;
-        embed_stored_u64_set(&ctx->valid_ms, now_ms);
+        EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->valid_ms, .count = now_ms);
     }
     else
     {
-        embed_stored_u64_set(&ctx->valid_ms, dhcp6_deadline(now_ms, ctx->valid_s));
+        EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->valid_ms,
+                   .count = dhcp6_deadline(now_ms, ctx->valid_s));
     }
 }
 
@@ -943,7 +950,8 @@ void idemip_dhcp6_start(uint8_t *work)
         io->status = IDEMIP_ERR;
         return;
     }
-    embed_stored_u64_set(&ctx->now_ms, idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->start_args.now_ms));
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->now_ms,
+               .count = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->start_args.now_ms));
     uint8_t state = ctx->cfg->stateless ? (uint8_t)IDEMIP_DHCP6_INFO_REQUESTING : (uint8_t)IDEMIP_DHCP6_SOLICITING;
     dhcp6_begin(ctx, state);
     // sec 16.1: "A client SHOULD generate a random number that cannot easily be guessed or predicted
@@ -951,8 +959,9 @@ void idemip_dhcp6_start(uint8_t *work)
     ctx->xid = io->start_args.xid & IDEMIP_DHCP6_XID_MASK;
     // sec 18.2.1 and sec 18.2.6: the first message is delayed by "a random amount of time between 0
     // and" the exchange's MAX_DELAY.
-    embed_stored_u64_set(&ctx->retry_ms, embed_stored_u64_get(&ctx->now_ms) +
-                                             dhcp6_draw(io->start_args.rand, dhcp6_max_delay_ms(state)));
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->retry_ms,
+               .count = EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms) +
+                        dhcp6_draw(io->start_args.rand, dhcp6_max_delay_ms(state)));
     ctx->phase = DHCP6_PHASE_DELAY;
     io->status = IDEMIP_OK;
     dhcp6_publish(work);
@@ -1280,10 +1289,11 @@ void idemip_dhcp6_build(uint8_t *work)
 static void dhcp6_arm_first(Dhcp6Ctx *ctx, uint32_t rand)
 {
     embed_bool solicit = (ctx->state == IDEMIP_DHCP6_SOLICITING) ? EMBED_TRUE : EMBED_FALSE;
-    const IdemIpMs now_ms = embed_stored_u64_get(&ctx->now_ms);
-    embed_stored_u64_set(&ctx->started_ms, now_ms);
+    const IdemIpMs now_ms = EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms);
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->started_ms, .count = now_ms);
     ctx->rt_ms = dhcp6_first_rt(dhcp6_irt_ms((uint8_t)ctx->state), rand, solicit);
-    embed_stored_u64_set(&ctx->retry_ms, now_ms + ctx->rt_ms);
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->retry_ms,
+               .count = now_ms + ctx->rt_ms);
     ctx->retries = 1u;
     ctx->owed = dhcp6_msg_for((uint8_t)ctx->state);
     ctx->phase = DHCP6_PHASE_RUN;
@@ -1293,7 +1303,9 @@ static void dhcp6_arm_first(Dhcp6Ctx *ctx, uint32_t rand)
 static void dhcp6_arm_again(Dhcp6Ctx *ctx, uint32_t rand)
 {
     ctx->rt_ms = dhcp6_next_rt(ctx->rt_ms, dhcp6_mrt_ms((uint8_t)ctx->state, ctx), rand);
-    embed_stored_u64_set(&ctx->retry_ms, embed_stored_u64_get(&ctx->now_ms) + ctx->rt_ms);
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->retry_ms,
+               .count =
+                   EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms) + ctx->rt_ms);
     if (ctx->retries < 0xFFu)
     {
         ctx->retries++;
@@ -1308,16 +1320,20 @@ static embed_bool dhcp6_mrd_spent(const Dhcp6Ctx *ctx)
     switch (ctx->state)
     {
     case IDEMIP_DHCP6_CONFIRMING:
-        return dhcp6_reached(embed_stored_u64_get(&ctx->now_ms),
-                             embed_stored_u64_get(&ctx->started_ms) + IDEMIP_DHCP6_CNF_MAX_RD_MS);
+        return dhcp6_reached(EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms),
+                             EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->started_ms) +
+                                 IDEMIP_DHCP6_CNF_MAX_RD_MS);
     case IDEMIP_DHCP6_RENEWING:
         return ((ctx->inf & DHCP6_INF_T2) != 0u)
                    ? EMBED_FALSE
-                   : dhcp6_reached(embed_stored_u64_get(&ctx->now_ms), embed_stored_u64_get(&ctx->t2_ms));
+                   : dhcp6_reached(EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms),
+                                   EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->t2_ms));
     case IDEMIP_DHCP6_REBINDING:
         return ((ctx->inf & DHCP6_INF_VALID) != 0u)
                    ? EMBED_FALSE
-                   : dhcp6_reached(embed_stored_u64_get(&ctx->now_ms), embed_stored_u64_get(&ctx->valid_ms));
+                   : dhcp6_reached(
+                         EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms),
+                         EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->valid_ms));
     default:
         return EMBED_FALSE;
     }
@@ -1367,7 +1383,8 @@ void idemip_dhcp6_tick(uint8_t *work)
         io->status = IDEMIP_ERR;
         return;
     }
-    embed_stored_u64_set(&ctx->now_ms, idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->tick_args.now_ms));
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->now_ms,
+               .count = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->tick_args.now_ms));
     uint32_t rand = io->tick_args.rand;
 
     if (ctx->state == IDEMIP_DHCP6_IDLE)
@@ -1384,7 +1401,8 @@ void idemip_dhcp6_tick(uint8_t *work)
         // the address is given up only by leaving BOUND. It is written because the lifetime being
         // tested is that address's, and a client with no address has no lifetime to reach.
         if ((ctx->inf & DHCP6_INF_VALID) == 0u && dhcp6_has_addr(ctx) && // GCOVR_EXCL_BR_LINE
-            dhcp6_reached(embed_stored_u64_get(&ctx->now_ms), embed_stored_u64_get(&ctx->valid_ms)))
+            dhcp6_reached(EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms),
+                          EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->valid_ms)))
         {
             dhcp6_forget_lease(work);
             dhcp6_begin(ctx, (uint8_t)IDEMIP_DHCP6_SOLICITING);
@@ -1396,7 +1414,8 @@ void idemip_dhcp6_tick(uint8_t *work)
         // client with T1 at infinity never extend the lifetimes. For a stateless client the deadline is
         // the sec 21.23 refresh, so the exchange is another Information-request.
         if ((ctx->inf & DHCP6_INF_T1) == 0u &&
-            dhcp6_reached(embed_stored_u64_get(&ctx->now_ms), embed_stored_u64_get(&ctx->t1_ms)))
+            dhcp6_reached(EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms),
+                          EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->t1_ms)))
         {
             uint8_t next = ctx->cfg->stateless ? (uint8_t)IDEMIP_DHCP6_INFO_REQUESTING : (uint8_t)IDEMIP_DHCP6_RENEWING;
             dhcp6_begin(ctx, next);
@@ -1425,7 +1444,9 @@ void idemip_dhcp6_tick(uint8_t *work)
         // id from the low 24 bits and the delay from a rotation of it.
         ctx->xid = rand & IDEMIP_DHCP6_XID_MASK;
         uint32_t delay = dhcp6_draw((rand >> 11) | (rand << 21), dhcp6_max_delay_ms((uint8_t)ctx->state));
-        embed_stored_u64_set(&ctx->retry_ms, embed_stored_u64_get(&ctx->now_ms) + delay);
+        EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &ctx->retry_ms,
+                   .count =
+                       EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms) + delay);
         ctx->phase = DHCP6_PHASE_DELAY;
         if (delay != 0u)
         {
@@ -1435,7 +1456,8 @@ void idemip_dhcp6_tick(uint8_t *work)
         }
     }
 
-    if (!dhcp6_reached(embed_stored_u64_get(&ctx->now_ms), embed_stored_u64_get(&ctx->retry_ms)))
+    if (!dhcp6_reached(EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->now_ms),
+                       EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &ctx->retry_ms)))
     {
         io->status = IDEMIP_BUSY;
         return;

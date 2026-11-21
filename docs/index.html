@@ -343,11 +343,11 @@ dl.io dd { margin:2px 0 0; color:var(--muted); font-size:.9rem; }
 
   <div class="stats">
 <!-- docsgen:stats -->
-<div class="stat"><b>31,624</b><span>bytes of .bss</span><em>IDEMIP_TOTAL_BORROW, at the counts in idemip_config.h</em></div>
+<div class="stat"><b>31,616</b><span>bytes of .bss</span><em>IDEMIP_TOTAL_BORROW, at the counts in idemip_config.h</em></div>
 <div class="stat"><b>0</b><span>heap allocations</span><em>there is no <code>&lt;stdlib.h&gt;</code> anywhere in <code>src/</code></em></div>
-<div class="stat"><b>62</b><span>translation units</span><em>74 headers, 54,519 lines</em></div>
-<div class="stat"><b>71,226</b><span>lines of test</span><em>against 54,519 lines of library</em></div>
-<div class="stat"><b>56</b><span>CTest suites</span><em>3,088 cases</em></div>
+<div class="stat"><b>62</b><span>translation units</span><em>74 headers, 54,726 lines</em></div>
+<div class="stat"><b>71,763</b><span>lines of test</span><em>against 54,726 lines of library</em></div>
+<div class="stat"><b>56</b><span>CTest suites</span><em>3,107 cases</em></div>
 <div class="stat"><b>112</b><span>RFCs vendored</span><em>the text every rule is written against</em></div>
 <!-- /docsgen:stats -->
   </div>
@@ -607,61 +607,61 @@ embed_bool  (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
   <code>tools/dev_env/docsgen.py</code> puts that output here. It is run, never remembered.</p>
 
 <!-- docsgen:footprint -->
-<div class="map" role="img" aria-label="every borrow, to scale, summing to 31624 bytes">
-<div class="bar shared" style="--w:2.6309%" title="IDEMIP_NETIF_BORROW - 832 bytes"><span class="bar-l">IDEMIP_NETIF_BORROW</span><span class="bar-v">832</span></div>
-<div class="bar shared" style="--w:13.4328%" title="IDEMIP_LOOPIF_BORROW - 4248 bytes"><span class="bar-l">IDEMIP_LOOPIF_BORROW</span><span class="bar-v">4248</span></div>
-<div class="bar shared" style="--w:1.6190%" title="IDEMIP_ARP_BORROW - 512 bytes"><span class="bar-l">IDEMIP_ARP_BORROW</span><span class="bar-v">512</span></div>
-<div class="bar shared" style="--w:0.7083%" title="IDEMIP_IP4_ROUTE_BORROW - 224 bytes"><span class="bar-l">IDEMIP_IP4_ROUTE_BORROW</span><span class="bar-v">224</span></div>
-<div class="bar shared" style="--w:0.4048%" title="IDEMIP_IP4_FORWARD_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP4_FORWARD_BORROW</span><span class="bar-v">128</span></div>
-<div class="bar shared" style="--w:0.4048%" title="IDEMIP_IP6_FORWARD_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP6_FORWARD_BORROW</span><span class="bar-v">128</span></div>
-<div class="bar shared" style="--w:1.7708%" title="IDEMIP_IP4_REASS_BORROW - 560 bytes"><span class="bar-l">IDEMIP_IP4_REASS_BORROW</span><span class="bar-v">560</span></div>
-<div class="bar shared" style="--w:0.4048%" title="IDEMIP_IP4_FRAG_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP4_FRAG_BORROW</span><span class="bar-v">128</span></div>
-<div class="bar shared" style="--w:0.6071%" title="IDEMIP_IGMP_BORROW - 192 bytes"><span class="bar-l">IDEMIP_IGMP_BORROW</span><span class="bar-v">192</span></div>
-<div class="bar shared" style="--w:2.0491%" title="IDEMIP_IP6_REASS_BORROW - 648 bytes"><span class="bar-l">IDEMIP_IP6_REASS_BORROW</span><span class="bar-v">648</span></div>
-<div class="bar shared" style="--w:0.4048%" title="IDEMIP_IP6_FRAG_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP6_FRAG_BORROW</span><span class="bar-v">128</span></div>
-<div class="bar shared" style="--w:0.7083%" title="IDEMIP_MLD6_BORROW - 224 bytes"><span class="bar-l">IDEMIP_MLD6_BORROW</span><span class="bar-v">224</span></div>
-<div class="bar shared" style="--w:0.5059%" title="IDEMIP_ICMP_IN_BORROW - 160 bytes"><span class="bar-l">IDEMIP_ICMP_IN_BORROW</span><span class="bar-v">160</span></div>
-<div class="bar shared" style="--w:0.6071%" title="IDEMIP_ICMP6_IN_BORROW - 192 bytes"><span class="bar-l">IDEMIP_ICMP6_IN_BORROW</span><span class="bar-v">192</span></div>
-<div class="bar shared" style="--w:0.9107%" title="IDEMIP_RAW_PCB_BORROW - 288 bytes"><span class="bar-l">IDEMIP_RAW_PCB_BORROW</span><span class="bar-v">288</span></div>
-<div class="bar shared" style="--w:2.2262%" title="IDEMIP_UDP_PCB_BORROW - 704 bytes"><span class="bar-l">IDEMIP_UDP_PCB_BORROW</span><span class="bar-v">704</span></div>
-<div class="bar shared" style="--w:0.4048%" title="IDEMIP_UDPLITE_BORROW - 128 bytes"><span class="bar-l">IDEMIP_UDPLITE_BORROW</span><span class="bar-v">128</span></div>
-<div class="bar shared" style="--w:9.6635%" title="IDEMIP_TCP_PCB_BORROW - 3056 bytes"><span class="bar-l">IDEMIP_TCP_PCB_BORROW</span><span class="bar-v">3056</span></div>
-<div class="bar shared" style="--w:0.9613%" title="IDEMIP_TCP_IN_BORROW - 304 bytes"><span class="bar-l">IDEMIP_TCP_IN_BORROW</span><span class="bar-v">304</span></div>
-<div class="bar shared" style="--w:1.0625%" title="IDEMIP_TCP_OUT_BORROW - 336 bytes"><span class="bar-l">IDEMIP_TCP_OUT_BORROW</span><span class="bar-v">336</span></div>
-<div class="bar shared" style="--w:1.4166%" title="IDEMIP_TCP_ISN_BORROW - 448 bytes"><span class="bar-l">IDEMIP_TCP_ISN_BORROW</span><span class="bar-v">448</span></div>
+<div class="map" role="img" aria-label="every borrow, to scale, summing to 31616 bytes">
+<div class="bar shared" style="--w:2.6316%" title="IDEMIP_NETIF_BORROW - 832 bytes"><span class="bar-l">IDEMIP_NETIF_BORROW</span><span class="bar-v">832</span></div>
+<div class="bar shared" style="--w:13.4362%" title="IDEMIP_LOOPIF_BORROW - 4248 bytes"><span class="bar-l">IDEMIP_LOOPIF_BORROW</span><span class="bar-v">4248</span></div>
+<div class="bar shared" style="--w:1.6194%" title="IDEMIP_ARP_BORROW - 512 bytes"><span class="bar-l">IDEMIP_ARP_BORROW</span><span class="bar-v">512</span></div>
+<div class="bar shared" style="--w:0.7085%" title="IDEMIP_IP4_ROUTE_BORROW - 224 bytes"><span class="bar-l">IDEMIP_IP4_ROUTE_BORROW</span><span class="bar-v">224</span></div>
+<div class="bar shared" style="--w:0.4049%" title="IDEMIP_IP4_FORWARD_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP4_FORWARD_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar shared" style="--w:0.4049%" title="IDEMIP_IP6_FORWARD_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP6_FORWARD_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar shared" style="--w:1.7713%" title="IDEMIP_IP4_REASS_BORROW - 560 bytes"><span class="bar-l">IDEMIP_IP4_REASS_BORROW</span><span class="bar-v">560</span></div>
+<div class="bar shared" style="--w:0.4049%" title="IDEMIP_IP4_FRAG_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP4_FRAG_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar shared" style="--w:0.6073%" title="IDEMIP_IGMP_BORROW - 192 bytes"><span class="bar-l">IDEMIP_IGMP_BORROW</span><span class="bar-v">192</span></div>
+<div class="bar shared" style="--w:2.0496%" title="IDEMIP_IP6_REASS_BORROW - 648 bytes"><span class="bar-l">IDEMIP_IP6_REASS_BORROW</span><span class="bar-v">648</span></div>
+<div class="bar shared" style="--w:0.4049%" title="IDEMIP_IP6_FRAG_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP6_FRAG_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar shared" style="--w:0.7085%" title="IDEMIP_MLD6_BORROW - 224 bytes"><span class="bar-l">IDEMIP_MLD6_BORROW</span><span class="bar-v">224</span></div>
+<div class="bar shared" style="--w:0.5061%" title="IDEMIP_ICMP_IN_BORROW - 160 bytes"><span class="bar-l">IDEMIP_ICMP_IN_BORROW</span><span class="bar-v">160</span></div>
+<div class="bar shared" style="--w:0.6073%" title="IDEMIP_ICMP6_IN_BORROW - 192 bytes"><span class="bar-l">IDEMIP_ICMP6_IN_BORROW</span><span class="bar-v">192</span></div>
+<div class="bar shared" style="--w:0.9109%" title="IDEMIP_RAW_PCB_BORROW - 288 bytes"><span class="bar-l">IDEMIP_RAW_PCB_BORROW</span><span class="bar-v">288</span></div>
+<div class="bar shared" style="--w:2.2267%" title="IDEMIP_UDP_PCB_BORROW - 704 bytes"><span class="bar-l">IDEMIP_UDP_PCB_BORROW</span><span class="bar-v">704</span></div>
+<div class="bar shared" style="--w:0.4049%" title="IDEMIP_UDPLITE_BORROW - 128 bytes"><span class="bar-l">IDEMIP_UDPLITE_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar shared" style="--w:9.6660%" title="IDEMIP_TCP_PCB_BORROW - 3056 bytes"><span class="bar-l">IDEMIP_TCP_PCB_BORROW</span><span class="bar-v">3056</span></div>
+<div class="bar shared" style="--w:0.9615%" title="IDEMIP_TCP_IN_BORROW - 304 bytes"><span class="bar-l">IDEMIP_TCP_IN_BORROW</span><span class="bar-v">304</span></div>
+<div class="bar shared" style="--w:1.0628%" title="IDEMIP_TCP_OUT_BORROW - 336 bytes"><span class="bar-l">IDEMIP_TCP_OUT_BORROW</span><span class="bar-v">336</span></div>
+<div class="bar shared" style="--w:1.4170%" title="IDEMIP_TCP_ISN_BORROW - 448 bytes"><span class="bar-l">IDEMIP_TCP_ISN_BORROW</span><span class="bar-v">448</span></div>
 <div class="bar shared" style="--w:0.3036%" title="IDEMIP_IP4_ADDR_BORROW - 96 bytes"><span class="bar-l">IDEMIP_IP4_ADDR_BORROW</span><span class="bar-v">96</span></div>
-<div class="bar shared" style="--w:0.4048%" title="IDEMIP_IP6_ADDR_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP6_ADDR_BORROW</span><span class="bar-v">128</span></div>
-<div class="bar shared" style="--w:3.8705%" title="IDEMIP_IP6_SELECT_BORROW - 1224 bytes"><span class="bar-l">IDEMIP_IP6_SELECT_BORROW</span><span class="bar-v">1224</span></div>
+<div class="bar shared" style="--w:0.4049%" title="IDEMIP_IP6_ADDR_BORROW - 128 bytes"><span class="bar-l">IDEMIP_IP6_ADDR_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar shared" style="--w:3.8715%" title="IDEMIP_IP6_SELECT_BORROW - 1224 bytes"><span class="bar-l">IDEMIP_IP6_SELECT_BORROW</span><span class="bar-v">1224</span></div>
 <div class="bar shared" style="--w:0.2277%" title="IDEMIP_PMTU4_BORROW - 72 bytes"><span class="bar-l">IDEMIP_PMTU4_BORROW</span><span class="bar-v">72</span></div>
-<div class="bar shared" style="--w:12.2692%" title="IDEMIP_DNS_BORROW - 3880 bytes"><span class="bar-l">IDEMIP_DNS_BORROW</span><span class="bar-v">3880</span></div>
-<div class="bar shared" style="--w:0.6324%" title="IDEMIP_TIMEOUTS_BORROW - 200 bytes"><span class="bar-l">IDEMIP_TIMEOUTS_BORROW</span><span class="bar-v">200</span></div>
-<div class="bar shared" style="--w:1.0119%" title="IDEMIP_TICK_BORROW - 320 bytes"><span class="bar-l">IDEMIP_TICK_BORROW</span><span class="bar-v">320</span></div>
-<div class="bar shared" style="--w:1.8467%" title="IDEMIP_DISPATCH_BORROW - 584 bytes"><span class="bar-l">IDEMIP_DISPATCH_BORROW</span><span class="bar-v">584</span></div>
-<div class="bar shared" style="--w:2.0238%" title="IDEMIP_STATS_BORROW - 640 bytes"><span class="bar-l">IDEMIP_STATS_BORROW</span><span class="bar-v">640</span></div>
+<div class="bar shared" style="--w:12.2723%" title="IDEMIP_DNS_BORROW - 3880 bytes"><span class="bar-l">IDEMIP_DNS_BORROW</span><span class="bar-v">3880</span></div>
+<div class="bar shared" style="--w:0.6326%" title="IDEMIP_TIMEOUTS_BORROW - 200 bytes"><span class="bar-l">IDEMIP_TIMEOUTS_BORROW</span><span class="bar-v">200</span></div>
+<div class="bar shared" style="--w:1.0121%" title="IDEMIP_TICK_BORROW - 320 bytes"><span class="bar-l">IDEMIP_TICK_BORROW</span><span class="bar-v">320</span></div>
+<div class="bar shared" style="--w:1.8472%" title="IDEMIP_DISPATCH_BORROW - 584 bytes"><span class="bar-l">IDEMIP_DISPATCH_BORROW</span><span class="bar-v">584</span></div>
+<div class="bar shared" style="--w:2.0243%" title="IDEMIP_STATS_BORROW - 640 bytes"><span class="bar-l">IDEMIP_STATS_BORROW</span><span class="bar-v">640</span></div>
 <div class="bar shared" style="--w:0.3036%" title="IDEMIP_VLAN_BORROW - 96 bytes"><span class="bar-l">IDEMIP_VLAN_BORROW</span><span class="bar-v">96</span></div>
 <div class="bar shared" style="--w:0.2024%" title="IDEMIP_ETHIP6_BORROW - 64 bytes"><span class="bar-l">IDEMIP_ETHIP6_BORROW</span><span class="bar-v">64</span></div>
-<div class="bar netif" style="--w:0.4048%" title="IDEMIP_PHY_BORROW - 128 bytes"><span class="bar-l">IDEMIP_PHY_BORROW</span><span class="bar-v">128</span></div>
-<div class="bar netif" style="--w:3.9464%" title="IDEMIP_DMA_BORROW - 1248 bytes"><span class="bar-l">IDEMIP_DMA_BORROW</span><span class="bar-v">1248</span></div>
-<div class="bar netif" style="--w:5.0594%" title="IDEMIP_ND6_BORROW - 1600 bytes"><span class="bar-l">IDEMIP_ND6_BORROW</span><span class="bar-v">1600</span></div>
-<div class="bar netif" style="--w:0.4048%" title="IDEMIP_ACD_BORROW - 128 bytes"><span class="bar-l">IDEMIP_ACD_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar netif" style="--w:0.4049%" title="IDEMIP_PHY_BORROW - 128 bytes"><span class="bar-l">IDEMIP_PHY_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar netif" style="--w:3.9474%" title="IDEMIP_DMA_BORROW - 1248 bytes"><span class="bar-l">IDEMIP_DMA_BORROW</span><span class="bar-v">1248</span></div>
+<div class="bar netif" style="--w:5.0607%" title="IDEMIP_ND6_BORROW - 1600 bytes"><span class="bar-l">IDEMIP_ND6_BORROW</span><span class="bar-v">1600</span></div>
+<div class="bar netif" style="--w:0.4049%" title="IDEMIP_ACD_BORROW - 128 bytes"><span class="bar-l">IDEMIP_ACD_BORROW</span><span class="bar-v">128</span></div>
 <div class="bar netif" style="--w:0.3036%" title="IDEMIP_AUTOIP_BORROW - 96 bytes"><span class="bar-l">IDEMIP_AUTOIP_BORROW</span><span class="bar-v">96</span></div>
-<div class="bar netif" style="--w:1.3155%" title="IDEMIP_PMTU6_BORROW - 416 bytes"><span class="bar-l">IDEMIP_PMTU6_BORROW</span><span class="bar-v">416</span></div>
-<div class="bar netif" style="--w:0.8348%" title="IDEMIP_DHCP4_BORROW - 264 bytes"><span class="bar-l">IDEMIP_DHCP4_BORROW</span><span class="bar-v">264</span></div>
-<div class="bar netif" style="--w:1.5431%" title="IDEMIP_DHCP6_BORROW - 488 bytes"><span class="bar-l">IDEMIP_DHCP6_BORROW</span><span class="bar-v">488</span></div>
-<div class="bar netif" style="--w:1.2649%" title="IDEMIP_DAD_BORROW - 400 bytes"><span class="bar-l">IDEMIP_DAD_BORROW</span><span class="bar-v">400</span></div>
-<div class="bar netif" style="--w:1.2649%" title="IDEMIP_SLAAC_BORROW - 400 bytes"><span class="bar-l">IDEMIP_SLAAC_BORROW</span><span class="bar-v">400</span></div>
-<div class="bar netif" style="--w:0.6577%" title="IDEMIP_RDNSS_BORROW - 208 bytes"><span class="bar-l">IDEMIP_RDNSS_BORROW</span><span class="bar-v">208</span></div>
-<div class="bar netif" style="--w:0.4048%" title="IDEMIP_PHY_BORROW - 128 bytes"><span class="bar-l">IDEMIP_PHY_BORROW</span><span class="bar-v">128</span></div>
-<div class="bar netif" style="--w:3.9464%" title="IDEMIP_DMA_BORROW - 1248 bytes"><span class="bar-l">IDEMIP_DMA_BORROW</span><span class="bar-v">1248</span></div>
-<div class="bar netif" style="--w:5.0594%" title="IDEMIP_ND6_BORROW - 1600 bytes"><span class="bar-l">IDEMIP_ND6_BORROW</span><span class="bar-v">1600</span></div>
-<div class="bar netif" style="--w:0.4048%" title="IDEMIP_ACD_BORROW - 128 bytes"><span class="bar-l">IDEMIP_ACD_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar netif" style="--w:1.3158%" title="IDEMIP_PMTU6_BORROW - 416 bytes"><span class="bar-l">IDEMIP_PMTU6_BORROW</span><span class="bar-v">416</span></div>
+<div class="bar netif" style="--w:0.8350%" title="IDEMIP_DHCP4_BORROW - 264 bytes"><span class="bar-l">IDEMIP_DHCP4_BORROW</span><span class="bar-v">264</span></div>
+<div class="bar netif" style="--w:1.5309%" title="IDEMIP_DHCP6_BORROW - 484 bytes"><span class="bar-l">IDEMIP_DHCP6_BORROW</span><span class="bar-v">484</span></div>
+<div class="bar netif" style="--w:1.2652%" title="IDEMIP_DAD_BORROW - 400 bytes"><span class="bar-l">IDEMIP_DAD_BORROW</span><span class="bar-v">400</span></div>
+<div class="bar netif" style="--w:1.2652%" title="IDEMIP_SLAAC_BORROW - 400 bytes"><span class="bar-l">IDEMIP_SLAAC_BORROW</span><span class="bar-v">400</span></div>
+<div class="bar netif" style="--w:0.6579%" title="IDEMIP_RDNSS_BORROW - 208 bytes"><span class="bar-l">IDEMIP_RDNSS_BORROW</span><span class="bar-v">208</span></div>
+<div class="bar netif" style="--w:0.4049%" title="IDEMIP_PHY_BORROW - 128 bytes"><span class="bar-l">IDEMIP_PHY_BORROW</span><span class="bar-v">128</span></div>
+<div class="bar netif" style="--w:3.9474%" title="IDEMIP_DMA_BORROW - 1248 bytes"><span class="bar-l">IDEMIP_DMA_BORROW</span><span class="bar-v">1248</span></div>
+<div class="bar netif" style="--w:5.0607%" title="IDEMIP_ND6_BORROW - 1600 bytes"><span class="bar-l">IDEMIP_ND6_BORROW</span><span class="bar-v">1600</span></div>
+<div class="bar netif" style="--w:0.4049%" title="IDEMIP_ACD_BORROW - 128 bytes"><span class="bar-l">IDEMIP_ACD_BORROW</span><span class="bar-v">128</span></div>
 <div class="bar netif" style="--w:0.3036%" title="IDEMIP_AUTOIP_BORROW - 96 bytes"><span class="bar-l">IDEMIP_AUTOIP_BORROW</span><span class="bar-v">96</span></div>
-<div class="bar netif" style="--w:1.3155%" title="IDEMIP_PMTU6_BORROW - 416 bytes"><span class="bar-l">IDEMIP_PMTU6_BORROW</span><span class="bar-v">416</span></div>
-<div class="bar netif" style="--w:0.8348%" title="IDEMIP_DHCP4_BORROW - 264 bytes"><span class="bar-l">IDEMIP_DHCP4_BORROW</span><span class="bar-v">264</span></div>
-<div class="bar netif" style="--w:1.5431%" title="IDEMIP_DHCP6_BORROW - 488 bytes"><span class="bar-l">IDEMIP_DHCP6_BORROW</span><span class="bar-v">488</span></div>
-<div class="bar netif" style="--w:1.2649%" title="IDEMIP_DAD_BORROW - 400 bytes"><span class="bar-l">IDEMIP_DAD_BORROW</span><span class="bar-v">400</span></div>
-<div class="bar netif" style="--w:1.2649%" title="IDEMIP_SLAAC_BORROW - 400 bytes"><span class="bar-l">IDEMIP_SLAAC_BORROW</span><span class="bar-v">400</span></div>
-<div class="bar netif" style="--w:0.6577%" title="IDEMIP_RDNSS_BORROW - 208 bytes"><span class="bar-l">IDEMIP_RDNSS_BORROW</span><span class="bar-v">208</span></div>
+<div class="bar netif" style="--w:1.3158%" title="IDEMIP_PMTU6_BORROW - 416 bytes"><span class="bar-l">IDEMIP_PMTU6_BORROW</span><span class="bar-v">416</span></div>
+<div class="bar netif" style="--w:0.8350%" title="IDEMIP_DHCP4_BORROW - 264 bytes"><span class="bar-l">IDEMIP_DHCP4_BORROW</span><span class="bar-v">264</span></div>
+<div class="bar netif" style="--w:1.5309%" title="IDEMIP_DHCP6_BORROW - 484 bytes"><span class="bar-l">IDEMIP_DHCP6_BORROW</span><span class="bar-v">484</span></div>
+<div class="bar netif" style="--w:1.2652%" title="IDEMIP_DAD_BORROW - 400 bytes"><span class="bar-l">IDEMIP_DAD_BORROW</span><span class="bar-v">400</span></div>
+<div class="bar netif" style="--w:1.2652%" title="IDEMIP_SLAAC_BORROW - 400 bytes"><span class="bar-l">IDEMIP_SLAAC_BORROW</span><span class="bar-v">400</span></div>
+<div class="bar netif" style="--w:0.6579%" title="IDEMIP_RDNSS_BORROW - 208 bytes"><span class="bar-l">IDEMIP_RDNSS_BORROW</span><span class="bar-v">208</span></div>
 </div>
 <table class="terms"><thead><tr><th>borrow</th><th class="n">bytes</th><th class="n">share</th></tr></thead><tbody>
 <tr class="grp"><th colspan="3">shared, one table across every interface</th></tr>
@@ -706,12 +706,12 @@ embed_bool  (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <tr><td><code>IDEMIP_AUTOIP_BORROW</code></td><td class="n">96</td><td class="n">0.6%</td></tr>
 <tr><td><code>IDEMIP_PMTU6_BORROW</code></td><td class="n">416</td><td class="n">2.6%</td></tr>
 <tr><td><code>IDEMIP_DHCP4_BORROW</code></td><td class="n">264</td><td class="n">1.7%</td></tr>
-<tr><td><code>IDEMIP_DHCP6_BORROW</code></td><td class="n">488</td><td class="n">3.1%</td></tr>
+<tr><td><code>IDEMIP_DHCP6_BORROW</code></td><td class="n">484</td><td class="n">3.1%</td></tr>
 <tr><td><code>IDEMIP_DAD_BORROW</code></td><td class="n">400</td><td class="n">2.5%</td></tr>
 <tr><td><code>IDEMIP_SLAAC_BORROW</code></td><td class="n">400</td><td class="n">2.5%</td></tr>
 <tr><td><code>IDEMIP_RDNSS_BORROW</code></td><td class="n">208</td><td class="n">1.3%</td></tr>
-<tr class="sum"><td><code>IDEMIP_PER_NETIF_BORROW</code> &times; 2</td><td class="n">10,752</td><td class="n">34.0%</td></tr>
-<tr class="total"><td><code>IDEMIP_TOTAL_BORROW</code></td><td class="n">31,624</td><td class="n">100%</td></tr>
+<tr class="sum"><td><code>IDEMIP_PER_NETIF_BORROW</code> &times; 2</td><td class="n">10,744</td><td class="n">34.0%</td></tr>
+<tr class="total"><td><code>IDEMIP_TOTAL_BORROW</code></td><td class="n">31,616</td><td class="n">100%</td></tr>
 </tbody></table>
 <!-- /docsgen:footprint -->
 
@@ -793,7 +793,7 @@ embed_bool  (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <article class="card"><header><b>Pmtu4</b><span class="hdr">src/pmtu/pmtu4.h</span></header><div class="entries"><code>clear</code><code>too_big</code><code>plateau_below</code><code>plateau_above</code><code>age</code></div><div class="borrow"><code>IDEMIP_PMTU4_BORROW</code><span>72 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc1191.txt">RFC 1191</a></footer></article>
 </div>
 <h3 class="layer">IPv6</h3><div class="cards">
-<article class="card"><header><b>Dhcp6</b><span class="hdr">src/dhcp/dhcp6.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>start</code><code>stop</code><code>input</code><code>build</code><code>tick</code><code>confirm</code><code>release</code><code>decline</code></div><div class="borrow"><code>IDEMIP_DHCP6_BORROW</code><span>488 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc8415.txt">RFC 8415</a></footer></article>
+<article class="card"><header><b>Dhcp6</b><span class="hdr">src/dhcp/dhcp6.h</span></header><div class="entries"><code>clear</code><code>bind</code><code>start</code><code>stop</code><code>input</code><code>build</code><code>tick</code><code>confirm</code><code>release</code><code>decline</code></div><div class="borrow"><code>IDEMIP_DHCP6_BORROW</code><span>484 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc8415.txt">RFC 8415</a></footer></article>
 <article class="card"><header><b>Ethip6</b><span class="hdr">src/ethernet/ethip6.h</span></header><div class="entries"><code>clear</code><code>multicast_map</code><code>eui64</code><code>linklocal</code></div><div class="borrow"><code>IDEMIP_ETHIP6_BORROW</code><span>64 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc2464.txt">RFC 2464</a></footer></article>
 <article class="card"><header><b>Icmp6In</b><span class="hdr">src/icmp/icmp6_in.h</span></header><div class="entries"><code>clear</code><code>recv</code><code>error</code></div><div class="borrow"><code>IDEMIP_ICMP6_IN_BORROW</code><span>192 bytes</span></div><footer><a class="rfc" href="learn/RFC/rfc4443.txt">RFC 4443</a></footer></article>
 <article class="card plain"><header><b>icmpv6.h</b><span class="hdr">src/icmp/icmpv6.h</span></header><div class="entries none">header only - no state, no borrow</div><footer><a class="rfc" href="learn/RFC/rfc4443.txt">RFC 4443</a></footer></article>
@@ -1015,10 +1015,10 @@ embed_bool  (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <tr><td><code>test/unit/arp/test_arp</code></td><td class="n">18</td><td><span class="cc">IPV4</span></td></tr>
 <tr><td><code>test/unit/arp/test_arp_table</code></td><td class="n">54</td><td><span class="cc">IPV4</span></td></tr>
 <tr><td><code>test/unit/autoip/test_autoip</code></td><td class="n">52</td><td><span class="cc">IPV4</span></td></tr>
-<tr><td><code>test/unit/base/test_checksum</code></td><td class="n">9</td><td><span class="cc any">any build</span></td></tr>
+<tr><td><code>test/unit/base/test_checksum</code></td><td class="n">10</td><td><span class="cc any">any build</span></td></tr>
 <tr><td><code>test/unit/base/test_clock</code></td><td class="n">25</td><td><span class="cc any">any build</span></td></tr>
 <tr><td><code>test/unit/base/test_span</code></td><td class="n">5</td><td><span class="cc any">any build</span></td></tr>
-<tr><td><code>test/unit/core/test_dispatch</code></td><td class="n">180</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span><span class="cc">TCP</span><span class="cc">UDP</span></td></tr>
+<tr><td><code>test/unit/core/test_dispatch</code></td><td class="n">189</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span><span class="cc">TCP</span><span class="cc">UDP</span></td></tr>
 <tr><td><code>test/unit/core/test_stats</code></td><td class="n">52</td><td><span class="cc">ETHERNET</span></td></tr>
 <tr><td><code>test/unit/core/test_tick</code></td><td class="n">41</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/core/test_timeouts</code></td><td class="n">52</td><td><span class="cc">ETHERNET</span></td></tr>
@@ -1049,24 +1049,24 @@ embed_bool  (*mdio_write)(uint8_t phy_addr, uint8_t reg, uint16_t val);</pre>
 <tr><td><code>test/unit/ip/test_ipv6</code></td><td class="n">47</td><td><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/mld/test_mld6</code></td><td class="n">67</td><td><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/nd/test_dad</code></td><td class="n">58</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/nd/test_nd6</code></td><td class="n">113</td><td><span class="cc">IPV6</span></td></tr>
+<tr><td><code>test/unit/nd/test_nd6</code></td><td class="n">115</td><td><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/nd/test_rdnss</code></td><td class="n">45</td><td><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/nd/test_slaac</code></td><td class="n">63</td><td><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/netif/test_dma</code></td><td class="n">54</td><td><span class="cc">ETHERNET</span></td></tr>
+<tr><td><code>test/unit/netif/test_dma</code></td><td class="n">56</td><td><span class="cc">ETHERNET</span></td></tr>
 <tr><td><code>test/unit/netif/test_loopif</code></td><td class="n">50</td><td><span class="cc">ETHERNET</span><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/netif/test_netif</code></td><td class="n">74</td><td><span class="cc">ETHERNET</span><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/pmtu/test_pmtu4</code></td><td class="n">33</td><td><span class="cc">IPV4</span></td></tr>
 <tr><td><code>test/unit/pmtu/test_pmtu6</code></td><td class="n">27</td><td><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/raw/test_raw_pcb</code></td><td class="n">50</td><td><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
 <tr><td><code>test/unit/tcp/test_tcp</code></td><td class="n">31</td><td><span class="cc">TCP</span></td></tr>
-<tr><td><code>test/unit/tcp/test_tcp_in</code></td><td class="n">103</td><td><span class="cc">TCP</span><span class="cc">IPV4</span></td></tr>
+<tr><td><code>test/unit/tcp/test_tcp_in</code></td><td class="n">107</td><td><span class="cc">TCP</span><span class="cc">IPV4</span></td></tr>
 <tr><td><code>test/unit/tcp/test_tcp_isn</code></td><td class="n">35</td><td><span class="cc">TCP</span></td></tr>
 <tr><td><code>test/unit/tcp/test_tcp_out</code></td><td class="n">71</td><td><span class="cc">TCP</span><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
-<tr><td><code>test/unit/tcp/test_tcp_pcb</code></td><td class="n">101</td><td><span class="cc">TCP</span></td></tr>
+<tr><td><code>test/unit/tcp/test_tcp_pcb</code></td><td class="n">102</td><td><span class="cc">TCP</span></td></tr>
 <tr><td><code>test/unit/udp/test_udp</code></td><td class="n">43</td><td><span class="cc">UDP</span></td></tr>
 <tr><td><code>test/unit/udp/test_udp_pcb</code></td><td class="n">62</td><td><span class="cc">UDP</span></td></tr>
 <tr><td><code>test/unit/udp/test_udplite</code></td><td class="n">36</td><td><span class="cc">UDP</span><span class="cc">IPV4</span><span class="cc">IPV6</span></td></tr>
-<tr class="total"><td>56 suites</td><td class="n">3,088</td><td></td></tr>
+<tr class="total"><td>56 suites</td><td class="n">3,107</td><td></td></tr>
 </tbody></table>
 <!-- /docsgen:suites -->
 </section>

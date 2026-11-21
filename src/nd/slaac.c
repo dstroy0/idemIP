@@ -256,8 +256,8 @@ static uint8_t slaac_count(uint8_t *work)
 static void slaac_clear_results(SlaacIo *io)
 {
     mmgr_zero_buf(io->addr, sizeof io->addr);
-    embed_stored_u64_set(&io->valid_at, 0u);
-    embed_stored_u64_set(&io->preferred_at, 0u);
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &io->valid_at, .count = 0u);
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &io->preferred_at, .count = 0u);
     io->entry = (uint8_t)IDEMIP_SLAAC_NONE;
     io->state = IDEMIP_SLAAC_ADDR_FREE;
     io->prefix_len = 0u;
@@ -280,8 +280,10 @@ static void slaac_publish(uint8_t *work, uint8_t index)
     const SlaacEntry *e = SLAAC_AT(work, index);
     io->entry = index;
     EMBED_CALL(proxim.read, ProximusCfg, .dst = io->addr, .at = e->addr, .size = IDEMIP_IP6_ADDR_LEN);
-    embed_stored_u64_set(&io->valid_at, embed_stored_u64_get(&e->valid_at));
-    embed_stored_u64_set(&io->preferred_at, embed_stored_u64_get(&e->preferred_at));
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &io->valid_at,
+               .count = EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &e->valid_at));
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &io->preferred_at,
+               .count = EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &e->preferred_at));
     io->state = e->state;
     io->prefix_len = e->prefix_len;
     io->valid_infinite = e->valid_infinite;
@@ -298,15 +300,16 @@ static void slaac_publish(uint8_t *work, uint8_t index)
 static void slaac_set_preferred(SlaacEntry *e, IdemIpMs now, uint32_t preferred_s)
 {
     e->preferred_infinite = (embed_bool)(preferred_s == IDEMIP_SLAAC_LIFETIME_INFINITE);
-    embed_stored_u64_set(&e->preferred_at,
-                         e->preferred_infinite ? (IdemIpMs)0 : (now + idemip_ms_from_s(preferred_s)));
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &e->preferred_at,
+               .count = e->preferred_infinite ? (IdemIpMs)0 : (now + idemip_ms_from_s(preferred_s)));
     e->state = (preferred_s != 0u) ? IDEMIP_SLAAC_ADDR_PREFERRED : IDEMIP_SLAAC_ADDR_DEPRECATED;
 }
 
 static void slaac_set_valid(SlaacEntry *e, IdemIpMs now, uint32_t valid_s)
 {
     e->valid_infinite = (embed_bool)(valid_s == IDEMIP_SLAAC_LIFETIME_INFINITE);
-    embed_stored_u64_set(&e->valid_at, e->valid_infinite ? (IdemIpMs)0 : (now + idemip_ms_from_s(valid_s)));
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &e->valid_at,
+               .count = e->valid_infinite ? (IdemIpMs)0 : (now + idemip_ms_from_s(valid_s)));
 }
 
 /*
@@ -331,7 +334,10 @@ static void slaac_two_hour_rule(uint8_t *work, SlaacEntry *e, IdemIpMs now, uint
     SlaacIo *io = SLAAC_IO(work);
     embed_bool received_infinite = (embed_bool)(valid_s == IDEMIP_SLAAC_LIFETIME_INFINITE);
     IdemIpMs received_ms = idemip_ms_from_s(valid_s);
-    IdemIpMs remaining_ms = e->valid_infinite ? (IdemIpMs)0 : slaac_remaining(now, embed_stored_u64_get(&e->valid_at));
+    IdemIpMs remaining_ms = e->valid_infinite
+                                ? (IdemIpMs)0
+                                : slaac_remaining(now, EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg,
+                                                                  .stored = &e->valid_at));
 
     if (received_infinite || received_ms > (IdemIpMs)IDEMIP_SLAAC_TWO_HOURS_MS ||
         (!e->valid_infinite && received_ms > remaining_ms))
@@ -352,7 +358,8 @@ static void slaac_two_hour_rule(uint8_t *work, SlaacEntry *e, IdemIpMs now, uint
         return;
     }
     e->valid_infinite = EMBED_FALSE;
-    embed_stored_u64_set(&e->valid_at, now + (IdemIpMs)IDEMIP_SLAAC_TWO_HOURS_MS);
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &e->valid_at,
+               .count = now + (IdemIpMs)IDEMIP_SLAAC_TWO_HOURS_MS);
     io->two_hour = EMBED_TRUE;
 }
 
@@ -595,7 +602,8 @@ void idemip_slaac_tick(uint8_t *work)
         {
             continue;
         }
-        if (!e->valid_infinite && slaac_due(now, embed_stored_u64_get(&e->valid_at)))
+        if (!e->valid_infinite &&
+            slaac_due(now, EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &e->valid_at)))
         {
             slaac_publish(work, i);
             *e = (SlaacEntry){0};
@@ -605,7 +613,7 @@ void idemip_slaac_tick(uint8_t *work)
             return;
         }
         if (e->state == IDEMIP_SLAAC_ADDR_PREFERRED && !e->preferred_infinite &&
-            slaac_due(now, embed_stored_u64_get(&e->preferred_at)))
+            slaac_due(now, EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &e->preferred_at)))
         {
             e->state = IDEMIP_SLAAC_ADDR_DEPRECATED;
             slaac_publish(work, i);

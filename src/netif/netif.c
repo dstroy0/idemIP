@@ -375,14 +375,14 @@ static uint8_t netif_age_addr6(uint8_t *work, uint32_t now_ms)
             {
                 continue;
             }
-            if (now >= embed_stored_u64_get(&addr6->valid_at))
+            if (now >= EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &addr6->valid_at))
             {
                 *addr6 = (NetifAddr6Entry){0};
                 moved = (uint8_t)(moved + 1u);
                 continue;
             }
             if (addr6->state == (uint8_t)IDEMIP_NETIF_ADDR6_PREFERRED &&
-                now >= embed_stored_u64_get(&addr6->preferred_at))
+                now >= EMBED_CALL(embed_stored_u64_table.get, EmbedStoredU64GetCfg, .stored = &addr6->preferred_at))
             {
                 addr6->state = (uint8_t)IDEMIP_NETIF_ADDR6_DEPRECATED;
                 moved = (uint8_t)(moved + 1u);
@@ -715,8 +715,10 @@ void idemip_netif_add_addr6(uint8_t *work)
     // into boot. Extending here as the sweep does keeps the two entries on one clock.
     NetifCtx *ctx = NETIF_CTX(work);
     const IdemIpMs now = idemip_ms_extend(&ctx->tick_ms, &ctx->tick_hi, io->now_ms);
-    embed_stored_u64_set(&addr6->valid_at, netif_deadline(now, io->addr6_args.valid_s));
-    embed_stored_u64_set(&addr6->preferred_at, netif_deadline(now, io->addr6_args.preferred_s));
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &addr6->valid_at,
+               .count = netif_deadline(now, io->addr6_args.valid_s));
+    EMBED_CALL(embed_stored_u64_table.set, EmbedStoredU64SetCfg, .stored = &addr6->preferred_at,
+               .count = netif_deadline(now, io->addr6_args.preferred_s));
     addr6->state = (uint8_t)io->addr6_args.state;
     netif_report_addr6(work, io->addr6_args.index, slot);
     io->status = IDEMIP_OK;
