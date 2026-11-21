@@ -371,6 +371,20 @@ void idemip_tcp_in_closed(uint8_t *work)
     tcp_in_put_rst(io);
 }
 
+// RFC 9293 sec 3.7.1 sets the send MSS from the MSS Option of the SYN. MUST-15 gives the default where
+// the SYN carries none: 536 octets for IPv4 and 1220 octets for IPv6. An option value of zero names no
+// segment size. The default thus applies to it too.
+static void tcp_in_take_mss(TcpInIo *io)
+{
+    if ((io->opts.present & IDEMIP_TCP_IN_OPT_MSS) != 0u && io->opts.mss != 0u)
+    {
+        io->ctl.mss = io->opts.mss;
+        return;
+    }
+    io->ctl.mss = (io->parse_args.ip_version == 6u) ? (uint16_t)IDEMIP_TCP_MSS_DEFAULT_IP6
+                                                    : (uint16_t)IDEMIP_TCP_MSS_DEFAULT_IP4;
+}
+
 // RFC 9293 sec 3.10.7.2 LISTEN STATE, its four checks in order. The ISS the third needs is
 // @ref IdemIpTcpVars::iss, which the caller draws through tcp_isn.h before the call.
 void idemip_tcp_in_listen(uint8_t *work)
@@ -423,6 +437,7 @@ void idemip_tcp_in_listen(uint8_t *work)
         io->ctl.max_snd_wnd = io->seg.wnd;
     }
     io->state = IDEMIP_TCP_STATE_SYN_RECEIVED;
+    tcp_in_take_mss(io);
     io->reply.seq = io->vars.iss;
     io->reply.ack = io->vars.rcv_nxt;
     io->reply.flags = (uint16_t)(IDEMIP_TCP_SYN | IDEMIP_TCP_ACK);
@@ -532,6 +547,7 @@ void idemip_tcp_in_syn_sent(uint8_t *work)
     // thereby acknowledged should be removed."
     io->vars.rcv_nxt = io->seg.seq + 1u;
     io->vars.irs = io->seg.seq;
+    tcp_in_take_mss(io);
     if (ack_ok)
     {
         io->res.acked = tcp_in_from(io->seg.ack, io->vars.snd_una);

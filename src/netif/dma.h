@@ -153,7 +153,9 @@ typedef struct
  * @var DmaNs::rx_take  the next descriptor the engine filled, its cache lines discarded first. BUSY
  *                      when nothing is waiting.
  * @var DmaNs::rx_post  give a taken descriptor back to the engine
- * @var DmaNs::pin      raise a taken receive descriptor's pin count, so posting it back waits
+ * @var DmaNs::pin      raise the pin count of a taken receive descriptor. A post of it then waits
+ *                      for the last unpin. The call reports the buffer of the descriptor and the
+ *                      octets in it.
  * @var DmaNs::unpin    lower it, and post the descriptor back when the last pin goes
  * @var DmaNs::tx_take  a free transmit descriptor to build into. BUSY when the ring is full.
  * @var DmaNs::tx_post  clean the buffer's cache lines and hand the descriptor to the engine

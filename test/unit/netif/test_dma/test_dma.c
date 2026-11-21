@@ -980,6 +980,31 @@ void test_a_pinned_frame_survives_the_ring_wrapping_past_it(void)
     TEST_ASSERT_EQUAL_INT(expect_released + 1, g_released);
 }
 
+// A pin reports the buffer of the descriptor that it reaches, and the octets in it. A unit that keeps a
+// descriptor names it by index alone. A second pin is thus how a caller reads the retained frame after
+// the post of the descriptor.
+void test_a_pin_reports_the_frame_of_the_descriptor(void)
+{
+    const unsigned held = 3u;
+    bind_ok(work_a);
+    engine_fill(held, 100u, 0x5Au);
+    Dma.rx_take(work_a);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    const uint8_t *taken_buf = IDEMIP_DMA_IO(work_a)->buf;
+    pin_rx(work_a, (uint8_t)held);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    post_rx(work_a, (uint8_t)held);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+
+    pin_rx(work_a, (uint8_t)held);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+    TEST_ASSERT_TRUE_MESSAGE(IDEMIP_DMA_IO(work_a)->buf == taken_buf, "a pin did not report the buffer it reached");
+    TEST_ASSERT_EQUAL_UINT(100u, IDEMIP_DMA_IO(work_a)->len);
+    unpin_rx(work_a, (uint8_t)held);
+    unpin_rx(work_a, (uint8_t)held);
+    TEST_ASSERT_EQUAL_INT(IDEMIP_OK, IDEMIP_DMA_IO(work_a)->status);
+}
+
 // The pin count is the ring's, and the ring is the borrow, so pinning on one interface leaves the
 // other's count where it was.
 void test_pins_on_two_borrows_are_independent(void)

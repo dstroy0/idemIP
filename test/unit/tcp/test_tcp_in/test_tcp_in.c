@@ -1271,7 +1271,57 @@ void test_listen_drops_a_segment_with_neither_syn_nor_ack_nor_rst(void)
     TEST_ASSERT_EQUAL_UINT32(0u, IO(work_a)->res.act);
 }
 
+// RFC 9293 sec 3.7.1: the MSS Option of the SYN gives the send MSS of the connection.
+void test_listen_takes_the_send_mss_from_the_option_of_the_syn(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_LISTEN, 0u, 0u, 0u, 4096u);
+    IO(work_a)->vars.iss = 300u;
+    IO(work_a)->parse_args.ip_version = 4u;
+    IO(work_a)->opts = (TcpInOpts){0};
+    IO(work_a)->opts.present = (uint8_t)IDEMIP_TCP_IN_OPT_MSS;
+    IO(work_a)->opts.mss = 1460u;
+    seg(work_a, 100u, 0u, 1u, 0u, (uint8_t)IDEMIP_TCP_SYN);
+    TcpIn.listen(work_a);
+    TEST_ASSERT_EQUAL_INT((int)IDEMIP_TCP_STATE_SYN_RECEIVED, (int)IO(work_a)->state);
+    TEST_ASSERT_EQUAL_UINT16(1460u, IO(work_a)->ctl.mss);
+}
+
+// RFC 9293 sec 3.7.1 MUST-15: a SYN with no MSS Option gives the default of its IP version.
+void test_listen_takes_the_default_send_mss_of_each_version(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_LISTEN, 0u, 0u, 0u, 4096u);
+    IO(work_a)->vars.iss = 300u;
+    IO(work_a)->parse_args.ip_version = 4u;
+    IO(work_a)->opts = (TcpInOpts){0};
+    seg(work_a, 100u, 0u, 1u, 0u, (uint8_t)IDEMIP_TCP_SYN);
+    TcpIn.listen(work_a);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_MSS_DEFAULT_IP4, IO(work_a)->ctl.mss);
+
+    conn(work_a, IDEMIP_TCP_STATE_LISTEN, 0u, 0u, 0u, 4096u);
+    IO(work_a)->vars.iss = 300u;
+    IO(work_a)->parse_args.ip_version = 6u;
+    IO(work_a)->opts = (TcpInOpts){0};
+    seg(work_a, 100u, 0u, 1u, 0u, (uint8_t)IDEMIP_TCP_SYN);
+    TcpIn.listen(work_a);
+    TEST_ASSERT_EQUAL_UINT16(IDEMIP_TCP_MSS_DEFAULT_IP6, IO(work_a)->ctl.mss);
+}
+
 // --- RFC 9293 sec 3.10.7.3, the SYN-SENT state --------------------------------
+
+// RFC 9293 sec 3.7.1: the MSS Option of the SYN,ACK gives the send MSS of an active OPEN.
+void test_syn_sent_takes_the_send_mss_from_the_option_of_the_syn_ack(void)
+{
+    conn(work_a, IDEMIP_TCP_STATE_SYN_SENT, 100u, 101u, 0u, 4096u);
+    IO(work_a)->vars.iss = 100u;
+    IO(work_a)->parse_args.ip_version = 4u;
+    IO(work_a)->opts = (TcpInOpts){0};
+    IO(work_a)->opts.present = (uint8_t)IDEMIP_TCP_IN_OPT_MSS;
+    IO(work_a)->opts.mss = 1400u;
+    seg(work_a, 300u, 101u, 1u, 0u, (uint8_t)(IDEMIP_TCP_SYN | IDEMIP_TCP_ACK));
+    TcpIn.syn_sent(work_a);
+    TEST_ASSERT_EQUAL_INT((int)IDEMIP_TCP_STATE_ESTABLISHED, (int)IO(work_a)->state);
+    TEST_ASSERT_EQUAL_UINT16(1400u, IO(work_a)->ctl.mss);
+}
 
 // RFC 9293 sec 3.5 Figure 6 lines 2, 3 and 4: A sent "<SEQ=100><CTL=SYN>", so ISS is 100 and SND.NXT
 // 101; "<SEQ=300><ACK=101><CTL=SYN,ACK>" arrives and A answers "<SEQ=101><ACK=301><CTL=ACK>".

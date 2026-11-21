@@ -103,6 +103,15 @@
  */
 #define IDEMIP_TCP_MSS_KIND IDEMIP_TCP_OPT_MSS
 
+/**
+ * @brief RFC 9293 sec 3.7.1 MUST-15, the send MSS of an IPv4 connection whose SYN carried no MSS
+ * Option: 576 octets less 40 octets of headers.
+ */
+#define IDEMIP_TCP_MSS_DEFAULT_IP4 536u
+
+/** @brief RFC 9293 sec 3.7.1 MUST-15, the same for IPv6: 1280 octets less 60 octets of headers. */
+#define IDEMIP_TCP_MSS_DEFAULT_IP6 1220u
+
 // The two octets every option but kind 0 and kind 1 begins with, then its data.
 
 #define IDEMIP_TCP_OPT_OFF_KIND 0u ///< 8-bit option-kind

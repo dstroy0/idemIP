@@ -328,6 +328,10 @@ void idemip_dma_pin(uint8_t *work)
     }
     d->pins++;
     ctx->pinned++;
+    // A unit that keeps a descriptor names it by index alone. The pin thus reports the frame, and a
+    // caller reaches the octets that the unit keeps.
+    io->buf = d->buf;
+    io->len = d->len;
     io->index = io->desc_args.index;
     io->flags = d->flags;
     io->pins = d->pins;
